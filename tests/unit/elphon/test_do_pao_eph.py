@@ -320,3 +320,27 @@ def test_atom_masses_expands_species_to_atoms() -> None:
         atom_masses([24.305, 10.811, 10.811], ['Mg', 'B'], ['Mg', 'B', 'B'])
     with pytest.raises(ValueError, match='unknown species'):
         atom_masses([24.305], ['Mg'], ['Mg', 'B'])
+
+
+def test_ws_lattice_pairs_reduces_to_single_site_and_conserves_weight() -> None:
+    from PAOFLOW.elphon.elph_bloch import _ws_lattice, _ws_lattice_pairs
+
+    at = np.array([[1.0, 0.0, 0.0], [-0.5, np.sqrt(3) / 2, 0.0], [0.0, 0.0, 1.14]])
+    ng = (3, 3, 2)
+    # One site: the pair construction is the single-site one.
+    single, weights_single, _ = _ws_lattice(ng, at)
+    cells, weights, midx = _ws_lattice_pairs(ng, at, np.zeros((2, 3)), sign=1)
+    order_single = np.lexsort(single.T)
+    order_pairs = np.lexsort(cells.T)
+    np.testing.assert_array_equal(cells[order_pairs], single[order_single])
+    np.testing.assert_allclose(weights[order_pairs, 0, 1], weights_single[order_single])
+    np.testing.assert_array_equal(midx, cells % np.array(ng))
+    # Two sites (MgB2-like B positions): every pair covers the supercell once.
+    positions = np.array([[0.0, 0.0, 0.0], [1 / 3, 2 / 3, 0.5], [2 / 3, 1 / 3, 0.5]])
+    for sign in (1, -1):
+        cells, weights, _ = _ws_lattice_pairs(ng, at, positions, sign)
+        np.testing.assert_allclose(weights.sum(axis=0), np.prod(ng))
+        # The weights of (i, j) and (j, i) are mirror images: cell n <-> -n.
+        mirrored = {tuple(c): k for k, c in enumerate(cells)}
+        for k, cell in enumerate(cells):
+            np.testing.assert_allclose(weights[k, 0, 1], weights[mirrored[tuple(-cell)], 1, 0])

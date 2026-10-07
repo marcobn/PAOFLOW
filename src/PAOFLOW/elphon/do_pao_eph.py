@@ -317,6 +317,7 @@ def eliashberg_from_qe_coupling(
     sigma_w_frac=0.02,
     fs_window=8.0,
     comm=None,
+    orbital_positions=None,
 ):
     """Isotropic Eliashberg properties from QE's coarse ``el_ph_mat`` (PAO route).
 
@@ -386,6 +387,12 @@ def eliashberg_from_qe_coupling(
         diagonalisation is computed redundantly on every rank (the cache is
         needed by all q and is too large to broadcast cheaply); only the
         per-q vertex interpolation is parallelised.
+    orbital_positions : ndarray ``(nawf, 3)``, optional
+        PAO orbital centres in crystal coordinates
+        (:func:`~PAOFLOW.elphon.elph_bloch.pao_orbital_positions`).  When given,
+        the electrons and the vertex are interpolated with orbital-pair
+        Wigner-Seitz images, required for symmetric interpolation in cells with
+        several atoms; ``None`` keeps the single-site images.
 
     Returns
     -------
@@ -415,8 +422,9 @@ def eliashberg_from_qe_coupling(
     # Diagonalise the dense electron spectrum ONCE; every q reuses it (E(k+q) /
     # V(k+q) are index shifts), so the per-q cost is only the vertex interpolation.
     electrons = precompute_dense_electrons(
-        HRs, at, nk_dense, sigmas_ry, nelec, tuple(ng), ispin=ispin, fs_window=fs_window
-    )
+        HRs, at, nk_dense, sigmas_ry, nelec, tuple(ng), ispin=ispin, fs_window=fs_window,
+        orbital_positions=orbital_positions,
+    )  # fmt: skip
 
     # Distribute the embarrassingly parallel per-q loop across MPI ranks: each q
     # writes a disjoint slice of the (zero-initialised) output arrays, so a single

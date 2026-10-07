@@ -1839,6 +1839,10 @@ Run them in this order (EPW tutorial 04 is a complete worked example):
     cd ..
     mpirun -np N python main.elphon.py      # PAO interpolation -> alpha^2F, lambda, Tc
 
+With dense q and FS_COUPLING, the run also stores the state-resolved coupling of
+the Fermi-surface states (OUTPUTDIR/fs_coupling.npz) for the anisotropic
+Migdal-Eliashberg equations of me_aniso.elphon.py; --iso-only skips it.
+
 ``epw/epw.in`` runs EPW without any Wannier functions (``wannierize = .false.``):
 EPW reads the band bookkeeping from the placeholder <prefix>.ukk (EXCLUDE_BANDS,
 identity rotations) and writes the coarse coupling before its Wannier stage,
@@ -1857,7 +1861,8 @@ from mpi4py import MPI
 from PAOFLOW import PAOFLOW
 from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
 from PAOFLOW.elphon.do_pao_eph_dense_q import eliashberg_dense_q
-from PAOFLOW.elphon.elph_bloch import RY_TO_EV, atom_masses, read_nscf
+from PAOFLOW.elphon.elph_bloch import RY_TO_EV, atom_masses, pao_orbital_positions, read_nscf
+from PAOFLOW.elphon.fermi_surface_coupling import write_fs_coupling
 
 # ----------------------------------------------------------------------- #
 # Configuration  (edit freely -- masses / NELEC are system-specific)      #
@@ -1879,12 +1884,14 @@ NK_DENSE = __NK_DENSE__  # dense electron grid
 NQ_DENSE = __NQ_DENSE__  # dense phonon grid; NK_DENSE % NQ_DENSE == 0
 SIGMA_EV = __SIGMA_EV__  # Fermi-surface smearing (EPW: degaussw)
 MU_STAR = __MU_STAR__  # Coulomb pseudopotential for Tc
+FS_COUPLING = __FS_COUPLING__  # store the Fermi-surface coupling for the anisotropic ME equations
+FSTHICK_EV = __FSTHICK_EV__  # Fermi window of the anisotropic states (EPW: fsthick)
 
 KB_EV = 8.617333262e-5
 
 
 def pao_electronic_structure():
-    """PAO projections and Hamiltonian on the EPW nscf save."""
+    """PAO projections, Hamiltonian and orbital centres on the EPW nscf save."""
     pf = PAOFLOW.PAOFLOW(
         workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=__SAVE_OVERLAPS__, verbose=False
     )
@@ -1895,11 +1902,14 @@ __PROJECTION_CALL__
     projections = pf.data_controller.full_projections()[:, :, :, 0].copy()
     # The explicit K_POINTS list already spans the whole Brillouin zone.
     pf.pao_hamiltonian(expand_wedge=False)
-    return projections, pf.data_controller.data_arrays['HRs'], read_nscf(SAVEDIR)
+    nscf = read_nscf(SAVEDIR)
+    # Orbital centres: pair-resolved Wigner-Seitz interpolation (several atoms per cell).
+    nscf['orbital_positions'] = pao_orbital_positions(pf.data_controller, nscf['at'])
+    return projections, pf.data_controller.data_arrays['HRs'], nscf
 
 
-def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q):
-    """Isotropic Eliashberg properties from EPW's coarse coupling."""
+def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, fs_coupling):
+    """Eliashberg properties from EPW's coarse coupling (and the Fermi-surface coupling)."""
     common = dict(
         source='epw',
         # one mass per atom of the cell, from the per-species MASSES_AMU
@@ -1908,6 +1918,7 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q):
         sigmas_ry=[sigma_ev / RY_TO_EV],
         nelec=NELEC,
         mu_star=MU_STAR,
+        orbital_positions=nscf['orbital_positions'],
     )
     lattice = (nscf['kpts_cryst'], nscf['bg'], nscf['at'])
     if coarse_q:
@@ -1919,12 +1930,13 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q):
     return eliashberg_dense_q(
         projections, HRs, *lattice, EPW_DIR, QGRID, None, None, COARSE_GRID, None,
         nq_dense=nq_dense, sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'],
-        species=nscf['atom_names'], **common,
+        species=nscf['atom_names'], fs_coupling=fs_coupling, fsthick_ev=FSTHICK_EV, **common,
     )
 
 
 def report(out, label):
-    """Print the Eliashberg summary and write alpha2F.dat / eliashberg.npz."""
+    """Print the Eliashberg summary and write alpha2F.dat / eliashberg.npz (/ fs_coupling.npz)."""
+    fs_coupling = out.pop('fs_coupling', None)
     print('PAOFLOW on EPW coupling (%s):' % label)
     print('  lambda   = %.4f' % out['lambda'])
     print('  w_log    = %.3f meV' % (out['omega_log'] * 1.0e3))
@@ -1938,6 +1950,10 @@ def report(out, label):
         % (out['lambda'], out['omega_log'] / KB_EV, out['Tc_mcmillan'], out['Tc_allen_dynes'], MU_STAR),
     )
     np.savez(os.path.join(OUTPUTDIR, 'eliashberg.npz'), **out)
+    if fs_coupling is not None:
+        write_fs_coupling(os.path.join(OUTPUTDIR, 'fs_coupling.npz'), fs_coupling)
+        print('  Fermi-surface coupling: %d states -> %s'
+              % (fs_coupling['band'].size, os.path.join(OUTPUTDIR, 'fs_coupling.npz')))
 
 
 def main():
@@ -1947,7 +1963,10 @@ def main():
     parser.add_argument('--nk', type=int, default=NK_DENSE, help='dense k-grid (default %(default)s)')
     parser.add_argument('--nq', type=int, default=NQ_DENSE, help='dense q-grid (default %(default)s)')
     parser.add_argument('--sigma-ev', type=float, default=SIGMA_EV, help='smearing in eV')
+    parser.add_argument('--iso-only', action='store_true', default=not FS_COUPLING,
+                        help='skip the Fermi-surface (anisotropic) coupling')
     args = parser.parse_args()
+    fs_coupling = not (args.iso_only or args.coarse_q)  # needs the dense-q loop
 
     if not os.path.isdir(SAVEDIR):
         sys.exit('%s not found. Run the pw.x nscf in epw/ first.' % SAVEDIR)
@@ -1955,7 +1974,8 @@ def main():
         sys.exit('No %s.epb* files in %s. Run epw.x with epbwrite = .true. first.' % (PREFIX, EPW_DIR))
 
     projections, HRs, nscf = pao_electronic_structure()
-    out = eliashberg(projections, HRs, nscf, args.nk, args.nq, args.sigma_ev, args.coarse_q)
+    out = eliashberg(projections, HRs, nscf, args.nk, args.nq, args.sigma_ev, args.coarse_q,
+                     fs_coupling)
 
     # The result is identical on every rank; only rank 0 reports and writes files.
     if MPI.COMM_WORLD.Get_rank() == 0:
@@ -1985,11 +2005,33 @@ print('Wrote __UKK__ (and the empty wannier90 stubs __STEM__.bvec, __STEM__.mmn)
 '''
 
 
+def _wants_fs_coupling(cfg: dict[str, Any]) -> bool:
+    """Whether the EPW driver stores the Fermi-surface (anisotropic) coupling.
+
+    Parameters
+    ----------
+    cfg : dict
+        Generator configuration; ``fs_coupling`` overrides the default.
+
+    Returns
+    -------
+    bool
+        ``cfg['fs_coupling']`` if set, otherwise ``True`` for a dense-q run with
+        equal dense k- and q-grids (with a coarser q-grid the anisotropic
+        equations split into independent sublattice problems).
+    """
+    if cfg.get('fs_coupling') is not None:
+        return bool(cfg['fs_coupling'])
+    return bool(cfg.get('dense_q')) and int(cfg['nk_dense']) == int(cfg['nq_dense'])
+
+
 def build_elphon_epw_script(cfg):
     """Assemble a main.elphon.py for the EPW coupling source from the config."""
     subs = {
         '__PREFIX__': repr(cfg['prefix']),
         '__PREFIX_NAME__': cfg['prefix'],
+        '__FS_COUPLING__': str(_wants_fs_coupling(cfg)),
+        '__FSTHICK_EV__': repr(float(cfg.get('fsthick_ev') or 4.0 * float(cfg['sigma_ev']))),
         '__EPW_DIR__': repr(cfg['epw_dir']),
         '__SAVEDIR__': repr(cfg['savedir']),
         '__OUTPUTDIR__': repr(cfg['outputdir']),
@@ -2086,7 +2128,9 @@ EPW_A2F points to an existing EPW ``<prefix>.a2f`` file (EPW run with
 ``a2f_iso``/``eliashberg``), EPW's alpha^2F and cumulative lambda are overlaid
 (dashed) for comparison.  When me.elphon.py has been run, a second figure shows
 the Migdal-Eliashberg gap on the imaginary and real axes, Delta(T) and the
-linearised-kernel Tc (saved as OUTPUTDIR/me/migdal_eliashberg.png).
+linearised-kernel Tc (saved as OUTPUTDIR/me/migdal_eliashberg.png), and when
+me_aniso.elphon.py has been run a third one shows the anisotropic gaps
+(OUTPUTDIR/me_aniso/migdal_eliashberg_aniso.png).
 """
 
 import os
@@ -2101,6 +2145,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUTDIR = __OUTPUTDIR__
 NPZ = os.path.join(HERE, OUTPUTDIR, 'eliashberg.npz')
 ME_NPZ = os.path.join(HERE, OUTPUTDIR, 'me', 'migdal_eliashberg.npz')  # written by me.elphon.py
+ME_ANISO_NPZ = os.path.join(HERE, OUTPUTDIR, 'me_aniso', 'migdal_eliashberg_aniso.npz')
 EPW_A2F = __EPW_A2F__   # EPW's own alpha^2F file, or None
 
 
@@ -2144,11 +2189,16 @@ def main():
         title += '\n' + r'$T_c^{McM} = %.2f$ K,  $T_c^{AD} = %.2f$ K ($\mu^* = %.2f$)' % (tc_mcm, tc_ad, mu)
     ax1.set_title(title)
     fig.tight_layout()
-    if os.path.isfile(ME_NPZ):  # shows both figures
+    if os.path.isfile(ME_ANISO_NPZ):  # plt.show() inside the GPAO calls shows every figure
+        GPAO.GPAO().plot_migdal_eliashberg_aniso(
+            ME_ANISO_NPZ, iso_npz_file=ME_NPZ if os.path.isfile(ME_NPZ) else None,
+            filename=os.path.join(os.path.dirname(ME_ANISO_NPZ), 'migdal_eliashberg_aniso.png'),
+        )
+    if os.path.isfile(ME_NPZ):
         GPAO.GPAO().plot_migdal_eliashberg(
             ME_NPZ, filename=os.path.join(os.path.dirname(ME_NPZ), 'migdal_eliashberg.png')
         )
-    else:
+    elif not os.path.isfile(ME_ANISO_NPZ):
         plt.show()
 
 
@@ -2309,6 +2359,145 @@ def build_elphon_me_script(cfg: dict[str, Any]) -> str:
         else repr((float(temps[0]), float(temps[1]), int(temps[2]))),
     }
     content = ELPHON_ME_TEMPLATE
+    for token, value in subs.items():
+        content = content.replace(token, value)
+    return content
+
+
+ELPHON_ME_ANISO_TEMPLATE = r'''#!/usr/bin/env python3
+"""Anisotropic Migdal-Eliashberg superconducting gaps and Tc (generated by paoflow_gen.py).
+
+Post-processing of the Fermi-surface coupling written by main.elphon.py
+(OUTPUTDIR/fs_coupling.npz, dense-q run with FS_COUPLING = True), as in the
+anisotropic Fermi-surface-restricted (FSR) step of EPW tutorial 04:
+
+    python me_aniso.elphon.py
+    python me_aniso.elphon.py --linear-temps 5 50 10   # also Tc from the linearised kernel
+    python plot.elphon.py
+
+For every temperature OUTPUTDIR/me_aniso/ receives, in EPW's formats,
+<prefix>.imag_aniso_<T> (Delta_nk and Z_nk on the Matsubara axis),
+<prefix>.imag_aniso_gap0_<T> and <prefix>.pade_aniso_gap0_<T> (gap
+distributions), <prefix>.imag_aniso_gap_FS_<T> (gap of every Fermi-surface
+state), <prefix>.pade_aniso_<T> and <prefix>.qdos_<T>.  <prefix>.lambda_FS and
+<prefix>.lambda_k_pairs hold lambda_nk, gap_vs_T_aniso.dat the gap range versus
+T, and migdal_eliashberg_aniso.npz all of it.  The solver is serial.
+"""
+
+import argparse
+import os
+
+import numpy as np
+
+from PAOFLOW.elphon.anisotropic_eliashberg import (
+    coupling_strength,
+    linearized_eigenvalues_aniso,
+    migdal_eliashberg_aniso,
+    write_me_aniso_outputs,
+)
+from PAOFLOW.elphon.fermi_surface_coupling import read_fs_coupling
+from PAOFLOW.elphon.migdal_eliashberg import default_temperatures, default_wscut
+
+# ----------------------------------------------------------------------- #
+# Configuration (EPW defaults; edit freely)                               #
+# ----------------------------------------------------------------------- #
+HERE = os.path.dirname(os.path.abspath(__file__))
+FS_COUPLING = os.path.join(HERE, __OUTPUTDIR__, 'fs_coupling.npz')  # written by main.elphon.py
+MEDIR = os.path.join(HERE, __OUTPUTDIR__, 'me_aniso')
+PREFIX = __PREFIX__
+
+MU_STAR = __MU_STAR__  # Coulomb pseudopotential (EPW muc)
+WSCUT = None  # Matsubara cutoff in eV (EPW wscut); None: 5 x the highest phonon, >= 0.1 eV
+NPADE = 90  # percentage of Matsubara points in the Pade approximants (EPW npade)
+# (Tmin, Tmax, nstemp) in K, or None: nstemp = 15 up to 2.5 x Tc(Allen-Dynes) of alpha^2F
+# (anisotropy raises Tc above the isotropic estimate).
+TEMPS = __TEMPS__
+
+
+def main() -> None:
+    """Solve the anisotropic Migdal-Eliashberg equations and write OUTPUTDIR/me_aniso/."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument('--temps', type=float, nargs=3, default=TEMPS,
+                        metavar=('TMIN', 'TMAX', 'NSTEMP'), help='temperatures (K)')
+    parser.add_argument('--linear-temps', type=float, nargs=3, metavar=('TMIN', 'TMAX', 'NSTEMP'),
+                        help='also compute the linearised-kernel eigenvalue on these temperatures')
+    parser.add_argument('--mu-star', type=float, default=MU_STAR)
+    parser.add_argument('--wscut', type=float, default=WSCUT,
+                        help='Matsubara cutoff (eV); default from the phonon spectrum')
+    parser.add_argument('--npade', type=float, default=NPADE, help='%% of Matsubara points for Pade')
+    parser.add_argument('--no-pade', action='store_true', help='skip the real axis')
+    args = parser.parse_args()
+
+    if not os.path.isfile(FS_COUPLING):
+        raise SystemExit('%s not found; run main.elphon.py (dense q, FS_COUPLING = True) first.'
+                         % FS_COUPLING)
+    coupling = read_fs_coupling(FS_COUPLING)
+    strength = coupling_strength(coupling)
+    wscut = default_wscut(strength['omega'], strength['a2F']) if args.wscut is None else args.wscut
+    print('Fermi-surface coupling: %d irreducible states (k %d^3, q %d^3, fsthick %.2f eV)'
+          % (coupling['band'].size, coupling['nk_dense'], coupling['nq_dense'],
+             coupling['fsthick_ev']))
+    print('  lambda = %.4f   lambda_nk = %.3f .. %.3f   N_F = %.4f states/eV/spin'
+          % (strength['lambda'], strength['lambda_nk'].min(), strength['lambda_nk'].max(),
+             strength['dos_ef']))
+    if args.temps is None:
+        temps = default_temperatures(strength['omega'], strength['a2F'], args.mu_star,
+                                     nstemp=15, tmax_factor=2.5)
+    else:
+        temps = np.linspace(args.temps[0], args.temps[1], int(args.temps[2]))
+
+    print('Anisotropic Migdal-Eliashberg equations (mu* = %.2f, wscut = %.3f eV):'
+          % (args.mu_star, wscut))
+    result = migdal_eliashberg_aniso(
+        coupling, temps, args.mu_star, wscut, npade=args.npade, lpade=not args.no_pade,
+        verbose=True,
+    )
+    linear = None
+    if args.linear_temps is not None:
+        tmin, tmax, nstemp = args.linear_temps
+        linear = linearized_eigenvalues_aniso(
+            coupling, np.linspace(tmin, tmax, int(nstemp)), args.mu_star, wscut
+        )
+    write_me_aniso_outputs(result, coupling, MEDIR, PREFIX, linear)
+
+    print('Tc from Delta_max^2(T) -> 0    : %.2f K' % result['Tc_gap'])
+    if linear is not None:
+        print('Tc from the linearised kernel : %.2f K' % linear['Tc_linear'])
+    if not result['converged'].all():
+        print('WARNING: not converged at T =', result['temps'][~result['converged']])
+    print('Wrote %s' % MEDIR)
+
+
+if __name__ == '__main__':
+    main()
+'''
+
+
+def build_elphon_me_aniso_script(cfg: dict[str, Any]) -> str:
+    """Assemble ``me_aniso.elphon.py``, the anisotropic Migdal-Eliashberg script.
+
+    Parameters
+    ----------
+    cfg : dict
+        Generator configuration; uses ``outputdir``, ``prefix``, ``mu_star`` and
+        the optional ``me_temps`` (``[Tmin, Tmax, nstemp]`` or ``None`` for an
+        automatic grid up to 2.5 times the Allen-Dynes ``Tc``).
+
+    Returns
+    -------
+    str
+        The script text.
+    """
+    temps = cfg.get('me_temps')
+    subs = {
+        '__OUTPUTDIR__': repr(cfg['outputdir']),
+        '__PREFIX__': repr(cfg['prefix']),
+        '__MU_STAR__': repr(float(cfg['mu_star'])),
+        '__TEMPS__': 'None'
+        if not temps
+        else repr((float(temps[0]), float(temps[1]), int(temps[2]))),
+    }
+    content = ELPHON_ME_ANISO_TEMPLATE
     for token, value in subs.items():
         content = content.replace(token, value)
     return content
@@ -4421,6 +4610,15 @@ def main(argv: list[str] | None = None) -> int:
             with open(me_path, 'w', encoding='utf-8') as handle:
                 handle.write(build_elphon_me_script(cfg))
             print(f'Wrote {me_path}')
+        # Anisotropic Migdal-Eliashberg on the Fermi-surface coupling (EPW source, dense q).
+        if cfg.get('source', 'epw') == 'epw' and _wants_fs_coupling(cfg):
+            me_aniso_path = os.path.join(os.path.dirname(me_path), 'me_aniso.elphon.py')
+            if os.path.exists(me_aniso_path) and not args.force:
+                sys.stderr.write(f'Refusing to overwrite {me_aniso_path} (use --force).\n')
+            else:
+                with open(me_aniso_path, 'w', encoding='utf-8') as handle:
+                    handle.write(build_elphon_me_aniso_script(cfg))
+                print(f'Wrote {me_aniso_path}')
         # Remind the user of the two-phase workflow (and the MPI dense-q option).
         script = os.path.basename(out_path)
         if cfg.get('source', 'epw') == 'epw':
@@ -4454,6 +4652,8 @@ def main(argv: list[str] | None = None) -> int:
                 f'  3) cd ..:  mpirun -np N python {script}   # PAO interpolation -> alpha^2F, lambda, Tc'
             )
             print('  4) python me.elphon.py     # Migdal-Eliashberg gap vs T, linearised-kernel Tc')
+            if _wants_fs_coupling(cfg):
+                print('     python me_aniso.elphon.py   # anisotropic gaps Delta_nk(T) on the Fermi surface')
             print(f'  5) python plot.elphon.py   # overlays EPW epw/{prefix}.a2f when present')
             return 0
         print('\nNext steps:')

@@ -51,7 +51,7 @@ Deferred / to validate
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -64,12 +64,19 @@ from .do_pao_eph import (
 )
 from .elph_bloch import (
     AMU_RY,
+    RY_TO_EV,
     RY_TO_THZ,
     _ws_lattice,
+    _ws_lattice_pairs,
     lambda_q_dense_ws_fast,
     precompute_dense_electrons,
 )
 from .eph_kq import eliashberg_from_modes
+from .fermi_surface_coupling import FermiSurfacePairCoupling
+
+# Sign of the cell vector in the atom-pair separation of the force constants
+# (see :func:`~PAOFLOW.elphon.elph_bloch._ws_lattice_pairs`).
+PHONON_WS_SIGN = 1
 
 
 # --------------------------------------------------------------------------- #
@@ -126,6 +133,8 @@ def g_Re_at_q(g_ReRp, q_cryst, Nint_p, W_p, Midx_p):
     applied to the phonon q-grid: ``Nint_p`` are the integer phonon cells (Bloch
     phase ``exp(2 pi i q . n_p)``), ``W_p`` the WS degeneracy weights and
     ``Midx_p = n_p mod qgrid`` the indices into the trailing axes of ``g_ReRp``.
+    ``W_p`` may also be pair-resolved, shape ``(nws_p, nawf, nawf, ncart)``
+    (:func:`vertex_phonon_ws_weights`).
 
     Returns
     -------
@@ -133,9 +142,63 @@ def g_Re_at_q(g_ReRp, q_cryst, Nint_p, W_p, Midx_p):
         The half-vertex for this q -- the exact input shape expected by
         :func:`~PAOFLOW.elphon.elph_bloch.lambda_q_dense_ws_fast`.
     """
-    phase = W_p * np.exp(2j * np.pi * (np.asarray(q_cryst) @ Nint_p.T))  # (nws_p,)
-    cells = g_ReRp[..., Midx_p[:, 0], Midx_p[:, 1], Midx_p[:, 2]]  # (..., nws_p)
-    return np.tensordot(cells, phase, axes=([-1], [0]))  # (nawf, nawf, ncart, n1e,n2e,n3e)
+    if np.ndim(W_p) == 1:
+        phase = W_p * np.exp(2j * np.pi * (np.asarray(q_cryst) @ Nint_p.T))  # (nws_p,)
+        cells = g_ReRp[..., Midx_p[:, 0], Midx_p[:, 1], Midx_p[:, 2]]  # (..., nws_p)
+        return np.tensordot(cells, phase, axes=([-1], [0]))  # (nawf, nawf, ncart, n1e,n2e,n3e)
+    # Pair-resolved weights (nws_p, nawf, nawf, ncart): one phonon cell at a time.
+    phase = np.exp(2j * np.pi * (np.asarray(q_cryst) @ Nint_p.T))
+    vertex = np.zeros(g_ReRp.shape[:6], dtype=complex)
+    for cell, (m1, m2, m3) in enumerate(Midx_p):
+        vertex += g_ReRp[..., m1, m2, m3] * (phase[cell] * W_p[cell])[..., None, None, None]
+    return vertex
+
+
+def vertex_phonon_ws_weights(
+    qgrid: Sequence[int],
+    at: NDArray[np.float64],
+    orbital_positions: NDArray[np.float64],
+    atom_positions: NDArray[np.float64],
+) -> tuple[NDArray[np.int_], NDArray[np.float64], NDArray[np.int_]]:
+    """Pair-resolved Wigner-Seitz images of the phonon cells ``R_p`` of the vertex.
+
+    Parameters
+    ----------
+    qgrid : sequence of int
+        Coarse phonon q-grid.
+    at : ndarray, shape ``(3, 3)``
+        Direct lattice vectors (rows, alat units).
+    orbital_positions : ndarray, shape ``(nawf, 3)``
+        PAO orbital centres (crystal coordinates).
+    atom_positions : ndarray, shape ``(nat, 3)``
+        Atomic positions (crystal coordinates).
+
+    Returns
+    -------
+    Nint_p : ndarray, shape ``(nws_p, 3)``, int
+        Phonon cells.
+    W_p : ndarray, shape ``(nws_p, nawf, nawf, 3 nat)``
+        Weight of each cell for each vertex element ``(i, j, c)``, input of
+        :func:`g_Re_at_q`.
+    Midx_p : ndarray, shape ``(nws_p, 3)``, int
+        Grid indices ``R_p mod qgrid``.
+
+    Notes
+    -----
+    The cell ``R_p`` of ``g_{ij, c}`` is kept when the displaced atom
+    ``kappa(c)`` at ``R_p`` lies in the Wigner-Seitz cell of the supercell
+    around orbital ``i``, as EPW does for ``g(R_e, R_p)`` (electron Wannier
+    centre to atom).  Of the four choices of orbital (``i`` or ``j``) and sign,
+    this one makes ``lambda_q`` of MgB2 the most symmetric within a q-star
+    (spread below 1%, against up to 33% with single-site images).
+    """
+    mode_positions = np.repeat(np.asarray(atom_positions, dtype=float), 3, axis=0)
+    Nint_p, weights, Midx_p = _ws_lattice_pairs(
+        qgrid, at, orbital_positions, sign=1, column_positions_cryst=mode_positions
+    )  # (nws_p, nawf, ncart): orbital i, displaced-atom coordinate c
+    nawf, ncart = weights.shape[1], weights.shape[2]
+    weights = np.broadcast_to(weights[:, :, None, :], (len(Nint_p), nawf, nawf, ncart))
+    return Nint_p, weights, Midx_p
 
 
 # --------------------------------------------------------------------------- #
@@ -211,6 +274,7 @@ def phonon_interp_from_epw(
     masses_amu: NDArray[np.float64],
     qgrid: tuple[int, int, int],
     at: NDArray[np.float64],
+    atom_positions: NDArray[np.float64] | None = None,
 ) -> Callable[[NDArray[np.float64]], tuple[NDArray[np.float64], NDArray[np.complex128]]]:
     """Dense-q phonon interpolator from EPW's coarse force constants.
 
@@ -228,6 +292,11 @@ def phonon_interp_from_epw(
         Coarse phonon q-grid.
     at : NDArray[np.float64], shape ``(3, 3)``
         Real-lattice vectors (rows, alat).
+    atom_positions : NDArray[np.float64], shape ``(nat, 3)``, optional
+        Atomic positions (crystal coordinates).  When given, the force
+        constants are interpolated with atom-pair Wigner-Seitz images (as QE
+        ``matdyn``), which keeps the dense phonons symmetric in cells with
+        several atoms.
 
     Returns
     -------
@@ -253,7 +322,7 @@ def phonon_interp_from_epw(
             'EPW q-points cover only %d/%d q of the grid.' % (filled.sum(), filled.size)
         )
     masses_ry = np.asarray(masses_amu, dtype=float) * AMU_RY
-    return _phonon_interp_from_force_constants(Cgrid, masses_ry, qgrid, at)
+    return _phonon_interp_from_force_constants(Cgrid, masses_ry, qgrid, at, atom_positions)
 
 
 def _phonon_interp_from_force_constants(
@@ -261,6 +330,7 @@ def _phonon_interp_from_force_constants(
     masses_ry: NDArray[np.float64],
     qgrid: tuple[int, int, int],
     at: NDArray[np.float64],
+    atom_positions: NDArray[np.float64] | None = None,
 ) -> Callable[[NDArray[np.float64]], tuple[NDArray[np.float64], NDArray[np.complex128]]]:
     """Wigner-Seitz phonon interpolator from force constants on the full coarse grid.
 
@@ -274,6 +344,9 @@ def _phonon_interp_from_force_constants(
         Coarse phonon q-grid.
     at : NDArray[np.float64], shape ``(3, 3)``
         Real-lattice vectors (rows, alat).
+    atom_positions : NDArray[np.float64], shape ``(nat, 3)``, optional
+        Atomic positions (crystal coordinates) for atom-pair Wigner-Seitz
+        images; ``None`` uses single-site images.
 
     Returns
     -------
@@ -298,11 +371,17 @@ def _phonon_interp_from_force_constants(
 
     inv_sqrt_m = 1.0 / np.sqrt(np.repeat(masses_ry, 3))  # (nmode,)
     mass_weight = np.outer(inv_sqrt_m, inv_sqrt_m)  # D = C / sqrt(Ma Mb)
-    Nint_p, W_p, Midx_p = _ws_lattice(qgrid, at)
+    if atom_positions is None:
+        Nint_p, W_p, Midx_p = _ws_lattice(qgrid, at)
+        cells = Cr[Midx_p[:, 0], Midx_p[:, 1], Midx_p[:, 2]]  # (nws_p, nmode, nmode)
+    else:
+        mode_positions = np.repeat(np.asarray(atom_positions, dtype=float), 3, axis=0)
+        Nint_p, W_pairs, Midx_p = _ws_lattice_pairs(qgrid, at, mode_positions, sign=PHONON_WS_SIGN)
+        cells = Cr[Midx_p[:, 0], Midx_p[:, 1], Midx_p[:, 2]] * W_pairs
+        W_p = np.ones(Nint_p.shape[0])
 
     def phonon_at_q(q_cryst):
         phase = W_p * np.exp(2j * np.pi * (np.asarray(q_cryst, dtype=float) @ Nint_p.T))
-        cells = Cr[Midx_p[:, 0], Midx_p[:, 1], Midx_p[:, 2]]  # (nws_p, nmode, nmode)
         C = np.tensordot(phase, cells, axes=([0], [0]))  # (nmode, nmode)
         D = 0.5 * (C + C.conj().T) * mass_weight  # mass-weighted -> eig = omega^2 (Ry^2)
         w2, ev = np.linalg.eigh(D)
@@ -441,6 +520,48 @@ def irreducible_qmesh(nq, rots_cryst, at, bg, include_tr=True):
     weights : ndarray ``(nir,)``
         Star multiplicities (sum to ``nq^3``).
     """
+    mesh, representatives, weights, _ = irreducible_mesh(nq, rots_cryst, at, bg, include_tr)
+    return mesh[representatives], weights
+
+
+def irreducible_mesh(
+    n: int,
+    rots_cryst: Sequence[NDArray],
+    at: NDArray[np.float64],
+    bg: NDArray[np.float64],
+    include_tr: bool = True,
+) -> tuple[NDArray[np.float64], NDArray[np.int_], NDArray[np.float64], NDArray[np.int_]]:
+    """Stars of a Gamma-centred ``n^3`` grid under a point group.
+
+    Parameters
+    ----------
+    n : int
+        Grid size along each reciprocal axis.
+    rots_cryst : sequence of ndarray, shape ``(3, 3)``
+        Point-group rotations (integer, crystal axes), e.g. the output of
+        :func:`_crystal_point_group`.
+    at, bg : ndarray, shape ``(3, 3)``
+        Direct and reciprocal lattice vectors (rows, alat and 2 pi / alat units).
+    include_tr : bool, optional
+        Add time reversal (``k -> -k``) to the group (default ``True``).
+
+    Returns
+    -------
+    mesh : ndarray, shape ``(n^3, 3)``
+        The full grid in crystal coordinates, flat index ``(i1 n + i2) n + i3``.
+    representatives : ndarray, shape ``(nir,)``
+        Flat index of one representative point per star.
+    weights : ndarray, shape ``(nir,)``
+        Star multiplicities (sum to ``n^3``).
+    star_index : ndarray, shape ``(n^3,)``
+        Star of every grid point (index into ``representatives``).
+
+    Notes
+    -----
+    The rotations act on Cartesian vectors as :math:`R = A S A^{-1}`, with
+    :math:`A` the matrix of direct lattice vectors as columns.
+    """
+    nq = n
     ax = [np.arange(nq) / nq for _ in range(3)]
     qm = np.stack(np.meshgrid(*ax, indexing='ij'), axis=-1).reshape(-1, 3)
     A = np.asarray(at, dtype=float).T
@@ -467,7 +588,7 @@ def irreducible_qmesh(nq, rots_cryst, at, bg, include_tr=True):
             assigned[j] = len(reps)
         reps.append(i)
         wts.append(len(orbit))
-    return qm[reps], np.asarray(wts, dtype=float)
+    return qm, np.asarray(reps, dtype=int), np.asarray(wts, dtype=float), assigned
 
 
 def eliashberg_dense_q(
@@ -498,6 +619,10 @@ def eliashberg_dense_q(
     tau_cryst=None,
     species=None,
     comm=None,
+    fs_coupling=False,
+    fsthick_ev=None,
+    n_freq_fs=100,
+    orbital_positions=None,
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
 
@@ -549,6 +674,29 @@ def eliashberg_dense_q(
         run ``mpirun -np N python ...`` for an up-to-``nq_dense^3``-fold speedup.
         The coarse ``g(R_e,R_p)`` build and the dense-electron cache are computed
         redundantly on every rank; only the per-q interpolation is parallelised.
+    fs_coupling : bool, optional
+        Also accumulate the state-resolved Fermi-surface coupling of the
+        anisotropic Migdal-Eliashberg equations
+        (:mod:`~PAOFLOW.elphon.fermi_surface_coupling`), returned under the key
+        ``'fs_coupling'``.  Requires ``sym_rots``: the states are folded to the
+        irreducible wedge of the dense k-grid.  Use ``nq_dense = nk_dense``:
+        with a coarser q-grid, ``k+q`` reaches only a sublattice of the k-grid
+        and the anisotropic equations split into independent sublattice
+        problems, each with its own ``Tc``.
+    fsthick_ev : float, optional
+        Half-width (eV) of the Fermi window of the anisotropic states (EPW
+        ``fsthick``); defaults to ``fs_window`` smearings.
+    n_freq_fs : int, optional
+        Number of phonon-frequency points of the Fermi-surface coupling
+        (default 100).
+    orbital_positions : ndarray ``(nawf, 3)``, optional
+        PAO orbital centres in crystal coordinates
+        (:func:`~PAOFLOW.elphon.elph_bloch.pao_orbital_positions`).  When given,
+        every Wigner-Seitz sum is pair-resolved: electrons and the vertex
+        ``R_e`` over orbital pairs, the vertex ``R_p`` over (orbital, displaced
+        atom) pairs and the EPW force constants over atom pairs (``tau_cryst``
+        required).  This keeps the dense interpolation symmetric in cells with
+        several atoms; ``None`` keeps the single-site images.
 
     Notes
     -----
@@ -569,8 +717,13 @@ def eliashberg_dense_q(
         if q_cryst_coarse is None:
             q_cryst_coarse = epw['q_cryst']
         if phonon_at_q is None:
+            atom_positions = None
+            if orbital_positions is not None:
+                if tau_cryst is None:
+                    raise ValueError('orbital_positions requires tau_cryst (atom-pair phonon WS).')
+                atom_positions = tau_cryst
             phonon_at_q = phonon_interp_from_epw(
-                epw['dynq'], epw['q_cryst'], masses_amu, qgrid_coarse, at
+                epw['dynq'], epw['q_cryst'], masses_amu, qgrid_coarse, at, atom_positions
             )
     q_cryst_coarse = np.asarray(q_cryst_coarse, dtype=float)
     if nq_dense is None:
@@ -624,7 +777,14 @@ def eliashberg_dense_q(
         del epw['epmatq']  # only the shared g(R_e, R_p) is needed from here on
     node_comm.Barrier()  # ensure the shared buffer is filled before any rank reads
 
-    Nint_p, W_p, Midx_p = _ws_lattice(qgrid_coarse, at)
+    if orbital_positions is None:
+        Nint_p, W_p, Midx_p = _ws_lattice(qgrid_coarse, at)
+    else:
+        if tau_cryst is None:
+            raise ValueError('orbital_positions requires tau_cryst (vertex phonon WS).')
+        Nint_p, W_p, Midx_p = vertex_phonon_ws_weights(
+            qgrid_coarse, at, orbital_positions, tau_cryst
+        )
 
     # --- electron cache (dense k), shared by every dense q ----------------- #
     electrons = precompute_dense_electrons(
@@ -636,11 +796,14 @@ def eliashberg_dense_q(
         tuple(ng),
         ispin=ispin,
         fs_window=fs_window,
+        orbital_positions=orbital_positions,
     )
 
     # --- (b) dense q-grid loop (distributed over MPI ranks) ---------------- #
     # Fold to the irreducible wedge when symmetries are supplied (identical
     # result, far fewer q); otherwise sample the full grid with unit weights.
+    if fs_coupling and sym_rots is None:
+        raise ValueError('fs_coupling requires sym_rots (irreducible Fermi-surface states).')
     if sym_rots is not None:
         rots = sym_rots
         if tau_cryst is not None and species is not None:
@@ -660,15 +823,51 @@ def eliashberg_dense_q(
     qstart, qstop = load_balancing(size, rank, nqd)
     lam_qv = np.zeros((nqd, nmodes))
     om_qv = np.zeros((nqd, nmodes))
+    # Phonons first: the Fermi-surface coupling needs the highest frequency
+    # (over all ranks) for its frequency grid before the coupling loop.
+    phonons = {iq: _phonon_modes_at_q(qmesh[iq], phonon_at_q) for iq in range(qstart, qstop)}
+    pair_coupling = None
+    if fs_coupling:
+        omega_max_thz = max((float(np.abs(f).max()) for f, _ in phonons.values()), default=0.0)
+        if size > 1:
+            omega_max_thz = comm.allreduce(omega_max_thz, op=MPI.MAX)
+        pair_coupling = _fermi_surface_accumulator(
+            electrons, rots, at, bg, nk_dense, fsthick_ev, fs_window, omega_max_thz,
+            n_freq_fs, isig,
+        )  # fmt: skip
+        if rank == 0:
+            print(
+                '  Fermi-surface coupling: %d irreducible states within %.3f eV of E_F'
+                % (pair_coupling.nstates, pair_coupling.fsthick_ev),
+                flush=True,
+            )
+            if nq_dense != nk_dense:
+                print(
+                    '  WARNING: nq_dense (%d) != nk_dense (%d): k+q reaches only a sublattice'
+                    ' of the k-grid, so the anisotropic equations split into independent'
+                    ' sublattice problems.  Use nq_dense = nk_dense.' % (nq_dense, nk_dense),
+                    flush=True,
+                )
     for iq in range(qstart, qstop):
         q_cryst = qmesh[iq]
-        freq_thz, z = _phonon_modes_at_q(q_cryst, phonon_at_q)  # (nmode,), (nmode, ncart)
+        freq_thz, z = phonons.pop(iq)  # (nmode,), (nmode, ncart)
         zmass = z / np.sqrt(mass_flat_ry)[None, :]
         gR = g_Re_at_q(g_ReRp, q_cryst, Nint_p, W_p, Midx_p)
-        res = lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freq_thz)
+        is_gamma = np.linalg.norm(q_cryst - np.round(q_cryst)) < 1.0e-6
+        q_weight = qweights[iq] / qweights.sum()
+        pair_weights = None
+        if pair_coupling is not None:
+            # Same mode exclusions as lambda_qv below.
+            pair_weights = np.where(freq_thz < min_freq_thz, 0.0, q_weight)
+            if is_gamma:
+                pair_weights[:] = 0.0
+        res = lambda_q_dense_ws_fast(
+            gR, electrons, q_cryst, zmass, freq_thz,
+            pair_coupling=pair_coupling, pair_weights=pair_weights, pair_q_weight=q_weight,
+        )  # fmt: skip
         lam = res['lambda_qnu'][isig].copy()
         lam[freq_thz < min_freq_thz] = 0.0  # drop spurious soft/imaginary modes
-        if np.linalg.norm(q_cryst - np.round(q_cryst)) < 1.0e-6:
+        if is_gamma:
             lam[:] = 0.0  # zero the Gamma acoustic blow-up (QE convention)
         lam_qv[iq] = lam
         om_qv[iq] = np.abs(freq_thz)
@@ -686,4 +885,56 @@ def eliashberg_dense_q(
     )
     out['lambda_qv'] = lam_qv
     out['omega_qv_thz'] = om_qv
+    if pair_coupling is not None:
+        pair_coupling.reduce(comm)
+        out['fs_coupling'] = pair_coupling.result(bg, at, nq_dense)
     return out
+
+
+def _fermi_surface_accumulator(
+    electrons: dict,
+    rots: Sequence[NDArray],
+    at: NDArray[np.float64],
+    bg: NDArray[np.float64],
+    nk_dense: int,
+    fsthick_ev: float | None,
+    fs_window: float,
+    omega_max_thz: float,
+    n_freq: int,
+    isig: int,
+) -> FermiSurfacePairCoupling:
+    """Fermi-surface pair-coupling accumulator on the irreducible dense k-points.
+
+    Parameters
+    ----------
+    electrons : dict
+        Dense electron cache (:func:`precompute_dense_electrons`).
+    rots : sequence of ndarray
+        Crystal point group (integer crystal-axis rotations).
+    at, bg : ndarray, shape ``(3, 3)``
+        Direct and reciprocal lattice vectors (rows).
+    nk_dense : int
+        Dense k-grid size.
+    fsthick_ev : float or None
+        Fermi window (eV); ``None`` uses ``fs_window`` smearings.
+    fs_window : float
+        Fermi-surface shell of the isotropic coupling, in smearings.
+    omega_max_thz : float
+        Highest phonon frequency (THz).
+    n_freq : int
+        Number of phonon-frequency points.
+    isig : int
+        Smearing index.
+
+    Returns
+    -------
+    FermiSurfacePairCoupling
+        The empty accumulator.
+    """
+    _, representatives, star_sizes, star_index = irreducible_mesh(nk_dense, rots, at, bg)
+    if fsthick_ev is None:
+        fsthick_ev = fs_window * float(electrons['sigmas'][isig]) * RY_TO_EV
+    return FermiSurfacePairCoupling(
+        electrons, star_index, representatives, star_sizes, fsthick_ev,
+        omega_max_thz / RY_TO_THZ * RY_TO_EV, n_freq, isig,
+    )  # fmt: skip

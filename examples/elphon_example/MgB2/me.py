@@ -16,7 +16,7 @@ real-axis gap edges, max_eigenvalue.dat the largest eigenvalue of the
 linearised kernel (1 at Tc), and migdal_eliashberg.npz all of it.
 
 The isotropic equations average the two MgB2 gaps (sigma and pi bands) into
-one; the anisotropic solution gives a higher Tc (about 35 K in EPW tutorial 04).
+one; me_aniso.py solves the anisotropic equations, whose Tc is about twice as high.
 """
 
 import argparse
