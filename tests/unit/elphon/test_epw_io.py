@@ -102,6 +102,18 @@ def test_read_epw_epb_rejects_wrong_dimensions(tmp_path):
         read_epw_epb(str(tmp_path), 'pb', 4, 3, 1, 3)  # wrong nbndep
 
 
+def test_read_epw_epb_reports_atom_count_for_per_species_masses(tmp_path: Path) -> None:
+    # Two species, three atoms (MgB2): a per-species mass list gives nat = 2.
+    rng = np.random.default_rng(13)
+    nbnd, nbndep, nk, nat, nq = 4, 2, 3, 3, 2
+    ref = _synthetic_epw(rng, nbnd, nbndep, nk, nat, nq)
+    payload = _epb_payload(nq, *(ref[k] for k in ('xqc', 'et', 'dynq', 'epmatq', 'zstar', 'epsi')))
+    _write_record(tmp_path / 'mgb2.epb1', payload)
+    with pytest.raises(ValueError, match='matches nat=3: masses_amu must give one mass per atom'):
+        read_epw_epb(str(tmp_path), 'mgb2', nbnd, nk, 2, nbndep)
+    assert read_epw_epb(str(tmp_path), 'mgb2', nbnd, nk, nat, nbndep)['dynq'].shape == (9, 9, nq)
+
+
 def test_read_epw_epb_missing_files(tmp_path):
     with pytest.raises(FileNotFoundError):
         read_epw_epb(str(tmp_path), 'pb', 4, 3, 1, 2)

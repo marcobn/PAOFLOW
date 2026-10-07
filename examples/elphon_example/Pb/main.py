@@ -21,7 +21,7 @@ from mpi4py import MPI
 from PAOFLOW import PAOFLOW
 from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
 from PAOFLOW.elphon.do_pao_eph_dense_q import eliashberg_dense_q
-from PAOFLOW.elphon.elph_bloch import RY_TO_EV, read_nscf
+from PAOFLOW.elphon.elph_bloch import RY_TO_EV, atom_masses, read_nscf
 
 # ----------------------------------------------------------------------- #
 # Configuration                                                           #
@@ -33,7 +33,7 @@ BASISDIR = os.path.join(HERE, 'BASIS_PS')  # paoflow-genbasis-ps --pseudo Pb.upf
 OUTPUTDIR = os.path.join(HERE, 'output')
 
 COARSE_GRID = (6, 6, 6)  # nscf k-grid == ph.x/EPW q-grid
-MASSES_AMU = [207.2]
+MASSES_AMU = [207.2]  # mass of each species (amu), ATOMIC_SPECIES order (EPW amass)
 NELEC = 14  # valence electrons of Pb.upf (5d10 6s2 6p2)
 PTHR = 0.95  # projectability threshold
 NK_DENSE = 48  # dense electron grid (EPW: nkf = 48)
@@ -63,7 +63,8 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q):
     """Isotropic Eliashberg properties from EPW's coarse coupling."""
     common = dict(
         source='epw',
-        masses_amu=MASSES_AMU,
+        # one mass per atom of the cell, from the per-species MASSES_AMU
+        masses_amu=atom_masses(MASSES_AMU, nscf['species'], nscf['atom_names']),
         nk_dense=nk_dense,
         sigmas_ry=[sigma_ev / RY_TO_EV],
         nelec=NELEC,

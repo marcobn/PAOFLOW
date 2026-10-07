@@ -235,6 +235,39 @@ def default_temperatures(
     return np.linspace(tmax / nstemp, tmax, nstemp)
 
 
+def default_wscut(
+    omega: ArrayLike, a2F: ArrayLike, factor: float = 5.0, minimum: float = 0.1
+) -> float:
+    """Matsubara cutoff ``wscut`` from the phonon spectrum.
+
+    Parameters
+    ----------
+    omega, a2F : array_like
+        Eliashberg function (frequencies in eV).
+    factor : float, optional
+        Cutoff in units of the highest phonon frequency (default 5).
+    minimum : float, optional
+        Smallest cutoff returned (eV, default 0.1).
+
+    Returns
+    -------
+    float
+        ``max(minimum, factor * omega_ph)`` rounded to 0.01 eV, and above the
+        top of the ``a2F`` grid (required by :func:`analytic_continuation_iso`).
+
+    Notes
+    -----
+    ``omega_ph`` is the highest frequency with ``a2F > 10^-3 max(a2F)``.  The
+    rule reproduces the cutoffs of EPW tutorial 04: 0.1 eV for Pb
+    (``omega_ph`` = 9 meV) and 0.5 eV for MgB2 (``omega_ph`` = 100 meV).
+    """
+    nu, a2F_uniform = _uniform_a2f(omega, a2F)
+    significant = np.nonzero(a2F_uniform > 1.0e-3 * a2F_uniform.max())[0]
+    omega_ph = nu[significant[-1]] if significant.size else nu[-1]
+    wscut = max(minimum, round(factor * float(omega_ph), 2))
+    return max(wscut, round(1.2 * float(nu[-1]), 2))
+
+
 def _gap_guess(omega: ArrayLike, a2F: ArrayLike, mu_star: float) -> float:
     """BCS gap ``1.764 k_B Tc`` from the Allen-Dynes ``Tc`` (EPW ``gap0``), in eV."""
     tc_allen_dynes = allen_dynes_tc(omega, a2F, mu_star)

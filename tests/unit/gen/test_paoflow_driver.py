@@ -398,6 +398,7 @@ def test_build_elphon_script_epw_is_default_and_wired():
     assert 'SIGMA_EV = 0.05' in text
     assert "source='epw'" in text
     assert 'pf.pao_hamiltonian(expand_wedge=False)' in text
+    assert "masses_amu=atom_masses(MASSES_AMU, nscf['species'], nscf['atom_names'])" in text
     assert 'eliashberg_dense_q(' in text and 'eliashberg_from_qe_coupling(' in text
     assert '__' + 'PREFIX' + '__' not in text
     for tok in ('__EPW_DIR__', '__KGRID__', '__NQ_DENSE__', '__PROJECTION_CALL__'):
@@ -506,6 +507,7 @@ def test_build_elphon_me_script_compiles_and_substitutes() -> None:
     text = d.build_elphon_me_script(_epw_cfg())
     compile(text, 'me.elphon.py', 'exec')
     assert "PREFIX = 'pb'" in text and 'MU_STAR = 0.1' in text and 'TEMPS = None' in text
+    assert 'WSCUT = None' in text and 'default_wscut(omega, a2F)' in text
     assert "os.path.join(HERE, 'output', 'eliashberg.npz')" in text
     assert not re.search(
         r'__[A-Z_]+__',

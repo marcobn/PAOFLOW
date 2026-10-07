@@ -186,3 +186,9 @@ def test_default_temperatures_bracket_the_migdal_eliashberg_tc() -> None:
     np.testing.assert_allclose(temps[-1], 1.5 * me.allen_dynes_tc(omega, a2F, 0.1))
     tc = me.linearized_eigenvalues(omega, a2F, temps, 0.1)['Tc_linear']
     assert temps[0] < tc < temps[-1]
+
+
+def test_default_wscut_follows_the_phonon_spectrum() -> None:
+    # EPW tutorial 04: 0.1 eV for Pb (phonons up to 9 meV), 0.5 eV for MgB2 (100 meV).
+    assert me.default_wscut(*_einstein(1.0, w_e=0.009)) == pytest.approx(0.1)
+    assert me.default_wscut(*_einstein(0.6, w_e=0.1)) == pytest.approx(0.5)

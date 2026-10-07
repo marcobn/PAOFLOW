@@ -309,3 +309,14 @@ def test_dense_electrons_follow_paoflow_fourier_convention():
     labels = np.round(el['K'] * n).astype(int) % n
     expected = np.array([np.linalg.eigvalsh(Hk[i, j, l]) for i, j, l in labels]) / RY_TO_EV
     np.testing.assert_allclose(el['E'], expected, atol=1e-10)
+
+
+def test_atom_masses_expands_species_to_atoms() -> None:
+    from PAOFLOW.elphon.elph_bloch import atom_masses
+
+    masses = atom_masses([24.305, 10.811], ['Mg', 'B'], ['Mg', 'B', 'B'])
+    np.testing.assert_array_equal(masses, [24.305, 10.811, 10.811])
+    with pytest.raises(ValueError, match='one mass per species'):
+        atom_masses([24.305, 10.811, 10.811], ['Mg', 'B'], ['Mg', 'B', 'B'])
+    with pytest.raises(ValueError, match='unknown species'):
+        atom_masses([24.305], ['Mg'], ['Mg', 'B'])

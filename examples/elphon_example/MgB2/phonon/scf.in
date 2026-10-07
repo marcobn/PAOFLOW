@@ -1,0 +1,33 @@
+&control
+ calculation  = 'scf'
+ restart_mode = 'from_scratch'
+ prefix       = 'mgb2'
+ pseudo_dir   = '../'
+ outdir       = './'
+/
+&system
+ ibrav        = 4
+ celldm(1)    = 5.8260252227888
+ celldm(3)    = 1.1420694129095
+ nat          = 3
+ ntyp         = 2
+ ecutwfc      = 50
+ smearing     = 'mp'
+ occupations  = 'smearing'
+ degauss      = 0.04
+/
+&electrons
+ diagonalization = 'david'
+ mixing_mode     = 'plain'
+ mixing_beta     = 0.7
+ conv_thr        = 1.0d-12
+/
+ATOMIC_SPECIES
+ Mg  24.305  Mg.upf
+ B   10.811  B.upf
+ATOMIC_POSITIONS crystal
+ Mg       0.000000000   0.000000000   0.000000000
+ B        0.333333333   0.666666667   0.500000000
+ B        0.666666667   0.333333333   0.500000000
+K_POINTS automatic
+ 8 8 8 0 0 0
