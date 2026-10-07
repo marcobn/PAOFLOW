@@ -1112,3 +1112,47 @@ class GPAO:
                 filename=filename,
                 real_axis_max_mev=real_axis_max_mev,
             )
+
+    def plot_migdal_eliashberg_aniso(
+        self,
+        npz_file: str,
+        temps: list[float] | None = None,
+        iso_npz_file: str | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot the anisotropic Migdal-Eliashberg results (gap distributions, DOS, lambda_nk).
+
+        Parameters
+        ----------
+        npz_file : str
+            ``migdal_eliashberg_aniso.npz`` written by
+            :func:`PAOFLOW.elphon.anisotropic_eliashberg.write_me_aniso_outputs`.
+        temps : list of float, optional
+            Temperatures (K) shown in the distribution and quasiparticle-DOS
+            panels; defaults to up to four temperatures with a non-zero gap.
+        iso_npz_file : str, optional
+            Isotropic ``migdal_eliashberg.npz``, whose gap is drawn for comparison.
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+
+        Returns
+        -------
+        None
+            Shows the figure
+            (:func:`PAOFLOW.graphics.plot_functions.plot_migdal_eliashberg_aniso`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_migdal_eliashberg_aniso
+
+        iso_data = None
+        if iso_npz_file is not None:
+            with np.load(iso_npz_file) as iso:
+                iso_data = dict(iso)
+        with np.load(npz_file) as data:
+            plot_migdal_eliashberg_aniso(
+                dict(data), temps=temps, iso_data=iso_data, title=title, filename=filename
+            )

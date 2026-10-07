@@ -9,6 +9,10 @@ the PAO gauge:
     mpirun -np 8 python main.py                 # dense k and q (default)
     mpirun -np 8 python main.py --coarse-q      # dense k only, coarse 3^3 q
 
+With dense q, the run also stores the state-resolved coupling of the Fermi-surface
+states (output/fs_coupling.npz) for the anisotropic Migdal-Eliashberg equations
+of me_aniso.py; --iso-only skips it.
+
 MgB2 has two species and three atoms (Mg, B, B): MASSES_AMU lists one mass per
 species, and atom_masses() expands it to the atoms of the cell.
 """
@@ -22,7 +26,8 @@ from mpi4py import MPI
 from PAOFLOW import PAOFLOW
 from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
 from PAOFLOW.elphon.do_pao_eph_dense_q import eliashberg_dense_q
-from PAOFLOW.elphon.elph_bloch import RY_TO_EV, atom_masses, read_nscf
+from PAOFLOW.elphon.elph_bloch import RY_TO_EV, atom_masses, pao_orbital_positions, read_nscf
+from PAOFLOW.elphon.fermi_surface_coupling import write_fs_coupling
 
 # ----------------------------------------------------------------------- #
 # Configuration                                                           #
@@ -41,13 +46,14 @@ PTHR = 0.95  # projectability threshold
 NK_DENSE = 24  # dense electron grid
 NQ_DENSE = 24  # dense phonon grid; NK_DENSE % NQ_DENSE == 0
 SIGMA_EV = 0.05  # Fermi-surface smearing (EPW: degaussw)
+FSTHICK_EV = 0.2  # Fermi window of the anisotropic states (EPW: fsthick)
 MU_STAR = 0.1
 
 KB_EV = 8.617333262e-5
 
 
 def pao_electronic_structure():
-    """PAO projections and Hamiltonian on the EPW nscf save."""
+    """PAO projections, Hamiltonian and orbital centres on the EPW nscf save."""
     pf = PAOFLOW.PAOFLOW(
         workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=False, verbose=False
     )
@@ -58,11 +64,14 @@ def pao_electronic_structure():
     projections = pf.data_controller.full_projections()[:, :, :, 0].copy()
     # The explicit K_POINTS list already spans the whole Brillouin zone.
     pf.pao_hamiltonian(expand_wedge=False)
-    return projections, pf.data_controller.data_arrays['HRs'], read_nscf(SAVEDIR)
+    nscf = read_nscf(SAVEDIR)
+    # Orbital centres: pair-resolved Wigner-Seitz interpolation (several atoms per cell).
+    nscf['orbital_positions'] = pao_orbital_positions(pf.data_controller, nscf['at'])
+    return projections, pf.data_controller.data_arrays['HRs'], nscf
 
 
-def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q):
-    """Isotropic Eliashberg properties from EPW's coarse coupling."""
+def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, fs_coupling):
+    """Eliashberg properties from EPW's coarse coupling (and the Fermi-surface coupling)."""
     common = dict(
         source='epw',
         # one mass per atom of the cell, from the per-species MASSES_AMU
@@ -71,6 +80,7 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q):
         sigmas_ry=[sigma_ev / RY_TO_EV],
         nelec=NELEC,
         mu_star=MU_STAR,
+        orbital_positions=nscf['orbital_positions'],
     )
     lattice = (nscf['kpts_cryst'], nscf['bg'], nscf['at'])
     if coarse_q:
@@ -82,12 +92,13 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q):
     return eliashberg_dense_q(
         projections, HRs, *lattice, EPW_DIR, QGRID, None, None, COARSE_GRID, None,
         nq_dense=nq_dense, sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'],
-        species=nscf['atom_names'], **common,
+        species=nscf['atom_names'], fs_coupling=fs_coupling, fsthick_ev=FSTHICK_EV, **common,
     )  # fmt: skip
 
 
 def report(out, label):
-    """Print the Eliashberg summary and write alpha2F.dat / eliashberg.npz."""
+    """Print the Eliashberg summary and write alpha2F.dat / eliashberg.npz (/ fs_coupling.npz)."""
+    fs_coupling = out.pop('fs_coupling', None)
     print('PAOFLOW on EPW coupling (%s):' % label)
     print('  lambda   = %.4f' % out['lambda'])
     print('  w_log    = %.3f meV' % (out['omega_log'] * 1.0e3))
@@ -109,6 +120,10 @@ def report(out, label):
         ),
     )
     np.savez(os.path.join(OUTPUTDIR, 'eliashberg.npz'), **out)
+    if fs_coupling is not None:
+        write_fs_coupling(os.path.join(OUTPUTDIR, 'fs_coupling.npz'), fs_coupling)
+        print('  Fermi-surface coupling: %d states -> output/fs_coupling.npz'
+              % fs_coupling['band'].size)  # fmt: skip
 
 
 def main():
@@ -121,10 +136,16 @@ def main():
         '--nq', type=int, default=NQ_DENSE, help='dense q-grid (default %(default)s)'
     )
     parser.add_argument('--sigma-ev', type=float, default=SIGMA_EV, help='smearing in eV')
+    parser.add_argument(
+        '--iso-only', action='store_true', help='skip the Fermi-surface (anisotropic) coupling'
+    )
     args = parser.parse_args()
+    fs_coupling = not (args.iso_only or args.coarse_q)  # needs the dense-q loop
 
     projections, HRs, nscf = pao_electronic_structure()
-    out = eliashberg(projections, HRs, nscf, args.nk, args.nq, args.sigma_ev, args.coarse_q)
+    out = eliashberg(
+        projections, HRs, nscf, args.nk, args.nq, args.sigma_ev, args.coarse_q, fs_coupling
+    )
 
     if MPI.COMM_WORLD.Get_rank() == 0:
         grids = 'k %d^3, q %s' % (args.nk, 'coarse 3^3' if args.coarse_q else '%d^3' % args.nq)

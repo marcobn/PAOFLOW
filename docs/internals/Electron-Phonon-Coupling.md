@@ -26,7 +26,9 @@ ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 - [Workflow 1 — coarse-q](#workflow-1--coarse-q)
 - [Workflow 2 — dense-q (k *and* q interpolation)](#workflow-2--dense-q-k-and-q-interpolation)
 - [Symmetry reduction of the dense q-grid](#symmetry-reduction-of-the-dense-q-grid)
+- [Pair-resolved Wigner–Seitz interpolation (several atoms per cell)](#pair-resolved-wignerseitz-interpolation-several-atoms-per-cell)
 - [Isotropic Migdal–Eliashberg: gap, Padé, analytic continuation, linearised $T_c$](#isotropic-migdaleliashberg-gap-padé-analytic-continuation-linearised-t_c)
+- [Anisotropic Migdal–Eliashberg (Fermi-surface restricted)](#anisotropic-migdaleliashberg-fermi-surface-restricted)
 - [Parallelisation and memory](#parallelisation-and-memory)
 - [Grid consistency rules](#grid-consistency-rules)
 - [The `paoflow-gen elphon` CLI workflow](#the-paoflow-gen-elphon-cli-workflow)
@@ -158,6 +160,8 @@ Paths relative to `src/PAOFLOW/`.
 | `elphon/do_pao_eph_dense_q.py` | **Workflow 2** driver `eliashberg_dense_q`; `build_g_ReRp` / `g_Re_at_q` (double real-space vertex); `phonon_interp_from_epw` and `phonon_interp_from_dyn` (dense-q phonons with acoustic sum rule); `irreducible_qmesh` / `_crystal_point_group`. |
 | `elphon/eph_kq.py` | Property engine: `eliashberg_from_modes` ($\alpha^2F$, $\lambda$, $\omega_{\log}$, $T_c$), `mcmillan_allen_dynes_tc`, `phonon_moments`; shared by every route. |
 | `elphon/migdal_eliashberg.py` | Isotropic Migdal–Eliashberg solver on $\alpha^2F$: `solve_imag_iso`, `pade_continuation`, `analytic_continuation_iso`, `gap_edge`, `quasiparticle_dos`, `linearized_max_eigenvalue`; drivers `migdal_eliashberg_iso` / `linearized_eigenvalues`; I/O `a2f_from_npz`, `a2f_from_epw`, `write_me_outputs`. |
+| `elphon/fermi_surface_coupling.py` | `FermiSurfacePairCoupling`: irreducible Fermi-surface states and the folded pair coupling $\Lambda_{ab}(\omega)$, filled during the dense-q loop; `write_fs_coupling` / `read_fs_coupling`. |
+| `elphon/anisotropic_eliashberg.py` | Anisotropic (FSR) Migdal–Eliashberg solver: `coupling_strength`, `matsubara_kernel`, `solve_imag_aniso`, `linearized_max_eigenvalue_aniso`, `pade_continuation_aniso`, `gap_distribution`; drivers `migdal_eliashberg_aniso` / `linearized_eigenvalues_aniso`; `write_me_aniso_outputs`. |
 | `elphon/qe_matdyn.py` | WS interpolation of QE force-constant files, used by the property-only route. |
 | `gen/epw_inputs.py` | EPW input helpers: `kpoints_card` / `uniform_kpoint_list` (explicit full nscf grid), `write_placeholder_ukk` (EPW without Wannierization), `epw_input`. |
 | `inputs/read_QE_xml.py` | `uniform_grid_from_kpoints`: recovers the grid of an explicit `K_POINTS crystal` nscf list, which has no `monkhorst_pack` element. |
@@ -307,6 +311,41 @@ q are separate WS interpolations).
 
 ---
 
+## Pair-resolved Wigner–Seitz interpolation (several atoms per cell)
+
+Every Fourier interpolation of the dense route sums real-space cells with
+Wigner–Seitz (WS) weights. The single-site construction (`_ws_lattice`) picks the
+images of a cell $R$ by $|R|$ alone, as if every orbital and atom sat at the
+origin. That is exact for one atom per cell (Pb), but with several atoms the
+minimal image of a matrix element depends on the separation of its two centres.
+Without it, the interpolation is **not symmetric** under the point group.
+
+On MgB₂ (Mg + 2 B, 6³ k / 3³ q coarse grids) the single-site images give:
+
+- dense bands differing between symmetry-equivalent k by up to 83 meV within
+  0.3 eV of $E_F$ (16 meV on average), while the coarse 6³ points are exact;
+- phonon frequencies differing by up to 1.4 THz (5.6 meV) within a q-star;
+- $\lambda_q$ spreading by more than 100% within a q-star.
+
+`_ws_lattice_pairs` keeps a cell for the element $(i,j)$ when
+$\pm R + 	au_j - 	au_i$ lies in the WS cell of the supercell (EPW `use_ws`,
+wannier90 `use_ws_distance`, QE `matdyn`). It is used for:
+
+| real-space object | pair | sign of $R$ | symmetry after the fix |
+|---|---|---|---|
+| $H_{ij}(R)$ (`precompute_dense_electrons`) | orbital $i$, orbital $j$ | $-1$ ($H(k) = \sum_R e^{-ik\cdot R}H(R)$) | bands to 0.005 meV |
+| vertex $g_{ij,c}(R_e)$ | orbital $i$, orbital $j$ | $+1$ (opposite Fourier convention) | |
+| vertex $g_{ij,c}(R_p)$ (`vertex_phonon_ws_weights`) | orbital $i$, displaced atom $\kappa(c)$ | $+1$ | |
+| force constants $C_{ab}(R_p)$ (`phonon_interp_from_epw`) | atom $a$, atom $b$ | $+1$ | phonons to $10^{-4}$ THz |
+
+The pair images are switched on by passing the orbital centres,
+`orbital_positions=pao_orbital_positions(pf.data_controller, nscf['at'])`, to
+`eliashberg_dense_q` (with `tau_cryst`) or `eliashberg_from_qe_coupling`.
+Without `orbital_positions` the single-site images are used, so runs on one-atom
+cells are unchanged. The MgB₂ example and the `paoflow-gen` EPW driver pass them.
+
+---
+
 ## Isotropic Migdal–Eliashberg: gap, Padé, analytic continuation, linearised $T_c$
 
 `elphon/migdal_eliashberg.py` turns the Eliashberg function into
@@ -389,6 +428,112 @@ quasiparticle DOS, $\Delta(T)$ and $\rho(T)$.
 
 ---
 
+## Anisotropic Migdal–Eliashberg (Fermi-surface restricted)
+
+Two-gap superconductors such as MgB₂ need the anisotropic equations (EPW
+`laniso`, `limag`, `lpade`, second part of EPW tutorial 04). Their input is not
+$\alpha^2F$ but the coupling of every pair of Fermi-surface states.
+
+**Fermi-surface coupling** (`elphon/fermi_surface_coupling.py`). With
+`fs_coupling=True`, `eliashberg_dense_q` accumulates the coupling during its
+irreducible-q loop: one extra hook in `lambda_q_dense_ws_fast`, with no new
+interpolation and no change to the EPW inputs.
+
+- **States.** Bands within `fsthick_ev` of $E_F$ (EPW `fsthick`), at one
+  representative per star of the dense k-grid (`irreducible_mesh`, crystal point
+  group plus time reversal). `sym_rots` is required.
+- **Folded pair coupling.** For states $a=(n,i)$ and $b=(m,i')$,
+
+$$
+\Lambda_{ab}(\omega) = \frac{1}{D_a}\sum_{q\in\mathrm{IBZ}} w_q
+  \sum_{k\in\star(i),\,k+q\in\star(i')} \delta(\epsilon_{nk})\,
+  \frac{\delta(\epsilon_{m k+q})}{N_q}\sum_\nu \frac{2|g_{mn\nu}(k,q)|^2}{\omega_{q\nu}}
+  \,\delta(\omega-\omega_{q\nu}),
+\qquad D_a = \sum_{k\in\star(i)}\delta(\epsilon_{nk}).
+$$
+
+  Summing irreducible q with their multiplicities $w_q$ is exact because
+  $\Lambda_{Sk,Sk+Sq} = \Lambda_{k,k+q}$. The δ-weighted star average makes
+  $N_F = \sum_a W_a$ ($W_a = D_a/N_k$) and $\lambda = \sum_a W_a\lambda_a/N_F$
+  equal to the isotropic values, where $\lambda_a = \sum_b\int\Lambda_{ab}$ is
+  EPW's $\lambda_{n\mathbf k}$.
+- **Frequency grid.** $\omega$ is stored on `n_freq_fs` points (default 100) up
+  to $1.05\,\omega_{\max}$. Each mode is split linearly between its two
+  neighbouring points, which conserves $\lambda$ exactly. Memory is
+  $8N^2 n_{\rm freq}$ bytes for $N$ states: 126 states for MgB₂ at 24³ k and
+  `fsthick` = 0.2 eV.
+- **Output.** `out['fs_coupling']`, saved with `write_fs_coupling` as
+  `output/fs_coupling.npz`.
+
+**Solver** (`elphon/anisotropic_eliashberg.py`). With
+$\lambda_{ab}(l) = \int\Lambda_{ab}(\omega)\,\omega^2/(\omega^2+\nu_l^2)\,d\omega$
+and Coulomb weights $C_{ab}$ (below):
+
+$$
+Z_a(j) = 1 + \frac{\pi T}{\omega_j}\sum_{b,j'}[\lambda_{ab}(j-j')-\lambda_{ab}(j+j'+1)]\frac{\omega_{j'}}{R_b(j')},
+\qquad
+Z_a\Delta_a(j) = \pi T\sum_{b,j'}[\lambda_{ab}(j-j')+\lambda_{ab}(j+j'+1)-2\mu^*C_{ab}]\frac{\Delta_b(j')}{R_b(j')}.
+$$
+
+- **Coulomb weights.** $C_{ab} = M_{ab}/N_F$, with
+  $M_{ab} = D_a^{-1}\sum_q w_q N_q^{-1}\sum\delta(\epsilon_{nk})\delta(\epsilon_{m\,k+q})$
+  accumulated over the same $(k, k+q)$ pairs as $\Lambda_{ab}$, as EPW does. When
+  the q-grid is coarser than the k-grid (40³ k / 20³ q in the tutorial), $k+q$
+  reaches only a sublattice of the k-grid. A $\mu^*$ spread uniformly over the
+  Fermi surface ($C_{ab} = c_b$) then couples sublattices that the phonons do
+  not, and the iteration converges to spurious gaps of opposite sign (MgB₂:
+  −10 to +11 meV). The pair-restricted weights remove this.
+- **Use `nq_dense = nk_dense`.** Even with consistent Coulomb weights, a
+  coarser q-grid splits the equations into independent sublattice problems,
+  each with its own $T_c$. For MgB₂ at 40³ k / 20³ q (EPW tutorial grids), the
+  four symmetry-connected sublattice components gap out at about 30 K (75% of
+  the Fermi-surface weight) and 41 K (25%). Both `eliashberg_dense_q` and
+  `migdal_eliashberg_aniso` warn in this case.
+
+- **Separable kernel.** `matsubara_kernel` takes the SVD of
+  $\omega_\beta^2/(\omega_\beta^2+\nu_l^2)$ on the phonon grid and the bosonic
+  frequencies (rank about 20 at 5 K for $\omega_c$ = 0.5 eV), so an iteration
+  costs $N^2 r n_\omega$.
+- **Fixed point.** Anderson mixing, shared with the isotropic solver
+  (`anderson_fixed_point`), with a warm start from the previous temperature. A
+  gap below $10^{-7}$ eV is the normal state.
+- **Real axis.** Padé state by state (`pade_continuation_aniso`, batched
+  `pade_coefficients` / `pade_eval`), gap edges, and the quasiparticle DOS
+  $\sum_a c_a\,\mathrm{Re}[\omega/\sqrt{\omega^2-\Delta_a^2(\omega)}]$.
+  There is no anisotropic analytic continuation (`lacon`), as in the tutorial.
+- **$T_c$.** `linearized_eigenvalues_aniso` gives the leading eigenvalue of the
+  linearised equations (ARPACK on the matrix-free operator), and `Tc_gap` comes
+  from $\Delta_{\max}^2(T)\to0$.
+- **Consistency.** For a single state (or identical states) the equations are
+  the isotropic ones with $\Lambda(\omega) = 2\alpha^2F(\omega)/\omega$. The
+  solver reproduces `solve_imag_iso` to $10^{-14}$ and
+  `linearized_max_eigenvalue` to $10^{-13}$.
+
+**Output** (`write_me_aniso_outputs`, in `output/me_aniso/`, EPW names):
+
+- `<prefix>.lambda_FS`, `<prefix>.lambda_k_pairs`: $\lambda_{n\mathbf k}$ per state, and its distribution
+- `<prefix>.imag_aniso_<T>`: $\omega_j$, $\epsilon-E_F$, $Z$, $\Delta$
+- `<prefix>.imag_aniso_gap0_<T>`, `<prefix>.pade_aniso_gap0_<T>`: distributions of $\Delta_{n\mathbf k}(i\omega_0)$ and of the Padé gap edges
+- `<prefix>.imag_aniso_gap_FS_<T>`: $\Delta_{n\mathbf k}(i\omega_0)$ per state
+- `<prefix>.pade_aniso_<T>`: Fermi-surface averaged $Z(\omega)$, $\Delta(\omega)$
+- `<prefix>.qdos_<T>`: $N_S/N_F$
+- `gap_vs_T_aniso.dat`, `max_eigenvalue_aniso.dat`, `migdal_eliashberg_aniso.npz`
+
+`GPAO.plot_migdal_eliashberg_aniso` draws $\Delta_{n\mathbf k}(i\omega_0)$
+against $T$ coloured by $\lambda_{n\mathbf k}$, with the isotropic gap overlaid.
+It also draws the gap distributions, the quasiparticle DOS, the
+$\lambda_{n\mathbf k}$ distribution and $\rho(T)$.
+
+| EPW input | PAOFLOW | default |
+|---|---|---|
+| `laniso`, `fsthick` | `eliashberg_dense_q(fs_coupling=True, fsthick_ev=)` | off; `fs_window` smearings |
+| `degaussw` | `sigmas_ry` | |
+| `muc`, `wscut`, `npade` | `migdal_eliashberg_aniso(mu_star=, wscut=, npade=)` | 0.1, 0.1 eV, 90 |
+| `nsiter`, `conv_thr_iaxis` | `nsiter=`, `conv_thr_iaxis=` | 500, 1e-4 |
+| `tc_linear` | `linearized_eigenvalues_aniso` | |
+
+---
+
 ## Parallelisation and memory
 
 - **MPI over the q loop** (both workflows), with `load_balancing` and
@@ -419,7 +564,8 @@ $\lambda$ under dense-q interpolation, from Fourier overshoot near $\Gamma$.
 ## The `paoflow-gen elphon` CLI workflow
 
 `paoflow-gen` (see [Input and Script Generators (CLI)](Input-and-Script-Generators-CLI))
-writes `main.elphon.py`, `me.elphon.py` and `plot.elphon.py`. With the default EPW source it also
+writes `main.elphon.py`, `me.elphon.py` and `plot.elphon.py`, plus `me_aniso.elphon.py` for the EPW
+source with equal dense k- and q-grids. With the default EPW source it also
 writes the QE/EPW inputs in the layout of `examples/elphon_epw_example`, deriving
 the scf and nscf from a `pw.x` input of the system:
 
@@ -435,6 +581,7 @@ cp ../phonon/<prefix>.save/{charge-density.dat,data-file-schema.xml} <prefix>.sa
 pw.x -in nscf.in && python3 write_ukk.py && mpirun -np N epw.x -nk N -in epw.in
 cd .. && mpirun -np N python main.elphon.py   # PAO interpolation of EPW's coupling -> alpha^2F, lambda, Tc
 python me.elphon.py                            # Migdal-Eliashberg gap vs T, linearised-kernel Tc
+python me_aniso.elphon.py                      # anisotropic gaps (dense q with nk = nq)
 python plot.elphon.py                          # overlays EPW's epw/<prefix>.a2f (dashed) when present
 ```
 
@@ -512,6 +659,32 @@ $\alpha^2F$, not the solver. For each $\alpha^2F$, the two $T_c$ estimates
 agree to 0.5%. The low-$T$ Padé and acon gap edges agree to $10^{-5}$ meV, and
 near $T_c$ to about 3%. A full sweep (23 temperatures with both continuations,
 plus 25 linearised-kernel temperatures) takes about 3 s.
+
+### MgB₂: pair-resolved interpolation and anisotropic Migdal–Eliashberg (October 2026)
+
+EPW source, 6³ k / 3³ q coarse grids, σ = 0.05 eV, μ* = 0.1, ω_c = 0.5 eV,
+`fsthick` = 0.2 eV (`examples/elphon_example/MgB2`).
+
+| | λ | ω_log | $T_c$ AD | $N_F$ | iso. $T_c$ (ME) | aniso. Δ(iω₀), 5 K | aniso. $T_c$ |
+|---|---|---|---|---|---|---|---|
+| 24³ k / 24³ q, single-site WS | 0.608 | 61.0 meV | 17.3 K | | 19.9 K | | |
+| 24³ k / 24³ q | 0.579 | 60.1 meV | 14.7 K | 0.422 | 17.0 K | 1.9–4.9 meV | 24.0 K |
+| 32³ k / 32³ q | 0.523 | 62.4 meV | 10.7 K | 0.330 | 12.9 K | 1.1–4.9 meV | 25.9 K |
+| 40³ k / 20³ q | 0.578 | 62.3 meV | 15.1 K | 0.368 | 17.6 K | 1.4–7.7 meV | (sublattices) |
+| EPW tutorial 04, 40³ k / 20³ q | 0.573 | 61.7 meV | 14.6 K | | | | |
+
+- **Fermi-surface coupling.** Its averages reproduce the isotropic λ and $N_F$
+  to $10^{-8}$ on every grid.
+- **Solver cost.** It converges in 5–17 iterations per temperature. The 475
+  states of the 40³ grid take 42 s for 17 temperatures plus 12 linearised-kernel
+  points. The two $T_c$ estimates agree to 0.1–1.4 K.
+- **$N_F$ convergence.** With σ = 0.05 eV, $N_F$ reaches 0.357 at 48³–64³ k, so
+  the 24³ and 32³ λ (and gaps) are sampling-limited. Converged anisotropic
+  values need at least 40³ k with equal q (about 2.5 h on 20 cores).
+- **Sublattices at 40³ k / 20³ q.** The equations split into four
+  symmetry-connected sublattice components, which lose their gaps at about
+  30 K (75% of the Fermi surface) and 41 K (25%); see
+  [Anisotropic Migdal–Eliashberg](#anisotropic-migdaleliashberg-fermi-surface-restricted).
 
 ### AHC source (historical, before October 2026)
 
@@ -607,6 +780,33 @@ lin = linearized_eigenvalues(*a2f_from_npz('output/eliashberg.npz', 5.0e-4),
                              np.linspace(0.25, 6.25, 25), mu_star=0.1)
 write_me_outputs(res, 'output/me', 'pb', lin)   # EPW-format files + migdal_eliashberg.npz
 print(res['gap0_imag'], res['gap_pade'], res['gap_acon'], lin['Tc_linear'])
+```
+
+The anisotropic equations need the Fermi-surface coupling of a dense-q run with
+equal dense grids, and (for several atoms per cell) the orbital centres:
+
+```python
+from PAOFLOW.elphon.elph_bloch import pao_orbital_positions
+from PAOFLOW.elphon.fermi_surface_coupling import read_fs_coupling, write_fs_coupling
+from PAOFLOW.elphon.anisotropic_eliashberg import (
+    linearized_eigenvalues_aniso, migdal_eliashberg_aniso, write_me_aniso_outputs,
+)
+
+positions = pao_orbital_positions(pf.data_controller, info['at'])  # after projections
+out = eliashberg_dense_q(
+    A, HRs, info['kpts_cryst'], info['bg'], info['at'],
+    'epw', (6, 6, 6), None, None, (6, 6, 6), None, nq_dense=24, source='epw',
+    masses_amu=[24.305, 10.811, 10.811], nk_dense=24, sigmas_ry=[0.05 / 13.6057],
+    nelec=16, sym_rots=info['s_cryst'], tau_cryst=info['tau_cryst'],
+    species=info['atom_names'], orbital_positions=positions,
+    fs_coupling=True, fsthick_ev=0.2,
+)
+write_fs_coupling('output/fs_coupling.npz', out.pop('fs_coupling'))
+
+coupling = read_fs_coupling('output/fs_coupling.npz')
+res = migdal_eliashberg_aniso(coupling, np.linspace(5, 45, 9), mu_star=0.1, wscut=0.5)
+lin = linearized_eigenvalues_aniso(coupling, np.linspace(5, 60, 12), mu_star=0.1, wscut=0.5)
+write_me_aniso_outputs(res, coupling, 'output/me_aniso', 'mgb2', lin)
 ```
 
 ---

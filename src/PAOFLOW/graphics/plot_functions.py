@@ -1060,3 +1060,154 @@ def plot_migdal_eliashberg(
     if filename is not None:
         plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.show()
+
+
+def plot_migdal_eliashberg_aniso(
+    data: Mapping[str, Any],
+    temps: Sequence[float] | None = None,
+    iso_data: Mapping[str, Any] | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+) -> None:
+    """Plot the anisotropic Migdal-Eliashberg results versus temperature.
+
+    Parameters
+    ----------
+    data : mapping
+        Contents of ``migdal_eliashberg_aniso.npz`` written by
+        :func:`PAOFLOW.elphon.anisotropic_eliashberg.write_me_aniso_outputs`.
+    temps : sequence of float, optional
+        Temperatures (K) drawn in the distribution and quasiparticle-DOS
+        panels; defaults to up to four temperatures with a non-zero gap.
+    iso_data : mapping, optional
+        Contents of the isotropic ``migdal_eliashberg.npz``
+        (:func:`PAOFLOW.elphon.migdal_eliashberg.write_me_outputs`); its
+        ``Delta(i w_0)`` is drawn for comparison.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Panels: ``Delta_nk(i w_0)`` of every Fermi-surface state versus ``T``
+    (coloured by ``lambda_nk``, with the Fermi-surface average and the
+    isotropic gap); the gap distributions and the quasiparticle DOS at the
+    chosen temperatures; the distribution of ``lambda_nk``; ``Delta_nk`` versus
+    ``lambda_nk`` at the lowest temperature; and the largest eigenvalue of the
+    linearised kernel.
+    """
+    temperatures = np.asarray(data['temps'])
+    gap0_mev = np.asarray(data['gap0']) * 1e3  # (ntemps, nstates)
+    lambda_nk = np.asarray(data['lambda_nk'])
+    gapped = temperatures[gap0_mev.max(axis=1) > 0.0]
+    if temps is None:
+        picks = np.linspace(0, gapped.size - 1, min(4, gapped.size)).round().astype(int)
+        temps = gapped[np.unique(picks)] if gapped.size else []
+    picked = [int(np.argmin(np.abs(temperatures - t))) for t in temps]
+    ramp_last = len(_ME_T_RAMP) - 1
+    colours = [
+        _ME_T_RAMP[int(round(i * ramp_last / max(len(picked) - 1, 1)))] for i in range(len(picked))
+    ]
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8.5))
+    fig.suptitle('Anisotropic Migdal-Eliashberg' if title is None else title)
+    ax_gap_t, ax_dist, ax_qdos, ax_lambda, ax_corr, ax_rho = axes.ravel()
+
+    order = np.argsort(lambda_nk)
+    scatter = None
+    for it, T in enumerate(temperatures):
+        scatter = ax_gap_t.scatter(
+            np.full(order.size, T), gap0_mev[it, order], c=lambda_nk[order], cmap='Blues',
+            vmin=0.0, vmax=lambda_nk.max(), s=10, edgecolors='none',
+        )  # fmt: skip
+    ax_gap_t.plot(
+        temperatures, np.asarray(data['gap_mean']) * 1e3, color=_ME_SERIES[1], lw=2,
+        label='Fermi-surface average',
+    )  # fmt: skip
+    if iso_data is not None:
+        ax_gap_t.plot(
+            np.asarray(iso_data['temps']), np.asarray(iso_data['gap0_imag']) * 1e3,
+            color=_ME_SERIES[2], ls='--', lw=2, label='isotropic',
+        )  # fmt: skip
+    if scatter is not None:
+        fig.colorbar(scatter, ax=ax_gap_t, label=r'$\lambda_{n\mathbf{k}}$')
+    gap_title = r'$\Delta_{n\mathbf{k}}(i\omega_0)$ vs $T$'
+    tc_gap = float(data['Tc_gap']) if 'Tc_gap' in data else float('nan')
+    if np.isfinite(tc_gap):
+        gap_title += r'  ($T_c \approx %.1f$ K)' % tc_gap
+    ax_gap_t.set(xlabel='Temperature (K)', ylabel=r'$\Delta$ (meV)', title=gap_title)
+    ax_gap_t.set_ylim(bottom=0.0)
+    ax_gap_t.legend(frameon=False, fontsize=9, loc='lower left')
+
+    gap_grid = np.asarray(data['gap_grid_mev'])
+    w_mev = np.asarray(data['w_real']) * 1e3
+    qdos = np.asarray(data['qdos'])
+    for it, colour in zip(picked, colours):
+        label = 'T = %g K' % temperatures[it]
+        ax_dist.plot(gap_grid, data['gap0_distribution'][it], color=colour, lw=1.5, label=label)
+        if np.all(np.isfinite(qdos[it])):
+            ax_qdos.plot(w_mev, qdos[it], color=colour, lw=1.5, label=label)
+    ax_dist.set(
+        xlabel=r'$\Delta_{n\mathbf{k}}(i\omega_0)$ (meV)', ylabel=r'$\rho(\Delta)$ (1/meV)',
+        title='Gap distribution',
+    )  # fmt: skip
+    ax_dist.set_ylim(bottom=0.0)
+    ax_dist.legend(frameon=False, fontsize=9)
+    gap_top = float(np.nanmax(gap0_mev)) if gap0_mev.size else 1.0
+    ax_qdos.set(
+        xlabel=r'$\omega$ (meV)', ylabel=r'$N_S(\omega)/N_F$', title='Quasiparticle DOS (Pade)',
+        xlim=(0.0, min(w_mev[-1], 2.5 * gap_top)),
+    )  # fmt: skip
+    ax_qdos.set_ylim(0.0, min(ax_qdos.get_ylim()[1], 6.0))
+    ax_qdos.legend(frameon=False, fontsize=9)
+
+    ax_lambda.plot(data['lambda_grid'], data['lambda_distribution'], color=_ME_SERIES[0], lw=1.5)
+    ax_lambda.axvline(float(data['lambda']), color='0.5', ls=':', lw=1.0)
+    ax_lambda.annotate(
+        r'$\lambda = %.3f$' % float(data['lambda']), (float(data['lambda']), 0.0),
+        xytext=(6, 12), textcoords='offset points',
+    )  # fmt: skip
+    ax_lambda.set(
+        xlabel=r'$\lambda_{n\mathbf{k}}$', ylabel=r'$\rho(\lambda_{n\mathbf{k}})$',
+        title='Coupling distribution',
+    )  # fmt: skip
+    ax_lambda.set_ylim(bottom=0.0)
+
+    if gap0_mev.size:
+        ax_corr.scatter(lambda_nk, gap0_mev[0], color=_ME_SERIES[0], s=10, edgecolors='none')
+    ax_corr.set(
+        xlabel=r'$\lambda_{n\mathbf{k}}$', ylabel=r'$\Delta_{n\mathbf{k}}(i\omega_0)$ (meV)',
+        title=r'Gap vs coupling at $T = %g$ K' % temperatures[0],
+    )  # fmt: skip
+
+    if 'max_eigenvalue' in data:
+        linear_temps = np.asarray(data['lin_temps'])
+        rho = np.asarray(data['max_eigenvalue'])
+        ax_rho.plot(linear_temps, rho, color=_ME_SERIES[0], marker='o', ms=5, lw=1.2)
+        ax_rho.axhline(1.0, color='0.5', ls='--', lw=1.0)
+        tc_linear = float(data['Tc_linear'])
+        if np.isfinite(tc_linear):
+            ax_rho.axvline(tc_linear, color='0.5', ls=':', lw=1.0)
+            ax_rho.annotate(
+                r'$T_c = %.2f$ K' % tc_linear, (tc_linear, 1.0), xytext=(6, 8),
+                textcoords='offset points',
+            )  # fmt: skip
+        ax_rho.set(
+            xlabel='Temperature (K)', ylabel=r'max eigenvalue $\rho$',
+            title='Linearised anisotropic kernel',
+        )  # fmt: skip
+    else:
+        ax_rho.set_visible(False)
+
+    for ax in axes.ravel():
+        ax.grid(alpha=0.3)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.show()

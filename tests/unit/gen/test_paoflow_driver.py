@@ -543,6 +543,65 @@ def test_generated_me_script_runs_on_an_eliashberg_npz(
     assert np.load(me_dir / 'migdal_eliashberg.npz')['Tc_linear'] > 1.0
 
 
+def test_build_elphon_epw_script_stores_the_fermi_surface_coupling() -> None:
+    assert 'FS_COUPLING = False' in d.build_elphon_script(_epw_cfg())  # 48^3 k, 24^3 q
+    text = d.build_elphon_script(_epw_cfg(nq_dense=48))
+    assert 'FS_COUPLING = True' in text and 'FSTHICK_EV = 0.2' in text  # 4 x sigma
+    assert 'fs_coupling=fs_coupling, fsthick_ev=FSTHICK_EV' in text
+    assert "write_fs_coupling(os.path.join(OUTPUTDIR, 'fs_coupling.npz'), fs_coupling)" in text
+    # Pair-resolved Wigner-Seitz interpolation (orbital centres from PAOFLOW).
+    assert "pao_orbital_positions(pf.data_controller, nscf['at'])" in text
+    assert "orbital_positions=nscf['orbital_positions']" in text
+    text = d.build_elphon_script(_epw_cfg(fs_coupling=False, fsthick_ev=0.3))
+    assert 'FS_COUPLING = False' in text and 'FSTHICK_EV = 0.3' in text
+
+
+def test_build_elphon_me_aniso_script_compiles_and_substitutes() -> None:
+    text = d.build_elphon_me_aniso_script(_epw_cfg(me_temps=[5.0, 45.0, 9]))
+    compile(text, 'me_aniso.elphon.py', 'exec')
+    assert "PREFIX = 'pb'" in text and 'MU_STAR = 0.1' in text
+    assert 'TEMPS = (5.0, 45.0, 9)' in text
+    assert "os.path.join(HERE, 'output', 'fs_coupling.npz')" in text
+    assert not re.search(
+        r'__[A-Z_]+__',
+        text.replace('__name__', '').replace('__main__', '').replace('__doc__', ''),
+    )
+    plot = d.build_elphon_plot_script(_epw_cfg())
+    assert 'GPAO.GPAO().plot_migdal_eliashberg_aniso(' in plot
+
+
+def test_generated_me_aniso_script_runs_on_a_fs_coupling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import runpy
+    import sys
+
+    from PAOFLOW.elphon import migdal_eliashberg as me
+    from PAOFLOW.elphon.eph_kq import THZ_TO_EV
+    from PAOFLOW.elphon.fermi_surface_coupling import write_fs_coupling
+
+    omega, a2F = me.a2f_from_modes([[1.0]], [[0.01 / THZ_TO_EV]], None, 2.0e-4, 500)
+    lam_density = 2.0 * a2F * omega[0] / omega
+    shares = np.array([[1.2, 0.2], [0.2, 0.4]])
+    out = tmp_path / 'output'
+    out.mkdir()
+    write_fs_coupling(
+        str(out / 'fs_coupling.npz'),
+        {
+            'coupling': shares[:, :, None] * lam_density, 'freq_ev': omega,
+            'weight': np.array([0.3, 0.7]), 'band': np.array([3, 4]),
+            'k_cryst': np.zeros((2, 3)), 'energy_ev': np.array([0.01, -0.01]),
+            'bg': np.eye(3), 'nk_dense': 4, 'nq_dense': 4, 'fsthick_ev': 0.2,
+        },
+    )  # fmt: skip
+    script = tmp_path / 'me_aniso.elphon.py'
+    script.write_text(d.build_elphon_me_aniso_script(_epw_cfg()))
+    monkeypatch.setattr(sys, 'argv', ['me_aniso.elphon.py', '--temps', '1', '30', '2'])
+    runpy.run_path(str(script), run_name='__main__')
+    gap = np.loadtxt(out / 'me_aniso' / 'gap_vs_T_aniso.dat')
+    assert gap.shape == (2, 4) and gap[0, 3] > gap[0, 2] > 0.0 and gap[1, 3] == 0.0
+
+
 def test_read_epw_a2f_helper_parses_epw_format(tmp_path):
     a2f = tmp_path / 'pb.a2f'
     a2f.write_text(

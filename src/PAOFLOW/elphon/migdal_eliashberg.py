@@ -35,6 +35,7 @@ kelvin.  ``a2F`` is resampled on a uniform grid ``nu_j = j * dw`` (as EPW's
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -482,29 +483,9 @@ def solve_imag_iso(
     if delta0 is None:
         delta0 = _gap_guess(omega, a2F, mu_star)
     gap_trial = np.broadcast_to(np.asarray(delta0, dtype=float), wn.shape).copy()
-    trial_steps: list[NDArray[np.float64]] = []
-    residual_steps: list[NDArray[np.float64]] = []
-    previous_trial = previous_residual = None
-    converged = False
-    for iteration in range(1, nsiter + 1):
-        gap_mapped, Z = gap_map(gap_trial)
-        residual = gap_mapped - gap_trial
-        norm = np.abs(gap_mapped).sum()
-        if norm > 0.0 and np.abs(residual).sum() / norm < conv_thr:
-            converged = True
-            break
-        if previous_trial is not None:
-            trial_steps.append(gap_trial - previous_trial)
-            residual_steps.append(residual - previous_residual)
-            del trial_steps[:-nhist], residual_steps[:-nhist]
-        previous_trial, previous_residual = gap_trial, residual
-        if residual_steps:
-            residual_matrix = np.stack(residual_steps, axis=1)
-            coefficients = np.linalg.lstsq(residual_matrix, residual, rcond=None)[0]
-            correction = (np.stack(trial_steps, axis=1) + mix * residual_matrix) @ coefficients
-            gap_trial = gap_trial + mix * residual - correction
-        else:
-            gap_trial = gap_trial + mix * residual
+    gap_mapped, Z, iteration, converged = anderson_fixed_point(
+        gap_map, gap_trial, nsiter, conv_thr, mix, nhist
+    )
     delta = gap_mapped if gap_mapped[0] >= 0.0 else -gap_mapped
     return {
         'wn': wn,
@@ -514,6 +495,89 @@ def solve_imag_iso(
         'converged': converged,
         'rho_max': rho_max,
     }
+
+
+def anderson_fixed_point(
+    gap_map: Callable[[NDArray[np.float64]], tuple[NDArray[np.float64], Any]],
+    gap_trial: NDArray[np.float64],
+    nsiter: int,
+    conv_thr: float,
+    mix: float,
+    nhist: int,
+    normal_floor: float | None = None,
+) -> tuple[NDArray[np.float64], Any, int, bool]:
+    r"""Anderson-mixed fixed point ``Delta = G(Delta)`` of the gap equation.
+
+    Parameters
+    ----------
+    gap_map : callable
+        ``Delta -> (G(Delta), extra)``; ``extra`` (e.g. ``Z``) is returned with
+        the last evaluation.
+    gap_trial : ndarray
+        Initial gap, of any shape.
+    nsiter : int
+        Maximum number of iterations.
+    conv_thr : float
+        Threshold on ``sum|G(Delta) - Delta| / sum|G(Delta)|`` (EPW's criterion).
+    mix : float
+        Mixing parameter.
+    nhist : int
+        Number of previous steps kept.
+    normal_floor : float, optional
+        Stop, as converged to the normal state, when ``max|G(Delta)|`` drops
+        below this value.
+
+    Returns
+    -------
+    gap_mapped : ndarray
+        The last ``G(Delta)``.
+    extra : Any
+        The ``extra`` of the last evaluation.
+    niter : int
+        Iterations used.
+    converged : bool
+        Whether the threshold (or ``normal_floor``) was reached.
+
+    Notes
+    -----
+    With the residual :math:`F_i = G(\Delta_i) - \Delta_i` and the differences
+    :math:`\delta\Delta_i`, :math:`\delta F_i` of the last ``nhist`` steps, the
+    update is
+
+    .. math::
+
+        \Delta_{i+1} = \Delta_i + \beta F_i
+            - \sum_j \gamma_j\,(\delta\Delta_j + \beta\,\delta F_j),
+        \qquad \gamma = \arg\min\,\|F_i - \textstyle\sum_j \gamma_j \delta F_j\|.
+    """
+    shape = gap_trial.shape
+    trial_steps: list[NDArray[np.float64]] = []
+    residual_steps: list[NDArray[np.float64]] = []
+    previous_trial = previous_residual = None
+    converged = False
+    for iteration in range(1, nsiter + 1):
+        gap_mapped, extra = gap_map(gap_trial)
+        residual = gap_mapped - gap_trial
+        norm = np.abs(gap_mapped).sum()
+        if norm > 0.0 and np.abs(residual).sum() / norm < conv_thr:
+            converged = True
+            break
+        if normal_floor is not None and np.abs(gap_mapped).max() < normal_floor:
+            converged = True
+            break
+        if previous_trial is not None:
+            trial_steps.append((gap_trial - previous_trial).ravel())
+            residual_steps.append((residual - previous_residual).ravel())
+            del trial_steps[:-nhist], residual_steps[:-nhist]
+        previous_trial, previous_residual = gap_trial, residual
+        if residual_steps:
+            residual_matrix = np.stack(residual_steps, axis=1)
+            coefficients = np.linalg.lstsq(residual_matrix, residual.ravel(), rcond=None)[0]
+            correction = (np.stack(trial_steps, axis=1) + mix * residual_matrix) @ coefficients
+            gap_trial = gap_trial + mix * residual - correction.reshape(shape)
+        else:
+            gap_trial = gap_trial + mix * residual
+    return gap_mapped, extra, iteration, converged
 
 
 # --------------------------------------------------------------------------- #
@@ -526,12 +590,12 @@ def pade_coefficients(z: ArrayLike, u: ArrayLike) -> NDArray[np.complex128]:
     ----------
     z : array_like, shape ``(N,)``
         Sampling points (e.g. ``i w_n``).
-    u : array_like, shape ``(N,)``
-        Function values at ``z``.
+    u : array_like, shape ``(..., N)``
+        Function values at ``z``; leading axes are independent functions.
 
     Returns
     -------
-    ndarray, shape ``(N,)``, complex
+    ndarray, shape ``(..., N)``, complex
         Coefficients ``a_p`` of :func:`pade_eval`.
 
     Notes
@@ -547,11 +611,13 @@ def pade_coefficients(z: ArrayLike, u: ArrayLike) -> NDArray[np.complex128]:
     """
     z = np.asarray(z, dtype=complex)
     g = np.asarray(u, dtype=complex).copy()
-    coefficients = np.empty(z.size, dtype=complex)
-    coefficients[0] = g[0]
+    coefficients = np.empty(g.shape, dtype=complex)
+    coefficients[..., 0] = g[..., 0]
     for p in range(1, z.size):
-        g[p:] = (coefficients[p - 1] - g[p:]) / ((z[p:] - z[p - 1]) * g[p:])
-        coefficients[p] = g[p]
+        g[..., p:] = (coefficients[..., p - 1, None] - g[..., p:]) / (
+            (z[p:] - z[p - 1]) * g[..., p:]
+        )
+        coefficients[..., p] = g[..., p]
     return coefficients
 
 
@@ -562,16 +628,16 @@ def pade_eval(
 
     Parameters
     ----------
-    coefficients : ndarray, shape ``(N,)``
+    coefficients : ndarray, shape ``(..., N)``
         Output of :func:`pade_coefficients`.
     z : array_like, shape ``(N,)``
         The sampling points used for ``coefficients``.
-    w : array_like
+    w : array_like, shape ``(nw,)``
         Evaluation points.
 
     Returns
     -------
-    ndarray, complex
+    ndarray, shape ``(..., nw)``, complex
         The approximant at ``w``.
 
     Notes
@@ -582,14 +648,17 @@ def pade_eval(
     rescaled by :math:`B_{n+1}`, which leaves the ratio unchanged and avoids
     overflow.
     """
+    coefficients = np.asarray(coefficients)
+    shape = coefficients.shape[:-1] + np.shape(w)
     w = np.asarray(w, dtype=complex)
-    A_prev, A_curr = np.zeros_like(w), np.full_like(w, coefficients[0])
-    B_prev, B_curr = np.ones_like(w), np.ones_like(w)
-    for n in range(1, len(coefficients)):
-        A_next = A_curr + (w - z[n - 1]) * coefficients[n] * A_prev
-        B_next = B_curr + (w - z[n - 1]) * coefficients[n] * B_prev
+    A_prev = np.zeros(shape, dtype=complex)
+    A_curr = np.broadcast_to(coefficients[..., 0, None], shape).astype(complex)
+    B_prev, B_curr = np.ones(shape, dtype=complex), np.ones(shape, dtype=complex)
+    for n in range(1, coefficients.shape[-1]):
+        A_next = A_curr + (w - z[n - 1]) * coefficients[..., n, None] * A_prev
+        B_next = B_curr + (w - z[n - 1]) * coefficients[..., n, None] * B_prev
         A_prev, A_curr = A_curr / B_next, A_next / B_next
-        B_prev, B_curr = B_curr / B_next, np.ones_like(w)
+        B_prev, B_curr = B_curr / B_next, np.ones(shape, dtype=complex)
     return A_curr / B_curr
 
 

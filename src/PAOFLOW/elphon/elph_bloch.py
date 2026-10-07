@@ -27,6 +27,7 @@ from numpy.typing import NDArray
 
 HARTREE_TO_RY = 2.0
 RY_TO_THZ = 3289.842
+VERTEX_WS_SIGN = 1  # sign of R in the orbital separation of the vertex (see _ws_lattice_pairs)
 RY_TO_EV = 13.605693122994
 AMU_RY = 911.4442421
 
@@ -111,6 +112,29 @@ def read_nscf(save_dir):
         'species': species,
         's_cryst': s_cryst,
     }
+
+
+def pao_orbital_positions(data_controller, at) -> NDArray[np.float64]:
+    """Centre of every PAO orbital in crystal coordinates.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        PAOFLOW data after ``projections`` (``arrays['basis']`` holds each
+        orbital's Cartesian ``tau`` in bohr, ``attributes['alat']`` the lattice
+        parameter).
+    at : ndarray, shape ``(3, 3)``
+        Direct lattice vectors (rows, alat units), e.g. ``read_nscf(...)['at']``.
+
+    Returns
+    -------
+    ndarray, shape ``(nawf, 3)``
+        Orbital centres, input of the orbital-pair Wigner-Seitz interpolation of
+        :func:`precompute_dense_electrons`.
+    """
+    arrays, attributes = data_controller.data_dicts()
+    tau_alat = np.array([orbital['tau'] for orbital in arrays['basis']]) / attributes['alat']
+    return np.linalg.solve(np.asarray(at, dtype=float).T, tau_alat.T).T
 
 
 def atom_masses(
@@ -322,6 +346,83 @@ def _ws_lattice(ng, at, span=2):
     return Nint, W, Midx.astype(int)
 
 
+def _ws_lattice_pairs(
+    ng: Sequence[int],
+    at: NDArray[np.float64],
+    positions_cryst: NDArray[np.float64],
+    sign: int,
+    span: int = 2,
+    column_positions_cryst: NDArray[np.float64] | None = None,
+) -> tuple[NDArray[np.int_], NDArray[np.float64], NDArray[np.int_]]:
+    """Wigner-Seitz images of the real-space cells for every pair of centres.
+
+    Pair-resolved version of :func:`_ws_lattice` (EPW ``use_ws``, wannier90
+    ``use_ws_distance``, QE ``matdyn``): the cell ``n`` of the element ``(i, j)``
+    is kept when the separation ``sign * n + tau_j - tau_i`` lies in (or on the
+    boundary of) the Wigner-Seitz cell of the ``ng``-supercell.  For a cell with
+    several atoms this keeps the interpolation invariant under the point group,
+    which the single-site construction breaks.
+
+    Parameters
+    ----------
+    ng : sequence of int
+        Real-space grid (supercell) size.
+    at : ndarray, shape ``(3, 3)``
+        Direct lattice vectors (rows, alat units).
+    positions_cryst : ndarray, shape ``(nrow, 3)``
+        Centres ``tau_i`` of the row index (crystal coordinates), e.g. the PAO
+        orbitals.
+    sign : {1, -1}
+        Sign of the cell vector in the separation, fixed by the Fourier
+        convention of the real-space array.
+    span : int, optional
+        Candidate cells extend to ``span * ng`` (default 2).
+    column_positions_cryst : ndarray, shape ``(ncol, 3)``, optional
+        Centres ``tau_j`` of the column index; defaults to ``positions_cryst``.
+
+    Returns
+    -------
+    Nint : ndarray, shape ``(nws, 3)``, int
+        Union of the kept cells over all pairs.
+    W : ndarray, shape ``(nws, nrow, ncol)``
+        Degeneracy weight of each cell for each pair (0 where not kept).
+    Midx : ndarray, shape ``(nws, 3)``, int
+        Grid indices ``n mod ng``.
+
+    Notes
+    -----
+    The weights of every pair sum to ``prod(ng)``, as those of :func:`_ws_lattice`.
+    """
+    ng = np.asarray(ng, dtype=int)
+    axes = [np.arange(-span * ng[d], span * ng[d] + 1) for d in range(3)]
+    cells = np.stack(np.meshgrid(*axes, indexing='ij'), axis=-1).reshape(-1, 3)
+    shifts = np.stack(np.meshgrid(*[np.arange(-span, span + 1)] * 3, indexing='ij'), axis=-1)
+    shifts = shifts.reshape(-1, 3)
+    shifts = shifts[np.any(shifts != 0, axis=1)]
+    rws = (shifts * ng[None, :]) @ at
+    half = 0.5 * np.einsum('ij,ij->i', rws, rws)
+    if column_positions_cryst is None:
+        column_positions_cryst = positions_cryst
+    row_sites, site_of_row = np.unique(
+        np.round(np.asarray(positions_cryst, dtype=float), 8), axis=0, return_inverse=True
+    )
+    column_sites, site_of_column = np.unique(
+        np.round(np.asarray(column_positions_cryst, dtype=float), 8), axis=0, return_inverse=True
+    )
+    tol = 1.0e-6
+    weights = np.zeros((cells.shape[0], len(row_sites), len(column_sites)))
+    for a, site_a in enumerate(row_sites):
+        for b, site_b in enumerate(column_sites):
+            proj = ((sign * cells + site_b - site_a) @ at) @ rws.T - half[None, :]
+            inside = np.all(proj <= tol, axis=1)
+            degeneracy = 1 + np.count_nonzero(np.abs(proj) < tol, axis=1)
+            weights[inside, a, b] = 1.0 / degeneracy[inside]
+    keep = np.any(weights > 0.0, axis=(1, 2))
+    Nint = cells[keep]
+    W = weights[keep][:, np.ravel(site_of_row)][:, :, np.ravel(site_of_column)]
+    return Nint, W, (Nint % ng).astype(int)
+
+
 def lambda_q_dense_ws(
     gR,
     HRs,
@@ -447,7 +548,16 @@ def lambda_q_dense_ws(
 
 
 def precompute_dense_electrons(
-    HRs, at, Nk, sigmas_ry, nelec, ng_vertex, ispin=0, kblock=4096, fs_window=8.0
+    HRs,
+    at,
+    Nk,
+    sigmas_ry,
+    nelec,
+    ng_vertex,
+    ispin=0,
+    kblock=4096,
+    fs_window=8.0,
+    orbital_positions=None,
 ):
     """Dense-grid electron spectrum + Fermi-surface delta, shared by every q.
 
@@ -477,6 +587,13 @@ def precompute_dense_electrons(
     fs_window : float, optional
         Fermi-surface window in smearings for the shell mask (default 8, exact to
         ``exp(-fs_window^2)``); lower it to prune wide-band metals more aggressively.
+    orbital_positions : ndarray ``(nawf, 3)``, optional
+        Orbital centres in crystal coordinates
+        (:func:`pao_orbital_positions`).  When given, ``H`` and the vertex are
+        interpolated with orbital-pair Wigner-Seitz images
+        (:func:`_ws_lattice_pairs`), which keeps the dense bands and couplings
+        symmetric in cells with several atoms; ``None`` uses the single-site
+        images of :func:`_ws_lattice`.
 
     Returns
     -------
@@ -489,9 +606,14 @@ def precompute_dense_electrons(
     nawf = HRs.shape[0]
     H = HRs[:, :, :, :, :, ispin]
     ng_H = H.shape[2:5]
-    NintH, WH, MidxH = _ws_lattice(ng_H, at)
-    Hn = np.transpose(H[:, :, MidxH[:, 0], MidxH[:, 1], MidxH[:, 2]], (2, 0, 1))
-    Hn = Hn * WH[:, None, None]
+    if orbital_positions is None:
+        NintH, WH, MidxH = _ws_lattice(ng_H, at)
+        Hn = np.transpose(H[:, :, MidxH[:, 0], MidxH[:, 1], MidxH[:, 2]], (2, 0, 1))
+        Hn = Hn * WH[:, None, None]
+    else:
+        # H(k) = sum_R exp(-2 pi i k.R) H(R) couples orbital i to orbital j at -R.
+        NintH, WH, MidxH = _ws_lattice_pairs(ng_H, at, orbital_positions, sign=-1)
+        Hn = np.transpose(H[:, :, MidxH[:, 0], MidxH[:, 1], MidxH[:, 2]], (2, 0, 1)) * WH
     Hn_flat = Hn.reshape(Hn.shape[0], -1)
 
     ax = [np.arange(Nk) / Nk for _ in range(3)]
@@ -527,7 +649,13 @@ def precompute_dense_electrons(
     for isig, sig in enumerate(sigmas):
         shell[isig] = np.min(np.abs(E - ef_sig[isig]), axis=1) < fs_window * sig
 
-    Nintg, Wg, Midxg = _ws_lattice(tuple(ng_vertex), at)
+    if orbital_positions is None:
+        Nintg, Wg, Midxg = _ws_lattice(tuple(ng_vertex), at)
+    else:
+        # The vertex keeps the opposite Fourier convention, exp(+2 pi i k.R).
+        Nintg, Wg, Midxg = _ws_lattice_pairs(
+            tuple(ng_vertex), at, orbital_positions, sign=VERTEX_WS_SIGN
+        )
     phkg = np.exp(2j * np.pi * (K @ Nintg.T))  # (nkd, nwsg)
     return {
         'Nk': Nk,
@@ -548,7 +676,17 @@ def precompute_dense_electrons(
     }
 
 
-def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096):
+def lambda_q_dense_ws_fast(
+    gR,
+    electrons,
+    q_cryst,
+    zmass,
+    freqs_thz,
+    kblock=4096,
+    pair_coupling=None,
+    pair_weights=None,
+    pair_q_weight=None,
+):
     """``lambda_{q nu}`` for one q, reusing a :func:`precompute_dense_electrons` cache.
 
     Numerically identical to :func:`lambda_q_dense_ws` (deterministic ``eigh``),
@@ -567,6 +705,17 @@ def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096
     zmass : ndarray ``(nmode, ncart)``
     freqs_thz : ndarray ``(nmode,)``
     kblock : int, optional
+    pair_coupling : FermiSurfacePairCoupling, optional
+        Also accumulate the state-resolved Fermi-surface coupling of the
+        anisotropic Migdal-Eliashberg equations
+        (:class:`~PAOFLOW.elphon.fermi_surface_coupling.FermiSurfacePairCoupling`).
+        Its window is added to the Fermi-surface shell.
+    pair_weights : ndarray ``(nmode,)``, optional
+        Mode weights passed to ``pair_coupling`` (q-star multiplicity over the
+        number of q, 0 for excluded modes); required with ``pair_coupling``.
+    pair_q_weight : float, optional
+        q-star multiplicity over the number of q (Coulomb pairs); required with
+        ``pair_coupling``.
 
     Returns
     -------
@@ -601,7 +750,10 @@ def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096
 
     Midxg, Wg, phkg = electrons['Midxg'], electrons['Wg'], electrons['phkg']
     gn = np.transpose(gR[:, :, :, Midxg[:, 0], Midxg[:, 1], Midxg[:, 2]], (3, 0, 1, 2))
-    gn = gn * Wg[:, None, None, None]
+    if Wg.ndim == 1:
+        gn = gn * Wg[:, None, None, None]
+    else:  # orbital-pair Wigner-Seitz weights (nws, nawf, nawf)
+        gn = gn * Wg[:, :, :, None]
     gn_flat = gn.reshape(gn.shape[0], -1)
 
     # Restrict to the Fermi-surface shell: only k with a band near E_F at BOTH k
@@ -612,6 +764,9 @@ def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096
         for isig in range(nsig):
             shq = np.roll(shell[isig].reshape(Nk, Nk, Nk), roll, axis=(0, 1, 2)).reshape(nkd)
             keep |= shell[isig] & shq
+        if pair_coupling is not None:
+            window = pair_coupling.k_in_window
+            keep |= window & np.roll(window.reshape(Nk, Nk, Nk), roll, axis=(0, 1, 2)).reshape(nkd)
         idx = np.nonzero(keep)[0]
     else:
         idx = np.arange(nkd)
@@ -631,6 +786,8 @@ def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096
             num[isig] += np.einsum(
                 'bvmn,bm,bn->v', absg2, dkq_all[isig][ii], dk_all[isig][ii], optimize=True
             )
+        if pair_coupling is not None:
+            pair_coupling.accumulate(ii, shift, absg2, freqs_thz, pair_weights, pair_q_weight)
 
     lam = np.zeros((nsig, nmode))
     gam_ghz = np.zeros((nsig, nmode))
