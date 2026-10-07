@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import glob
 import os
+import warnings
 
 import numpy as np
 from numpy.typing import NDArray
@@ -234,7 +235,9 @@ def load_epw_coupling(
     -------
     dict
         ``epmatq`` ``(nbndep, nbndep, nk, 3 nat, nq)``, ``q_cryst`` ``(nq, 3)``,
-        ``dynq`` ``(3 nat, 3 nat, nq)``, ``ibndkept`` ``(nbndep,)`` and ``nq``.
+        ``dynq`` ``(3 nat, 3 nat, nq)``, ``ibndkept`` ``(nbndep,)``, ``nq``, and
+        the Born charges ``zstar`` ``(nat, 3, 3)`` and dielectric tensor
+        ``epsi`` ``(3, 3)`` (zero unless ph.x ran with ``epsil = .true.``).
 
     Raises
     ------
@@ -266,7 +269,73 @@ def load_epw_coupling(
         'dynq': epb['dynq'],
         'ibndkept': ukk['ibndkept'],
         'nq': q_cryst.shape[0],
+        'zstar': epb['zstar'],
+        'epsi': epb['epsi'],
     }
+
+
+def check_long_range_terms(
+    zstar: NDArray[np.float64],
+    epsi: NDArray[np.float64],
+    allow_missing_long_range: bool = False,
+    zstar_tol: float = 0.1,
+) -> None:
+    """Refuse couplings whose long-range part the interpolation does not treat.
+
+    The PAO interpolation Fourier-interpolates the full coupling and force
+    constants; it has no dipole (Frohlich) or quadrupole subtract-and-restore
+    step (EPW ``lpolar``).  That is exact for metals, whose free carriers screen
+    the long-range fields, but not for insulators and semiconductors.
+
+    Parameters
+    ----------
+    zstar : NDArray[np.float64], shape ``(nat, 3, 3)``
+        Born effective charges (:func:`load_epw_coupling`).
+    epsi : NDArray[np.float64], shape ``(3, 3)``
+        High-frequency dielectric tensor; zero when ph.x did not compute it.
+    allow_missing_long_range : bool, optional
+        Only warn instead of raising for polar materials (default ``False``).
+    zstar_tol : float, optional
+        Born charges below this magnitude are DFPT noise (default 0.1).
+
+    Raises
+    ------
+    NotImplementedError
+        For a polar material (``max |Z*| > zstar_tol``) unless
+        ``allow_missing_long_range``: the dipole term diverges as ``1/|q|`` and
+        cannot be Fourier-interpolated.
+
+    Warns
+    -----
+    UserWarning
+        For a non-polar insulator or semiconductor (``epsi`` present, ``Z* = 0``,
+        e.g. Si): the dynamical-quadrupole term is not included.
+
+    Notes
+    -----
+    See the wiki page *Long-range electron-phonon interpolation (plan)* for the
+    planned dipole and quadrupole treatment.
+    """
+    max_zstar = float(np.abs(np.asarray(zstar)).max()) if np.size(zstar) else 0.0
+    has_dielectric = bool(np.any(np.asarray(epsi) != 0.0))
+    if max_zstar > zstar_tol:
+        message = (
+            'Polar material (max |Z*| = %.2f): the long-range dipole (Frohlich) part of the '
+            'coupling and of the force constants is not subtracted before the interpolation, '
+            'so g(q) and the phonons near Gamma (LO-TO splitting) are wrong.' % max_zstar
+        )
+        if not allow_missing_long_range:
+            raise NotImplementedError(
+                message + '  Pass allow_missing_long_range=True to run anyway.'
+            )
+        warnings.warn(message, stacklevel=2)
+    elif has_dielectric:
+        warnings.warn(
+            'Non-metal (dielectric tensor present, Z* = 0): the long-range quadrupole part of '
+            'the coupling is not subtracted before the interpolation, so g(q) near Gamma is '
+            'approximate (important for carrier mobilities, not for metals).',
+            stacklevel=2,
+        )
 
 
 def phonon_modes_from_force_constants(
@@ -318,6 +387,7 @@ def eliashberg_from_qe_coupling(
     fs_window=8.0,
     comm=None,
     orbital_positions=None,
+    allow_missing_long_range=False,
 ):
     """Isotropic Eliashberg properties from QE's coarse ``el_ph_mat`` (PAO route).
 
@@ -393,6 +463,9 @@ def eliashberg_from_qe_coupling(
         the electrons and the vertex are interpolated with orbital-pair
         Wigner-Seitz images, required for symmetric interpolation in cells with
         several atoms; ``None`` keeps the single-site images.
+    allow_missing_long_range : bool, optional
+        For ``source='epw'``, run a polar material without the long-range dipole
+        term instead of raising (:func:`check_long_range_terms`).
 
     Returns
     -------
@@ -412,6 +485,7 @@ def eliashberg_from_qe_coupling(
     if source == 'epw':
         # EPW already unfolded the irreducible q to the full coarse grid.
         epw = load_epw_coupling(coupling_dir, nbnd, nk, masses_amu.size, bg)
+        check_long_range_terms(epw['zstar'], epw['epsi'], allow_missing_long_range)
         if q_weights is None:
             q_weights = np.ones(epw['nq'])
     q_weights = np.asarray(q_weights, dtype=float)

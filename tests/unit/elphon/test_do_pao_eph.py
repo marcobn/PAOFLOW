@@ -344,3 +344,23 @@ def test_ws_lattice_pairs_reduces_to_single_site_and_conserves_weight() -> None:
         mirrored = {tuple(c): k for k, c in enumerate(cells)}
         for k, cell in enumerate(cells):
             np.testing.assert_allclose(weights[k, 0, 1], weights[mirrored[tuple(-cell)], 1, 0])
+
+
+def test_check_long_range_terms_refuses_polar_and_warns_for_insulators() -> None:
+    import warnings
+
+    from PAOFLOW.elphon.do_pao_eph import check_long_range_terms
+
+    zero_z, zero_eps = np.zeros((2, 3, 3)), np.zeros((3, 3))
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        check_long_range_terms(zero_z, zero_eps)  # metal: silent
+    polar_z = np.zeros((2, 3, 3))
+    polar_z[0], polar_z[1] = 2.1 * np.eye(3), -2.1 * np.eye(3)  # GaAs-like
+    with pytest.raises(NotImplementedError, match='Polar material'):
+        check_long_range_terms(polar_z, 10.9 * np.eye(3))
+    with pytest.warns(UserWarning, match='Polar material'):
+        check_long_range_terms(polar_z, 10.9 * np.eye(3), allow_missing_long_range=True)
+    # Si: Z* is DFPT noise, the dielectric tensor is present -> quadrupole warning.
+    with pytest.warns(UserWarning, match='quadrupole'):
+        check_long_range_terms(0.02 * np.ones((2, 3, 3)), 12.9 * np.eye(3))
