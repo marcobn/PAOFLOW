@@ -6,6 +6,7 @@ the dense-grid Eliashberg properties:
 
 * :func:`read_nscf` -- k-points, eigenvalues, Fermi level and lattice from the QE
   ``data-file-schema.xml``;
+* :func:`atom_masses` -- per-species masses expanded to the atoms of the cell;
 * :func:`kq_index_map` -- ``k -> (index of k+q on the grid, umklapp G0)``;
 * :func:`vertex_pao_R` -- rotate the band-basis Cartesian coupling into the PAO
   gauge ``A_{k+q}^T d A_k^*`` (``A_{ni} = <phi_i|psi_n>``) and Fourier-transform
@@ -15,10 +16,14 @@ the dense-grid Eliashberg properties:
   ``lambda_{q nu}``.
 """
 
+from __future__ import annotations
+
 import os
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 
 import numpy as np
+from numpy.typing import NDArray
 
 HARTREE_TO_RY = 2.0
 RY_TO_THZ = 3289.842
@@ -106,6 +111,49 @@ def read_nscf(save_dir):
         'species': species,
         's_cryst': s_cryst,
     }
+
+
+def atom_masses(
+    species_masses: Sequence[float],
+    species: Sequence[str],
+    atom_names: Sequence[str],
+) -> NDArray[np.float64]:
+    """Expand per-species masses to one mass per atom.
+
+    Parameters
+    ----------
+    species_masses : sequence of float
+        Mass of each species (amu), in the order of ``species`` (the
+        ``ATOMIC_SPECIES`` order, as EPW's ``amass(i)``).
+    species : sequence of str
+        Species names, e.g. ``list(read_nscf(...)['species'])``.
+    atom_names : sequence of str
+        Species name of every atom in the cell, e.g. ``read_nscf(...)['atom_names']``.
+
+    Returns
+    -------
+    ndarray, shape ``(nat,)``
+        Mass of each atom (amu), the ``masses_amu`` expected by
+        :func:`~PAOFLOW.elphon.do_pao_eph.eliashberg_from_qe_coupling` and
+        :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.eliashberg_dense_q`.
+
+    Raises
+    ------
+    ValueError
+        If the number of masses differs from the number of species, or an atom
+        has an unknown species.
+    """
+    species = list(species)
+    if len(species_masses) != len(species):
+        raise ValueError(
+            'got %d masses for the %d species %s; give one mass per species'
+            % (len(species_masses), len(species), species)
+        )
+    unknown = sorted(set(atom_names) - set(species))
+    if unknown:
+        raise ValueError('atoms with unknown species %s (species: %s)' % (unknown, species))
+    by_name = dict(zip(species, species_masses))
+    return np.array([float(by_name[name]) for name in atom_names])
 
 
 def kq_index_map(kpts_cryst, q_cryst, nkgrid, tol=1.0e-5):

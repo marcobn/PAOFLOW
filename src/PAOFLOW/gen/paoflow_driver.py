@@ -1857,7 +1857,7 @@ from mpi4py import MPI
 from PAOFLOW import PAOFLOW
 from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
 from PAOFLOW.elphon.do_pao_eph_dense_q import eliashberg_dense_q
-from PAOFLOW.elphon.elph_bloch import RY_TO_EV, read_nscf
+from PAOFLOW.elphon.elph_bloch import RY_TO_EV, atom_masses, read_nscf
 
 # ----------------------------------------------------------------------- #
 # Configuration  (edit freely -- masses / NELEC are system-specific)      #
@@ -1871,7 +1871,7 @@ OUTPUTDIR = os.path.join(HERE, __OUTPUTDIR__)
 
 COARSE_GRID = __KGRID__  # nscf k-grid (EPW nk1..3)
 QGRID = __QGRID__  # ph.x / EPW q-grid (nq1..3); must divide COARSE_GRID
-MASSES_AMU = __MASSES__  # atomic mass of each species (amu)
+MASSES_AMU = __MASSES__  # mass of each species (amu), ATOMIC_SPECIES order (EPW amass)
 NELEC = __NELEC__  # valence electrons (dense E_F recompute)
 PTHR = __PTHR__  # projectability threshold
 DENSE_Q = __DENSE_Q__  # interpolate q as well as k (recommended); --coarse-q overrides
@@ -1902,7 +1902,8 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q):
     """Isotropic Eliashberg properties from EPW's coarse coupling."""
     common = dict(
         source='epw',
-        masses_amu=MASSES_AMU,
+        # one mass per atom of the cell, from the per-species MASSES_AMU
+        masses_amu=atom_masses(MASSES_AMU, nscf['species'], nscf['atom_names']),
         nk_dense=nk_dense,
         sigmas_ry=[sigma_ev / RY_TO_EV],
         nelec=NELEC,
@@ -2199,6 +2200,7 @@ from PAOFLOW.elphon.migdal_eliashberg import (
     a2f_from_epw,
     a2f_from_npz,
     default_temperatures,
+    default_wscut,
     linearized_eigenvalues,
     matsubara_lambda,
     migdal_eliashberg_iso,
@@ -2214,7 +2216,7 @@ MEDIR = os.path.join(HERE, __OUTPUTDIR__, 'me')
 PREFIX = __PREFIX__
 
 MU_STAR = __MU_STAR__  # Coulomb pseudopotential (EPW muc)
-WSCUT = 0.1  # Matsubara cutoff in eV (EPW wscut); a few times the highest phonon frequency
+WSCUT = None  # Matsubara cutoff in eV (EPW wscut); None: 5 x the highest phonon, >= 0.1 eV
 DEGAUSSQ = 0.15  # phonon smearing of alpha^2F in meV for the ME equations (EPW degaussq)
 DEGAUSSQ_LINEAR = 0.5  # ... for the linearised kernel, as EPW's tc_linear step
 NPADE = 90  # percentage of Matsubara points in the Pade approximant (EPW npade)
@@ -2229,7 +2231,8 @@ def main() -> None:
     parser.add_argument('--temps', type=float, nargs=3, default=TEMPS,
                         metavar=('TMIN', 'TMAX', 'NSTEMP'), help='temperatures (K)')
     parser.add_argument('--mu-star', type=float, default=MU_STAR)
-    parser.add_argument('--wscut', type=float, default=WSCUT, help='Matsubara cutoff (eV)')
+    parser.add_argument('--wscut', type=float, default=WSCUT,
+                        help='Matsubara cutoff (eV); default from the phonon spectrum')
     parser.add_argument('--degaussq', type=float, default=DEGAUSSQ, help='phonon smearing (meV)')
     parser.add_argument('--degaussq-linear', type=float, default=DEGAUSSQ_LINEAR,
                         help='phonon smearing for the linearised kernel (meV)')
@@ -2249,8 +2252,9 @@ def main() -> None:
         omega, a2F = a2f_from_npz(NPZ, args.degaussq * 1e-3)
         omega_lin, a2F_lin = a2f_from_npz(NPZ, args.degaussq_linear * 1e-3)
         source = NPZ
+    wscut = default_wscut(omega, a2F) if args.wscut is None else args.wscut
     print('alpha^2F from %s  (lambda = %.4f, mu* = %.2f, wscut = %.3f eV)'
-          % (source, matsubara_lambda(omega, a2F, 1.0, 0)[0], args.mu_star, args.wscut))
+          % (source, matsubara_lambda(omega, a2F, 1.0, 0)[0], args.mu_star, wscut))
     if args.temps is None:
         temps = default_temperatures(omega, a2F, args.mu_star)
     else:
@@ -2258,12 +2262,12 @@ def main() -> None:
 
     print('Isotropic Migdal-Eliashberg equations:')
     res = migdal_eliashberg_iso(
-        omega, a2F, temps, args.mu_star, args.wscut, npade=args.npade,
+        omega, a2F, temps, args.mu_star, wscut, npade=args.npade,
         lpade=not args.no_pade, lacon=not args.no_acon, verbose=True,
     )
     lin = None
     if not args.no_linear:
-        lin = linearized_eigenvalues(omega_lin, a2F_lin, temps, args.mu_star, args.wscut)
+        lin = linearized_eigenvalues(omega_lin, a2F_lin, temps, args.mu_star, wscut)
     write_me_outputs(res, MEDIR, PREFIX, lin)
 
     print('Tc from Delta^2(T) -> 0     : %.3f K' % res['Tc_gap'])

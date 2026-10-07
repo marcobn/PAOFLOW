@@ -153,7 +153,7 @@ Paths relative to `src/PAOFLOW/`.
 | File | Role |
 |------|------|
 | `elphon/qe_elph_io.py` | Readers: `read_epw_epb` (EPW coarse Bloch coupling, multi-pool, gfortran subrecords), `read_epw_ukk` (EPW band bookkeeping: kept bands, window), `read_qe_ahc_gkk`, `read_qe_el_ph_mat`, `el_ph_mat_to_cartesian`, `read_qe_dyn`, plus the older `elph.inp_lambda`/`lambda.in` readers of the property-only route. |
-| `elphon/elph_bloch.py` | Core machinery: `read_nscf` (k-points, lattice, Fermi level, crystal symmetries), `kq_index_map`, `vertex_pao_R`, `_ws_lattice`, `precompute_dense_electrons` + `lambda_q_dense_ws_fast` (dense-$k$ electron cache + Fermi-surface double delta, shared across q). |
+| `elphon/elph_bloch.py` | Core machinery: `read_nscf` (k-points, lattice, Fermi level, crystal symmetries, atom species), `atom_masses` (per-species masses → one per atom), `kq_index_map`, `vertex_pao_R`, `_ws_lattice`, `precompute_dense_electrons` + `lambda_q_dense_ws_fast` (dense-$k$ electron cache + Fermi-surface double delta, shared across q). |
 | `elphon/do_pao_eph.py` | **Workflow 1** driver `eliashberg_from_qe_coupling`; per-source vertex builders `vertex_from_epw`, `vertex_from_qe_ahc`, `vertex_from_qe_elphmat`; `load_epw_coupling` (`.ukk` + `.epb` + q in crystal coordinates); `phonon_modes_from_force_constants`. |
 | `elphon/do_pao_eph_dense_q.py` | **Workflow 2** driver `eliashberg_dense_q`; `build_g_ReRp` / `g_Re_at_q` (double real-space vertex); `phonon_interp_from_epw` and `phonon_interp_from_dyn` (dense-q phonons with acoustic sum rule); `irreducible_qmesh` / `_crystal_point_group`. |
 | `elphon/eph_kq.py` | Property engine: `eliashberg_from_modes` ($\alpha^2F$, $\lambda$, $\omega_{\log}$, $T_c$), `mcmillan_allen_dynes_tc`, `phonon_moments`; shared by every route. |
@@ -539,6 +539,15 @@ remains a convergence statement, not a code defect.
   bands) is not supported.
 - **`el_ph_mat` is in the pattern basis**: rotate with `el_ph_mat_to_cartesian`
   using the dump's own `u` matrix.
+- **Masses: one per atom.** `masses_amu` of `eliashberg_dense_q` /
+  `eliashberg_from_qe_coupling` has one entry per atom of the cell: it sets
+  the number of atoms of the EPW record and mass-weights the phonon
+  eigenvectors. The generated drivers keep `MASSES_AMU` per species (EPW's
+  `amass(i)`, `ATOMIC_SPECIES` order) and expand it with
+  `atom_masses(MASSES_AMU, nscf['species'], nscf['atom_names'])`. Before this
+  (October 2026), cells with repeated species (e.g. MgB₂: Mg, B, B) failed in
+  `read_epw_epb` with a record-size mismatch; the error now names the matching
+  number of atoms.
 - **Units.** `HRs` and eigenvalues in eV; smearings (`sigmas_ry`) in Ry;
   frequencies in THz; `epmatq` and `ahc_gkk` in Ry/bohr; force constants in
   Ry/bohr²; masses in QE Rydberg units (`AMU_RY`).

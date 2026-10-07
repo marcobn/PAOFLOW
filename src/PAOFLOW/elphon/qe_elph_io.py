@@ -674,6 +674,39 @@ def read_epw_ukk(path: str, nk: int) -> dict[str, object]:
     }
 
 
+def _epb_record_nat(nbytes: int, nq: int, nbnd: int, nbndep: int, nks: int) -> int | None:
+    """Number of atoms for which an ``.epb`` record would have ``nbytes`` bytes, or ``None``.
+
+    Parameters
+    ----------
+    nbytes : int
+        Size of the record payload.
+    nq, nbnd, nbndep, nks : int
+        Coarse q-points, nscf bands, e-ph bands and k-points of the pool.
+
+    Returns
+    -------
+    int or None
+        The ``nat`` (1 to 200) that reproduces ``nbytes`` exactly.
+    """
+    for nat in range(1, 201):
+        nmodes = 3 * nat
+        size = (
+            4
+            + 8 * 3 * nq
+            + 8 * nbnd * nks
+            + 16 * nmodes * nmodes * nq
+            + 16 * nbndep * nbndep * nks * nmodes * nq
+            + 8 * 9 * nat
+            + 8 * 9
+        )
+        if size == nbytes:
+            return nat
+        if size > nbytes:
+            return None
+    return None
+
+
 def read_epw_epb(
     epw_dir: str, prefix: str, nbnd: int, nk: int, nat: int, nbndep: int
 ) -> dict[str, NDArray]:
@@ -756,9 +789,16 @@ def read_epw_epb(
         ]
         expected = sum(np.dtype(dt).itemsize * n for _, dt, n in sizes)
         if raw.size != expected:
+            hint = ''
+            matching = _epb_record_nat(raw.size, nq, nbnd, nbndep, nks)
+            if matching is not None and matching != nat:
+                hint = (
+                    '; the record matches nat=%d: masses_amu must give one mass per atom,'
+                    ' not per species (see PAOFLOW.elphon.elph_bloch.atom_masses)' % matching
+                )
             raise ValueError(
-                '%s: record has %d bytes, expected %d for nbnd=%d, nbndep=%d, nks=%d, nat=%d, nq=%d'
-                % (path, raw.size, expected, nbnd, nbndep, nks, nat, nq)
+                '%s: record has %d bytes, expected %d for nbnd=%d, nbndep=%d, nks=%d, nat=%d, nq=%d%s'
+                % (path, raw.size, expected, nbnd, nbndep, nks, nat, nq, hint)
             )
         offset, block = 0, {}
         for name, dt, n in sizes:
