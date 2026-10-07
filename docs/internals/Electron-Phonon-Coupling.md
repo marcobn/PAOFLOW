@@ -702,6 +702,18 @@ remains a convergence statement, not a code defect.
 
 ## Practical notes and pitfalls
 
+- **Long-range (polar) terms are not treated yet.** The interpolation
+  Fourier-transforms the full coupling and force constants. There is no dipole
+  (Fröhlich) or quadrupole subtract-and-restore step (EPW `lpolar`). That is
+  exact for metals, whose `.epb` files carry $Z^* = \varepsilon^\infty = 0$
+  (MgB₂, Pb). For EPW couplings, `check_long_range_terms` (`do_pao_eph.py`):
+  - raises `NotImplementedError` for polar materials ($|Z^*| > 0.1$), unless
+    `allow_missing_long_range=True`;
+  - warns for non-polar insulators such as Si ($\varepsilon^\infty$ present),
+    whose quadrupole term is missing.
+
+  The implementation plan is the wiki page *Long-range electron–phonon
+  interpolation (plan)*.
 - **Explicit k lists.** PAOFLOW reads nscf saves without a `monkhorst_pack`
   element by recovering the grid from the list (`uniform_grid_from_kpoints`).
   The list must be the complete grid in `K_POINTS automatic` order (third index

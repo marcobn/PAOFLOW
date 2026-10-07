@@ -46,6 +46,9 @@ Deferred / to validate
   ``zmass = z / sqrt(M)`` matches the coarse-q driver (``TODO: verify_evec``).
 * Polar (Frohlich) long-range part is intentionally NOT handled here; add the
   dipole/quadrupole subtract-before / add-back-after step for polar materials.
+  For now :func:`~PAOFLOW.elphon.do_pao_eph.check_long_range_terms` refuses
+  polar EPW couplings (and warns for non-polar insulators); the plan is the wiki
+  page *Long-range electron-phonon interpolation (plan)*.
 """
 
 from __future__ import annotations
@@ -57,6 +60,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .do_pao_eph import (
+    check_long_range_terms,
     load_epw_coupling,
     vertex_from_epw,
     vertex_from_qe_ahc,
@@ -623,6 +627,7 @@ def eliashberg_dense_q(
     fsthick_ev=None,
     n_freq_fs=100,
     orbital_positions=None,
+    allow_missing_long_range=False,
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
 
@@ -697,6 +702,10 @@ def eliashberg_dense_q(
         atom) pairs and the EPW force constants over atom pairs (``tau_cryst``
         required).  This keeps the dense interpolation symmetric in cells with
         several atoms; ``None`` keeps the single-site images.
+    allow_missing_long_range : bool, optional
+        For ``source='epw'``, run a polar material without the long-range dipole
+        term instead of raising
+        (:func:`~PAOFLOW.elphon.do_pao_eph.check_long_range_terms`).
 
     Notes
     -----
@@ -714,6 +723,7 @@ def eliashberg_dense_q(
         # EPW provides the full coarse q-grid (unfolded from the irreducible ph.x
         # q) and its force constants; both default from the .epb files.
         epw = load_epw_coupling(coupling_dir, nbnd, nk, masses_amu.size, bg)
+        check_long_range_terms(epw['zstar'], epw['epsi'], allow_missing_long_range)
         if q_cryst_coarse is None:
             q_cryst_coarse = epw['q_cryst']
         if phonon_at_q is None:
