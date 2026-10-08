@@ -434,86 +434,93 @@ def estimate_soc(El):
     The soc ={} dict contains an approximate value for the soc strenght for desired shell,
     still in testing for optimal values
     """
-    soc = {
-        # ============================================================
-        # p orbitals
-        # ============================================================
+    soc={
         # 3p
-        'Al': 0.015,
-        'Si': 0.030,
-        'P': 0.051,
-        'S': 0.080,
-        'Cl': 0.117,
+        "Al": 0.015,
+        "Si": 0.030,
+        "P" : 0.051,
+        "S" : 0.080,
+        "Cl": 0.117,
+
         # 4p
-        'Ga': 0.107,
-        'Ge': 0.172,
-        'As': 0.251,
-        'Se': 0.344,
-        'Br': 0.453,
+        "Ga": 0.107,
+        "Ge": 0.142,
+        "As": 0.251,
+        "Se": 0.3,
+        "Br": 0.453,
+
         # 5p
-        'In': 0.209,
-        'Sn': 0.309,
-        'Sb': 0.421,
-        'Te': 0.543,
-        'I': 0.686,
+        "In": 0.209,
+        "Sn": 0.25,
+        "Sb": 0.35,
+        "Te": 0.6,
+        "I" : 0.7,
+
         # 6p
-        'Tl': 0.85,
-        'Pb': 0.90,
-        'Bi': 1.10,
-        'Po': 1.20,
-        'At': 1.30,
+        "Tl": 1.0,
+        "Pb": 1.15,
+        "Bi": 1.48,
+        "Po": 1.60,
+        "At": 1.70,
+
+
         # ============================================================
         # d orbitals
         # ============================================================
-        # 3d
-        'Sc': 0.010,
-        'Ti': 0.014,
-        'V': 0.018,
-        'Cr': 0.022,
-        'Mn': 0.027,
-        'Fe': 0.032,
-        'Co': 0.038,
-        'Ni': 0.045,
-        'Cu': 0.055,
-        'Zn': 0.065,
+
+            # 3d
+        "Sc": 0.010,
+        "Ti": 0.014,
+        "V" : 0.018,
+        "Cr": 0.022,
+        "Mn": 0.027,
+        "Fe": 0.032,
+        "Co": 0.038,
+        "Ni": 0.06,
+        "Cu": 0.07,
+        "Zn": 0.085,
+
         # 4d
-        'Y': 0.039,
-        'Zr': 0.058,
-        'Nb': 0.069,
-        'Mo': 0.091,
-        'Tc': 0.128,
-        'Ru': 0.143,
-        'Rh': 0.174,
-        'Pd': 0.193,
-        'Ag': 0.246,
-        'Cd': 0.306,
+        "Y" : 0.05,
+        "Zr": 0.065,
+        "Nb": 0.083,
+        "Mo": 0.091,
+        "Tc": 0.128,
+        "Ru": 0.143,
+        "Rh": 0.174,
+        "Pd": 0.193,
+        "Ag": 0.246,
+        "Cd": 0.306,
+
         # 5d
-        'Hf': 0.191,
-        'Ta': 0.248,
-        'W': 0.308,
-        'Re': 0.373,
-        'Os': 0.441,
-        'Ir': 0.514,
-        'Pt': 0.556,
-        'Au': 0.556,
-        'Hg': 0.63,
-        # 4F
-        'La': 0.2,
-        'Ce': 0.2,
-        'Pr': 0.2,
-        'Nd': 0.2,
-        'Pm': 0.2,
-        'Sm': 0.2,
-        'Eu': 0.2,
-        'Gd': 0.2,
-        'Tb': 0.2,
-        'Dy': 0.2,
-        'Ho': 0.2,
-        'Er': 0.2,
-        'Tm': 0.2,
-        'Yb': 0.2,
-        'Lu': 0.2,
+        "Hf": 0.145,
+        "Ta": 0.21,
+        "W" : 0.308,
+        "Re": 0.37,
+        "Os": 0.44,
+        "Ir": 0.5,
+        "Pt": 0.57,
+        "Au": 0.63,
+        "Hg": 0.69,
+
+        #4F
+        "La": 0.02,
+        "Ce": 0.05,
+        "Pr": 0.08,
+        "Nd": 0.12,
+        "Pm": 0.14,
+        "Sm": 0.17,
+        "Eu": 0.21,
+        "Gd": 0.235,
+        "Tb": 0.27,
+        "Dy": 0.31,
+        "Ho": 0.335,
+        "Er": 0.36,
+        "Tm": 0.39,
+        "Yb": 0.41,
+        "Lu": 0.44,
     }
+
 
     if El not in soc:
         raise ValueError(f'No SOC estimate available for element: {El}')
@@ -631,7 +638,6 @@ def build_automatic_adhoc_soc(calc):
     print(orb)
     for elem, shells in arry['configuration'].items():
         mask = [0.0] * len(shells)
-        positions = []
         pdf_strengh = [0.0, 0.0, 0.0]
         if elem in orb:
             for target_shell in orb[elem]:
@@ -645,6 +651,6 @@ def build_automatic_adhoc_soc(calc):
         soc_shell_weights[elem] = mask
         soc_strengh[elem] = pdf_strengh
     print(
-        f'YOUR AUTOMATIC PARAMS FOR SOC CALCULATION ARE:\nsoc_strengh={soc_shell_weights}\nsoc_shell_weights={soc_strengh}'
+        f'YOUR AUTOMATIC PARAMS FOR SOC CALCULATION ARE:(\nsoc_strengh={soc_strengh}\nsoc_shell_weights={soc_shell_weights})'
     )
     return soc_strengh, soc_shell_weights
