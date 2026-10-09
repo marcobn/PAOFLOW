@@ -1120,6 +1120,7 @@ class GPAO:
         iso_npz_file: str | None = None,
         title: str | None = None,
         filename: str | None = None,
+        distribution_scale: float = 3.0e-3,
     ) -> None:
         """Plot the anisotropic Migdal-Eliashberg results (gap distributions, DOS, lambda_nk).
 
@@ -1137,6 +1138,9 @@ class GPAO:
             A title for the figure.
         filename : str, optional
             If given, the figure is also saved to this path.
+        distribution_scale : float, optional
+            Horizontal scale (K per 1/eV^2) of the gap distributions drawn at
+            each temperature (default 3e-3, as EPW tutorial 04).
 
         Returns
         -------
@@ -1154,5 +1158,6 @@ class GPAO:
                 iso_data = dict(iso)
         with np.load(npz_file) as data:
             plot_migdal_eliashberg_aniso(
-                dict(data), temps=temps, iso_data=iso_data, title=title, filename=filename
-            )
+                dict(data), temps=temps, iso_data=iso_data, title=title, filename=filename,
+                distribution_scale=distribution_scale,
+            )  # fmt: skip

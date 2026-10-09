@@ -450,6 +450,93 @@ def gap_distribution(
     return gaussians @ weights / weights.sum()
 
 
+def epw_gap_distribution(
+    gaps: ArrayLike, weights: ArrayLike, nbin: int = 300
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]] | None:
+    r"""Gap distribution of EPW's ``gap_distribution_FS`` (file ``imag_aniso_gap0_<T>``).
+
+    Parameters
+    ----------
+    gaps : array_like, shape ``(N,)``
+        ``Delta_nk`` of every Fermi-surface state (eV); ``nan`` values are ignored.
+    weights : array_like, shape ``(N,)``
+        Fermi-surface weights ``W_a`` (1/eV per spin, summing to ``N_F``).
+    nbin : int, optional
+        Number of bins (EPW: 300).
+
+    Returns
+    -------
+    grid : ndarray, shape ``(nbin,)``
+        Gap values (eV).
+    scaled : ndarray, shape ``(nbin,)``
+        Distribution normalised to a maximum of 1.
+    raw : ndarray, shape ``(nbin,)``
+        Unnormalised distribution (1/eV^2, both spins), EPW's ``dist. (not scaled)``.
+    ``None`` is returned when every gap is zero (normal state).
+
+    Notes
+    -----
+    As EPW, the bins cover :math:`[0.9\,\Delta_{\min}, 1.1\,\Delta_{\max}]` and
+    every state is a Gaussian of width half a bin,
+
+    .. math::
+
+        \rho(\Delta) = \sum_a 2W_a\,\frac{e^{-(\Delta-\Delta_a)^2/s^2}}{\sqrt\pi\,s},
+        \qquad s = \frac{1.1\,\Delta_{\max} - 0.9\,\Delta_{\min}}{2\,n_{\rm bin}},
+
+    with the factor 2 for the spins of EPW's k-point weights.  Its integral is
+    therefore :math:`2N_F`.
+    """
+    gaps = np.asarray(gaps, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+    finite = np.isfinite(gaps)
+    gaps, weights = gaps[finite], weights[finite]
+    if gaps.size == 0 or not np.any(gaps != 0.0):
+        return None
+    gap_min, gap_max = gaps.min(), gaps.max()
+    gap_min = 0.9 * gap_min if gap_min > 0.0 else 1.1 * gap_min
+    gap_max = 1.1 * gap_max if gap_max > 0.0 else 0.9 * gap_max
+    step = (gap_max - gap_min) / nbin
+    smear = 0.5 * step
+    grid = gap_min + step * np.arange(nbin)
+    x = (grid[:, None] - gaps[None, :]) / smear
+    raw = (np.exp(-(x**2)) / (np.sqrt(np.pi) * smear)) @ (2.0 * weights)
+    return grid, raw / raw.max(), raw
+
+
+def _write_epw_gap_distribution(
+    path: str, T: float, gaps: ArrayLike, weights: ArrayLike, label: str
+) -> None:
+    """Write :func:`epw_gap_distribution` in EPW's ``imag_aniso_gap0_<T>`` columns.
+
+    The columns are ``T + scaled``, ``Delta`` (meV), ``T``, ``scaled`` and ``raw``,
+    restricted (as EPW) to the bins where ``scaled > 1e-5`` plus one on each
+    side, so EPW's gnuplot scripts plot the file unchanged.  Nothing is written
+    in the normal state.
+    """
+    distribution = epw_gap_distribution(gaps, weights)
+    if distribution is None:
+        return
+    grid, scaled, raw = distribution
+    kept = np.nonzero(scaled > 1.0e-5)[0]
+    window = slice(max(kept[0] - 1, 0), min(kept[-1] + 2, grid.size))
+    np.savetxt(
+        path,
+        np.column_stack(
+            [
+                T + scaled[window],
+                grid[window] * 1e3,
+                np.full(raw[window].size, T),
+                scaled[window],
+                raw[window],
+            ]
+        ),
+        header='distribution = rho(%s), as EPW gap_distribution_FS\n'
+        'T[K] + dist. (scaled to 1)   %s [meV]   T [K]   dist. (scaled to 1)   dist. (not scaled)'
+        % (label, label),
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Temperature sweeps                                                          #
 # --------------------------------------------------------------------------- #
@@ -668,7 +755,9 @@ def write_me_aniso_outputs(
         (:func:`~PAOFLOW.elphon.migdal_eliashberg.temperature_tag`)
         ``<prefix>.imag_aniso_<T>`` (``w_j``, ``e - E_F``, ``Z``, ``Delta``, eV),
         ``<prefix>.imag_aniso_gap0_<T>`` and ``<prefix>.pade_aniso_gap0_<T>``
-        (distributions of ``Delta_nk(i w_0)`` and of the Pade gap edges, meV),
+        (distributions of ``Delta_nk(i w_0)`` and of the Pade gap edges in
+        EPW's columns, :func:`epw_gap_distribution`; not written in the normal
+        state),
         ``<prefix>.imag_aniso_gap_FS_<T>`` (``Delta_nk(i w_0)`` of every state),
         ``<prefix>.pade_aniso_<T>`` (Fermi-surface averaged ``Z(w)``,
         ``Delta(w)``) and ``<prefix>.qdos_<T>``; ``gap_vs_T_aniso.dat``,
@@ -721,10 +810,8 @@ def write_me_aniso_outputs(
         arrays['gap0_distribution'][i] = gap_distribution(
             result['gap0'][i] * 1e3, weights, gap_grid, smearing_mev
         )
-        np.savetxt(
-            path % ('imag_aniso_gap0_' + tag),
-            np.column_stack([gap_grid, arrays['gap0_distribution'][i]]),
-            header='Delta_nk(iw_0) [meV]  rho(Delta)   T = %g K' % T,
+        _write_epw_gap_distribution(
+            path % ('imag_aniso_gap0_' + tag), T, result['gap0'][i], weights, 'delta_nk'
         )
         np.savetxt(
             path % ('imag_aniso_gap_FS_' + tag),
@@ -736,11 +823,10 @@ def write_me_aniso_outputs(
             arrays['gap_edge_distribution'][i] = gap_distribution(
                 result['gap_edge'][i] * 1e3, weights, gap_grid, smearing_mev
             )
-            np.savetxt(
-                path % ('pade_aniso_gap0_' + tag),
-                np.column_stack([gap_grid, arrays['gap_edge_distribution'][i]]),
-                header='gap edge [meV]  rho   (Pade)   T = %g K' % T,
-            )
+            _write_epw_gap_distribution(
+                path % ('pade_aniso_gap0_' + tag), T, result['gap_edge'][i], weights,
+                'gap edge (Pade)',
+            )  # fmt: skip
             Z_mean, delta_mean = result['pade_mean'][i]
             np.savetxt(
                 path % ('pade_aniso_' + tag),

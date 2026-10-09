@@ -1068,6 +1068,7 @@ def plot_migdal_eliashberg_aniso(
     iso_data: Mapping[str, Any] | None = None,
     title: str | None = None,
     filename: str | None = None,
+    distribution_scale: float = 3.0e-3,
 ) -> None:
     """Plot the anisotropic Migdal-Eliashberg results versus temperature.
 
@@ -1087,6 +1088,9 @@ def plot_migdal_eliashberg_aniso(
         Overall figure title.
     filename : str, optional
         If given, the figure is also saved to this path.
+    distribution_scale : float, optional
+        Horizontal scale (K per 1/eV^2) of the gap distributions in the
+        ``Delta(T)`` panel; the default 3e-3 is that of EPW tutorial 04.
 
     Returns
     -------
@@ -1095,9 +1099,12 @@ def plot_migdal_eliashberg_aniso(
 
     Notes
     -----
-    Panels: ``Delta_nk(i w_0)`` of every Fermi-surface state versus ``T``
-    (coloured by ``lambda_nk``, with the Fermi-surface average and the
-    isotropic gap); the gap distributions and the quasiparticle DOS at the
+    Panels: the distribution of ``Delta_nk(i w_0)`` at every temperature,
+    drawn as in EPW tutorial 04 (``plot_gap0.gnu``): EPW's
+    ``gap_distribution_FS``
+    (:func:`~PAOFLOW.elphon.anisotropic_eliashberg.epw_gap_distribution`),
+    filled from ``T`` to ``T + distribution_scale * rho(Delta)``, with the
+    isotropic gap when given; the gap distributions and the quasiparticle DOS at the
     chosen temperatures; the distribution of ``lambda_nk``; ``Delta_nk`` versus
     ``lambda_nk`` at the lowest temperature; and the largest eigenvalue of the
     linearised kernel.
@@ -1119,31 +1126,36 @@ def plot_migdal_eliashberg_aniso(
     fig.suptitle('Anisotropic Migdal-Eliashberg' if title is None else title)
     ax_gap_t, ax_dist, ax_qdos, ax_lambda, ax_corr, ax_rho = axes.ravel()
 
-    order = np.argsort(lambda_nk)
-    scatter = None
+    from ..elphon.anisotropic_eliashberg import epw_gap_distribution
+
+    weights = np.asarray(data['weight'])
     for it, T in enumerate(temperatures):
-        scatter = ax_gap_t.scatter(
-            np.full(order.size, T), gap0_mev[it, order], c=lambda_nk[order], cmap='Blues',
-            vmin=0.0, vmax=lambda_nk.max(), s=10, edgecolors='none',
-        )  # fmt: skip
-    ax_gap_t.plot(
-        temperatures, np.asarray(data['gap_mean']) * 1e3, color=_ME_SERIES[1], lw=2,
-        label='Fermi-surface average',
-    )  # fmt: skip
+        distribution = epw_gap_distribution(gap0_mev[it] * 1e-3, weights)
+        if distribution is None:
+            continue
+        grid, _, raw = distribution
+        width = T + distribution_scale * raw
+        ax_gap_t.fill_betweenx(grid * 1e3, T, width, color=_ME_SERIES[0], alpha=0.2, lw=0)
+        ax_gap_t.plot(width, grid * 1e3, color=_ME_SERIES[0], lw=1.0)
     if iso_data is not None:
         ax_gap_t.plot(
             np.asarray(iso_data['temps']), np.asarray(iso_data['gap0_imag']) * 1e3,
             color=_ME_SERIES[2], ls='--', lw=2, label='isotropic',
         )  # fmt: skip
-    if scatter is not None:
-        fig.colorbar(scatter, ax=ax_gap_t, label=r'$\lambda_{n\mathbf{k}}$')
+        ax_gap_t.legend(frameon=False, fontsize=9, loc='lower left')
+    mu_star = float(data['mu_star']) if 'mu_star' in data else float('nan')
+    ax_gap_t.text(
+        0.97, 0.95, r'FSR ($\mu^*_c = %.2g$)' % mu_star, transform=ax_gap_t.transAxes,
+        ha='right', va='top',
+    )  # fmt: skip
+    t_step = np.min(np.diff(temperatures)) if temperatures.size > 1 else 5.0
+    ax_gap_t.set_xlim(0.0, temperatures.max() + 1.5 * t_step)
     gap_title = r'$\Delta_{n\mathbf{k}}(i\omega_0)$ vs $T$'
     tc_gap = float(data['Tc_gap']) if 'Tc_gap' in data else float('nan')
     if np.isfinite(tc_gap):
         gap_title += r'  ($T_c \approx %.1f$ K)' % tc_gap
-    ax_gap_t.set(xlabel='Temperature (K)', ylabel=r'$\Delta$ (meV)', title=gap_title)
+    ax_gap_t.set(xlabel='Temperature (K)', ylabel=r'$\Delta_{n\mathbf{k}}$ (meV)', title=gap_title)
     ax_gap_t.set_ylim(bottom=0.0)
-    ax_gap_t.legend(frameon=False, fontsize=9, loc='lower left')
 
     gap_grid = np.asarray(data['gap_grid_mev'])
     w_mev = np.asarray(data['w_real']) * 1e3
