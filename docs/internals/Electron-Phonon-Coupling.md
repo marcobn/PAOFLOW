@@ -513,14 +513,16 @@ $$
 
 - `<prefix>.lambda_FS`, `<prefix>.lambda_k_pairs`: $\lambda_{n\mathbf k}$ per state, and its distribution
 - `<prefix>.imag_aniso_<T>`: $\omega_j$, $\epsilon-E_F$, $Z$, $\Delta$
-- `<prefix>.imag_aniso_gap0_<T>`, `<prefix>.pade_aniso_gap0_<T>`: distributions of $\Delta_{n\mathbf k}(i\omega_0)$ and of the Padé gap edges
+- `<prefix>.imag_aniso_gap0_<T>`, `<prefix>.pade_aniso_gap0_<T>`: distributions of $\Delta_{n\mathbf k}(i\omega_0)$ and of the Padé gap edges, computed as EPW's `gap_distribution_FS` (`epw_gap_distribution`: 300 bins, half-bin Gaussians) and written in EPW's columns ($T$ + scaled, Δ in meV, $T$, scaled, unscaled), so EPW's gnuplot scripts read them unchanged
 - `<prefix>.imag_aniso_gap_FS_<T>`: $\Delta_{n\mathbf k}(i\omega_0)$ per state
 - `<prefix>.pade_aniso_<T>`: Fermi-surface averaged $Z(\omega)$, $\Delta(\omega)$
 - `<prefix>.qdos_<T>`: $N_S/N_F$
 - `gap_vs_T_aniso.dat`, `max_eigenvalue_aniso.dat`, `migdal_eliashberg_aniso.npz`
 
-`GPAO.plot_migdal_eliashberg_aniso` draws $\Delta_{n\mathbf k}(i\omega_0)$
-against $T$ coloured by $\lambda_{n\mathbf k}$, with the isotropic gap overlaid.
+`GPAO.plot_migdal_eliashberg_aniso` draws the distribution of
+$\Delta_{n\mathbf k}(i\omega_0)$ at every temperature as EPW tutorial 04 does
+(`plot_gap0.gnu`): filled from $T$ to $T + 3\times10^{-3}\,\rho(\Delta)$
+(`distribution_scale`), with the isotropic gap overlaid when given.
 It also draws the gap distributions, the quasiparticle DOS, the
 $\lambda_{n\mathbf k}$ distribution and $\rho(T)$.
 

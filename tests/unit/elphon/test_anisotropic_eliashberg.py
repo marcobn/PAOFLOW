@@ -201,3 +201,22 @@ def test_write_me_aniso_outputs(tmp_path: Path) -> None:
         distribution = data['gap0_distribution'][0]
         grid = data['gap_grid_mev']
         assert np.sum(distribution) * (grid[1] - grid[0]) == pytest.approx(1.0, rel=0.02)
+
+
+def test_epw_gap_distribution_and_file_format(tmp_path: Path) -> None:
+    rng = np.random.default_rng(5)
+    gaps = np.concatenate([rng.normal(2.0e-3, 2.0e-4, 40), rng.normal(7.0e-3, 4.0e-4, 20)])
+    weights = rng.uniform(0.1, 1.0, gaps.size) * 1.0e-2
+    grid, scaled, raw = mea.epw_gap_distribution(gaps, weights)
+    assert grid.size == 300 and scaled.max() == pytest.approx(1.0)
+    assert grid[0] == pytest.approx(0.9 * gaps.min()) and grid[-1] < 1.1 * gaps.max()
+    # Integral 2 N_F (both spins), as EPW's k-point weights; with EPW's half-bin
+    # Gaussians the rectangle sum of one state aliases, so only on average.
+    assert raw.sum() * (grid[1] - grid[0]) == pytest.approx(2.0 * weights.sum(), rel=0.05)
+    assert mea.epw_gap_distribution(np.zeros(5), np.ones(5)) is None  # normal state
+    path = str(tmp_path / 'gap0')
+    mea._write_epw_gap_distribution(path, 5.0, gaps, weights, 'delta_nk')
+    table = np.loadtxt(path)
+    assert table.shape[1] == 5  # EPW columns: T + scaled, Delta (meV), T, scaled, raw
+    np.testing.assert_allclose(table[:, 0], 5.0 + table[:, 3])
+    np.testing.assert_allclose(table[:, 2], 5.0)
