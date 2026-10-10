@@ -41,6 +41,12 @@ Generates a PAOFLOW property-calculation driver (`main.py`) from a completed QE 
 - **`mpirun -np N python main.elphon.py`** builds the PAO electronic structure on the EPW nscf save (`epw/<prefix>.save`) and runs the dense-q (or, with `--coarse-q`, coarse-q) Eliashberg calculation on EPW's coupling.
 - **`python me.elphon.py`** (all coupling sources, serial, seconds) solves the isotropic Migdal–Eliashberg equations on `output/eliashberg.npz`: the gap and Z on the imaginary axis, their Padé and analytic continuations to the real axis, Δ(T) and the linearised-kernel T_c. It writes `output/me/` in EPW's formats. `--a2f epw/<prefix>.a2f` runs it on EPW's α²F instead. μ* comes from the generator; `WSCUT`, `DEGAUSSQ`, `DEGAUSSQ_LINEAR` and `NPADE` are EPW-default constants at the top of the script and are also command-line options.
 - **`python me_aniso.elphon.py`** (EPW source, dense q with equal dense k- and q-grids) solves the anisotropic, Fermi-surface-restricted Migdal–Eliashberg equations on `output/fs_coupling.npz`. That file is written by `main.elphon.py` when `FS_COUPLING = True`, the default for equal dense grids; `FSTHICK_EV` defaults to 4σ. It gives Δ_nk and Z_nk on the Matsubara axis, Padé gap edges, the gap distributions, the quasiparticle DOS and, with `--linear-temps`, the linearised-kernel T_c, and writes `output/me_aniso/` in EPW's formats. The generated `main.elphon.py` passes the PAO orbital centres, so the dense interpolation uses pair-resolved Wigner–Seitz images.
+- **Phonon-assisted optical absorption (EPW source).** After `nelec`, the generator asks for the property to compute. Choosing "phonon-assisted optical absorption" prompts for:
+  - the dense q- and k-grids (EPW `nqf`, `nkf`; default `nq` = coarse k-grid, `nk` = 2 × `nq`);
+  - the photon energies (`omegamin`, `omegamax`, `omegastep`), the temperatures, `degaussw` and `fsthick`;
+  - the refractive index, the non-local velocity correction and `pthr`.
+
+  `main.elphon.py` then computes the phonon-assisted and direct Im ε(ω) and α(ω) (EPW `lindabs`), writing EPW-format files and `output/absorption.npz`. `plot.elphon.py` plots them. No `me.elphon.py` is written. See `examples/elphon_example/Si`.
 - **`plot.elphon.py`** plots α²F and the cumulative λ, and overlays EPW's own `<prefix>.a2f` (dashed) when it exists. After `me.elphon.py` it also draws the Migdal–Eliashberg figure (`output/me/migdal_eliashberg.png`), and after `me_aniso.elphon.py` the anisotropic one (`output/me_aniso/migdal_eliashberg_aniso.png`).
 
 ## A Complete Workflow

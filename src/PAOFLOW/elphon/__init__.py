@@ -55,6 +55,13 @@ from .anisotropic_eliashberg import (
     solve_imag_aniso,
     write_me_aniso_outputs,
 )
+from .phonon_assisted_absorption import (
+    absorption_coefficient,
+    direct_absorption_kernel,
+    indirect_absorption_kernel,
+    phonon_assisted_absorption_dense_q,
+    write_absorption_outputs,
+)
 from .qe_elph_io import (
     el_ph_mat_to_cartesian,
     lambda_from_gamma,
@@ -76,6 +83,7 @@ from .qe_matdyn import (
 
 __all__ = [
     'a2f_from_epw',
+    'absorption_coefficient',
     'a2f_from_modes',
     'a2f_from_npz',
     'allen_dynes_tc',
@@ -83,12 +91,14 @@ __all__ = [
     'coupling_strength',
     'default_temperatures',
     'default_wscut',
+    'direct_absorption_kernel',
     'el_ph_mat_to_cartesian',
     'eliashberg',
     'eliashberg_from_modes',
     'eliashberg_from_qe_coupling',
     'FermiSurfacePairCoupling',
     'gap_edge',
+    'indirect_absorption_kernel',
     'interpolate_coupling',
     'lambda_from_gamma',
     'linearized_eigenvalues',
@@ -100,6 +110,7 @@ __all__ = [
     'migdal_eliashberg_iso',
     'pade_continuation',
     'pade_continuation_aniso',
+    'phonon_assisted_absorption_dense_q',
     'quasiparticle_dos',
     'read_a2f_ifc',
     'read_elph_inp_lambda',
@@ -116,6 +127,7 @@ __all__ = [
     'solve_imag_iso',
     'vertex_from_qe_ahc',
     'vertex_from_qe_elphmat',
+    'write_absorption_outputs',
     'write_fs_coupling',
     'write_me_aniso_outputs',
     'write_me_outputs',

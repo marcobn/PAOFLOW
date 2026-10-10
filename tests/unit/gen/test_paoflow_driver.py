@@ -631,6 +631,7 @@ def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch, tmp_path):
             '1:5',  # excluded bands
             '',  # masses (from ATOMIC_SPECIES)
             '14',  # nelec
+            '',  # property (default: superconductivity)
             'y',  # dense q
             '12',  # NQ_DENSE
             '30',  # NK_DENSE not a multiple of 12 -> re-prompt
@@ -653,3 +654,63 @@ def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch, tmp_path):
     assert cfg['sigma_ev'] == 0.05 and cfg['pthr'] == 0.95
     assert cfg['exclude_bands'] == [1, 2, 3, 4, 5]
     assert cfg['me_temps'] == [1.0, 8.0, 15]
+
+
+def _absorption_cfg(**kw):
+    cfg = _epw_cfg(
+        prefix='Si2',
+        savedir='epw/Si2.save',
+        kgrid=[6, 6, 6],
+        qgrid=[3, 3, 3],
+        nbnd=21,
+        masses_amu=[28.085],
+        nelec=8,
+        nk_dense=12,
+        nq_dense=6,
+        elphon_property='absorption',
+        omega_ev=[0.05, 3.0, 0.05],
+        temps_k=[100.0, 300.0],
+        degauss_ev=0.05,
+        fsthick_ev=4.0,
+        refractive_index=3.4,
+        nonlocal_velocity=True,
+    )
+    cfg.update(kw)
+    return cfg
+
+
+def test_build_elphon_absorption_script_compiles_and_wires() -> None:
+    text = d.build_elphon_script(_absorption_cfg())
+    compile(text, 'main.elphon.py', 'exec')
+    assert '__' not in re.sub(r'__(name|main|doc|file)__', '', text)  # every token substituted
+    assert 'phonon_assisted_absorption_dense_q(' in text
+    assert 'write_absorption_outputs(out, OUTPUTDIR)' in text
+    assert 'NK_DENSE = 12' in text and 'NQ_DENSE = 6' in text
+    assert 'TEMPS_K = [100.0, 300.0]' in text
+    assert 'OMEGA_EV = (0.05, 3.0, 0.05)' in text
+    assert 'NONLOCAL_VELOCITY = True' in text
+    assert 'eliashberg' not in text
+    off = d.build_elphon_script(_absorption_cfg(nonlocal_velocity=False))
+    assert 'NONLOCAL_VELOCITY = False' in off
+
+
+def test_build_elphon_absorption_plot_script() -> None:
+    text = d.build_elphon_plot_script(_absorption_cfg())
+    compile(text, 'plot.elphon.py', 'exec')
+    assert 'plot_phonon_assisted_absorption(' in text
+    assert "OUTPUTDIR = os.path.join(HERE, 'output')" in text
+    assert "EPW_DIR = os.path.join(HERE, 'epw')" in text
+    assert 'alpha2F' not in text
+
+
+def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
+    answers = iter(['6', '', '0.1', '2.5', '0.02', '10, 300', '0.04', '3.0', '3.5', 'n', ''])
+    monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
+    cfg = d._collect_elphon_absorption({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
+    assert cfg['elphon_property'] == 'absorption'
+    assert (cfg['nq_dense'], cfg['nk_dense']) == (6, 12)
+    assert cfg['omega_ev'] == [0.1, 2.5, 0.02]
+    assert cfg['temps_k'] == [10.0, 300.0]
+    assert (cfg['degauss_ev'], cfg['fsthick_ev'], cfg['refractive_index']) == (0.04, 3.0, 3.5)
+    assert cfg['nonlocal_velocity'] is False
+    assert cfg['pthr'] == 0.95
