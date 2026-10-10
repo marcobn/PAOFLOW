@@ -1113,6 +1113,49 @@ class GPAO:
                 real_axis_max_mev=real_axis_max_mev,
             )
 
+    def plot_phonon_assisted_absorption(
+        self,
+        npz_file: str,
+        eta_ev: float = 0.05,
+        temperature: float | None = None,
+        epw_indabs_file: str | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot the phonon-assisted and direct optical absorption.
+
+        Parameters
+        ----------
+        npz_file : str
+            ``absorption.npz`` written by
+            :func:`PAOFLOW.elphon.phonon_assisted_absorption.write_absorption_outputs`.
+        eta_ev : float, optional
+            Intermediate-state broadening (eV) shown (closest computed value).
+        temperature : float, optional
+            Temperature (K) of the dielectric-function panel (default: the first).
+        epw_indabs_file : str, optional
+            EPW ``epsilon2_indabs_<T>K.dat`` overlaid for comparison.
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+
+        Returns
+        -------
+        None
+            Shows the figure
+            (:func:`PAOFLOW.graphics.plot_functions.plot_phonon_assisted_absorption`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_phonon_assisted_absorption
+
+        with np.load(npz_file) as data:
+            plot_phonon_assisted_absorption(
+                dict(data), eta_ev=eta_ev, temperature=temperature,
+                epw_indabs_file=epw_indabs_file, title=title, filename=filename,
+            )  # fmt: skip
+
     def plot_migdal_eliashberg_aniso(
         self,
         npz_file: str,

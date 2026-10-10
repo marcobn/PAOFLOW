@@ -29,6 +29,7 @@ ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 - [Pair-resolved Wigner–Seitz interpolation (several atoms per cell)](#pair-resolved-wignerseitz-interpolation-several-atoms-per-cell)
 - [Isotropic Migdal–Eliashberg: gap, Padé, analytic continuation, linearised $T_c$](#isotropic-migdaleliashberg-gap-padé-analytic-continuation-linearised-t_c)
 - [Anisotropic Migdal–Eliashberg (Fermi-surface restricted)](#anisotropic-migdaleliashberg-fermi-surface-restricted)
+- [Phonon-assisted optical absorption](#phonon-assisted-optical-absorption)
 - [Parallelisation and memory](#parallelisation-and-memory)
 - [Grid consistency rules](#grid-consistency-rules)
 - [The `paoflow-gen elphon` CLI workflow](#the-paoflow-gen-elphon-cli-workflow)
@@ -536,6 +537,108 @@ $\lambda_{n\mathbf k}$ distribution and $\rho(T)$.
 
 ---
 
+## Phonon-assisted optical absorption
+
+`PAOFLOW.elphon.phonon_assisted_absorption` reuses the dense-q interpolation for
+the second-order (photon + phonon) absorption of indirect-gap semiconductors,
+EPW's `lindabs` (`indabs.f90`; Noffsinger et al., PRL **108**, 167402 (2012);
+EPW tutorial 06). The worked example is `examples/elphon_example/Si`.
+
+For an initial state $i$ at $\mathbf{k}$, a final state $j$ at
+$\mathbf{k}+\mathbf{q}$ and a phonon $\nu$, the two time orderings give
+
+$$
+S^{a/e}_{\alpha} = \sum_m \frac{g_{jm,\nu}\, v^{\alpha}_{mi}(\mathbf{k})}
+{\varepsilon_{m\mathbf{k}} - \varepsilon_{j\mathbf{k}+\mathbf{q}} \pm \omega_{\mathbf{q}\nu} + i\eta}
++ \sum_m \frac{v^{\alpha}_{jm}(\mathbf{k}+\mathbf{q})\, g_{mi,\nu}}
+{\varepsilon_{m\mathbf{k}+\mathbf{q}} - \varepsilon_{i\mathbf{k}} \mp \omega_{\mathbf{q}\nu} + i\eta},
+$$
+
+for phonon absorption ($a$, upper signs) and emission ($e$), and
+
+$$
+\mathrm{Im}\,\varepsilon_{\alpha\alpha}(\omega) = \frac{8\pi^2 g_s}{\Omega\,\omega^2}
+\frac{1}{N_k}\sum_{\mathbf{q}} w_{\mathbf{q}} \sum_{ij\nu\mathbf{k}} P^{a/e}\,
+\frac{|S^{a/e}_{\alpha}|^2}{2\omega_{\mathbf{q}\nu}}\,
+\delta(\varepsilon_{j\mathbf{k}+\mathbf{q}} - \varepsilon_{i\mathbf{k}} - \omega \mp \omega_{\mathbf{q}\nu}),
+$$
+
+with $P^a = n f_i(1-f_j) - (n+1)(1-f_i)f_j$ and
+$P^e = (n+1) f_i(1-f_j) - n(1-f_i)f_j$, in Rydberg units ($8\pi^2 g_s = 16\pi^2$
+for $g_s = 2$, EPW's `cfac`). $g$ is the vertex without $1/\sqrt{2\omega}$, as
+in $\lambda$. The kernels transliterate EPW's loops, including the nine $\eta$,
+the Gaussian and Lorentzian deltas cut at six smearings, the `fsthick` window
+for initial, final and intermediate states, and `eps_acoustic`. The unit tests
+compare them with a literal loop transcription of `indabs_main` and `dirabs`.
+
+**Velocity in the gauge of $g$.** The interference of the two paths requires
+$g$ and $v$ in the same eigenvector gauge. Both are therefore evaluated on the
+dense grid and rotated with the same cached eigenvectors:
+- the coupling by `band_vertex` (factored out of `lambda_q_dense_ws_fast`);
+- the velocity by `band_velocities`, from `precompute_dense_electrons(...,
+  velocities=True)`.
+
+The velocity is the PAO analogue of EPW's `vme = 'wannier'`:
+
+$$
+\mathbf{v}_{ij}(\mathbf{k}) = \partial_{\mathbf{k}} H_{ij}(\mathbf{k})
++ i H_{ij}(\mathbf{k})(\boldsymbol{\tau}_j - \boldsymbol{\tau}_i),
+$$
+
+i.e. minus PAOFLOW's `dHksp`. The optional non-local pseudopotential term
+(`nonlocal_velocity=<DataController>`, norm-conserving only) uses
+`build_nonlocal_velocity_kspace` at the dense k-points, with the calibrated sign
+of `inject_into_dHksp`.
+
+The validation checks are:
+- **Exact model.** An exactly solvable two-site tight-binding model checks that
+  the whole chain (`vertex_pao_R` → `band_vertex`, `band_velocities` →
+  kernel) reproduces the exact gauge-invariant spectrum off the coarse grid.
+- **Mutation check.** The test fails if the position term is dropped or
+  flipped, or if the vertex is conjugated.
+- **Direct term on Si.** The direct term matches `dielectric_tensor` on the
+  same Hamiltonian, both with and without the non-local term.
+
+**Driver.** `phonon_assisted_absorption_dense_q(A, HRs, kpts_cryst, bg, at,
+alat, cell_volume, epw_dir, qgrid, kgrid, masses_amu=, nelec=, nk_dense=,
+nq_dense=, omega_ev=, temps_k=, degauss_ev=, fsthick_ev=, ...)` works in four
+stages:
+1. It calls `prepare_dense_vertex`, the setup shared with
+   `eliashberg_dense_q`: EPW coupling, long-range guard, phonon interpolator,
+   node-shared $g(R_e,R_p)$.
+2. It caches the band velocities on the dense grid (one copy per node).
+3. It loops over (irreducible q, k-block) tasks distributed over MPI ranks.
+4. `write_absorption_outputs` writes EPW-format `epsilon2_indabs_<T>K.dat`,
+   `epsilon2_indabs_lorenz<T>K.dat`, `epsilon2_dirabs_<T>K.dat`,
+   `alpha_<T>K.dat` and `absorption.npz`.
+
+`GPAO.plot_phonon_assisted_absorption` plots them.
+
+| EPW `lindabs` input | PAOFLOW | default |
+|---|---|---|
+| `nkf`, `nqf` | `nk_dense`, `nq_dense` (`nk_dense % nq_dense == 0`) | 12, 6 |
+| `omegamin`, `omegamax`, `omegastep` | `omega_ev=(min, max, step)` | (0.05, 3.0, 0.05) eV |
+| `temps` | `temps_k` | 300 K |
+| `degaussw` | `degauss_ev` | 0.05 eV |
+| `fsthick` | `fsthick_ev` | 4 eV |
+| `efermi_read`, `fermi_energy` | `fermi_energy_ev` (`None` = mid-gap) | mid-gap |
+| `eps_acoustic` | `eps_acoustic_cm` | 0.1 cm⁻¹ |
+| `n_r` (tutorial: constant 3.4) | `refractive_index` | 3.4 |
+| `mp_mesh_k` | `sym_rots` (folds **q**; the polarisation average is exact) | |
+| `eig_read`, `scissor` | not implemented: PAO (DFT) energies | |
+
+Some limitations and conventions apply:
+- **Irreducible q.** With `sym_rots`, the dense q-grid is folded to its
+  irreducible wedge. Only the polarisation average is invariant, and it is
+  returned in all three components. Pass `sym_rots=None` for the resolved
+  diagonal.
+- **Above the direct gap.** The amplitudes diverge at direct transitions, as
+  in EPW. Read the indirect spectrum below the direct gap.
+- **Not implemented.** Free-carrier and impurity absorption (`carrier`,
+  `ii_g`) and QDPT (`loptabs`).
+
+---
+
 ## Parallelisation and memory
 
 - **MPI over the q loop** (both workflows), with `load_balancing` and
@@ -794,6 +897,27 @@ lin = linearized_eigenvalues(*a2f_from_npz('output/eliashberg.npz', 5.0e-4),
                              np.linspace(0.25, 6.25, 25), mu_star=0.1)
 write_me_outputs(res, 'output/me', 'pb', lin)   # EPW-format files + migdal_eliashberg.npz
 print(res['gap0_imag'], res['gap_pade'], res['gap_acon'], lin['Tc_linear'])
+```
+
+Phonon-assisted absorption on the same inputs (the data controller is passed
+only for the optional non-local velocity term):
+
+```python
+from PAOFLOW.elphon.elph_bloch import atom_masses, pao_orbital_positions
+from PAOFLOW.elphon.phonon_assisted_absorption import (
+    phonon_assisted_absorption_dense_q, write_absorption_outputs,
+)
+
+out = phonon_assisted_absorption_dense_q(
+    A, HRs, info['kpts_cryst'], info['bg'], info['at'], info['alat'], info['omega'],
+    'epw', (3, 3, 3), (6, 6, 6),
+    masses_amu=atom_masses([28.085], info['species'], info['atom_names']), nelec=8,
+    nk_dense=12, nq_dense=6, temps_k=[300.0],
+    nonlocal_velocity=pf.data_controller,
+    sym_rots=info['s_cryst'], tau_cryst=info['tau_cryst'], species=info['atom_names'],
+    orbital_positions=pao_orbital_positions(pf.data_controller, info['at']),
+)
+write_absorption_outputs(out, 'output')
 ```
 
 The anisotropic equations need the Fermi-surface coupling of a dense-q run with

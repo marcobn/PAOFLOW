@@ -1,0 +1,16 @@
+Si2
+&INPUTPH
+  prefix    = 'Si2',
+  outdir    = './'
+  trans     = .true.,
+  reduce_io = .true.
+  fildyn    = 'Si2.dyn',
+  fildvscf  = 'dvscf'
+  ldisp     = .true.,
+  nq1 = 3,
+  nq2 = 3,
+  nq3 = 3,
+  tr2_ph    = 1.0d-16,
+  alpha_mix(1)  = 0.1
+  alpha_mix(10) = 0.3
+/

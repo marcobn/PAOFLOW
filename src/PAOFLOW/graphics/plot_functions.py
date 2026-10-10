@@ -1223,3 +1223,113 @@ def plot_migdal_eliashberg_aniso(
     if filename is not None:
         plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.show()
+
+
+def plot_phonon_assisted_absorption(
+    data: Mapping[str, Any],
+    eta_ev: float = 0.05,
+    temperature: float | None = None,
+    epw_indabs_file: str | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+) -> None:
+    """Plot the phonon-assisted and direct absorption versus photon energy.
+
+    Parameters
+    ----------
+    data : mapping
+        Contents of ``absorption.npz`` written by
+        :func:`PAOFLOW.elphon.phonon_assisted_absorption.write_absorption_outputs`.
+    eta_ev : float, optional
+        Intermediate-state broadening (eV) to show; the closest computed one is
+        used (default 0.05).
+    temperature : float, optional
+        Temperature (K) of the left panel; defaults to the first one.
+    epw_indabs_file : str, optional
+        EPW ``epsilon2_indabs_<T>K.dat`` overlaid (dashed) on the phonon-assisted
+        curve of the left panel, at the same broadening column.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Left: polarisation-averaged ``Im eps`` (direct, phonon-assisted and total,
+    Gaussian delta) on a log scale.  Right: the absorption coefficient (cm^-1)
+    for every temperature (one blue ramp, light to dark with increasing T).
+    The indirect and direct gaps of the dense grid are marked.
+    """
+    omega = np.asarray(data['omega_ev'])
+    etas = np.asarray(data['etas_ev'])
+    temps = np.atleast_1d(np.asarray(data['temps_k']))
+    ieta = int(np.argmin(np.abs(etas - eta_ev)))
+    itemp = 0 if temperature is None else int(np.argmin(np.abs(temps - temperature)))
+    indirect = np.asarray(data['eps2_indirect']).mean(axis=2)  # (nT, neta, nw)
+    direct = np.asarray(data['eps2_direct']).mean(axis=1)  # (nT, nw)
+    alpha = np.asarray(data['alpha_cm'])  # (nT, neta, nw)
+
+    fig, (ax_eps, ax_alpha) = plt.subplots(1, 2, figsize=(10, 4))
+    floor = 1.0e-6
+    curves = [
+        (direct[itemp], 'direct', _ME_SERIES[0]),
+        (indirect[itemp, ieta], 'phonon-assisted', _ME_SERIES[1]),
+        (direct[itemp] + indirect[itemp, ieta], 'total', _ME_SERIES[2]),
+    ]
+    for values, label, color in curves:
+        ax_eps.plot(omega, np.clip(values, floor, None), color=color, lw=2, label=label)
+    if epw_indabs_file is not None:
+        epw = np.loadtxt(epw_indabs_file)
+        column = min(ieta + 1, epw.shape[1] - 1)
+        ax_eps.plot(
+            epw[:, 0], np.clip(epw[:, column], floor, None), color=_ME_SERIES[1], lw=1.5,
+            ls='--', label='phonon-assisted (EPW)',
+        )  # fmt: skip
+    ax_eps.set_yscale('log')
+    ax_eps.set_ylim(bottom=max(floor, 1.0e-5 * np.max(indirect[itemp, ieta])))
+    ax_eps.set_xlabel('Photon energy (eV)')
+    ax_eps.set_ylabel(r'Im $\varepsilon(\omega)$')
+    ax_eps.set_title(r'T = %g K, $\eta$ = %g eV' % (temps[itemp], etas[ieta]), fontsize=10)
+
+    ramp_last = len(_ME_T_RAMP) - 1
+    colors = [
+        _ME_T_RAMP[int(round(i * ramp_last / max(len(temps) - 1, 1)))] for i in range(len(temps))
+    ]
+    for it, temp in enumerate(temps):
+        ax_alpha.plot(
+            omega, np.clip(alpha[it, ieta], floor, None), color=colors[it], lw=2,
+            label='%g K' % temp,
+        )  # fmt: skip
+    ax_alpha.set_yscale('log')
+    ax_alpha.set_ylim(bottom=max(1.0e-1, 1.0e-6 * np.max(alpha[:, ieta])))
+    ax_alpha.set_xlabel('Photon energy (eV)')
+    ax_alpha.set_ylabel(r'$\alpha$ (cm$^{-1}$)')
+    ax_alpha.set_title(
+        r'direct + phonon-assisted, $n_r$ = %s' % np.round(np.mean(data['refractive_index']), 2)
+        if 'refractive_index' in data
+        else 'direct + phonon-assisted',
+        fontsize=10,
+    )
+
+    for ax in (ax_eps, ax_alpha):
+        for key, label in (('indirect_gap_ev', r'$E_g^{ind}$'), ('direct_gap_ev', r'$E_g^{dir}$')):
+            if key in data and omega[0] <= float(data[key]) <= omega[-1]:
+                ax.axvline(float(data[key]), color='#52514e', lw=1, ls=':')
+                ax.text(
+                    float(data[key]), 1.0, ' ' + label, transform=ax.get_xaxis_transform(),
+                    va='top', ha='left', color='#52514e', fontsize=9,
+                )  # fmt: skip
+        ax.set_xlim(omega[0], omega[-1])
+        ax.grid(alpha=0.3)
+        ax.legend(frameon=False, fontsize=9, loc='lower right')
+    if title is not None:
+        fig.suptitle(title)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.show()

@@ -314,7 +314,8 @@ def check_long_range_terms(
     Notes
     -----
     See the wiki page *Long-range electron-phonon interpolation (plan)* for the
-    planned dipole and quadrupole treatment.
+    planned dipole and quadrupole treatment.  Under MPI the warnings are issued
+    by rank 0 only (every rank still raises).
     """
     max_zstar = float(np.abs(np.asarray(zstar)).max()) if np.size(zstar) else 0.0
     has_dielectric = bool(np.any(np.asarray(epsi) != 0.0))
@@ -328,14 +329,25 @@ def check_long_range_terms(
             raise NotImplementedError(
                 message + '  Pass allow_missing_long_range=True to run anyway.'
             )
-        warnings.warn(message, stacklevel=2)
-    elif has_dielectric:
+        if _is_root_rank():
+            warnings.warn(message, stacklevel=2)
+    elif has_dielectric and _is_root_rank():
         warnings.warn(
-            'Non-metal (dielectric tensor present, Z* = 0): the long-range quadrupole part of '
-            'the coupling is not subtracted before the interpolation, so g(q) near Gamma is '
-            'approximate (important for carrier mobilities, not for metals).',
+            'Non-polar insulator (Z* = 0): the dynamical-quadrupole part of the coupling is '
+            'not treated separately, so g(q) is approximate for q close to Gamma.  This '
+            'matters mostly for carrier mobilities; for Brillouin-zone integrals such as '
+            'lambda or the phonon-assisted absorption the effect is expected to be small.',
             stacklevel=2,
         )
+
+
+def _is_root_rank() -> bool:
+    """``True`` on MPI rank 0 of ``COMM_WORLD`` (or without mpi4py)."""
+    try:
+        from mpi4py import MPI
+    except ImportError:
+        return True
+    return MPI.COMM_WORLD.Get_rank() == 0
 
 
 def phonon_modes_from_force_constants(

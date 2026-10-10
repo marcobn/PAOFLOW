@@ -715,31 +715,9 @@ def eliashberg_dense_q(
         raise ValueError('masses_amu is required to mass-weight the phonon eigenvectors')
     masses_amu = np.asarray(masses_amu, dtype=float)
     mass_flat_ry = np.repeat(masses_amu, 3) * AMU_RY  # (ncart,)
-    qgrid_coarse = tuple(int(n) for n in qgrid_coarse)
-    nbnd, nk = int(A.shape[0]), int(A.shape[2])
-    nmodes = int(mass_flat_ry.size)
-    epw = None
-    if source == 'epw':
-        # EPW provides the full coarse q-grid (unfolded from the irreducible ph.x
-        # q) and its force constants; both default from the .epb files.
-        epw = load_epw_coupling(coupling_dir, nbnd, nk, masses_amu.size, bg)
-        check_long_range_terms(epw['zstar'], epw['epsi'], allow_missing_long_range)
-        if q_cryst_coarse is None:
-            q_cryst_coarse = epw['q_cryst']
-        if phonon_at_q is None:
-            atom_positions = None
-            if orbital_positions is not None:
-                if tau_cryst is None:
-                    raise ValueError('orbital_positions requires tau_cryst (atom-pair phonon WS).')
-                atom_positions = tau_cryst
-            phonon_at_q = phonon_interp_from_epw(
-                epw['dynq'], epw['q_cryst'], masses_amu, qgrid_coarse, at, atom_positions
-            )
-    q_cryst_coarse = np.asarray(q_cryst_coarse, dtype=float)
     if nq_dense is None:
         nq_dense = nk_dense  # keep the dense q-grid commensurate with k for k+q
 
-    # --- MPI setup (node-local sharing of the large read-only vertex) ------ #
     from mpi4py import MPI
 
     from ..utils.communication import load_balancing
@@ -748,53 +726,15 @@ def eliashberg_dense_q(
         comm = MPI.COMM_WORLD
     size, rank = comm.Get_size(), comm.Get_rank()
 
-    # g(R_e, R_p) is large (~GBs) and read-only, and every rank needs all of it.
-    # Allocate ONE copy per node in MPI shared memory (built by the node-local
-    # rank 0 only) instead of an independent copy per rank, which otherwise
-    # multiplies the memory by the number of ranks on the node.
-    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
-    node_rank = node_comm.Get_rank()
-    nawf = int(A.shape[1])
-    qg = qgrid_coarse
-    shape = (nawf, nawf, nmodes, ng[0], ng[1], ng[2], qg[0], qg[1], qg[2])
-    itemsize = np.dtype(np.complex128).itemsize
-    nelem = int(np.prod(shape))
-    win = MPI.Win.Allocate_shared(
-        nelem * itemsize if node_rank == 0 else 0, itemsize, comm=node_comm
-    )
-    buf, _ = win.Shared_query(0)
-    g_ReRp = np.ndarray(buffer=buf, dtype=np.complex128, shape=shape)
-
-    # --- (a) coarse half-vertices g_q(R_e) -> g(R_e, R_p), on node rank 0 --- #
-    if node_rank == 0:
-        g_list = []
-        for iq, q_cryst in enumerate(q_cryst_coarse):
-            if source == 'epw':
-                gR = vertex_from_epw(
-                    epw['epmatq'][..., iq], A, kpts_cryst, q_cryst, ng, epw['ibndkept']
-                )
-            elif source == 'ahc':
-                gR = vertex_from_qe_ahc(
-                    coupling_dir, iq + 1, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
-                )
-            else:
-                path = '%s/elphmat.%d.dat' % (coupling_dir, iq + 1)
-                gR, _q = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng)
-            g_list.append(gR)
-        g_ReRp[...] = build_g_ReRp(np.stack(g_list, axis=0), q_cryst_coarse, qgrid_coarse)
-        del g_list
-    if epw is not None:
-        del epw['epmatq']  # only the shared g(R_e, R_p) is needed from here on
-    node_comm.Barrier()  # ensure the shared buffer is filled before any rank reads
-
-    if orbital_positions is None:
-        Nint_p, W_p, Midx_p = _ws_lattice(qgrid_coarse, at)
-    else:
-        if tau_cryst is None:
-            raise ValueError('orbital_positions requires tau_cryst (vertex phonon WS).')
-        Nint_p, W_p, Midx_p = vertex_phonon_ws_weights(
-            qgrid_coarse, at, orbital_positions, tau_cryst
-        )
+    vertex = prepare_dense_vertex(
+        A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, q_cryst_coarse, ng, phonon_at_q,
+        source=source, masses_amu=masses_amu, tau_cryst=tau_cryst,
+        orbital_positions=orbital_positions, comm=comm,
+        allow_missing_long_range=allow_missing_long_range,
+    )  # fmt: skip
+    g_ReRp, win, phonon_at_q = vertex['g_ReRp'], vertex['window'], vertex['phonon_at_q']
+    Nint_p, W_p, Midx_p = vertex['phonon_ws']
+    nmodes = int(mass_flat_ry.size)
 
     # --- electron cache (dense k), shared by every dense q ----------------- #
     electrons = precompute_dense_electrons(
@@ -899,6 +839,156 @@ def eliashberg_dense_q(
         pair_coupling.reduce(comm)
         out['fs_coupling'] = pair_coupling.result(bg, at, nq_dense)
     return out
+
+
+def prepare_dense_vertex(
+    A: NDArray[np.complex128],
+    kpts_cryst: NDArray[np.float64],
+    bg: NDArray[np.float64],
+    at: NDArray[np.float64],
+    coupling_dir: str,
+    qgrid_coarse: Sequence[int],
+    q_cryst_coarse: NDArray[np.float64] | None,
+    ng: Sequence[int],
+    phonon_at_q: Callable | None,
+    *,
+    source: str = 'epw',
+    masses_amu: NDArray[np.float64],
+    tau_cryst: NDArray[np.float64] | None = None,
+    orbital_positions: NDArray[np.float64] | None = None,
+    comm=None,
+    allow_missing_long_range: bool = False,
+) -> dict:
+    """Coarse couplings -> shared ``g(R_e, R_p)`` and the phonon interpolator.
+
+    Common setup of every dense-q electron-phonon property
+    (:func:`eliashberg_dense_q`, the phonon-assisted absorption of
+    :mod:`~PAOFLOW.elphon.phonon_assisted_absorption`): read the coarse
+    couplings, guard against missing long-range terms, build the phonon
+    interpolator and the doubly real-space vertex, and the Wigner-Seitz images of
+    its phonon cells.
+
+    Parameters
+    ----------
+    A : ndarray, shape ``(nbnd, nawf, nk)``, complex
+        PAO projections on the coarse k-grid.
+    kpts_cryst : ndarray, shape ``(nk, 3)``
+        Coarse k-points (crystal coordinates).
+    bg, at : ndarray, shape ``(3, 3)``
+        Reciprocal (rows, 2 pi/alat) and direct (rows, alat) lattice vectors.
+    coupling_dir : str
+        EPW (``source='epw'``) or QE coupling directory.
+    qgrid_coarse : sequence of int
+        Coarse q-grid.
+    q_cryst_coarse : ndarray, shape ``(nq_coarse, 3)`` or None
+        Full coarse q-grid; ``None`` takes EPW's q-points.
+    ng : sequence of int
+        Coarse k-grid (real-space electron cells of the vertex).
+    phonon_at_q : callable or None
+        ``q_cryst -> (freq_thz, z)``; ``None`` builds it from EPW's force constants.
+    source : {'epw', 'ahc', 'elphmat'}, optional
+        Coarse coupling input (see :func:`eliashberg_dense_q`).
+    masses_amu : ndarray, shape ``(nat,)``
+        Atomic masses (amu), one per atom.
+    tau_cryst : ndarray, shape ``(nat, 3)``, optional
+        Atomic positions; required with ``orbital_positions``.
+    orbital_positions : ndarray, shape ``(nawf, 3)``, optional
+        PAO orbital centres for the pair-resolved Wigner-Seitz sums.
+    comm : mpi4py communicator, optional
+        ``MPI.COMM_WORLD`` by default.
+    allow_missing_long_range : bool, optional
+        Run a polar material without the long-range dipole term instead of raising.
+
+    Returns
+    -------
+    dict
+        ``g_ReRp`` ``(nawf, nawf, ncart, n1e, n2e, n3e, nq1, nq2, nq3)`` (one copy per
+        node in MPI shared memory), ``window`` (the ``MPI.Win`` to ``Free`` once
+        all reads are done), ``phonon_ws`` ``(Nint_p, W_p, Midx_p)`` and
+        ``phonon_at_q``.
+    """
+    masses_amu = np.asarray(masses_amu, dtype=float)
+    qgrid_coarse = tuple(int(n) for n in qgrid_coarse)
+    nbnd, nk = int(A.shape[0]), int(A.shape[2])
+    nmodes = 3 * int(masses_amu.size)
+    epw = None
+    if source == 'epw':
+        # EPW provides the full coarse q-grid (unfolded from the irreducible ph.x
+        # q) and its force constants; both default from the .epb files.
+        epw = load_epw_coupling(coupling_dir, nbnd, nk, masses_amu.size, bg)
+        check_long_range_terms(epw['zstar'], epw['epsi'], allow_missing_long_range)
+        if q_cryst_coarse is None:
+            q_cryst_coarse = epw['q_cryst']
+        if phonon_at_q is None:
+            atom_positions = None
+            if orbital_positions is not None:
+                if tau_cryst is None:
+                    raise ValueError('orbital_positions requires tau_cryst (atom-pair phonon WS).')
+                atom_positions = tau_cryst
+            phonon_at_q = phonon_interp_from_epw(
+                epw['dynq'], epw['q_cryst'], masses_amu, qgrid_coarse, at, atom_positions
+            )
+    q_cryst_coarse = np.asarray(q_cryst_coarse, dtype=float)
+
+    from mpi4py import MPI
+
+    if comm is None:
+        comm = MPI.COMM_WORLD
+
+    # g(R_e, R_p) is large (~GBs) and read-only, and every rank needs all of it.
+    # Allocate ONE copy per node in MPI shared memory (built by the node-local
+    # rank 0 only) instead of an independent copy per rank, which otherwise
+    # multiplies the memory by the number of ranks on the node.
+    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    node_rank = node_comm.Get_rank()
+    nawf = int(A.shape[1])
+    qg = qgrid_coarse
+    shape = (nawf, nawf, nmodes, ng[0], ng[1], ng[2], qg[0], qg[1], qg[2])
+    itemsize = np.dtype(np.complex128).itemsize
+    nelem = int(np.prod(shape))
+    win = MPI.Win.Allocate_shared(
+        nelem * itemsize if node_rank == 0 else 0, itemsize, comm=node_comm
+    )
+    buf, _ = win.Shared_query(0)
+    g_ReRp = np.ndarray(buffer=buf, dtype=np.complex128, shape=shape)
+
+    # --- (a) coarse half-vertices g_q(R_e) -> g(R_e, R_p), on node rank 0 --- #
+    if node_rank == 0:
+        g_list = []
+        for iq, q_cryst in enumerate(q_cryst_coarse):
+            if source == 'epw':
+                gR = vertex_from_epw(
+                    epw['epmatq'][..., iq], A, kpts_cryst, q_cryst, ng, epw['ibndkept']
+                )
+            elif source == 'ahc':
+                gR = vertex_from_qe_ahc(
+                    coupling_dir, iq + 1, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
+                )
+            else:
+                path = '%s/elphmat.%d.dat' % (coupling_dir, iq + 1)
+                gR, _q = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng)
+            g_list.append(gR)
+        g_ReRp[...] = build_g_ReRp(np.stack(g_list, axis=0), q_cryst_coarse, qgrid_coarse)
+        del g_list
+    if epw is not None:
+        del epw['epmatq']  # only the shared g(R_e, R_p) is needed from here on
+    node_comm.Barrier()  # ensure the shared buffer is filled before any rank reads
+
+    if orbital_positions is None:
+        Nint_p, W_p, Midx_p = _ws_lattice(qgrid_coarse, at)
+    else:
+        if tau_cryst is None:
+            raise ValueError('orbital_positions requires tau_cryst (vertex phonon WS).')
+        Nint_p, W_p, Midx_p = vertex_phonon_ws_weights(
+            qgrid_coarse, at, orbital_positions, tau_cryst
+        )
+
+    return {
+        'g_ReRp': g_ReRp,
+        'window': win,
+        'phonon_ws': (Nint_p, W_p, Midx_p),
+        'phonon_at_q': phonon_at_q,
+    }
 
 
 def _fermi_surface_accumulator(
