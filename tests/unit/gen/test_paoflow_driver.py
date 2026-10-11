@@ -704,7 +704,7 @@ def test_build_elphon_absorption_plot_script() -> None:
 
 
 def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
-    answers = iter(['6', '', '0.1', '2.5', '0.02', '10, 300', '0.04', '3.0', '3.5', 'n', ''])
+    answers = iter(['6', '', 'n', '0.1', '2.5', '0.02', '10, 300', '0.04', '3.0', '3.5', 'n', ''])
     monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
     cfg = d._collect_elphon_absorption({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
     assert cfg['elphon_property'] == 'absorption'
@@ -714,3 +714,36 @@ def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
     assert (cfg['degauss_ev'], cfg['fsthick_ev'], cfg['refractive_index']) == (0.04, 3.0, 3.5)
     assert cfg['nonlocal_velocity'] is False
     assert cfg['pthr'] == 0.95
+    assert cfg['emissivity'] is False
+
+
+def test_collect_elphon_absorption_emissivity_defaults(monkeypatch) -> None:
+    # emissivity on: thickness and angles, then low-omega / multi-T defaults
+    answers = iter(['6', '', 'y', '250', '0, 45', '../optics/output'] + [''] * 10)
+    monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
+    cfg = d._collect_elphon_absorption({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
+    assert cfg['emissivity'] is True
+    assert cfg['thickness_um'] == 250.0 and cfg['emis_angles'] == [0.0, 45.0]
+    assert cfg['direct_dielectric_dir'] == '../optics/output'
+    assert cfg['omega_ev'] == [0.01, 3.0, 0.01] and cfg['degauss_ev'] == 0.01
+    assert cfg['temps_k'] == [300.0, 500.0, 700.0, 900.0, 1100.0, 1300.0, 1500.0]
+
+
+def test_build_elphon_absorption_script_emissivity() -> None:
+    text = d.build_elphon_script(
+        _absorption_cfg(emissivity=True, thickness_um=250.0, emis_angles=[0.0, 45.0])
+    )
+    compile(text, 'main.elphon.py', 'exec')
+    assert 'EMISSIVITY = True' in text and 'THICKNESS_UM = 250.0' in text
+    assert 'EMIS_ANGLES = (0.0, 45.0)' in text
+    assert 'DIRECT_DIELECTRIC_DIR = None' in text and 'read_direct_dielectric(' in text
+    with_dir = d.build_elphon_script(
+        _absorption_cfg(emissivity=True, direct_dielectric_dir='opt/out')
+    )
+    assert "DIRECT_DIELECTRIC_DIR = 'opt/out'" in with_dir
+    assert 'thermal_emissivity(' in text and 'write_emissivity_outputs(' in text
+    assert "fermi_energy_ev='intrinsic' if args.emissivity" in text
+    assert 'EMISSIVITY = False' in d.build_elphon_script(_absorption_cfg())
+    plot = d.build_elphon_plot_script(_absorption_cfg())
+    compile(plot, 'plot.elphon.py', 'exec')
+    assert 'plot_thermal_emissivity(' in plot

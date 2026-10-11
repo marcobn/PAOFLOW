@@ -397,3 +397,140 @@ def test_absorption_coefficient_and_outputs(tmp_path):
     )
     assert np.loadtxt(tmp_path / 'epsilon2_indabs_300.0K.dat').shape == (2, 3)
     assert np.loadtxt(tmp_path / 'epsilon2_dirabs_300.0K.dat').shape == (2, 9)
+
+
+# --------------------------------------------------------------------------- #
+# Temperature-dependent Fermi levels and thermal emissivity
+# --------------------------------------------------------------------------- #
+def test_fermi_levels_equal_a_rigid_energy_shift():
+    from PAOFLOW.elphon.phonon_assisted_absorption import indirect_absorption_kernel as kernel
+
+    ek, ekq, vk, vkq, epf, wq = _random_case(5)
+    temps, omegas = [0.002, 0.004], np.linspace(0.01, 0.12, 9)
+    args = (temps, omegas, [0.01], 0.004, 1.0, 1e-5)
+    base = kernel(ek, ekq, vk, vkq, epf, wq, *args, occupation_tol=0.0)
+    zero = kernel(ek, ekq, vk, vkq, epf, wq, *args, occupation_tol=0.0, fermi_levels=[0.0, 0.0])
+    np.testing.assert_array_equal(base[0], zero[0])
+    shift = 0.01
+    moved = kernel(ek, ekq, vk, vkq, epf, wq, *args, occupation_tol=0.0, fermi_levels=[shift] * 2)
+    rigid = kernel(ek - shift, ekq - shift, vk, vkq, epf, wq, *args, occupation_tol=0.0)
+    np.testing.assert_allclose(moved[0], rigid[0], rtol=1e-12, atol=1e-14 * np.abs(rigid[0]).max())
+    d_base = direct_absorption_kernel(ek, vk, temps, omegas, 0.004, 1.0, fermi_levels=[shift] * 2)
+    d_rigid = direct_absorption_kernel(ek - shift, vk, temps, omegas, 0.004, 1.0)
+    np.testing.assert_allclose(d_base[0], d_rigid[0], rtol=1e-12, atol=1e-30)
+
+
+def test_intrinsic_fermi_levels():
+    from PAOFLOW.elphon.phonon_assisted_absorption import intrinsic_fermi_levels
+
+    rng = np.random.default_rng(0)
+    valence = rng.uniform(-1.0, -0.3, (400, 1))
+    symmetric = np.hstack([valence, -valence])  # mirror-symmetric about 0
+    mu = intrinsic_fermi_levels(symmetric, [0.02, 0.05], nelec=2.0)
+    np.testing.assert_allclose(mu, 0.0, atol=1e-6)
+    # four degenerate valence copies (heavy holes): mu moves up, toward the lighter band
+    heavy = np.hstack([np.repeat(valence, 4, axis=1), -valence])
+    mu_heavy = intrinsic_fermi_levels(heavy, [0.02, 0.05], nelec=8.0)
+    assert np.all(mu_heavy > 0.0) and mu_heavy[1] > mu_heavy[0]
+    np.testing.assert_allclose(mu_heavy, 0.5 * np.array([0.02, 0.05]) * np.log(4.0), rtol=0.05)
+
+
+def _synthetic_results():
+    omega_kk = np.arange(0.0, 20.0 + 1e-9, 0.01)
+    omega = omega_kk[1:301]  # 0.01 ... 3.0 eV
+    temps = np.array([300.0, 900.0])
+    e0, gamma, strength = 3.5, 0.4, 120.0
+    lorentz = strength * gamma * omega_kk / ((e0**2 - omega_kk**2) ** 2 + (gamma * omega_kk) ** 2)
+    wide = np.repeat(lorentz[None, None, :], 3, axis=1).repeat(2, axis=0)  # (T, 3, nkk)
+    fca = np.array([1e-4, 1e-2])[:, None] / omega**2  # free carriers grow with T
+    indirect = np.zeros((2, 1, 3, omega.size)) + fca[:, None, None, :]
+    return {
+        'omega_ev': omega, 'omega_kk_ev': omega_kk, 'temps_k': temps, 'etas_ev': np.array([0.05]),
+        'direct_gap_ev': 2.5, 'eps2_indirect': indirect, 'eps2_direct_wide': wide,
+        # omega_p^2 = strength (eV^2): the oscillator alone exhausts the f-sum rule
+        'nelec': 1.0, 'cell_volume_bohr3': 16.0 * np.pi * RY_TO_EV**2 / strength,
+    }  # fmt: skip
+
+
+def test_thermal_emissivity_slab_and_opaque():
+    from PAOFLOW.elphon.phonon_assisted_absorption import thermal_emissivity
+
+    results = _synthetic_results()
+    emis = thermal_emissivity(results, 500e-6, angles_deg=(0.0, 45.0), ntheta=48)
+    for key in ('hemispherical_slab', 'hemispherical_opaque', 'directional_slab'):
+        assert np.all((emis[key] >= -1e-12) & (emis[key] <= 1.0 + 1e-12))
+    assert np.all(emis['hemispherical_slab'] <= emis['hemispherical_opaque'] + 1e-12)
+    # more free carriers at 900 K -> a more emissive wafer, while 1 - R barely moves
+    assert emis['total_slab'][1] > emis['total_slab'][0]
+    assert abs(emis['total_opaque'][1] - emis['total_opaque'][0]) < 0.05
+    assert np.all((emis['planck_coverage'] > 0.0) & (emis['planck_coverage'] <= 1.0))
+    # eps1 from Kramers-Kronig: static limit of the oscillator, about 1 + strength / e0^2
+    assert emis['eps1'][0, 0] == pytest.approx(1.0 + 120.0 / 3.5**2, rel=0.05)
+    np.testing.assert_allclose(emis['f_sum_ratio'], 1.0, atol=0.03)
+    thick = thermal_emissivity(results, np.inf, ntheta=48)
+    np.testing.assert_allclose(
+        thick['hemispherical_slab'], thick['hemispherical_opaque'], rtol=1e-12
+    )
+    with pytest.raises(KeyError):
+        thermal_emissivity({k: v for k, v in results.items() if k != 'eps2_direct_wide'}, 1e-3)
+
+
+def test_write_emissivity_outputs(tmp_path):
+    from PAOFLOW.elphon.phonon_assisted_absorption import (
+        thermal_emissivity,
+        write_emissivity_outputs,
+    )
+
+    emis = thermal_emissivity(_synthetic_results(), 500e-6, angles_deg=(0.0,), ntheta=24)
+    names = sorted(p.split('/')[-1] for p in write_emissivity_outputs(emis, str(tmp_path)))
+    assert 'emist.dat' in names and 'emissivity.npz' in names
+    assert 'emish_900.0K.dat' in names and 'emis_th0_300.0K.dat' in names
+    assert np.loadtxt(tmp_path / 'emist.dat').shape == (2, 4)
+
+
+def test_thermal_emissivity_with_external_direct_dielectric(tmp_path):
+    from PAOFLOW.elphon.phonon_assisted_absorption import (
+        read_direct_dielectric,
+        thermal_emissivity,
+    )
+
+    results = _synthetic_results()
+    e0, gamma, strength = 3.5, 0.4, 120.0
+    omega_ext = np.arange(0.01, 10.0 + 1e-9, 0.01)
+    denominator = (e0**2 - omega_ext**2) ** 2 + (gamma * omega_ext) ** 2
+    eps1_ext = 1.0 + strength * (e0**2 - omega_ext**2) / denominator  # exact, all energies
+    eps2_ext = strength * gamma * omega_ext / denominator
+    for comp in ('xx', 'yy', 'zz'):
+        np.savetxt(tmp_path / ('epsr_%s.dat' % comp), np.column_stack([omega_ext, eps1_ext]))
+        np.savetxt(tmp_path / ('epsi_%s.dat' % comp), np.column_stack([omega_ext, eps2_ext]))
+    direct = read_direct_dielectric(str(tmp_path))
+    assert direct[1].shape == (3, omega_ext.size)
+    # this run's own direct term: the same oscillator, without the sub-gap tail
+    omega = results['omega_ev']
+    tail_free = np.where(omega > 2.5, np.interp(omega, omega_ext, eps2_ext), 0.0)
+    results['eps2_direct'] = np.repeat(tail_free[None, None, :], 3, axis=1).repeat(2, axis=0)
+
+    ext = thermal_emissivity(results, 500e-6, ntheta=48, direct_dielectric=direct)
+    kk = thermal_emissivity(results, 500e-6, ntheta=48)
+    assert ext['direct_source'] == 'external' and kk['direct_source'] == 'kramers-kronig'
+    below = omega < 2.3
+    # below the gap Im eps is this run's (tail-free direct + phonon-assisted), not the
+    # Lorentzian tail of the external spectrum; Re eps comes from the external file
+    own = results['eps2_indirect'][:, 0].mean(axis=1)[:, below]
+    np.testing.assert_allclose(ext['eps2'][:, below], own, rtol=1e-10)
+    np.testing.assert_allclose(ext['eps1'][:, below], kk['eps1'][:, below], rtol=0.02)
+    # the tail kept by the Kramers-Kronig path makes the cold wafer spuriously emissive
+    assert ext['total_slab'][0] < kk['total_slab'][0]
+    np.testing.assert_allclose(ext['f_sum_ratio'], 1.0, atol=0.05)
+    with pytest.raises(ValueError):
+        thermal_emissivity(
+            results, 500e-6, direct_dielectric=(omega_ext[200:], eps1_ext[200:], eps2_ext[200:])
+        )
+
+
+def test_thermal_emissivity_refuses_metals():
+    from PAOFLOW.elphon.phonon_assisted_absorption import thermal_emissivity
+
+    metal = dict(_synthetic_results(), indirect_gap_ev=-0.3)
+    with pytest.raises(NotImplementedError, match='Drude'):
+        thermal_emissivity(metal, 500e-6)

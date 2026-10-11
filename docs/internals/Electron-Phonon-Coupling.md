@@ -637,6 +637,77 @@ Some limitations and conventions apply:
 - **Not implemented.** Free-carrier and impurity absorption (`carrier`,
   `ii_g`) and QDPT (`loptabs`).
 
+### Thermal emissivity
+
+`thermal_emissivity(results, thickness_m, angles_deg, ntheta, eta_ev)` turns
+the temperature-dependent $\mathrm{Im}\,\varepsilon(\omega, T)$ into the
+emissivity of a free-standing slab. By Kirchhoff's law, the emissivity of a
+body at uniform temperature equals its absorptance. The run must be made with
+`fermi_energy_ev='intrinsic'` and `kk_omega_max_ev`.
+
+For every temperature:
+1. **Dielectric function.** $\varepsilon_2 = \varepsilon_2^{dir}$ (all bands,
+   smeared by `kk_degauss_ev`) plus $\varepsilon_2^{ind}$, tapered off just
+   below the direct gap. $\varepsilon_1$ follows by Kramers–Kronig
+   (`response.do_epsilon.kramers_kronig_eps1`, Maclaurin's formula).
+2. **Slab absorptance.** It is evaluated with
+   `response.do_epsilon.slab_directional_absorptance`: incoherent multiple
+   reflections, per polarization,
+   $A_\sigma = (1-R_\sigma)(1-\tau)/(1-R_\sigma\tau)$ with
+   $\tau = \exp(-2\omega\,\mathrm{Im}\sqrt{\tilde n^2-\sin^2\theta}\,d/c)$.
+3. **Averages.** The hemispherical average
+   (`spectral_hemispherical_emissivity(..., ene, thickness_m)`) and the
+   Planck-weighted total at the **same** temperature
+   (`total_hemispherical_emissivity`). The opaque half-space ($1-R$) is
+   reported alongside.
+
+Why each ingredient matters:
+- **Finite thickness.** Below the direct gap $\kappa \sim 10^{-3}$, so
+  $1-R \approx 0.7$ whatever the absorption. Only a finite thickness lets
+  $\alpha(T)$ show up in the emissivity.
+- **Free carriers.** The blackbody spectrum at 300–1500 K lies mostly below
+  the gap. There, the absorption comes from thermally excited carriers: the
+  intraband ($i=j$) phonon-assisted terms of the same kernel, weighted by
+  $f(1-f)$, i.e. EPW's free-carrier kernel.
+- **Charge-neutral $E_F(T)$.** `intrinsic_fermi_levels` sets the carrier
+  density. The $\omega$ grid must start near 0.01 eV with a smearing of about
+  0.01 eV. `planck_coverage` reports the fraction of the blackbody spectrum
+  inside the grid.
+- **Kramers–Kronig range.** The PAO spectrum above about 10 eV contains
+  transitions into poorly projected (shifted) bands and violates the f-sum rule.
+  For Si, $\int\omega\varepsilon_2\,d\omega$ is 4× too large at 20 eV and 85%
+  of $\pi\omega_p^2/2$ at 10 eV. Keep `kk_omega_max_ev` near 10 eV and check
+  `f_sum_ratio`.
+- **Smearing of the KK input.** A weakly smeared, under-sampled direct
+  spectrum makes $\varepsilon_1$ oscillate, even below zero, and spoils $R$.
+  This is why the wide-range direct term has its own smearing,
+  `kk_degauss_ev = 0.1` eV.
+
+**Extended-basis direct term (recommended).** PAOFLOW's optical route uses the
+extended basis with the non-local velocity. `direct_dielectric=(ω, ε₁, ε₂)`
+(`read_direct_dielectric(outdir)` reads the `epsr_*/epsi_*.dat` files of such a
+`dielectric_tensor` run) replaces the wide-range Kramers–Kronig term:
+- ε₁ is the external one, plus the KK shift of the tapered phonon-assisted
+  term;
+- ε₂ is the external one above the direct gap, and this run's Gaussian direct
+  term plus the phonon-assisted term below it.
+
+The Drude–Lorentz broadening tail of the external ε₂ would otherwise dominate
+the sub-gap absorption. The extended run only needs an nscf with more bands than
+orbitals; EPW is not rerun. For Si (24³) it gives ε₁(0) = 17.3 and an f-sum
+ratio of 0.88.
+
+Limitations:
+- **Metals are not supported.** `thermal_emissivity` raises
+  `NotImplementedError` when there is no gap. The intraband (Drude) term, with
+  ω_p from the Fermi-surface velocities and 1/τ_tr(T) from a transport α²F,
+  is the planned next step. The driver's mid-gap and `'intrinsic'` Fermi
+  levels also require a gap.
+- With the DFT gap, the intrinsic carrier density and the rise of the
+  emissivity with $T$ come at too low a temperature.
+- There is no band-gap renormalisation with $T$, no multiphonon lattice
+  absorption, and no doping.
+
 ---
 
 ## Parallelisation and memory

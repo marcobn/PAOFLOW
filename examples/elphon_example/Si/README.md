@@ -27,7 +27,9 @@ mid-gap Fermi level.
 | `epw/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, all 21 bands kept |
 | `epw/write_ukk.py` | writes `Si2.ukk` (band bookkeeping for `wannierize = .false.`) and empty `Si2.bvec`/`Si2.mmn` stubs |
 | `main.py` | PAOFLOW analysis: PAO electronic structure, then phonon-assisted + direct absorption |
-| `plot.py` | plots Im ε(ω) and α(ω); overlays EPW's `epsilon2_indabs_<T>K.dat` when present |
+| `optics/nscf.in` | `pw.x` nscf with 60 bands (8³ k) for the extended-basis direct dielectric function |
+| `optics_eps.py` | PAOFLOW `dielectric_tensor` on the extended basis with the non-local velocity → `optics/output/epsr_*/epsi_*.dat` |
+| `plot.py` | plots Im ε(ω) and α(ω), overlaying EPW's `epsilon2_indabs_<T>K.dat` when present; after `--emissivity` it also plots the thermal emissivity |
 
 **Pseudopotential:** copy the PseudoDojo `Si.upf` (nc-sr-05, PBE standard;
 `PSEUDOS/nc-sr-05_pbe_standard_upf/` in this repository) into this directory.
@@ -84,6 +86,93 @@ Output goes to `output/`, one set of files per temperature in EPW's layout:
 - `epsilon2_dirabs_<T>K.dat`: the direct Im ε along x, y, z and their average
 - `alpha_<T>K.dat`: absorption coefficient (cm⁻¹, direct + phonon-assisted) per η
 - `absorption.npz`: every result array, read by `plot.py`
+
+### 4. Thermal emissivity of a wafer
+
+The direct dielectric function is best taken from PAOFLOW's established
+optical route: `dielectric_tensor` on the **extended** basis with the
+non-local velocity, as in paoflow-gen's optical workflow. The extended basis
+has 44 orbitals for Si (3s4s5s, 3p4p5p, 3d4d), so it needs a separate nscf with
+more bands. EPW is not rerun.
+
+```bash
+mkdir -p optics/Si2.save && cp phonon/Si2.save/{charge-density.dat,data-file-schema.xml} optics/Si2.save/
+# optics/nscf.in: nscf with nbnd = 60 on an 8x8x8 grid
+(cd optics && mpirun -np 8 pw.x -nk 8 -in nscf.in > nscf.out)
+python optics_eps.py   # extended basis, nonlocal velocity, interpolated 24^3, dielectric_tensor
+mpirun -np 8 python main.py --emissivity --direct-dielectric optics/output \
+    --nk 24 --nq 12 --omega-min 0.01 --omega-step 0.01 --degauss-ev 0.01 \
+    --temps 300 400 500 600 700 900 1100 1300 1500       # 2 min on 8 cores
+python plot.py                                           # -> output/emissivity.png
+```
+
+`optics_eps.py` runs:
+- `projections(configuration='extended')`, `projectability`, `pao_hamiltonian`
+- `interpolated_hamiltonian(24, 24, 24)`, `pao_eigh`
+- `gradient_and_momenta(nonlocal_velocity=True)`
+- `dielectric_tensor(emin=0.01, emax=10, ne=1000, d_tensor='diag', delta=0.1)`
+
+Without `--direct-dielectric`, the direct term is computed from this run's
+(standard) PAO basis by Kramers–Kronig up to `KK_OMEGA_MAX_EV = 10` eV.
+
+By Kirchhoff's law the emissivity of a body at uniform temperature equals its
+absorptance. `--emissivity` computes it for a free-standing slab of
+`THICKNESS_UM = 500` µm (`--thickness-um`) at every temperature:
+
+- **Fermi level:** the charge-neutral E_F(T) replaces the mid-gap value, so the
+  density of thermally excited carriers, and their phonon-assisted
+  free-carrier absorption, is included. These carriers dominate the absorption
+  below the gap, where the blackbody spectrum of 300–1500 K lies.
+- **Dielectric function (with `--direct-dielectric`):**
+  - Re ε is the extended-basis one, plus the Kramers–Kronig shift from the
+    phonon-assisted term.
+  - Im ε is the extended-basis one above the direct gap. Below the gap it is
+    this run's direct term (Gaussian, so no broadening tail) plus the
+    phonon-assisted and free-carrier term.
+  - The Drude–Lorentz tail of `dielectric_tensor` (ε₂ ≈ 0.15 at 0.5 eV for
+    `delta = 0.1`) would otherwise make the wafer opaque below the gap.
+- **Dielectric function (Kramers–Kronig fallback):** without the external
+  file, Re ε comes from Kramers–Kronig of the direct term over all PAO bands up
+  to 10 eV. The standard-basis spectrum above that violates the f-sum rule,
+  and the printed ratio flags it.
+- **Emissivity:** the Fresnel slab absorptance gives the spectral directional
+  and hemispherical emissivity, and the Planck-weighted total at the same
+  temperature. The opaque half-space, 1 − R, is reported alongside.
+- **Outputs:**
+  - `eps_<T>K.dat` (ω, Re ε, Im ε)
+  - `emish_<T>K.dat` (ω, slab, opaque)
+  - `emis_th<deg>_<T>K.dat`
+  - `emist.dat` (T, total slab, total opaque, fraction of the blackbody
+    spectrum inside the ω grid)
+  - `emissivity.npz`
+
+Total hemispherical emissivity of a 500 µm wafer (PBE, non-local velocity, k 24³ / q 12³):
+
+| T (K) | 300 | 400 | 500 | 600 | 700 | 900 | 1100 | 1500 |
+|---|---|---|---|---|---|---|---|---|
+| slab, extended-basis direct ε | 0.001 | 0.06 | 0.32 | 0.55 | 0.61 | 0.62 | 0.62 | 0.62 |
+| opaque half-space, extended-basis direct ε | 0.62 | 0.62 | 0.62 | 0.62 | 0.62 | 0.62 | 0.62 | 0.62 |
+| slab, Kramers–Kronig fallback | 0.002 | 0.06 | 0.35 | 0.59 | 0.63 | 0.64 | 0.64 | 0.63 |
+
+The two routes differ only through ε₁ and hence R. The extended-basis
+`dielectric_tensor` gives ε₁(0) = 17.3 (f-sum ratio 0.88); the standard-basis
+Kramers–Kronig up to 10 eV gives 14.8. Both are above the DFPT ε∞ = 12.97,
+which includes local fields.
+
+- **The wafer goes from transparent to opaque.** At 300 K the wafer is
+  transparent below the gap and nearly non-emissive. Thermally excited
+  carriers make it opaque, and a 1 − R emitter, above about 700 K. The opaque
+  half-space hardly depends on T, which is why the finite thickness is needed.
+- **The transition comes too early.** With the PBE gap (0.61 eV, against
+  1.12 eV in experiment) the intrinsic carriers turn on at too low a
+  temperature. Lightly doped Si wafers turn opaque near 900–1000 K (Sato,
+  Jpn. J. Appl. Phys. 6, 339 (1967)).
+- **Free-carrier reflection at 1500 K.** At 1500 K the very high carrier
+  density reflects the low photon energies (free-carrier plasma), lowering the
+  spectral emissivity below about 0.2 eV.
+- **Convergence.** The free carriers sit near the band edges. At 500 K the
+  slab total is 0.11 at 12³/6³, 0.35 at 24³/12³ and 0.37 at 32³/16³, so use at
+  least 24³/12³.
 
 ---
 
@@ -153,6 +242,12 @@ velocity term:
 - **Sub-gap tail.** The tail at high temperature is phonon-assisted
   free-carrier absorption by carriers thermally excited across the (small)
   PBE gap.
+- **Semiconductors and insulators only.** For metals `thermal_emissivity`
+  raises, because the intraband (Drude) term that sets their infrared
+  reflectivity is not included yet.
+- **Emissivity model.** The slab is incoherent: there is no thin-film
+  interference. It has no multiphonon lattice absorption (the two-phonon bands
+  of Si at 0.07–0.17 eV), no doping, and no band-gap change with temperature.
 - **Polar materials.** Si is non-polar, so no long-range (Fröhlich) term is
   needed. PAOFLOW refuses polar materials (Z* ≠ 0) unless
   `allow_missing_long_range=True`.

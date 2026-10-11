@@ -41,6 +41,25 @@ FERMI_ENERGY_EV is set.  The band energies are the PAO (DFT) ones: the
 absorption edge follows the DFT indirect gap.  NONLOCAL_VELOCITY adds the
 non-local pseudopotential term of the velocity operator (norm-conserving
 pseudopotentials only); it changes the magnitude of Im eps, not the edge.
+
+With EMISSIVITY (or --emissivity) the run also gives the thermal emissivity of
+a free-standing slab of THICKNESS_UM at every temperature (Kirchhoff's law:
+emissivity = absorptance): Re eps from Kramers-Kronig of Im eps (direct term
+over all bands up to KK_OMEGA_MAX_EV, phonon-assisted term below the direct
+gap), the Fresnel slab absorptance, its hemispherical average and the
+Planck-weighted total at the same temperature.  For the direct part, point
+DIRECT_DIELECTRIC_DIR (--direct-dielectric) to the output of a separate
+dielectric_tensor run on the extended basis with the non-local velocity, as in
+paoflow-gen's optical workflow: its eps1 is used throughout and its eps2 above
+the direct gap.  The Fermi level is then the
+charge-neutral one of each temperature, so the thermally excited carriers and
+their (phonon-assisted) free-carrier absorption enter; OMEGA_EV should start
+near 0.01 eV with a 0.01 eV step (and DEGAUSS_EV about 0.01 eV) to cover the
+blackbody spectrum, e.g. --emissivity --omega-min 0.01 --omega-step 0.01
+--degauss-ev 0.01 --temps 300 500 700 900 1100 1300 1500.  Extra outputs: eps_<T>K.dat,
+emish_<T>K.dat, emis_th<deg>_<T>K.dat, emist.dat and emissivity.npz.  With the
+DFT gap, the intrinsic carriers (and the rise of the emissivity with T) come at
+too low a temperature.
 """
 
 import argparse
@@ -53,7 +72,10 @@ from PAOFLOW import PAOFLOW
 from PAOFLOW.elphon.elph_bloch import atom_masses, pao_orbital_positions, read_nscf
 from PAOFLOW.elphon.phonon_assisted_absorption import (
     phonon_assisted_absorption_dense_q,
+    read_direct_dielectric,
+    thermal_emissivity,
     write_absorption_outputs,
+    write_emissivity_outputs,
 )
 
 # ----------------------------------------------------------------------- #
@@ -80,6 +102,15 @@ FSTHICK_EV = 4.0  # states within FSTHICK_EV of the Fermi level (EPW fsthick)
 FERMI_ENERGY_EV = None  # Fermi level on the PAO energy scale; None = mid-gap
 REFRACTIVE_INDEX = 3.4  # constant n_r of alpha = omega Im eps / (n_r c)
 NONLOCAL_VELOCITY = True  # non-local PP velocity term (norm-conserving PPs)
+EMISSIVITY = False  # also the thermal emissivity of a slab (--emissivity)
+THICKNESS_UM = 500.0  # slab thickness (um); float('inf') = opaque half-space
+EMIS_ANGLES = (0.0, 30.0, 60.0)  # emission angles (deg) of the directional spectra
+KK_OMEGA_MAX_EV = 10.0  # Kramers-Kronig range of the direct term (check the f-sum ratio)
+# Output directory of a separate dielectric_tensor run on the EXTENDED basis with the
+# non-local velocity (recommended for the direct eps1 + i eps2; needs an nscf with more
+# bands than extended-basis orbitals).  None = direct term from this run's PAO basis
+# by Kramers-Kronig.
+DIRECT_DIELECTRIC_DIR = None
 
 
 def pao_electronic_structure():
@@ -108,8 +139,10 @@ def optical_absorption(projections, HRs, nscf, data_controller, args):
         nscf['omega'], EPW_DIR, QGRID, COARSE_GRID,
         masses_amu=atom_masses(MASSES_AMU, nscf['species'], nscf['atom_names']),
         nelec=NELEC, nk_dense=args.nk, nq_dense=args.nq,
-        omega_ev=(OMEGA_EV[0], args.omega_max, OMEGA_EV[2]), temps_k=args.temps,
-        degauss_ev=args.degauss_ev, fsthick_ev=FSTHICK_EV, fermi_energy_ev=FERMI_ENERGY_EV,
+        omega_ev=(args.omega_min, args.omega_max, args.omega_step), temps_k=args.temps,
+        degauss_ev=args.degauss_ev, fsthick_ev=FSTHICK_EV,
+        fermi_energy_ev='intrinsic' if args.emissivity else FERMI_ENERGY_EV,
+        kk_omega_max_ev=KK_OMEGA_MAX_EV if args.emissivity and not args.direct_dielectric else None,
         refractive_index=REFRACTIVE_INDEX,
         nonlocal_velocity=data_controller if args.nonlocal_velocity else None,
         sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'], species=nscf['atom_names'],
@@ -125,6 +158,22 @@ def report(out, args):
           % (out['indirect_gap_ev'], out['direct_gap_ev'], out['fermi_energy_ev']))
     for path in write_absorption_outputs(out, OUTPUTDIR):
         print('  wrote %s' % path)
+    if not args.emissivity:
+        return
+    direct = read_direct_dielectric(args.direct_dielectric) if args.direct_dielectric else None
+    emissivity = thermal_emissivity(
+        out, args.thickness_um * 1.0e-6, angles_deg=EMIS_ANGLES, direct_dielectric=direct
+    )
+    print('Thermal emissivity (slab, d = %g um; direct eps from %s, f-sum ratio %.2f):'
+          % (args.thickness_um, args.direct_dielectric or 'Kramers-Kronig of this run',
+             emissivity['f_sum_ratio'].mean()))
+    print('    T (K)   E_F (eV)   total slab   total opaque   Planck coverage')
+    for it, temp in enumerate(emissivity['temps_k']):
+        print('  %7.1f  %9.4f  %11.4f  %13.4f  %16.4f'
+              % (temp, out['fermi_levels_ev'][it], emissivity['total_slab'][it],
+                 emissivity['total_opaque'][it], emissivity['planck_coverage'][it]))
+    for path in write_emissivity_outputs(emissivity, OUTPUTDIR):
+        print('  wrote %s' % path)
 
 
 def main():
@@ -133,9 +182,17 @@ def main():
     parser.add_argument('--nq', type=int, default=NQ_DENSE, help='dense q-grid (default %(default)s)')
     parser.add_argument('--temps', type=float, nargs='+', default=TEMPS_K, help='temperatures (K)')
     parser.add_argument('--degauss-ev', type=float, default=DEGAUSS_EV, help='delta smearing (eV)')
+    parser.add_argument('--omega-min', type=float, default=OMEGA_EV[0], help='min photon energy (eV)')
     parser.add_argument('--omega-max', type=float, default=OMEGA_EV[1], help='max photon energy (eV)')
+    parser.add_argument('--omega-step', type=float, default=OMEGA_EV[2], help='photon-energy step (eV)')
     parser.add_argument('--nonlocal-velocity', action=argparse.BooleanOptionalAction,
                         default=NONLOCAL_VELOCITY, help='non-local PP velocity term')
+    parser.add_argument('--emissivity', action=argparse.BooleanOptionalAction, default=EMISSIVITY,
+                        help='also compute the thermal emissivity of a slab')
+    parser.add_argument('--thickness-um', type=float, default=THICKNESS_UM,
+                        help='slab thickness in um (default %(default)s)')
+    parser.add_argument('--direct-dielectric', default=DIRECT_DIELECTRIC_DIR,
+                        help='output dir of an extended-basis dielectric_tensor run (epsr/epsi_*.dat)')
     args = parser.parse_args()
     if args.nk % args.nq:
         sys.exit('--nk (%d) must be a multiple of --nq (%d).' % (args.nk, args.nq))

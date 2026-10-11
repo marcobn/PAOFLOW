@@ -1156,6 +1156,40 @@ class GPAO:
                 epw_indabs_file=epw_indabs_file, title=title, filename=filename,
             )  # fmt: skip
 
+    def plot_thermal_emissivity(
+        self,
+        npz_file: str,
+        temps: list[float] | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot the spectral and total hemispherical emissivity versus temperature.
+
+        Parameters
+        ----------
+        npz_file : str
+            ``emissivity.npz`` written by
+            :func:`PAOFLOW.elphon.phonon_assisted_absorption.write_emissivity_outputs`.
+        temps : list of float, optional
+            Temperatures (K) of the spectral panel (default: up to five).
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+
+        Returns
+        -------
+        None
+            Shows the figure
+            (:func:`PAOFLOW.graphics.plot_functions.plot_thermal_emissivity`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_thermal_emissivity
+
+        with np.load(npz_file) as data:
+            plot_thermal_emissivity(dict(data), temps=temps, title=title, filename=filename)
+
     def plot_migdal_eliashberg_aniso(
         self,
         npz_file: str,
