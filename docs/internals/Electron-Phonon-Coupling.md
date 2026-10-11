@@ -697,14 +697,47 @@ the sub-gap absorption. The extended run only needs an nscf with more bands than
 orbitals; EPW is not rerun. For Si (24³) it gives ε₁(0) = 17.3 and an f-sum
 ratio of 0.88.
 
+**Scissor (band-gap correction).** ph.x supports Hubbard U only with atomic
+projectors, which barely opens the Si gap, so the e-ph run stays PBE. The
+scissor corrects the band energies only:
+- **How the shift is set.** `phonon_assisted_absorption_dense_q(...,
+  target_gap_ev=..., scissor_velocity=...)` shifts the conduction bands rigidly
+  by $\Delta(T) = E_g^{target}(T) - E_g^{DFT}$. Alternatively,
+  `scissor_ev=` gives Δ directly.
+- **Target gap.** It can be the experimental gap, or the dense-grid gap of an
+  eACBN0 (DFT+U+V, ortho-atomic) PAO Hamiltonian (`pao_band_gaps`). It can be
+  made temperature dependent with `varshni_gap(E0, alpha, beta)` (Si:
+  `SILICON_VARSHNI`).
+- **What the shift enters.** It enters the δ functions, the second-order
+  denominators, the occupations and the charge-neutral $\mu(T)$.
+- **Velocities.** With `scissor_velocity='renormalized'` (default) the
+  valence–conduction velocities scale as
+  $(\Delta\varepsilon+\Delta)/\Delta\varepsilon$ (Levine–Allan; Del
+  Sole–Girlanda). This keeps the length-gauge matrix elements, so the direct
+  spectrum moves rigidly. `'ks'` keeps the Kohn–Sham velocities, as EPW's
+  `scissor` does.
+- **External direct ε.** It gets the same scissor
+  (`scissor_shift_dielectric`: ε₂ shifted rigidly, ε₁ corrected by the KK
+  difference).
+- **Cost.** Temperatures with equal Δ are processed together. A T-dependent
+  scissor repeats only the second-order kernel per temperature.
+
+For Si with the Varshni experimental gap (500 µm, 24³/12³, extended-basis ε),
+the slab becomes opaque at 700–900 K: ε = 0.003, 0.25 and 0.61 at 500, 700 and
+900 K.
+
 Limitations:
 - **Metals are not supported.** `thermal_emissivity` raises
   `NotImplementedError` when there is no gap. The intraband (Drude) term, with
   ω_p from the Fermi-surface velocities and 1/τ_tr(T) from a transport α²F,
   is the planned next step. The driver's mid-gap and `'intrinsic'` Fermi
   levels also require a gap.
-- With the DFT gap, the intrinsic carrier density and the rise of the
-  emissivity with $T$ come at too low a temperature.
+- Without a scissor, the DFT gap puts the intrinsic carriers, and the rise of
+  the emissivity with $T$, at too low a temperature.
+- **Lowest photon energies at high T.** Kramers–Kronig misses the free-carrier
+  weight below the grid (the Drude part, which would make ε₁ negative). ε₁ at
+  the lowest energies is unreliable at the highest temperatures, but the Planck
+  weight there is below 1%.
 - There is no band-gap renormalisation with $T$, no multiphonon lattice
   absorption, and no doping.
 

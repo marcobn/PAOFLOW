@@ -427,6 +427,252 @@ def intrinsic_fermi_levels(
     return np.array(levels)
 
 
+SILICON_VARSHNI = (1.170, 4.73e-4, 636.0)  # E_g(0) (eV), alpha (eV/K), beta (K)
+
+
+def varshni_gap(
+    e0_ev: float, alpha_ev_per_k: float = 4.73e-4, beta_k: float = 636.0
+) -> Callable[[float], float]:
+    """Temperature-dependent band gap of the Varshni form.
+
+    Parameters
+    ----------
+    e0_ev : float
+        Gap at 0 K (eV), e.g. the experimental value or an eACBN0 gap.
+    alpha_ev_per_k, beta_k : float, optional
+        Varshni parameters (defaults: silicon, Varshni, Physica 34, 149 (1967)).
+
+    Returns
+    -------
+    callable
+        ``T (K) -> E_g(T)`` in eV, the ``target_gap_ev`` of
+        :func:`phonon_assisted_absorption_dense_q`.
+
+    Notes
+    -----
+    .. math::
+
+        E_g(T) = E_0 - \\frac{\\alpha T^2}{T + \\beta}.
+    """
+
+    def gap(temperature: float) -> float:
+        return float(e0_ev - alpha_ev_per_k * temperature**2 / (temperature + beta_k))
+
+    return gap
+
+
+def scissor_per_temperature(
+    temps_k: Sequence[float],
+    dft_gap_ev: float,
+    scissor_ev: float | None = None,
+    target_gap_ev: float | Callable[[float], float] | None = None,
+) -> NDArray[np.float64]:
+    """Rigid conduction-band shift at each temperature.
+
+    Parameters
+    ----------
+    temps_k : sequence of float
+        Temperatures (K).
+    dft_gap_ev : float
+        Indirect gap of the (DFT) PAO spectrum on the dense grid (eV).
+    scissor_ev : float, optional
+        Explicit shift (eV), the same at every temperature.
+    target_gap_ev : float or callable, optional
+        Gap to reproduce (eV), fixed or ``T (K) -> E_g(T)`` (:func:`varshni_gap`).
+
+    Returns
+    -------
+    ndarray, shape ``(ntemp,)``
+        Scissor :math:`\\Delta(T) = E_g^{target}(T) - E_g^{DFT}` (eV); zeros when
+        neither ``scissor_ev`` nor ``target_gap_ev`` is given.
+
+    Raises
+    ------
+    ValueError
+        If both ``scissor_ev`` and ``target_gap_ev`` are given.
+    """
+    temps = np.atleast_1d(np.asarray(temps_k, dtype=float))
+    if scissor_ev is not None and target_gap_ev is not None:
+        raise ValueError('give either scissor_ev or target_gap_ev, not both.')
+    if scissor_ev is not None:
+        return np.full(temps.size, float(scissor_ev))
+    if target_gap_ev is None:
+        return np.zeros(temps.size)
+    if callable(target_gap_ev):
+        targets = np.array([float(target_gap_ev(t)) for t in temps])
+    else:
+        targets = np.full(temps.size, float(target_gap_ev))
+    return targets - float(dft_gap_ev)
+
+
+def scissor_velocities(
+    velocity: NDArray[np.complex128],
+    energies: NDArray[np.float64],
+    scissor: float,
+    conduction: NDArray[np.bool_],
+    mode: str = 'renormalized',
+) -> NDArray[np.complex128]:
+    """Velocity matrix elements of the scissor-corrected Hamiltonian.
+
+    Parameters
+    ----------
+    velocity : ndarray, shape ``(nk, 3, nband, nband)``, complex
+        Kohn-Sham (PAO) band velocities.
+    energies : ndarray, shape ``(nk, nband)``
+        Kohn-Sham band energies (same unit as ``scissor``).
+    scissor : float
+        Rigid shift of the conduction bands.
+    conduction : ndarray of bool, shape ``(nband,)``
+        Conduction-band mask.
+    mode : {'renormalized', 'ks'}, optional
+        ``'renormalized'`` (default) applies the Levine-Allan factor below;
+        ``'ks'`` keeps the Kohn-Sham velocities (EPW's ``scissor``).
+
+    Returns
+    -------
+    ndarray, shape ``(nk, 3, nband, nband)``, complex
+        Velocities to use with the shifted energies.
+
+    Raises
+    ------
+    ValueError
+        For an unknown ``mode``.
+
+    Notes
+    -----
+    A scissor operator :math:`H_\\Delta = H + \\Delta\\, P_c` (:math:`P_c` the
+    conduction projector) leaves the position matrix elements unchanged, so the
+    velocity :math:`i[H_\\Delta, \\mathbf r]` of a valence-conduction pair scales
+    with its transition energy (Levine and Allan, Phys. Rev. Lett. 63, 1719
+    (1989); Del Sole and Girlanda, Phys. Rev. B 48, 11789 (1993)):
+
+    .. math::
+
+        v^{\\Delta}_{mn} = v_{mn}\\,
+            \\frac{\\varepsilon_m - \\varepsilon_n \\pm \\Delta}{\\varepsilon_m - \\varepsilon_n},
+
+    while intraband and within-manifold elements (e.g. the free-carrier
+    velocities) are unchanged.  The direct absorption then shifts rigidly.
+    """
+    if mode not in ('renormalized', 'ks'):
+        raise ValueError("scissor velocity mode must be 'renormalized' or 'ks', got %r" % mode)
+    if mode == 'ks' or scissor == 0.0:
+        return velocity
+    conduction = np.asarray(conduction, dtype=bool)
+    cross = conduction[:, None] != conduction[None, :]
+    shift = scissor * (conduction[:, None].astype(float) - conduction[None, :].astype(float))
+    gap = energies[:, :, None] - energies[:, None, :]  # (nk, m, n)
+    factor = np.where(cross[None], (gap + shift[None]) / np.where(cross[None], gap, 1.0), 1.0)
+    return velocity * factor[:, None, :, :]
+
+
+def scissor_shift_dielectric(
+    omega_ev: NDArray[np.float64],
+    eps1: NDArray[np.float64],
+    eps2: NDArray[np.float64],
+    scissor_ev: float,
+    mode: str = 'renormalized',
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Apply a scissor to an independent-particle dielectric function.
+
+    Parameters
+    ----------
+    omega_ev : ndarray, shape ``(nomega,)``
+        Uniform photon-energy grid (eV).
+    eps1, eps2 : ndarray, shape ``(nomega,)``
+        Real (vacuum 1 included) and imaginary parts.
+    scissor_ev : float
+        Rigid conduction-band shift (eV).
+    mode : {'renormalized', 'ks'}, optional
+        Velocity convention of :func:`scissor_velocities`.
+
+    Returns
+    -------
+    eps1, eps2 : ndarray, shape ``(nomega,)``
+        Scissor-corrected real and imaginary parts.
+
+    Notes
+    -----
+    With renormalized velocities the interband spectrum shifts rigidly,
+    :math:`\\varepsilon_2^\\Delta(\\omega) = \\varepsilon_2(\\omega - \\Delta)`;
+    with Kohn-Sham velocities it is also scaled by
+    :math:`(\\omega - \\Delta)^2/\\omega^2`.  The real part changes by the
+    Kramers-Kronig transform of the change of :math:`\\varepsilon_2` (so the
+    contribution of the spectrum beyond the grid is kept); weight shifted past
+    the end of the grid is dropped.
+    """
+    from ..response.do_epsilon import kramers_kronig_eps1
+
+    if mode not in ('renormalized', 'ks'):
+        raise ValueError("scissor velocity mode must be 'renormalized' or 'ks', got %r" % mode)
+    omega = np.asarray(omega_ev, dtype=float)
+    if scissor_ev == 0.0:
+        return np.asarray(eps1, dtype=float), np.asarray(eps2, dtype=float)
+    step = omega[1] - omega[0]
+    grid = np.arange(0.0, omega.max() + 0.5 * step, step)
+    original = np.interp(grid, omega, eps2, left=0.0, right=0.0)
+    shifted = np.interp(grid - scissor_ev, grid, original, left=0.0, right=0.0)
+    if mode == 'ks':
+        with np.errstate(divide='ignore', invalid='ignore'):
+            shifted = np.where(grid > 0.0, shifted * ((grid - scissor_ev) / grid) ** 2, 0.0)
+    delta_eps1 = kramers_kronig_eps1(grid, shifted) - kramers_kronig_eps1(grid, original)
+    return (
+        np.asarray(eps1, dtype=float) + np.interp(omega, grid, delta_eps1),
+        np.interp(omega, grid, shifted),
+    )
+
+
+def pao_band_gaps(
+    HRs: NDArray[np.complex128],
+    at: NDArray[np.float64],
+    nk_dense: int,
+    nelec: float,
+    orbital_positions: NDArray[np.float64] | None = None,
+    spin_degeneracy: float = 2.0,
+    ispin: int = 0,
+) -> dict:
+    """Indirect and direct gaps of a PAO Hamiltonian on a dense k-grid.
+
+    Parameters
+    ----------
+    HRs : ndarray, shape ``(nawf, nawf, n1, n2, n3, nspin)``, complex
+        PAO Hamiltonian (eV), e.g. of an eACBN0 (DFT+U+V, ortho-atomic) run.
+    at : ndarray, shape ``(3, 3)``
+        Direct lattice vectors (rows, alat units).
+    nk_dense : int
+        Dense grid per axis (Wigner-Seitz interpolation, as the absorption).
+    nelec : float
+        Valence electrons.
+    orbital_positions : ndarray, shape ``(nawf, 3)``, optional
+        PAO orbital centres (pair-resolved Wigner-Seitz sums).
+    spin_degeneracy : float, optional
+        2 without spin-orbit coupling, 1 with it.
+    ispin : int, optional
+        Spin channel.
+
+    Returns
+    -------
+    dict
+        ``indirect_gap_ev``, ``direct_gap_ev``, ``vbm_ev``, ``cbm_ev`` (on the
+        energy scale of ``HRs``).  The ``target_gap_ev`` of a scissor-corrected
+        :func:`phonon_assisted_absorption_dense_q` is ``indirect_gap_ev`` of the
+        reference Hamiltonian.
+    """
+    electrons = precompute_dense_electrons(
+        HRs, at, nk_dense, [0.01], None, tuple(HRs.shape[2:5]), ispin=ispin,
+        orbital_positions=orbital_positions,
+    )  # fmt: skip
+    energies = electrons['E'] * RY_TO_EV
+    nocc = int(round(nelec / spin_degeneracy))
+    vbm, cbm = float(energies[:, nocc - 1].max()), float(energies[:, nocc].min())
+    return {
+        'indirect_gap_ev': cbm - vbm,
+        'direct_gap_ev': float(np.min(energies[:, nocc] - energies[:, nocc - 1])),
+        'vbm_ev': vbm,
+        'cbm_ev': cbm,
+    }
+
+
 def absorption_coefficient(
     photon_energy_ev: NDArray[np.float64],
     eps2: NDArray[np.float64],
@@ -591,6 +837,9 @@ def phonon_assisted_absorption_dense_q(
     nonlocal_velocity=None,
     kk_omega_max_ev: float | None = None,
     kk_degauss_ev: float = 0.1,
+    scissor_ev: float | None = None,
+    target_gap_ev: float | Callable[[float], float] | None = None,
+    scissor_velocity: str = 'renormalized',
     spin_degeneracy: float = 2.0,
     sym_rots: NDArray[np.int_] | None = None,
     tau_cryst: NDArray[np.float64] | None = None,
@@ -667,6 +916,18 @@ def phonon_assisted_absorption_dense_q(
         weakly smeared spectrum oscillates (even below zero) and spoils the
         reflectivity; it also smooths the direct term the emissivity uses above
         the gap.
+    scissor_ev : float, optional
+        Rigid shift (eV) of the conduction bands (scissor operator).
+    target_gap_ev : float or callable, optional
+        Indirect gap (eV) to reproduce instead of the DFT one: a number (e.g. the
+        experimental gap, or the dense-grid gap of an eACBN0 PAO Hamiltonian from
+        :func:`pao_band_gaps`) or ``T (K) -> E_g(T)`` (:func:`varshni_gap`).  The
+        scissor is :math:`\Delta(T) = E_g^{target}(T) - E_g^{DFT}`; the coupling
+        and the wavefunctions stay those of the DFT (DFPT) calculation.
+    scissor_velocity : {'renormalized', 'ks'}, optional
+        Velocities of the scissor-corrected Hamiltonian
+        (:func:`scissor_velocities`): Levine-Allan renormalized (default) or the
+        Kohn-Sham ones (EPW's ``scissor``).
     spin_degeneracy : float, optional
         2 without spin-orbit coupling, 1 with it.
     sym_rots, tau_cryst, species : optional
@@ -697,7 +958,11 @@ def phonon_assisted_absorption_dense_q(
         indirect, polarisation averaged, Gaussian delta); ``fermi_energy_ev``,
         ``indirect_gap_ev``, ``direct_gap_ev``, ``etas_ev``, ``temps_k``,
         ``nk_dense``, ``nq_dense``, ``bands`` (window band indices),
-        ``fermi_levels_ev`` ``(ntemp,)``; with ``kk_omega_max_ev`` also
+        ``fermi_levels_ev`` ``(ntemp,)``, ``scissor_ev``, ``indirect_gap_ev_t``,
+        ``direct_gap_ev_t`` ``(ntemp,)`` (scissor-corrected; the scalar
+        ``indirect_gap_ev``/``direct_gap_ev`` are those of the first temperature
+        and ``*_gap_dft_ev`` the uncorrected ones), ``scissor_velocity``; with
+        ``kk_omega_max_ev`` also
         ``omega_kk_ev`` and ``eps2_direct_wide`` ``(ntemp, 3, nomega_kk)``.
 
     Raises
@@ -758,29 +1023,61 @@ def phonon_assisted_absorption_dense_q(
     intrinsic = isinstance(fermi_energy_ev, str)
     if intrinsic and fermi_energy_ev != 'intrinsic':
         raise ValueError("fermi_energy_ev must be a number, None or 'intrinsic'.")
-    if fermi_energy_ev is None or intrinsic:
-        if cbm <= vbm:
-            raise ValueError(
-                'No gap above band %d: pass fermi_energy_ev explicitly (metals: the mid-gap '
-                "and 'intrinsic' Fermi levels, and the thermal emissivity, need a gap)." % nocc
-            )
-        fermi = 0.5 * (vbm + cbm)
-    else:
-        fermi = fermi_energy_ev / RY_TO_EV
-    fsthick = fsthick_ev / RY_TO_EV
-    in_window = np.nonzero(np.any(np.abs(energies - fermi) < fsthick, axis=0))[0]
-    bands = np.arange(in_window.min(), in_window.max() + 1)
-    energy_rel = energies[:, bands] - fermi
+    midgap = fermi_energy_ev is None or intrinsic
+    if cbm <= vbm and midgap:
+        raise ValueError(
+            'No gap above band %d: pass fermi_energy_ev explicitly (metals: the mid-gap '
+            "and 'intrinsic' Fermi levels, and the thermal emissivity, need a gap)." % nocc
+        )
 
-    temps_ry = np.asarray(temps_k, dtype=float) * KELVIN_TO_EV / RY_TO_EV
+    temps_k = np.atleast_1d(np.asarray(temps_k, dtype=float))
+    scissor_t = (
+        scissor_per_temperature(temps_k, (cbm - vbm) * RY_TO_EV, scissor_ev, target_gap_ev)
+        / RY_TO_EV
+    )  # Ry, (ntemp,)
+    if np.any(scissor_t != 0.0) and cbm <= vbm:
+        raise ValueError('A scissor needs a gap above band %d.' % nocc)
+    if scissor_velocity not in ('renormalized', 'ks'):
+        raise ValueError("scissor_velocity must be 'renormalized' or 'ks'.")
+    conduction_all = np.arange(energies.shape[1]) >= nocc
+    # Temperatures sharing a scissor are processed together; the coupling is
+    # computed once per (q, k-block) and only the second-order kernel is
+    # repeated for each distinct scissor.
+    scissor_values, group_of_t = np.unique(np.round(scissor_t, 12), return_inverse=True)
+    groups = [
+        (float(delta), np.nonzero(group_of_t == ig)[0]) for ig, delta in enumerate(scissor_values)
+    ]
+
+    fermi_dft = 0.5 * (vbm + cbm) if midgap else fermi_energy_ev / RY_TO_EV
+    fsthick = fsthick_ev / RY_TO_EV
+    # The scissor moves every state away from the mid-gap reference, so the
+    # window of the unshifted spectrum (widened for a negative scissor) holds
+    # the windows of all temperatures; fsthick is applied per state in the kernels.
+    widen = max(0.0, -float(scissor_t.min())) / 2.0 if midgap else abs(scissor_t).max()
+    in_window = np.nonzero(np.any(np.abs(energies - fermi_dft) < fsthick + widen, axis=0))[0]
+    bands = np.arange(in_window.min(), in_window.max() + 1)
+    conduction = conduction_all[bands]
+
+    temps_ry = temps_k * KELVIN_TO_EV / RY_TO_EV
     etas = np.asarray(etas_ev, dtype=float) / RY_TO_EV
     omin, omax, ostep = omega_ev
     photon_ev = omin + ostep * np.arange(int(np.floor((omax - omin) / ostep + 1.0e-6)) + 1)
     photon = photon_ev / RY_TO_EV
     eps_acoustic = eps_acoustic_cm / EV_TO_CM1 / RY_TO_EV
-    fermi_levels = np.zeros(temps_ry.size)  # relative to the mid-gap reference
-    if intrinsic:
-        fermi_levels = intrinsic_fermi_levels(energies - fermi, temps_ry, nelec, spin_degeneracy)
+
+    # Per scissor group: reference energy, window energies, Fermi levels.
+    reference = np.zeros(temps_k.size)
+    fermi_levels = np.zeros(temps_k.size)  # relative to the reference
+    group_energy = []
+    for delta, tidx in groups:
+        fermi_g = fermi_dft + 0.5 * delta if midgap else fermi_dft
+        reference[tidx] = fermi_g
+        shifted_all = energies + delta * conduction_all - fermi_g
+        if intrinsic:
+            fermi_levels[tidx] = intrinsic_fermi_levels(
+                shifted_all, temps_ry[tidx], nelec, spin_degeneracy
+            )
+        group_energy.append(shifted_all[:, bands])
 
     nl_correction = None
     if nonlocal_velocity is not None:
@@ -832,39 +1129,54 @@ def phonon_assisted_absorption_dense_q(
         kk = kblocks[ib]
         kq = ikq[kk]
         coupling = band_vertex(gn_flat, phkg[kk], V[kq][:, :, bands], V[kk][:, :, bands], zmass)
-        g_part, l_part = indirect_absorption_kernel(
-            energy_rel[kk], energy_rel[kq], velocities[kk], velocities[kq], coupling,
-            omega_ry, temps_ry, photon, etas, degauss, fsthick, eps_acoustic,
-            weight=weight, spin_degeneracy=spin_degeneracy, fermi_levels=fermi_levels,
-        )  # fmt: skip
-        eps_ind += g_part
-        eps_ind_l += l_part
+        for (delta, tidx), energy_g in zip(groups, group_energy):
+            v_k = scissor_velocities(
+                velocities[kk], energies[kk][:, bands], delta, conduction, scissor_velocity
+            )
+            v_kq = scissor_velocities(
+                velocities[kq], energies[kq][:, bands], delta, conduction, scissor_velocity
+            )
+            g_part, l_part = indirect_absorption_kernel(
+                energy_g[kk], energy_g[kq], v_k, v_kq, coupling,
+                omega_ry, temps_ry[tidx], photon, etas, degauss, fsthick, eps_acoustic,
+                weight=weight, spin_degeneracy=spin_degeneracy, fermi_levels=fermi_levels[tidx],
+            )  # fmt: skip
+            eps_ind[tidx] += g_part
+            eps_ind_l[tidx] += l_part
 
     dstart, dstop = load_balancing(size, rank, len(kblocks))
     for kk in kblocks[dstart:dstop]:
-        g_part, l_part = direct_absorption_kernel(
-            energy_rel[kk], velocities[kk], temps_ry, photon, degauss, fsthick,
-            weight=1.0 / (nkd * cell_volume), spin_degeneracy=spin_degeneracy,
-            fermi_levels=fermi_levels,
-        )  # fmt: skip
-        eps_dir += g_part
-        eps_dir_l += l_part
+        for (delta, tidx), energy_g in zip(groups, group_energy):
+            v_k = scissor_velocities(
+                velocities[kk], energies[kk][:, bands], delta, conduction, scissor_velocity
+            )
+            g_part, l_part = direct_absorption_kernel(
+                energy_g[kk], v_k, temps_ry[tidx], photon, degauss, fsthick,
+                weight=1.0 / (nkd * cell_volume), spin_degeneracy=spin_degeneracy,
+                fermi_levels=fermi_levels[tidx],
+            )  # fmt: skip
+            eps_dir[tidx] += g_part
+            eps_dir_l[tidx] += l_part
 
     # Direct term over all bands on [0, kk_omega_max_ev] for the Kramers-Kronig ε1.
     wide = None
     if kk_omega_max_ev is not None:
         omega_kk_ev = ostep * np.arange(int(np.floor(kk_omega_max_ev / ostep + 1.0e-6)) + 1)
         wide = np.zeros((ntemp, 3, omega_kk_ev.size))
-        energy_all = energies - fermi
         for kk in kblocks[dstart:dstop]:
             v_all = band_velocities(electrons, kk, slice(None), nl_correction)
-            g_part, _ = direct_absorption_kernel(
-                energy_all[kk], v_all, temps_ry, omega_kk_ev[1:] / RY_TO_EV,
-                kk_degauss_ev / RY_TO_EV, np.inf,
-                weight=1.0 / (nkd * cell_volume), spin_degeneracy=spin_degeneracy,
-                fermi_levels=fermi_levels,
-            )  # fmt: skip
-            wide[:, :, 1:] += g_part
+            for delta, tidx in groups:
+                v_g = scissor_velocities(
+                    v_all, energies[kk], delta, conduction_all, scissor_velocity
+                )
+                energy_all = energies[kk] + delta * conduction_all - reference[tidx[0]]
+                g_part, _ = direct_absorption_kernel(
+                    energy_all, v_g, temps_ry[tidx], omega_kk_ev[1:] / RY_TO_EV,
+                    kk_degauss_ev / RY_TO_EV, np.inf,
+                    weight=1.0 / (nkd * cell_volume), spin_degeneracy=spin_degeneracy,
+                    fermi_levels=fermi_levels[tidx],
+                )  # fmt: skip
+                wide[tidx, :, 1:] += g_part
 
     if size > 1:
         arrays = [eps_ind, eps_ind_l, eps_dir, eps_dir_l] + ([wide] if wide is not None else [])
@@ -886,15 +1198,21 @@ def phonon_assisted_absorption_dense_q(
         'eps2_direct_lorentz': eps_dir_l,
         'alpha_cm': absorption_coefficient(photon_ev, eps_total, refractive_index),
         'refractive_index': np.asarray(refractive_index, dtype=float),
-        'fermi_energy_ev': fermi * RY_TO_EV,
-        'indirect_gap_ev': (cbm - vbm) * RY_TO_EV,
-        'direct_gap_ev': direct_gap * RY_TO_EV,
+        'fermi_energy_ev': reference[0] * RY_TO_EV,
+        'indirect_gap_ev': (cbm - vbm + scissor_t[0]) * RY_TO_EV,
+        'direct_gap_ev': (direct_gap + scissor_t[0]) * RY_TO_EV,
+        'indirect_gap_dft_ev': (cbm - vbm) * RY_TO_EV,
+        'direct_gap_dft_ev': direct_gap * RY_TO_EV,
+        'indirect_gap_ev_t': (cbm - vbm + scissor_t) * RY_TO_EV,
+        'direct_gap_ev_t': (direct_gap + scissor_t) * RY_TO_EV,
+        'scissor_ev': scissor_t * RY_TO_EV,
+        'scissor_velocity': scissor_velocity,
         'etas_ev': np.asarray(etas_ev, dtype=float),
-        'temps_k': np.asarray(temps_k, dtype=float),
+        'temps_k': temps_k,
         'nk_dense': nk_dense,
         'nq_dense': nq_dense,
         'bands': bands,
-        'fermi_levels_ev': (fermi + fermi_levels) * RY_TO_EV,
+        'fermi_levels_ev': (reference + fermi_levels) * RY_TO_EV,
         'spin_degeneracy': spin_degeneracy,
         'nelec': float(nelec),
         'cell_volume_bohr3': float(cell_volume),
@@ -942,8 +1260,10 @@ def thermal_emissivity(
         PAOFLOW's ``dielectric_tensor`` on the extended basis with the non-local
         velocity (:func:`read_direct_dielectric`).  ``eps1``/``eps2`` have shape
         ``(nomega_d,)`` or ``(ncomp, nomega_d)`` (averaged); ``eps1`` includes
-        the vacuum 1 and the grid must cover ``results['omega_ev']``.  When
-        given, the wide-range direct term of ``results`` is not used.
+        the vacuum 1 and the grid (uniform) must cover ``results['omega_ev']``.
+        When given, the wide-range direct term of ``results`` is not used.  A
+        scissor of ``results`` (``scissor_ev``, ``scissor_velocity``) is applied
+        to it too (:func:`scissor_shift_dielectric`).
 
     Returns
     -------
@@ -1032,14 +1352,20 @@ def thermal_emissivity(
     temps = np.atleast_1d(np.asarray(results['temps_k'], dtype=float))
     etas = np.asarray(results['etas_ev'], dtype=float)
     ieta = int(np.argmin(np.abs(etas - eta_ev)))
-    direct_gap = float(results['direct_gap_ev'])
+    ntemp = temps.size
+    # scissor-corrected direct gap and scissor of each temperature
+    direct_gaps = np.asarray(
+        results.get('direct_gap_ev_t', np.full(ntemp, float(results['direct_gap_ev']))), dtype=float
+    )
+    scissors = np.asarray(results.get('scissor_ev', np.zeros(ntemp)), dtype=float)
+    scissor_mode = str(results.get('scissor_velocity', 'renormalized'))
 
-    def taper(energies: NDArray[np.float64]) -> NDArray[np.float64]:
+    def taper(energies: NDArray[np.float64], direct_gap: float) -> NDArray[np.float64]:
         # 1 below E_g^dir - taper_ev, 0 above E_g^dir
         return np.sin(0.5 * np.pi * np.clip((direct_gap - energies) / taper_ev, 0.0, 1.0)) ** 2
 
     angles = np.atleast_1d(np.asarray(angles_deg, dtype=float))
-    ntemp, nomega = temps.size, omega.size
+    nomega = omega.size
     out = {
         'omega_ev': omega,
         'temps_k': temps,
@@ -1073,17 +1399,21 @@ def thermal_emissivity(
                 'direct_dielectric covers %.3f-%.3f eV, the photon-energy grid %.3f-%.3f eV'
                 % (ext_omega.min(), ext_omega.max(), omega.min(), omega.max())
             )
-        weight = taper(omega)
-        eps1_ext = np.interp(omega, ext_omega, ext_eps1)
-        eps2_ext = np.interp(omega, ext_omega, ext_eps2)
         kk_grid = np.arange(0.0, omega.max() + 0.5 * step, step)  # uniform, from 0
+        shifted_ext = {}  # scissor (eV) -> external (eps1, eps2) on the photon grid
+        for scissor in np.unique(scissors):
+            e1, e2 = scissor_shift_dielectric(ext_omega, ext_eps1, ext_eps2, scissor, scissor_mode)
+            shifted_ext[scissor] = (
+                np.interp(omega, ext_omega, e1),
+                np.interp(omega, ext_omega, e2),
+            )
 
     for it, temp in enumerate(temps):
         indirect = np.asarray(results['eps2_indirect'])[it, ieta].mean(axis=0)
         if direct_dielectric is None:
             omega_kk = np.asarray(results['omega_kk_ev'], dtype=float)
             eps2_kk = np.asarray(results['eps2_direct_wide'])[it].mean(axis=0) + taper(
-                omega_kk
+                omega_kk, direct_gaps[it]
             ) * np.interp(omega_kk, omega, indirect, left=0.0, right=0.0)
             eps1_kk = kramers_kronig_eps1(omega_kk, eps2_kk)
             eps1 = np.interp(omega, omega_kk, eps1_kk)
@@ -1091,6 +1421,8 @@ def thermal_emissivity(
             f_sum = np.trapezoid(omega_kk * eps2_kk, omega_kk)
         else:
             direct = np.asarray(results['eps2_direct'])[it].mean(axis=0)
+            weight = taper(omega, direct_gaps[it])
+            eps1_ext, eps2_ext = shifted_ext[scissors[it]]
             eps2 = weight * (direct + indirect) + (1.0 - weight) * eps2_ext
             phonon_assisted = np.interp(kk_grid, omega, weight * indirect, left=0.0, right=0.0)
             delta_eps1 = kramers_kronig_eps1(kk_grid, phonon_assisted) - 1.0

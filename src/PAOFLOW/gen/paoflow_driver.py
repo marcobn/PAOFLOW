@@ -2104,8 +2104,15 @@ epsilon2_dirabs_<T>K.dat (direct Im eps), alpha_<T>K.dat (absorption
 coefficient, cm^-1) and absorption.npz.
 
 The Fermi level sits mid-gap (EPW: efermi_read + fermi_energy) unless
-FERMI_ENERGY_EV is set.  The band energies are the PAO (DFT) ones: the
-absorption edge follows the DFT indirect gap.  NONLOCAL_VELOCITY adds the
+FERMI_ENERGY_EV is set.  The band energies are the PAO (DFT) ones unless a
+scissor fixes the gap: TARGET_GAP_EV (--target-gap-ev, e.g. the experiment) or
+GAP_REFERENCE_SAVE (--gap-reference-save, the QE save of an eACBN0 / DFT+U+V
+run with ortho-atomic projectors, whose PAO gap on the dense grid becomes the
+target), optionally temperature dependent with VARSHNI (--varshni ALPHA BETA).
+Only the band energies change (rigid conduction shift) and, with
+SCISSOR_VELOCITY = 'renormalized', the interband velocities (Levine-Allan);
+the electron-phonon coupling stays that of the DFT (DFPT) run, since ph.x
+supports Hubbard U only with atomic projectors.  NONLOCAL_VELOCITY adds the
 non-local pseudopotential term of the velocity operator (norm-conserving
 pseudopotentials only); it changes the magnitude of Im eps, not the edge.
 
@@ -2138,9 +2145,11 @@ from mpi4py import MPI
 from PAOFLOW import PAOFLOW
 from PAOFLOW.elphon.elph_bloch import atom_masses, pao_orbital_positions, read_nscf
 from PAOFLOW.elphon.phonon_assisted_absorption import (
+    pao_band_gaps,
     phonon_assisted_absorption_dense_q,
     read_direct_dielectric,
     thermal_emissivity,
+    varshni_gap,
     write_absorption_outputs,
     write_emissivity_outputs,
 )
@@ -2169,6 +2178,11 @@ FSTHICK_EV = __FSTHICK_EV__  # states within FSTHICK_EV of the Fermi level (EPW 
 FERMI_ENERGY_EV = None  # Fermi level on the PAO energy scale; None = mid-gap
 REFRACTIVE_INDEX = __REFRACTIVE_INDEX__  # constant n_r of alpha = omega Im eps / (n_r c)
 NONLOCAL_VELOCITY = __NONLOCAL_VELOCITY__  # non-local PP velocity term (norm-conserving PPs)
+# Scissor: rigid conduction-band shift to a target indirect gap (the e-ph coupling stays DFT).
+TARGET_GAP_EV = __TARGET_GAP_EV__  # e.g. 1.17 (Si, 0 K) or an eACBN0 gap; None = DFT gap
+GAP_REFERENCE_SAVE = __GAP_REFERENCE_SAVE__  # QE save of an eACBN0 (DFT+U+V) run: target = its PAO gap
+VARSHNI = __VARSHNI__  # (alpha eV/K, beta K): E_g(T) = E0 - alpha T^2 / (T + beta), E0 = target
+SCISSOR_VELOCITY = 'renormalized'  # Levine-Allan velocities; 'ks' = EPW's scissor
 EMISSIVITY = __EMISSIVITY__  # also the thermal emissivity of a slab (--emissivity)
 THICKNESS_UM = __THICKNESS_UM__  # slab thickness (um); float('inf') = opaque half-space
 EMIS_ANGLES = __EMIS_ANGLES__  # emission angles (deg) of the directional spectra
@@ -2199,6 +2213,34 @@ __PROJECTION_CALL__
     return projections, pf.data_controller.data_arrays['HRs'], nscf, pf.data_controller
 
 
+def reference_gap(savedir, nk):
+    """Indirect gap (eV) of the PAO Hamiltonian of another QE run (e.g. eACBN0) on the dense grid."""
+    pf = PAOFLOW.PAOFLOW(
+        workpath=HERE, outputdir=OUTPUTDIR, savedir=savedir, save_overlaps=__SAVE_OVERLAPS__, verbose=False
+    )
+__PROJECTION_CALL__
+    pf.projectability(pthr=PTHR)
+    pf.pao_hamiltonian()
+    info = read_nscf(savedir)
+    positions = pao_orbital_positions(pf.data_controller, info['at'])
+    gaps = pao_band_gaps(pf.data_controller.data_arrays['HRs'], info['at'], nk, NELEC, positions)
+    return gaps['indirect_gap_ev']
+
+
+def target_gap(args):
+    """Target indirect gap of the scissor: None, a number (eV) or T (K) -> E_g(T)."""
+    e0 = args.target_gap_ev
+    if args.gap_reference_save:
+        e0 = reference_gap(args.gap_reference_save, args.nk)
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            print('  reference gap of %s: %.3f eV' % (args.gap_reference_save, e0))
+    if e0 is None:
+        if args.varshni:
+            sys.exit('--varshni needs --target-gap-ev or --gap-reference-save (the 0 K gap).')
+        return None
+    return varshni_gap(e0, *args.varshni) if args.varshni else e0
+
+
 def optical_absorption(projections, HRs, nscf, data_controller, args):
     """Phonon-assisted + direct Im eps(omega) and alpha(omega) on the dense grids."""
     return phonon_assisted_absorption_dense_q(
@@ -2211,6 +2253,7 @@ def optical_absorption(projections, HRs, nscf, data_controller, args):
         fermi_energy_ev='intrinsic' if args.emissivity else FERMI_ENERGY_EV,
         kk_omega_max_ev=KK_OMEGA_MAX_EV if args.emissivity and not args.direct_dielectric else None,
         refractive_index=REFRACTIVE_INDEX,
+        target_gap_ev=target_gap(args), scissor_velocity=args.scissor_velocity,
         nonlocal_velocity=data_controller if args.nonlocal_velocity else None,
         sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'], species=nscf['atom_names'],
         orbital_positions=nscf['orbital_positions'],
@@ -2221,8 +2264,12 @@ def report(out, args):
     """Print the gaps and write the spectra to OUTPUTDIR."""
     print('PAOFLOW phonon-assisted absorption (k %d^3, q %d^3, degauss %.3f eV%s):'
           % (args.nk, args.nq, args.degauss_ev, ', non-local velocity' if args.nonlocal_velocity else ''))
-    print('  indirect gap = %.3f eV   direct gap = %.3f eV   E_F = %.3f eV'
-          % (out['indirect_gap_ev'], out['direct_gap_ev'], out['fermi_energy_ev']))
+    print('  DFT gaps: indirect %.3f eV, direct %.3f eV'
+          % (out['indirect_gap_dft_ev'], out['direct_gap_dft_ev']))
+    if abs(out['scissor_ev']).max() > 0.0:
+        print('  scissor (%s velocities):' % out['scissor_velocity'])
+        for temp, delta, gap in zip(out['temps_k'], out['scissor_ev'], out['indirect_gap_ev_t']):
+            print('    T = %7.1f K   scissor %+.3f eV   indirect gap %.3f eV' % (temp, delta, gap))
     for path in write_absorption_outputs(out, OUTPUTDIR):
         print('  wrote %s' % path)
     if not args.emissivity:
@@ -2258,6 +2305,14 @@ def main():
                         help='also compute the thermal emissivity of a slab')
     parser.add_argument('--thickness-um', type=float, default=THICKNESS_UM,
                         help='slab thickness in um (default %(default)s)')
+    parser.add_argument('--target-gap-ev', type=float, default=TARGET_GAP_EV,
+                        help='target indirect gap (eV) of a scissor (0 K value with --varshni)')
+    parser.add_argument('--gap-reference-save', default=GAP_REFERENCE_SAVE,
+                        help='QE save of an eACBN0 (DFT+U+V) run whose PAO gap is the target')
+    parser.add_argument('--varshni', type=float, nargs=2, default=VARSHNI, metavar=('ALPHA', 'BETA'),
+                        help='temperature-dependent target gap (Si: 4.73e-4 636)')
+    parser.add_argument('--scissor-velocity', choices=('renormalized', 'ks'), default=SCISSOR_VELOCITY,
+                        help='velocities of the scissor-corrected Hamiltonian')
     parser.add_argument('--direct-dielectric', default=DIRECT_DIELECTRIC_DIR,
                         help='output dir of an extended-basis dielectric_tensor run (epsr/epsi_*.dat)')
     args = parser.parse_args()
@@ -2322,6 +2377,9 @@ def build_elphon_absorption_script(cfg: dict[str, Any]) -> str:
         '__THICKNESS_UM__': repr(float(cfg.get('thickness_um', 500.0))),
         '__EMIS_ANGLES__': repr(tuple(float(a) for a in cfg.get('emis_angles', (0.0, 30.0, 60.0)))),
         '__DIRECT_DIELECTRIC_DIR__': repr(cfg.get('direct_dielectric_dir') or None),
+        '__TARGET_GAP_EV__': repr(cfg.get('target_gap_ev')),
+        '__GAP_REFERENCE_SAVE__': repr(cfg.get('gap_reference_save') or None),
+        '__VARSHNI__': repr(tuple(cfg['varshni']) if cfg.get('varshni') else None),
         '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
         '__PROJECTION_CALL__': '\n'.join(
             _projection_lines(cfg, var='pf', basispath='BASISDIR', configuration="'standard'")
@@ -4769,7 +4827,8 @@ def _collect_elphon_absorption(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
     dict
         ``cfg`` with ``elphon_property = 'absorption'`` and the dense grids,
         photon energies, temperatures, smearing, window, refractive index, the
-        non-local velocity flag and the thermal-emissivity settings
+        non-local velocity flag, the scissor (``target_gap_ev``,
+        ``gap_reference_save``, ``varshni``) and the thermal-emissivity settings
         (``emissivity``, ``thickness_um``, ``emis_angles``,
         ``direct_dielectric_dir``).
     """
@@ -4779,6 +4838,17 @@ def _collect_elphon_absorption(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
     cfg['nk_dense'] = _ask_divisible(
         'Dense electron k-grid per axis (EPW nkf)', 2 * cfg['nq_dense'], cfg['nq_dense'], 'NK_DENSE'
     )
+    gap = ask(
+        'Target indirect gap for a scissor (eV, e.g. experiment or eACBN0; blank = DFT gap)', ''
+    )
+    cfg['target_gap_ev'] = float(gap) if gap.strip() else None
+    cfg['gap_reference_save'] = (
+        ask('QE save of an eACBN0 (DFT+U+V) run whose PAO gap is the target (blank = none)', '')
+        or None
+    )
+    varshni = ask('Temperature-dependent gap: Varshni alpha (eV/K), beta (K) (blank = fixed)', '')
+    parsed_v = [float(x) for x in varshni.replace(',', ' ').split() if x.strip()]
+    cfg['varshni'] = parsed_v if len(parsed_v) == 2 else None
     cfg['emissivity'] = ask_yes_no(
         'Also compute the thermal emissivity of a slab vs temperature (Kirchhoff, '
         'free carriers included)?',
