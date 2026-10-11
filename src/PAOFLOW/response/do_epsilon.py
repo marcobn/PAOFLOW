@@ -533,6 +533,28 @@ def directional_reflectivity(epsr, epsi, theta):
     refl : ndarray, shape (ne,)
         Unpolarized directional reflectivity (unitless, in [0, 1]).
     """
+    r_s, r_p = fresnel_reflectivities(epsr, epsi, theta)
+    return 0.5 * (r_s + r_p)
+
+
+def fresnel_reflectivities(
+    epsr: np.ndarray, epsi: np.ndarray, theta: float
+) -> tuple[np.ndarray, np.ndarray]:
+    r"""Polarization-resolved Fresnel reflectivities ``(R_s, R_p)`` of a half-space.
+
+    Parameters
+    ----------
+    epsr, epsi : ndarray, shape (ne,)
+        Real and imaginary parts of the (diagonal) dielectric function.
+    theta : float
+        Incidence angle from the surface normal (radians).
+
+    Returns
+    -------
+    r_s, r_p : ndarray, shape (ne,)
+        Reflectivities of the s (TE) and p (TM) waves; see
+        :func:`directional_reflectivity` for the formulas.
+    """
     n2 = epsr + 1j * epsi
     cos_t = np.cos(theta)
     sin2_t = np.sin(theta) ** 2
@@ -540,11 +562,76 @@ def directional_reflectivity(epsr, epsi, theta):
 
     r_s = np.abs((cos_t - q) / (cos_t + q)) ** 2
     r_p = np.abs((n2 * cos_t - q) / (n2 * cos_t + q)) ** 2
+    return r_s, r_p
 
-    return 0.5 * (r_s + r_p)
+
+def slab_directional_absorptance(
+    ene: np.ndarray,
+    epsr: np.ndarray,
+    epsi: np.ndarray,
+    theta: float,
+    thickness_m: float,
+) -> np.ndarray:
+    r"""Directional absorptance (= emissivity) of a free-standing slab.
+
+    A slab of thickness :math:`d` with incoherent multiple reflections between
+    its two faces absorbs, for each polarization :math:`\sigma = s, p`,
+
+    .. math::
+
+        A_\sigma(\theta, \omega) = \frac{(1 - R_\sigma)(1 - \tau)}{1 - R_\sigma \tau},
+        \qquad
+        \tau(\theta, \omega) = \exp\left(-\frac{2\omega}{c}\,
+            \mathrm{Im}\sqrt{\tilde n^2 - \sin^2\theta}\; d\right),
+
+    where :math:`R_\sigma` are the half-space Fresnel reflectivities
+    (:func:`fresnel_reflectivities`) and :math:`\tau` is the single-pass
+    intensity transmission (:math:`e^{-\alpha d}` at normal incidence).  By
+    Kirchhoff's law the directional emissivity of the slab at uniform
+    temperature equals :math:`\tfrac{1}{2}(A_s + A_p)`.
+
+    Parameters
+    ----------
+    ene : ndarray, shape (ne,)
+        Photon energies (eV).
+    epsr, epsi : ndarray, shape (ne,)
+        Real and imaginary parts of the (diagonal) dielectric function.
+    theta : float
+        Incidence (emission) angle from the surface normal (radians).
+    thickness_m : float
+        Slab thickness (m); ``inf`` gives the opaque half-space ``1 - R``.
+
+    Returns
+    -------
+    ndarray, shape (ne,)
+        Unpolarized directional absorptance (unitless, in [0, 1]).
+
+    Notes
+    -----
+    The film is assumed thick compared with the coherence length of thermal
+    light (no thin-film interference).
+    """
+    from ..utils.constants import HBAR, SPEED_OF_LIGHT
+
+    r_s, r_p = fresnel_reflectivities(epsr, epsi, theta)
+    q = np.sqrt(epsr + 1j * epsi - np.sin(theta) ** 2)
+    if np.isinf(thickness_m):
+        tau = np.zeros_like(r_s)
+    else:
+        omega = np.asarray(ene) / HBAR
+        tau = np.exp(-2.0 * omega * np.abs(q.imag) * thickness_m / SPEED_OF_LIGHT)
+    absorptance = []
+    for r in (r_s, r_p):
+        denominator = 1.0 - r * tau
+        # R = 1 and tau = 1 together only at grazing emission (theta = pi/2), where A -> 0.
+        safe = denominator > 1.0e-14
+        absorptance.append(
+            np.where(safe, (1.0 - r) * (1.0 - tau) / np.where(safe, denominator, 1.0), 0.0)
+        )
+    return 0.5 * (absorptance[0] + absorptance[1])
 
 
-def spectral_hemispherical_emissivity(epsr, epsi, ntheta):
+def spectral_hemispherical_emissivity(epsr, epsi, ntheta, ene=None, thickness_m=None):
     r"""Spectral hemispherical emissivity from the directional reflectivity.
 
     By Kirchhoff's law the directional spectral emissivity of an opaque
@@ -570,17 +657,29 @@ def spectral_hemispherical_emissivity(epsr, epsi, ntheta):
         Real and imaginary parts of the (diagonal) dielectric function.
     ntheta : int
         Number of polar-angle samples in ``[0, pi/2]``.
+    ene : ndarray, shape (ne,), optional
+        Photon energies (eV); required with ``thickness_m``.
+    thickness_m : float, optional
+        Slab thickness (m).  ``None`` (default) keeps the opaque half-space,
+        :math:`\varepsilon(\theta, \omega) = 1 - R(\theta, \omega)`; otherwise
+        the directional emissivity is the slab absorptance of
+        :func:`slab_directional_absorptance`.
 
     Returns
     -------
     emis : ndarray, shape (ne,)
         Spectral hemispherical emissivity (unitless, in [0, 1]).
     """
+    if thickness_m is not None and ene is None:
+        raise ValueError('thickness_m requires the photon energies ene (eV).')
     thetas = np.linspace(0.0, 0.5 * np.pi, ntheta)
     # integrand[k, :] = epsilon(theta_k, omega) * cos(theta_k) * sin(theta_k)
     integrand = np.empty((ntheta, epsr.size), dtype=float)
     for k, theta in enumerate(thetas):
-        emis_dir = 1.0 - directional_reflectivity(epsr, epsi, theta)
+        if thickness_m is None:
+            emis_dir = 1.0 - directional_reflectivity(epsr, epsi, theta)
+        else:
+            emis_dir = slab_directional_absorptance(ene, epsr, epsi, theta, thickness_m)
         integrand[k] = emis_dir * np.cos(theta) * np.sin(theta)
 
     return 2.0 * np.trapezoid(integrand, x=thetas, axis=0)
@@ -648,6 +747,94 @@ def total_hemispherical_emissivity(ene, emis_w, temperature):
     if denom == 0.0:
         return 0.0
     return np.trapezoid(emis_w * weight, x=ene) / denom
+
+
+def planck_coverage(ene: np.ndarray, temperature: float, npoints: int = 4000) -> float:
+    r"""Fraction of the blackbody spectrum inside the photon-energy grid.
+
+    .. math::
+
+        f(T) = \frac{\int_{E_{\min}}^{E_{\max}} E^3 / (e^{E/k_BT} - 1)\,dE}
+                    {\pi^4 (k_B T)^4 / 15},
+
+    the share of the Planck weight seen by :func:`total_hemispherical_emissivity`,
+    whose ratio is taken over the grid only.
+
+    Parameters
+    ----------
+    ene : ndarray, shape (ne,)
+        Photon-energy grid (eV); only its end points are used.
+    temperature : float
+        Temperature (K).
+    npoints : int, optional
+        Quadrature points between the end points.
+
+    Returns
+    -------
+    float
+        Covered fraction, in [0, 1].
+    """
+    from ..utils.constants import ELECTRONVOLT_SI, K_BOLTZMAN_SI
+
+    kt = K_BOLTZMAN_SI / ELECTRONVOLT_SI * temperature
+    energies = np.linspace(max(float(np.min(ene)), 1.0e-12), float(np.max(ene)), npoints)
+    x = energies / kt
+    with np.errstate(over='ignore'):
+        weight = np.where(x < 700.0, energies**3 / np.expm1(x), 0.0)
+    return float(np.trapezoid(weight, x=energies) / (np.pi**4 * kt**4 / 15.0))
+
+
+def kramers_kronig_eps1(ene: np.ndarray, eps2: np.ndarray) -> np.ndarray:
+    r"""Real part of the dielectric function from its imaginary part.
+
+    .. math::
+
+        \varepsilon_1(\omega) = 1 + \frac{2}{\pi}\,\mathcal{P}\!\int_0^\infty
+            \frac{\omega'\,\varepsilon_2(\omega')}{\omega'^2 - \omega^2}\,d\omega',
+
+    evaluated with Maclaurin's formula on a uniform grid (Ohta and Ishida,
+    Appl. Spectrosc. 42, 952 (1988)): the principal value is taken by summing
+    only the points whose index differs from the target by an odd number,
+
+    .. math::
+
+        \varepsilon_1(\omega_i) \simeq 1 + \frac{4h}{\pi}
+            \sum_{j - i\ \mathrm{odd}} \frac{\omega_j\,\varepsilon_2(\omega_j)}
+                                            {\omega_j^2 - \omega_i^2}.
+
+    Parameters
+    ----------
+    ene : ndarray, shape (ne,)
+        Uniform photon-energy grid starting at 0 (any energy unit).
+    eps2 : ndarray, shape (..., ne)
+        Imaginary part on ``ene``; it must have decayed at ``ene[-1]``, since the
+        tail beyond the grid is neglected.
+
+    Returns
+    -------
+    ndarray, shape (..., ne)
+        Real part :math:`\varepsilon_1`.
+
+    Raises
+    ------
+    ValueError
+        If the grid is not uniform or does not start at 0.
+    """
+    ene = np.asarray(ene, dtype=float)
+    step = ene[1] - ene[0]
+    if abs(ene[0]) > 1.0e-12 * max(1.0, step) or not np.allclose(np.diff(ene), step):
+        raise ValueError('kramers_kronig_eps1 needs a uniform grid starting at 0.')
+    eps2 = np.asarray(eps2, dtype=float)
+    eps1 = np.empty_like(eps2)
+    index = np.arange(ene.size)
+    block = 512  # rows of the (ne, ne) kernel built at a time
+    for start in range(0, ene.size, block):
+        rows = index[start : start + block]
+        odd = (index[None, :] - rows[:, None]) % 2 == 1
+        with np.errstate(divide='ignore', invalid='ignore'):
+            kernel = np.where(odd, ene[None, :] / (ene[None, :] ** 2 - ene[rows, None] ** 2), 0.0)
+        eps1[..., rows] = 1.0 + (4.0 * step / np.pi) * (eps2 @ kernel.T)
+    return eps1
 
 
 def write_emissivity(data_controller, ene, epsr, epsi, comp, spin_tag):

@@ -47,6 +47,7 @@ Generates a PAOFLOW property-calculation driver (`main.py`) from a completed QE 
   - the refractive index, the non-local velocity correction and `pthr`.
 
   `main.elphon.py` then computes the phonon-assisted and direct Im ε(ω) and α(ω) (EPW `lindabs`), writing EPW-format files and `output/absorption.npz`. `plot.elphon.py` plots them. No `me.elphon.py` is written. See `examples/elphon_example/Si`.
+  A follow-up prompt, "Also compute the thermal emissivity", adds the slab thickness and the emission angles. It also switches the defaults to ω from 0.01 eV in 0.01 eV steps, degauss 0.01 eV and T = 300–1500 K. `main.elphon.py --emissivity` then uses the charge-neutral E_F(T), adds the Kramers–Kronig ε₁ and writes `emish_<T>K.dat`, `emis_th<deg>_<T>K.dat`, `eps_<T>K.dat`, `emist.dat` and `emissivity.npz`. `plot.elphon.py` draws the emissivity figure.
 - **`plot.elphon.py`** plots α²F and the cumulative λ, and overlays EPW's own `<prefix>.a2f` (dashed) when it exists. After `me.elphon.py` it also draws the Migdal–Eliashberg figure (`output/me/migdal_eliashberg.png`), and after `me_aniso.elphon.py` the anisotropic one (`output/me_aniso/migdal_eliashberg_aniso.png`).
 
 ## A Complete Workflow

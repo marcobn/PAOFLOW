@@ -1333,3 +1333,91 @@ def plot_phonon_assisted_absorption(
     if filename is not None:
         plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.show()
+
+
+def plot_thermal_emissivity(
+    data: Mapping[str, Any],
+    temps: Sequence[float] | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+) -> None:
+    """Plot the spectral and total hemispherical emissivity versus temperature.
+
+    Parameters
+    ----------
+    data : mapping
+        Contents of ``emissivity.npz`` written by
+        :func:`PAOFLOW.elphon.phonon_assisted_absorption.write_emissivity_outputs`.
+    temps : sequence of float, optional
+        Temperatures (K) of the spectral panel; defaults to up to four evenly
+        spaced ones.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Left: spectral hemispherical emissivity of the slab (solid) and of the
+    opaque half-space (dashed) at each temperature (one blue ramp, light to dark
+    with increasing T).  Right: the Planck-weighted total emissivity of the slab
+    and of the half-space versus T; the lowest Planck coverage of the
+    photon-energy grid is noted.
+    """
+    omega = np.asarray(data['omega_ev'])
+    all_temps = np.atleast_1d(np.asarray(data['temps_k']))
+    if temps is None:
+        picks = np.unique(np.round(np.linspace(0, all_temps.size - 1, min(4, all_temps.size))))
+        index = picks.astype(int)
+    else:
+        index = np.array([int(np.argmin(np.abs(all_temps - t))) for t in temps])
+    thickness_um = float(data['thickness_m']) * 1.0e6
+
+    from matplotlib.colors import LinearSegmentedColormap
+
+    fig, (ax_w, ax_t) = plt.subplots(1, 2, figsize=(10, 4))
+    t_ramp = LinearSegmentedColormap.from_list('temperature', _ME_T_RAMP)
+    for rank_t, it in enumerate(index):
+        color = t_ramp(rank_t / max(len(index) - 1, 1))
+        ax_w.plot(
+            omega, data['hemispherical_slab'][it], color=color, lw=2,
+            label='%g K' % all_temps[it],
+        )  # fmt: skip
+        ax_w.plot(omega, data['hemispherical_opaque'][it], color=color, lw=1, ls='--')
+    ax_w.plot([], [], color='#52514e', lw=1, ls='--', label='opaque half-space')
+    ax_w.set_xscale('log')
+    ax_w.set_xlim(omega[0], omega[-1])
+    ax_w.set_ylim(0.0, 1.0)
+    ax_w.set_xlabel('Photon energy (eV)')
+    ax_w.set_ylabel(r'Hemispherical emissivity $\varepsilon(\omega, T)$')
+    ax_w.set_title('slab, d = %g µm' % thickness_um, fontsize=10)
+
+    ax_t.plot(
+        all_temps, data['total_slab'], color=_ME_SERIES[0], lw=2, marker='o', ms=8,
+        label='slab, d = %g µm' % thickness_um,
+    )  # fmt: skip
+    ax_t.plot(
+        all_temps, data['total_opaque'], color=_ME_SERIES[1], lw=2, marker='s', ms=8,
+        ls='--', label='opaque half-space',
+    )  # fmt: skip
+    ax_t.set_ylim(0.0, 1.0)
+    ax_t.set_xlabel('Temperature (K)')
+    ax_t.set_ylabel(r'Total hemispherical emissivity $\varepsilon(T)$')
+    ax_t.set_title(
+        'Planck coverage of the grid ≥ %.3f' % float(np.min(data['planck_coverage'])), fontsize=10
+    )
+    ax_w.legend(frameon=False, fontsize=9, loc='upper center', bbox_to_anchor=(0.5, -0.16), ncol=3)
+    ax_t.legend(frameon=False, fontsize=9, loc='lower right')
+    for ax in (ax_w, ax_t):
+        ax.grid(alpha=0.3)
+    if title is not None:
+        fig.suptitle(title)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.show()

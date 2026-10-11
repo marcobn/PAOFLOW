@@ -8,7 +8,9 @@ Reads OUTPUTDIR/absorption.npz written by main.py: Im eps(omega)
 for every temperature, with the indirect and direct gaps marked.  When EPW's
 own epsilon2_indabs_<T>K.dat exists in the EPW directory (an EPW run with
 lindabs = .true.), it is overlaid (dashed) for comparison.  The figure is saved
-as OUTPUTDIR/absorption.png.
+as OUTPUTDIR/absorption.png.  After main.py --emissivity a second figure
+shows the spectral and total hemispherical emissivity versus temperature
+(OUTPUTDIR/emissivity.png).
 """
 
 import argparse
@@ -40,6 +42,11 @@ def main():
         epw_indabs_file=epw_file if os.path.isfile(epw_file) else None,
         filename=os.path.join(OUTPUTDIR, 'absorption.png'),
     )
+    emissivity_npz = os.path.join(OUTPUTDIR, 'emissivity.npz')
+    if os.path.isfile(emissivity_npz):
+        GPAO.GPAO().plot_thermal_emissivity(
+            emissivity_npz, filename=os.path.join(OUTPUTDIR, 'emissivity.png')
+        )
 
 
 if __name__ == '__main__':
