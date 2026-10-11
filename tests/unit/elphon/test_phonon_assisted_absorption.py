@@ -534,3 +534,135 @@ def test_thermal_emissivity_refuses_metals():
     metal = dict(_synthetic_results(), indirect_gap_ev=-0.3)
     with pytest.raises(NotImplementedError, match='Drude'):
         thermal_emissivity(metal, 500e-6)
+
+
+# --------------------------------------------------------------------------- #
+# Scissor operator
+# --------------------------------------------------------------------------- #
+def test_varshni_and_scissor_per_temperature():
+    from PAOFLOW.elphon.phonon_assisted_absorption import (
+        SILICON_VARSHNI,
+        scissor_per_temperature,
+        varshni_gap,
+    )
+
+    gap = varshni_gap(*SILICON_VARSHNI)
+    assert gap(0.0) == pytest.approx(1.170)
+    assert gap(300.0) == pytest.approx(1.170 - 4.73e-4 * 300.0**2 / 936.0)
+    temps = [300.0, 900.0]
+    np.testing.assert_allclose(scissor_per_temperature(temps, 0.6), 0.0)
+    np.testing.assert_allclose(scissor_per_temperature(temps, 0.6, scissor_ev=0.5), 0.5)
+    np.testing.assert_allclose(scissor_per_temperature(temps, 0.6, target_gap_ev=1.12), 0.52)
+    np.testing.assert_allclose(
+        scissor_per_temperature(temps, 0.6, target_gap_ev=gap), [gap(300.0) - 0.6, gap(900.0) - 0.6]
+    )
+    with pytest.raises(ValueError):
+        scissor_per_temperature(temps, 0.6, scissor_ev=0.5, target_gap_ev=1.1)
+
+
+def _gapped_case(seed, nk=3, nval=2, ncond=3):
+    rng = np.random.default_rng(seed)
+    ev = np.sort(rng.uniform(-0.12, -0.03, (nk, nval)), axis=1)
+    ec = np.sort(rng.uniform(0.03, 0.15, (nk, ncond)), axis=1)
+    energies = np.hstack([ev, ec])
+    nb = nval + ncond
+    a = rng.standard_normal((nk, 3, nb, nb)) + 1j * rng.standard_normal((nk, 3, nb, nb))
+    velocity = 0.5 * (a + np.conj(np.swapaxes(a, -1, -2)))
+    conduction = np.arange(nb) >= nval
+    return energies, velocity, conduction
+
+
+def test_scissor_velocities():
+    from PAOFLOW.elphon.phonon_assisted_absorption import scissor_velocities
+
+    energies, velocity, conduction = _gapped_case(0)
+    delta = 0.05
+    scaled = scissor_velocities(velocity, energies, delta, conduction)
+    np.testing.assert_allclose(scaled, np.conj(np.swapaxes(scaled, -1, -2)), atol=1e-14)
+    val, cond = np.nonzero(~conduction)[0], np.nonzero(conduction)[0]
+    i, j = val[0], cond[1]
+    factor = (energies[:, j] - energies[:, i] + delta) / (energies[:, j] - energies[:, i])
+    np.testing.assert_allclose(scaled[:, :, j, i], velocity[:, :, j, i] * factor[:, None])
+    np.testing.assert_array_equal(scaled[:, :, cond[0], cond[1]], velocity[:, :, cond[0], cond[1]])
+    np.testing.assert_array_equal(scaled[:, :, val[0], val[1]], velocity[:, :, val[0], val[1]])
+    assert scissor_velocities(velocity, energies, delta, conduction, 'ks') is velocity
+    with pytest.raises(ValueError):
+        scissor_velocities(velocity, energies, delta, conduction, 'other')
+
+
+def test_scissor_shifts_direct_absorption_rigidly():
+    from PAOFLOW.elphon.phonon_assisted_absorption import scissor_velocities
+
+    energies, velocity, conduction = _gapped_case(1)
+    delta, sigma = 0.04, 0.001
+    omegas = np.linspace(0.07, 0.32, 251)
+    temps = [1e-4]
+    ks = direct_absorption_kernel(energies, velocity, temps, omegas, sigma, 1.0)[0][0]
+    shifted_e = energies + delta * conduction
+    renorm = scissor_velocities(velocity, energies, delta, conduction)
+    sc = direct_absorption_kernel(shifted_e, renorm, temps, omegas + delta, sigma, 1.0)[0][0]
+    # renormalized velocities: the spectrum moves rigidly (up to the delta width)
+    np.testing.assert_allclose(sc.sum(axis=1), ks.sum(axis=1), rtol=0.02)
+    # Kohn-Sham velocities (EPW scissor): the weight drops roughly as (omega_KS / omega)^2
+    sc_ks = direct_absorption_kernel(shifted_e, velocity, temps, omegas + delta, sigma, 1.0)[0][0]
+    ratio = (sc_ks * omegas[None] ** 0).sum(axis=1) / sc.sum(axis=1)
+    assert np.all(ratio < 1.0)
+
+
+def test_scissor_shift_dielectric():
+    from PAOFLOW.elphon.phonon_assisted_absorption import scissor_shift_dielectric
+    from PAOFLOW.response.do_epsilon import kramers_kronig_eps1
+
+    omega = np.arange(0.0, 60.0 + 1e-9, 0.01)
+    e0, gamma, strength = 3.0, 0.3, 20.0
+    denominator = (e0**2 - omega**2) ** 2 + (gamma * omega) ** 2
+    eps2 = strength * gamma * omega / denominator
+    eps1 = kramers_kronig_eps1(omega, eps2)
+    same = scissor_shift_dielectric(omega, eps1, eps2, 0.0)
+    np.testing.assert_array_equal(same[1], eps2)
+    new1, new2 = scissor_shift_dielectric(omega, eps1, eps2, 0.5)
+    np.testing.assert_allclose(new2, np.interp(omega - 0.5, omega, eps2, left=0.0), atol=1e-12)
+    np.testing.assert_allclose(new1, kramers_kronig_eps1(omega, new2), atol=1e-8)
+    assert new1[1] < eps1[1]  # a larger gap lowers the static dielectric constant
+    _, ks2 = scissor_shift_dielectric(omega, eps1, eps2, 0.5, 'ks')
+    i = np.argmin(abs(omega - 3.5))
+    assert ks2[i] == pytest.approx(new2[i] * (3.0 / 3.5) ** 2, rel=1e-6)
+
+
+def test_pao_band_gaps_matches_brute_force():
+    from PAOFLOW.elphon.phonon_assisted_absorption import pao_band_gaps
+
+    hops, _ = _model_terms(seed=3)
+    gaps = pao_band_gaps(_paoflow_HRs(hops, 4), np.eye(3), 6, nelec=4.0, orbital_positions=TAU)
+    energies = np.array([np.linalg.eigvalsh(_bloch(hops, k)) for k in _grid(6)])
+    assert gaps['vbm_ev'] == pytest.approx(energies[:, 1].max(), abs=1e-10)
+    assert gaps['cbm_ev'] == pytest.approx(energies[:, 2].min(), abs=1e-10)
+    assert gaps['indirect_gap_ev'] == pytest.approx(gaps['cbm_ev'] - gaps['vbm_ev'])
+    assert gaps['direct_gap_ev'] == pytest.approx(
+        (energies[:, 2] - energies[:, 1]).min(), abs=1e-10
+    )
+
+
+def test_thermal_emissivity_uses_per_temperature_scissor(tmp_path):
+    from PAOFLOW.elphon.phonon_assisted_absorption import thermal_emissivity
+
+    results = _synthetic_results()
+    omega_ext = np.arange(0.01, 10.0 + 1e-9, 0.01)
+    e0, gamma, strength = 3.5, 0.4, 120.0
+    denominator = (e0**2 - omega_ext**2) ** 2 + (gamma * omega_ext) ** 2
+    direct = (omega_ext, 1.0 + strength * (e0**2 - omega_ext**2) / denominator,
+              strength * gamma * omega_ext / denominator)  # fmt: skip
+    results['eps2_direct'] = np.zeros((2, 3, results['omega_ev'].size))
+    results['eps2_indirect'] = np.zeros_like(results['eps2_indirect'])  # isolate the scissor
+    results['scissor_ev'] = np.array([0.0, 0.3])
+    results['direct_gap_ev_t'] = np.array([2.5, 2.8])
+    emis = thermal_emissivity(results, 500e-6, ntheta=24, direct_dielectric=direct)
+    omega = results['omega_ev']
+    above = omega > 2.85  # above both direct gaps: external eps2, shifted by the scissor
+    np.testing.assert_allclose(
+        emis['eps2'][0, above], np.interp(omega[above], omega_ext, direct[2])
+    )
+    np.testing.assert_allclose(
+        emis['eps2'][1, above], np.interp(omega[above] - 0.3, omega_ext, direct[2]), rtol=1e-6
+    )
+    assert emis['eps1'][1, 0] < emis['eps1'][0, 0]

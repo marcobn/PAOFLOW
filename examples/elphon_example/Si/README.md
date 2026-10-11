@@ -146,7 +146,45 @@ absorptance. `--emissivity` computes it for a free-standing slab of
     spectrum inside the ω grid)
   - `emissivity.npz`
 
-Total hemispherical emissivity of a 500 µm wafer (PBE, non-local velocity, k 24³ / q 12³):
+**Band-gap correction (scissor).** ph.x supports Hubbard U only with atomic
+projectors, which barely changes the Si gap. The e-ph calculation therefore
+stays PBE, and a scissor fixes the band energies:
+
+```bash
+# experimental gap, temperature dependent (Varshni, Si: E0 = 1.17 eV, alpha = 4.73e-4 eV/K, beta = 636 K)
+mpirun -np 8 python main.py --emissivity --direct-dielectric optics/output \
+    --target-gap-ev 1.17 --varshni 4.73e-4 636 --nk 24 --nq 12 \
+    --omega-min 0.01 --omega-step 0.01 --degauss-ev 0.01 --temps 300 500 700 900 1100 1300 1500
+# or the eACBN0 gap: --gap-reference-save <eACBN0 run>/<prefix>.save  (its PAO gap on the dense grid)
+```
+
+- **What changes:** the conduction bands are shifted rigidly. The interband
+  velocities are renormalized (Levine–Allan; `--scissor-velocity ks` keeps the
+  Kohn–Sham ones, as EPW's `scissor` does). The extended-basis direct ε gets
+  the same shift.
+- **Cost:** a temperature-dependent gap repeats the second-order kernel per
+  temperature, 3.5 min instead of 2 for 8 temperatures.
+
+With the Varshni gap the wafer turns opaque near 700–900 K, as in experiment:
+
+| T (K) | 300 | 500 | 700 | 900 | 1100 | 1500 |
+|---|---|---|---|---|---|---|
+| slab, Varshni scissor, extended-basis ε | 0.000 | 0.003 | 0.25 | 0.61 | 0.63 | 0.62 |
+| opaque half-space | 0.64 | 0.64 | 0.63 | 0.63 | 0.63 | 0.62 |
+
+At 300 K, with a fixed 1.12 eV scissor, the phonon-assisted absorption
+coefficient is close to the experimental curve. These experimental values are
+approximate:
+
+| Photon energy | 1.55 eV | 1.75 eV | 2.05 eV |
+|---|---|---|---|
+| computed α | 660 cm⁻¹ | 1500 cm⁻¹ | 3800 cm⁻¹ |
+| experiment | ≈ 850 cm⁻¹ | ≈ 1900 cm⁻¹ | ≈ 4100 cm⁻¹ |
+
+Without the scissor (PBE gap), the totals below come out at too low a
+temperature.
+
+Total hemispherical emissivity of a 500 µm wafer (PBE gap, non-local velocity, k 24³ / q 12³):
 
 | T (K) | 300 | 400 | 500 | 600 | 700 | 900 | 1100 | 1500 |
 |---|---|---|---|---|---|---|---|---|
@@ -163,9 +201,9 @@ which includes local fields.
   transparent below the gap and nearly non-emissive. Thermally excited
   carriers make it opaque, and a 1 − R emitter, above about 700 K. The opaque
   half-space hardly depends on T, which is why the finite thickness is needed.
-- **The transition comes too early.** With the PBE gap (0.61 eV, against
-  1.12 eV in experiment) the intrinsic carriers turn on at too low a
-  temperature. Lightly doped Si wafers turn opaque near 900–1000 K (Sato,
+- **The transition comes too early without the scissor.** With the PBE gap
+  (0.61 eV, against 1.12 eV in experiment) the intrinsic carriers turn on at
+  too low a temperature; see the scissor table above. Lightly doped Si wafers turn opaque near 900–1000 K (Sato,
   Jpn. J. Appl. Phys. 6, 339 (1967)).
 - **Free-carrier reflection at 1500 K.** At 1500 K the very high carrier
   density reflects the low photon energies (free-carrier plasma), lowering the

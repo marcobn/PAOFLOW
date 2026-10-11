@@ -704,7 +704,9 @@ def test_build_elphon_absorption_plot_script() -> None:
 
 
 def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
-    answers = iter(['6', '', 'n', '0.1', '2.5', '0.02', '10, 300', '0.04', '3.0', '3.5', 'n', ''])
+    answers = iter(
+        ['6', '', '', '', '', 'n', '0.1', '2.5', '0.02', '10, 300', '0.04', '3.0', '3.5', 'n', '']
+    )
     monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
     cfg = d._collect_elphon_absorption({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
     assert cfg['elphon_property'] == 'absorption'
@@ -715,16 +717,22 @@ def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
     assert cfg['nonlocal_velocity'] is False
     assert cfg['pthr'] == 0.95
     assert cfg['emissivity'] is False
+    assert cfg['target_gap_ev'] is None and cfg['varshni'] is None
 
 
 def test_collect_elphon_absorption_emissivity_defaults(monkeypatch) -> None:
     # emissivity on: thickness and angles, then low-omega / multi-T defaults
-    answers = iter(['6', '', 'y', '250', '0, 45', '../optics/output'] + [''] * 10)
+    answers = iter(
+        ['6', '', '1.17', 'acbn0/si.save', '4.73e-4, 636', 'y', '250', '0, 45', '../optics/output']
+        + [''] * 10
+    )
     monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
     cfg = d._collect_elphon_absorption({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
     assert cfg['emissivity'] is True
     assert cfg['thickness_um'] == 250.0 and cfg['emis_angles'] == [0.0, 45.0]
     assert cfg['direct_dielectric_dir'] == '../optics/output'
+    assert cfg['target_gap_ev'] == 1.17 and cfg['gap_reference_save'] == 'acbn0/si.save'
+    assert cfg['varshni'] == [4.73e-4, 636.0]
     assert cfg['omega_ev'] == [0.01, 3.0, 0.01] and cfg['degauss_ev'] == 0.01
     assert cfg['temps_k'] == [300.0, 500.0, 700.0, 900.0, 1100.0, 1300.0, 1500.0]
 
@@ -741,6 +749,13 @@ def test_build_elphon_absorption_script_emissivity() -> None:
         _absorption_cfg(emissivity=True, direct_dielectric_dir='opt/out')
     )
     assert "DIRECT_DIELECTRIC_DIR = 'opt/out'" in with_dir
+    assert 'TARGET_GAP_EV = None' in text and 'VARSHNI = None' in text
+    scissored = d.build_elphon_script(
+        _absorption_cfg(target_gap_ev=1.17, varshni=[4.73e-4, 636.0], gap_reference_save='ref.save')
+    )
+    compile(scissored, 'main.elphon.py', 'exec')
+    assert 'TARGET_GAP_EV = 1.17' in scissored and 'VARSHNI = (0.000473, 636.0)' in scissored
+    assert "GAP_REFERENCE_SAVE = 'ref.save'" in scissored and 'pao_band_gaps(' in scissored
     assert 'thermal_emissivity(' in text and 'write_emissivity_outputs(' in text
     assert "fermi_energy_ev='intrinsic' if args.emissivity" in text
     assert 'EMISSIVITY = False' in d.build_elphon_script(_absorption_cfg())
