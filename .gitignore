@@ -194,6 +194,8 @@ examples/**/*.log
 !examples/**/INCAR
 !examples/**/KPOINTS
 !examples/**/POSCAR
+# Experimental input images of the quantum-oscillation examples
+!examples/qo_analysis_examples/**/data/*.png
 # Keep curated Reference directories (expected outputs for tests/comparison)
 !examples/**/Reference/
 !examples/**/Reference/**
@@ -208,5 +210,3 @@ examples/**/*.log
 SHA*
 **/_assets
 
-# Claude agents
-CLAUDE.md
