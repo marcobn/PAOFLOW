@@ -1331,18 +1331,14 @@ def thermal_emissivity(
     are taken over the photon-energy grid; ``planck_coverage`` is the fraction
     of the blackbody spectrum that the grid covers.
     """
-    from ..response.do_epsilon import (
-        kramers_kronig_eps1,
-        planck_coverage,
-        slab_directional_absorptance,
-        spectral_hemispherical_emissivity,
-        total_hemispherical_emissivity,
-    )
+    from ..response.do_epsilon import kramers_kronig_eps1
+    from ..response.emissivity import emissivity_from_dielectric
 
     if float(results.get('indirect_gap_ev', 1.0)) <= 0.0:
         raise NotImplementedError(
             'thermal_emissivity treats semiconductors and insulators only: for a metal the '
-            'intraband (Drude) term, which sets its infrared reflectivity, is not included.'
+            'intraband (Drude) term sets the infrared reflectivity; use '
+            'PAOFLOW.response.emissivity.metal_thermal_emissivity.'
         )
     if direct_dielectric is None and 'eps2_direct_wide' not in results:
         raise KeyError(
@@ -1364,30 +1360,16 @@ def thermal_emissivity(
         # 1 below E_g^dir - taper_ev, 0 above E_g^dir
         return np.sin(0.5 * np.pi * np.clip((direct_gap - energies) / taper_ev, 0.0, 1.0)) ** 2
 
-    angles = np.atleast_1d(np.asarray(angles_deg, dtype=float))
     nomega = omega.size
-    out = {
-        'omega_ev': omega,
-        'temps_k': temps,
-        'eps1': np.zeros((ntemp, nomega)),
-        'eps2': np.zeros((ntemp, nomega)),
-        'hemispherical_slab': np.zeros((ntemp, nomega)),
-        'hemispherical_opaque': np.zeros((ntemp, nomega)),
-        'directional_slab': np.zeros((ntemp, angles.size, nomega)),
-        'total_slab': np.zeros(ntemp),
-        'total_opaque': np.zeros(ntemp),
-        'planck_coverage': np.zeros(ntemp),
-        'thickness_m': float(thickness_m),
-        'angles_deg': angles,
-        'eta_ev': float(etas[ieta]),
-        'direct_source': 'kramers-kronig' if direct_dielectric is None else 'external',
-    }
+    eps1_t = np.zeros((ntemp, nomega))
+    eps2_t = np.zeros((ntemp, nomega))
+    f_sum_ratio = None
     plasma2_ev2 = None
     if 'nelec' in results and 'cell_volume_bohr3' in results:
         # omega_p^2 = 16 pi n Ry^2 in Rydberg atomic units (e^2 = 2, m = 1/2)
         density = float(results['nelec']) / float(results['cell_volume_bohr3'])
         plasma2_ev2 = 16.0 * np.pi * density * RY_TO_EV**2
-        out['f_sum_ratio'] = np.zeros(ntemp)
+        f_sum_ratio = np.zeros(ntemp)
 
     if direct_dielectric is not None:
         ext_omega, ext_eps1, ext_eps2 = (np.asarray(a, dtype=float) for a in direct_dielectric)
@@ -1428,19 +1410,14 @@ def thermal_emissivity(
             delta_eps1 = kramers_kronig_eps1(kk_grid, phonon_assisted) - 1.0
             eps1 = eps1_ext + np.interp(omega, kk_grid, delta_eps1)
             f_sum = np.trapezoid(ext_omega * ext_eps2, ext_omega)
-        if plasma2_ev2 is not None:
-            out['f_sum_ratio'][it] = f_sum / (0.5 * np.pi * plasma2_ev2)
-        slab = spectral_hemispherical_emissivity(eps1, eps2, ntheta, omega, thickness_m)
-        opaque = spectral_hemispherical_emissivity(eps1, eps2, ntheta)
-        out['eps1'][it], out['eps2'][it] = eps1, eps2
-        out['hemispherical_slab'][it], out['hemispherical_opaque'][it] = slab, opaque
-        for ia, angle in enumerate(angles):
-            out['directional_slab'][it, ia] = slab_directional_absorptance(
-                omega, eps1, eps2, np.deg2rad(angle), thickness_m
-            )
-        out['total_slab'][it] = total_hemispherical_emissivity(omega, slab, temp)
-        out['total_opaque'][it] = total_hemispherical_emissivity(omega, opaque, temp)
-        out['planck_coverage'][it] = planck_coverage(omega, temp)
+        if f_sum_ratio is not None:
+            f_sum_ratio[it] = f_sum / (0.5 * np.pi * plasma2_ev2)
+        eps1_t[it], eps2_t[it] = eps1, eps2
+    out = emissivity_from_dielectric(omega, eps1_t, eps2_t, temps, thickness_m, angles_deg, ntheta)
+    out['eta_ev'] = float(etas[ieta])
+    out['direct_source'] = 'kramers-kronig' if direct_dielectric is None else 'external'
+    if f_sum_ratio is not None:
+        out['f_sum_ratio'] = f_sum_ratio
     return out
 
 

@@ -278,16 +278,22 @@ def get_tau(data_controller, temp, channels, weights):
     channels are provided, a constant relaxation time of unity is used
     (constant-\u03c4 approximation).
 
-    Each channel entry in ``channels`` can be either a built-in model name
-    string (dispatched to :func:`do_tau_models.builtin_tau_model`) or a
-    :class:`TauModel` instance.
+    Each channel entry in ``channels`` can be a built-in model name string
+    (dispatched to :func:`do_tau_models.builtin_tau_model`), a
+    :class:`TauModel` instance, or a
+    :class:`~PAOFLOW.boltzmann.scattering_channels.ScatteringChannel` (e.g. the
+    electron-phonon :class:`~PAOFLOW.boltzmann.scattering_channels.TransportSpectralChannel`,
+    a :class:`~PAOFLOW.boltzmann.scattering_channels.ResidualResistivity`),
+    whose rate :math:`1/\tau` (1/s) enters the same harmonic sum with its weight.
 
     Parameters
     ----------
     data_controller : DataController
         Provides ``E_k``, ``bnd``, and ``tau_dict`` (model parameters).
     temp : float
-        Temperature in eV (k\u0432T), passed to each model's ``evaluate`` method.
+        :math:`k_BT` in eV (not kelvin), passed to each model's ``evaluate``
+        method; scattering channels receive ``temp / k_B`` in K and the band
+        energies relative to the Fermi level.
     channels : list
         Scattering channel identifiers (strings or :class:`TauModel` objects).
         Pass an empty list or ``None`` for constant-\u03c4.
@@ -307,26 +313,22 @@ def get_tau(data_controller, temp, channels, weights):
     import numpy as np
 
     from .do_tau_models import builtin_tau_model
+    from .scattering_channels import KB_EV_K, ScatteringChannel
     from .TauModel import TauModel
 
     arry, attr = data_controller.data_dicts()
-    snktot = arry['E_k'].shape[0]
-
-    taus = []
-    for c in channels:
-        if c == 'acoustic':
-            a_tau = np.ones((snktot), dtype=float)
-            taus.append(a_tau)
 
     bnd = attr['bnd']
-    eigs = np.abs(arry['E_k'][:, :bnd, :])
+    energies = arry['E_k'][:, :bnd, :]
+    eigs = np.abs(energies)
     snktot, _, nspin = eigs.shape
 
     models = []
+    rate_channels = []  # (ScatteringChannel, weight)
     if channels != None:
-        if len(weights) == 0:
+        if weights is None or len(weights) == 0:
             weights = np.ones(len(channels))
-        elif len(weights) != len(models):
+        elif len(weights) != len(channels):
             raise Exception('Length of weights does not match the number of channels.')
         for i, c in enumerate(channels):
             if isinstance(c, str):
@@ -334,10 +336,12 @@ def get_tau(data_controller, temp, channels, weights):
             elif isinstance(c, TauModel):
                 c.weight = weights[i]
                 models.append(c)
+            elif isinstance(c, ScatteringChannel):
+                rate_channels.append((c, float(weights[i])))
             else:
                 print('Invalid channel type.')
 
-    if len(models) == 0:
+    if len(models) == 0 and len(rate_channels) == 0:
         # Constant relaxation time approximation with tau = 1
         tau = np.ones((snktot, bnd, nspin), dtype=float)
 
@@ -355,6 +359,8 @@ def get_tau(data_controller, temp, channels, weights):
                 )
                 report_exception()
                 raise e
+        for channel, weight in rate_channels:
+            tau += weight * channel.rate(temp / KB_EV_K, energy_ev=energies)
         tau = 1 / tau
 
     return tau

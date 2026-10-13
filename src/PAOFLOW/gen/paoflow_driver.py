@@ -1854,6 +1854,12 @@ With dense q and FS_COUPLING, the run also stores the state-resolved coupling of
 the Fermi-surface states (OUTPUTDIR/fs_coupling.npz) for the anisotropic
 Migdal-Eliashberg equations of me_aniso.elphon.py; --iso-only skips it.
 
+With TRANSPORT (--transport) the dense-q run also gives the transport
+Eliashberg function alpha^2F_tr, lambda_tr and the Fermi-surface plasma
+frequency (OUTPUTDIR/alpha2F_tr.dat and eliashberg.npz), the inputs of
+transport.elphon.py: resistivity rho(T) and the infrared optics and thermal
+emissivity of the metal (extended Drude model).
+
 ``epw/epw.in`` runs EPW without any Wannier functions (``wannierize = .false.``):
 EPW reads the band bookkeeping from the placeholder <prefix>.ukk (EXCLUDE_BANDS,
 identity rotations) and writes the coarse coupling before its Wannier stage,
@@ -1897,6 +1903,8 @@ SIGMA_EV = __SIGMA_EV__  # Fermi-surface smearing (EPW: degaussw)
 MU_STAR = __MU_STAR__  # Coulomb pseudopotential for Tc
 FS_COUPLING = __FS_COUPLING__  # store the Fermi-surface coupling for the anisotropic ME equations
 FSTHICK_EV = __FSTHICK_EV__  # Fermi window of the anisotropic states (EPW: fsthick)
+TRANSPORT = __TRANSPORT__  # also alpha^2F_tr, lambda_tr and the plasma frequency (transport.elphon.py)
+NONLOCAL_VELOCITY = __NONLOCAL_VELOCITY__  # non-local PP term of the band velocities (norm-conserving PPs)
 
 KB_EV = 8.617333262e-5
 
@@ -1916,10 +1924,11 @@ __PROJECTION_CALL__
     nscf = read_nscf(SAVEDIR)
     # Orbital centres: pair-resolved Wigner-Seitz interpolation (several atoms per cell).
     nscf['orbital_positions'] = pao_orbital_positions(pf.data_controller, nscf['at'])
-    return projections, pf.data_controller.data_arrays['HRs'], nscf
+    return projections, pf.data_controller.data_arrays['HRs'], nscf, pf.data_controller
 
 
-def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, fs_coupling):
+def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, fs_coupling,
+               transport=False, data_controller=None):
     """Eliashberg properties from EPW's coarse coupling (and the Fermi-surface coupling)."""
     common = dict(
         source='epw',
@@ -1933,6 +1942,8 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, f
     )
     lattice = (nscf['kpts_cryst'], nscf['bg'], nscf['at'])
     if coarse_q:
+        if transport and MPI.COMM_WORLD.Get_rank() == 0:
+            print('  (the transport Eliashberg function needs the dense-q route; skipped)')
         # q stays on EPW's coarse grid; q-points and phonons come from the .epb files.
         return eliashberg_from_qe_coupling(
             projections, HRs, *lattice, EPW_DIR, None, COARSE_GRID, None, **common
@@ -1941,7 +1952,9 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, f
     return eliashberg_dense_q(
         projections, HRs, *lattice, EPW_DIR, QGRID, None, None, COARSE_GRID, None,
         nq_dense=nq_dense, sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'],
-        species=nscf['atom_names'], fs_coupling=fs_coupling, fsthick_ev=FSTHICK_EV, **common,
+        species=nscf['atom_names'], fs_coupling=fs_coupling, fsthick_ev=FSTHICK_EV,
+        transport=transport, alat=nscf['alat'], cell_volume=nscf['omega'],
+        nonlocal_velocity=data_controller if transport and NONLOCAL_VELOCITY else None, **common,
     )
 
 
@@ -1960,6 +1973,15 @@ def report(out, label):
         header='omega(meV)  alpha^2F  (lambda=%.4f, w_log=%.2fK, Tc_McM=%.3fK, Tc_AD=%.3fK, mu*=%.2f)'
         % (out['lambda'], out['omega_log'] / KB_EV, out['Tc_mcmillan'], out['Tc_allen_dynes'], MU_STAR),
     )
+    if 'lambda_tr' in out:
+        print('  lambda_tr = %.4f   plasma frequency = %.3f eV'
+              % (out['lambda_tr'], out['omega_plasma_ev']))
+        np.savetxt(
+            os.path.join(OUTPUTDIR, 'alpha2F_tr.dat'),
+            np.column_stack([out['omega'] * 1.0e3, out['a2F_tr']]),
+            header='omega(meV)  alpha^2F_tr  (lambda_tr=%.4f, hbar omega_p=%.4f eV)'
+            % (out['lambda_tr'], out['omega_plasma_ev']),
+        )
     np.savez(os.path.join(OUTPUTDIR, 'eliashberg.npz'), **out)
     if fs_coupling is not None:
         write_fs_coupling(os.path.join(OUTPUTDIR, 'fs_coupling.npz'), fs_coupling)
@@ -1976,6 +1998,8 @@ def main():
     parser.add_argument('--sigma-ev', type=float, default=SIGMA_EV, help='smearing in eV')
     parser.add_argument('--iso-only', action='store_true', default=not FS_COUPLING,
                         help='skip the Fermi-surface (anisotropic) coupling')
+    parser.add_argument('--transport', action=argparse.BooleanOptionalAction, default=TRANSPORT,
+                        help='also the transport Eliashberg function and the plasma frequency')
     args = parser.parse_args()
     fs_coupling = not (args.iso_only or args.coarse_q)  # needs the dense-q loop
 
@@ -1984,9 +2008,9 @@ def main():
     if not any(f.startswith(PREFIX + '.epb') for f in os.listdir(EPW_DIR)):
         sys.exit('No %s.epb* files in %s. Run epw.x with epbwrite = .true. first.' % (PREFIX, EPW_DIR))
 
-    projections, HRs, nscf = pao_electronic_structure()
+    projections, HRs, nscf, data_controller = pao_electronic_structure()
     out = eliashberg(projections, HRs, nscf, args.nk, args.nq, args.sigma_ev, args.coarse_q,
-                     fs_coupling)
+                     fs_coupling, args.transport, data_controller)
 
     # The result is identical on every rank; only rank 0 reports and writes files.
     if MPI.COMM_WORLD.Get_rank() == 0:
@@ -2057,6 +2081,8 @@ def build_elphon_epw_script(cfg):
         '__SIGMA_EV__': repr(float(cfg['sigma_ev'])),
         '__MU_STAR__': repr(float(cfg['mu_star'])),
         '__PTHR__': repr(float(cfg['pthr'])),
+        '__TRANSPORT__': str(bool(cfg.get('transport', False))),
+        '__NONLOCAL_VELOCITY__': str(bool(cfg.get('nonlocal_velocity', True))),
         '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
         '__PROJECTION_CALL__': '\n'.join(
             _projection_lines(cfg, var='pf', basispath='BASISDIR', configuration="'standard'")
@@ -2392,6 +2418,158 @@ def build_elphon_absorption_script(cfg: dict[str, Any]) -> str:
         ),
     }
     content = ELPHON_EPW_ABSORPTION_TEMPLATE
+    for token, value in subs.items():
+        content = content.replace(token, value)
+    return content
+
+
+# --------------------------------------------------------------------------- #
+# Electron-phonon EPW route: metal transport, optics and emissivity
+# --------------------------------------------------------------------------- #
+ELPHON_TRANSPORT_TEMPLATE = r'''#!/usr/bin/env python3
+"""Metal resistivity, infrared optics and thermal emissivity from alpha^2F_tr (generated by paoflow_gen.py).
+
+    python transport.elphon.py [--temps T ...] [--interband-dielectric DIR] [--thickness-um D]
+
+Reads OUTPUTDIR/eliashberg.npz of `main.elphon.py --transport` (the transport
+Eliashberg function alpha^2F_tr, lambda_tr and the Fermi-surface plasma
+frequency) and combines scattering channels by Matthiessen's rule:
+
+  * electron-phonon: alpha^2F_tr (Allen): the DC rate 1/tau_tr(T) and, for the
+    optics, the frequency-dependent rate 1/tau(w, T) with the mass enhancement
+    lambda(w, T) of the extended Drude model;
+  * residual (impurity) resistivity RHO0_UOHM_CM;
+  * electron-electron (Fermi liquid): hbar/tau = B_EE [(hbar w)^2 + (2 pi kT)^2].
+
+Outputs (OUTPUTDIR/transport/): resistivity.dat (T, rho total and per channel,
+micro-ohm cm) and the thermal emissivity of the metal: eps_<T>K.dat (interband
++ extended Drude), emish_<T>K.dat, emis_th<deg>_<T>K.dat, emist.dat,
+emissivity.npz.  The interband part comes from --interband-dielectric DIR, the
+output of a separate dielectric_tensor(..., intraband=False) run on the
+extended basis (epsr/epsi_*.dat); without it eps_inter = 1.
+
+The same channels drive PAOFLOW's Boltzmann transport, e.g.
+    pf.transport(scattering_channels=[TransportSpectralChannel.from_npz(NPZ),
+                                      ResidualResistivity(rho0_ohm_m, plasma_ev)])
+"""
+
+import argparse
+import os
+
+import numpy as np
+
+from PAOFLOW.boltzmann.scattering_channels import (
+    FermiLiquidRate,
+    ResidualResistivity,
+    TransportSpectralChannel,
+)
+from PAOFLOW.elphon.phonon_assisted_absorption import (
+    read_direct_dielectric,
+    write_emissivity_outputs,
+)
+from PAOFLOW.response.drude import dc_resistivity
+from PAOFLOW.response.emissivity import metal_thermal_emissivity
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUTPUTDIR = os.path.join(HERE, __OUTPUTDIR__)
+NPZ = os.path.join(OUTPUTDIR, 'eliashberg.npz')
+RHO0_UOHM_CM = __RHO0__  # residual resistivity (micro-ohm cm)
+B_EE_PER_EV = __B_EE__  # Fermi-liquid coefficient b (1/eV); 0 = no electron-electron term
+TEMPS_K = __TEMPS_K__  # temperatures (K)
+OMEGA_EV = (0.005, 2.0, 0.005)  # photon energies (min, max, step) for the optics (eV)
+THICKNESS_UM = float('inf')  # film thickness; metals are opaque
+EMIS_ANGLES = (0.0, 30.0, 60.0)  # emission angles (deg) of the directional spectra
+INTERBAND_DIELECTRIC_DIR = None  # dielectric_tensor(intraband=False) output (extended basis)
+EXTENDED_DRUDE = True  # frequency-dependent rate + mass enhancement; False = DC rate
+
+
+def scattering_channels(plasma_ev, rho0_uohm_cm, b_ee):
+    """Electron-phonon (alpha^2F_tr) + residual + electron-electron channels."""
+    channels = [TransportSpectralChannel.from_npz(NPZ)]
+    if rho0_uohm_cm > 0.0:
+        channels.append(ResidualResistivity(rho0_uohm_cm * 1.0e-8, plasma_ev))
+    if b_ee > 0.0:
+        channels.append(FermiLiquidRate(b_ee))
+    return channels
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument('--temps', type=float, nargs='+', default=TEMPS_K, help='temperatures (K)')
+    parser.add_argument('--rho0', type=float, default=RHO0_UOHM_CM, help='residual resistivity (uOhm cm)')
+    parser.add_argument('--b-ee', type=float, default=B_EE_PER_EV, help='Fermi-liquid coefficient (1/eV)')
+    parser.add_argument('--interband-dielectric', default=INTERBAND_DIELECTRIC_DIR,
+                        help='output dir of a dielectric_tensor(intraband=False) run')
+    parser.add_argument('--thickness-um', type=float, default=THICKNESS_UM, help='film thickness (um)')
+    parser.add_argument('--simple-drude', action='store_true', default=not EXTENDED_DRUDE,
+                        help='DC rate instead of the extended Drude model')
+    args = parser.parse_args()
+    with np.load(NPZ) as data:
+        if 'a2F_tr' not in data:
+            raise SystemExit('%s has no alpha^2F_tr: run main.elphon.py --transport first.' % NPZ)
+        plasma = float(data['omega_plasma_ev'])
+        lambda_tr = float(data['lambda_tr'])
+    channels = scattering_channels(plasma, args.rho0, args.b_ee)
+    outdir = os.path.join(OUTPUTDIR, 'transport')
+    os.makedirs(outdir, exist_ok=True)
+
+    print('Metal transport from alpha^2F_tr: lambda_tr = %.3f, hbar omega_p = %.3f eV' % (lambda_tr, plasma))
+    print('    T (K)   rho (uOhm cm)   ' + '   '.join('%s' % c.name for c in channels))
+    rows = []
+    for temp in args.temps:
+        rho = dc_resistivity(plasma, channels, temp)
+        parts = [rho['channels'][c.name][1] * 1.0e8 for c in channels]
+        rows.append([temp, rho['rho_ohm_m'] * 1.0e8] + parts)
+        print('  %7.1f  %14.4f   ' % (temp, rho['rho_ohm_m'] * 1.0e8) + '   '.join('%.4f' % p for p in parts))
+    np.savetxt(os.path.join(outdir, 'resistivity.dat'), np.array(rows), fmt='%14.6f',
+               header='T (K), rho total and per channel (uOhm cm): ' + ', '.join(c.name for c in channels))
+
+    omin, omax, ostep = OMEGA_EV
+    omega = np.arange(omin, omax + 0.5 * ostep, ostep)
+    interband = read_direct_dielectric(args.interband_dielectric) if args.interband_dielectric else None
+    emissivity = metal_thermal_emissivity(
+        omega, args.temps, plasma, channels, interband=interband,
+        thickness_m=args.thickness_um * 1.0e-6, angles_deg=EMIS_ANGLES,
+        extended=not args.simple_drude,
+    )
+    print('Thermal emissivity (%s Drude, interband: %s):'
+          % (emissivity['drude'], args.interband_dielectric or 'none'))
+    print('    T (K)   total hemispherical   Planck coverage')
+    for temp, total, cover in zip(emissivity['temps_k'], emissivity['total_opaque'],
+                                  emissivity['planck_coverage']):
+        print('  %7.1f  %20.5f  %16.4f' % (temp, total, cover))
+    for path in write_emissivity_outputs(emissivity, outdir):
+        print('  wrote %s' % path)
+
+
+if __name__ == '__main__':
+    main()
+'''
+
+
+def build_elphon_transport_script(cfg: dict[str, Any]) -> str:
+    """Assemble a transport.elphon.py (resistivity, metal optics and emissivity from alpha^2F_tr).
+
+    Parameters
+    ----------
+    cfg : dict
+        Electron-phonon configuration (``outputdir``, ``rho0_uohm_cm``,
+        ``b_ee_per_ev``, ``transport_temps_k``).
+
+    Returns
+    -------
+    str
+        The script.
+    """
+    subs = {
+        '__OUTPUTDIR__': repr(cfg['outputdir']),
+        '__RHO0__': repr(float(cfg.get('rho0_uohm_cm', 0.0))),
+        '__B_EE__': repr(float(cfg.get('b_ee_per_ev', 0.0))),
+        '__TEMPS_K__': repr(
+            [float(x) for x in cfg.get('transport_temps_k', [50, 100, 200, 300, 400, 600])]
+        ),
+    }
+    content = ELPHON_TRANSPORT_TEMPLATE
     for token, value in subs.items():
         content = content.replace(token, value)
     return content
@@ -4812,6 +4990,16 @@ def _collect_elphon_epw(cfg: dict[str, Any]) -> dict[str, Any]:
     cfg['mu_star'] = ask_float('Coulomb pseudopotential mu* (for Tc)', 0.10)
     cfg['pthr'] = ask_float('Projectability threshold (pthr)', 0.95)
     _ask_me_temperatures(cfg)
+    cfg['transport'] = ask_yes_no(
+        'Also the transport Eliashberg function (metal resistivity, infrared optics, '
+        'emissivity: transport.elphon.py)?',
+        False,
+    )
+    if cfg['transport']:
+        cfg['rho0_uohm_cm'] = ask_float('Residual resistivity (micro-ohm cm)', 0.0)
+        cfg['b_ee_per_ev'] = ask_float('Electron-electron (Fermi-liquid) coefficient b (1/eV)', 0.0)
+        temps = ask('Temperatures (K) for transport and emissivity', '50, 100, 200, 300, 400, 600')
+        cfg['transport_temps_k'] = [float(x) for x in temps.replace(',', ' ').split() if x.strip()]
     if cfg['nbnd'] <= 0 or not cfg['masses_amu'] or cfg['nelec'] <= 0:
         print(
             '\nNote: NBND, MASSES_AMU and NELEC are system-specific; edit the '
@@ -5132,6 +5320,14 @@ def main(argv: list[str] | None = None) -> int:
                 with open(me_aniso_path, 'w', encoding='utf-8') as handle:
                     handle.write(build_elphon_me_aniso_script(cfg))
                 print(f'Wrote {me_aniso_path}')
+        if not absorption and cfg.get('transport'):
+            transport_path = os.path.join(os.path.dirname(me_path), 'transport.elphon.py')
+            if os.path.exists(transport_path) and not args.force:
+                sys.stderr.write(f'Refusing to overwrite {transport_path} (use --force).\n')
+            else:
+                with open(transport_path, 'w', encoding='utf-8') as handle:
+                    handle.write(build_elphon_transport_script(cfg))
+                print(f'Wrote {transport_path}')
         # Remind the user of the two-phase workflow (and the MPI dense-q option).
         script = os.path.basename(out_path)
         if cfg.get('source', 'epw') == 'epw':
@@ -5162,8 +5358,12 @@ def main(argv: list[str] | None = None) -> int:
             )
             print('     pw.x -in nscf.in;  python3 write_ukk.py;  mpirun -np N epw.x -nk N -in epw.in')
             if absorption:
-                print(f'  3) cd ..:  mpirun -np N python {script}   # PAO interpolation -> Im eps, alpha')
-                print('  4) python plot.elphon.py   # overlays EPW epsilon2_indabs_<T>K.dat when present')
+                print(
+                    f'  3) cd ..:  mpirun -np N python {script}   # PAO interpolation -> Im eps, alpha'
+                )
+                print(
+                    '  4) python plot.elphon.py   # overlays EPW epsilon2_indabs_<T>K.dat when present'
+                )
                 return 0
             print(
                 f'  3) cd ..:  mpirun -np N python {script}   # PAO interpolation -> alpha^2F, lambda, Tc'
@@ -5172,6 +5372,10 @@ def main(argv: list[str] | None = None) -> int:
             if _wants_fs_coupling(cfg):
                 print('     python me_aniso.elphon.py   # anisotropic gaps Delta_nk(T) on the Fermi surface')
             print(f'  5) python plot.elphon.py   # overlays EPW epw/{prefix}.a2f when present')
+            if cfg.get('transport'):
+                print(
+                    '  6) python transport.elphon.py   # resistivity, metal optics and emissivity'
+                )
             return 0
         print('\nNext steps:')
         if cfg.get('dense_q'):

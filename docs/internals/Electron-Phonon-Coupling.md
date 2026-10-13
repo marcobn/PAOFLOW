@@ -741,6 +741,38 @@ Limitations:
 - There is no band-gap renormalisation with $T$, no multiphonon lattice
   absorption, and no doping.
 
+### Metals: transport Eliashberg function, resistivity and infrared optics
+
+`eliashberg_dense_q(..., transport=True, alat=, cell_volume=, nonlocal_velocity=)`
+(driver flag `--transport`) also computes three quantities:
+- **λ_tr and α²F_tr.** The double-delta sum of λ is weighted by
+  $\mathbf v_{n\mathbf k}\cdot(\mathbf v_{n\mathbf k}-\mathbf v_{m\mathbf k+\mathbf q})/\langle v^2\rangle_{FS}$
+  (`lambda_q_dense_ws_fast(..., transport=True)`) and passed through
+  `eliashberg_from_modes`.
+- **Plasma-frequency tensor.** `omega_plasma2_ev2` and the isotropic
+  `omega_plasma_ev` come from `fermi_surface_plasma_frequency`.
+- **Band velocities.** They are cached by
+  `precompute_dense_electrons(..., diagonal_velocities=True)`.
+
+All of this is stored in `eliashberg.npz` and `alpha2F_tr.dat`. The
+scattering-channel layer, [Scattering channels](scattering-channels.md), turns
+it into the DC resistivity, Allen's frequency-dependent rate, the extended-Drude
+dielectric function and the thermal emissivity of the metal. The generated
+`transport.elphon.py` runs that chain.
+
+For Pb (48³/24³) the results are:
+- λ_tr = 0.94 and ħω_p = 8.1 eV;
+- ρ(300 K) = 17 µΩ cm, against about 21 measured;
+- total emissivity 0.037 at 300 K.
+
+The k- and q-grids do not have to be equal for these Fermi-surface averages:
+equal grids are required only by the anisotropic Migdal–Eliashberg equations.
+Both still have to be converged:
+- **k-grid.** It has to resolve the Fermi surface at the chosen smearing (Pb:
+  ≥ 48³ at 0.05 eV).
+- **q-grid.** For Pb, going from 24³ to 48³ q (at 48³ k) lowers λ_tr by 7%,
+  from 0.94 to 0.87.
+
 ---
 
 ## Parallelisation and memory

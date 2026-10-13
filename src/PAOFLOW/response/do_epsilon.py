@@ -1107,7 +1107,7 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
                 pksp2_diag = np.real(P[d, d] * Q[d, d])
                 drude_weight += np.dot(pksp2_diag, fnF[ik])
 
-    if not attributes['insulator']:
+    if not attributes['insulator'] and attributes.get('intraband', True):
         # Separable Drude profile: epsi_metal = S * intrasmear * ene / denom,
         # epsr_metal = -S * ene^2 / denom, with S the accumulated weight and
         # denom = ene^4 + intrasmear^2 ene^2.

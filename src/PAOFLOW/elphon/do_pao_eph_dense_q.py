@@ -72,6 +72,7 @@ from .elph_bloch import (
     RY_TO_THZ,
     _ws_lattice,
     _ws_lattice_pairs,
+    fermi_surface_plasma_frequency,
     lambda_q_dense_ws_fast,
     precompute_dense_electrons,
 )
@@ -628,6 +629,11 @@ def eliashberg_dense_q(
     n_freq_fs=100,
     orbital_positions=None,
     allow_missing_long_range=False,
+    transport=False,
+    alat=None,
+    cell_volume=None,
+    spin_degeneracy=2.0,
+    nonlocal_velocity=None,
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
 
@@ -706,6 +712,22 @@ def eliashberg_dense_q(
         For ``source='epw'``, run a polar material without the long-range dipole
         term instead of raising
         (:func:`~PAOFLOW.elphon.do_pao_eph.check_long_range_terms`).
+    transport : bool, optional
+        Also compute the transport Eliashberg function (``a2F_tr``,
+        ``lambda_tr``, ``lambda_tr_qv``), the Fermi-surface plasma-frequency
+        tensor ``omega_plasma2_ev2`` (3x3, eV^2) and its isotropic
+        ``omega_plasma_ev`` (:math:`\\sqrt{\\mathrm{Tr}/3}`, eV), the inputs of metal transport and
+        optics (:class:`~PAOFLOW.boltzmann.scattering_channels.TransportSpectralChannel`,
+        :mod:`PAOFLOW.response.drude`).  Needs ``alat`` and ``cell_volume``.
+    alat : float, optional
+        Lattice parameter (bohr), for the band velocities.
+    cell_volume : float, optional
+        Unit-cell volume (bohr^3), for the plasma frequency.
+    spin_degeneracy : float, optional
+        2 without spin-orbit coupling, 1 with it.
+    nonlocal_velocity : DataController, optional
+        Adds the norm-conserving non-local pseudopotential term to the band
+        velocities (:func:`~PAOFLOW.elphon.phonon_assisted_absorption.nonlocal_velocity_operator`).
 
     Notes
     -----
@@ -737,6 +759,14 @@ def eliashberg_dense_q(
     nmodes = int(mass_flat_ry.size)
 
     # --- electron cache (dense k), shared by every dense q ----------------- #
+    nl_correction = None
+    if transport:
+        if alat is None or cell_volume is None:
+            raise ValueError('transport=True needs alat (bohr) and cell_volume (bohr^3).')
+        if nonlocal_velocity is not None:
+            from .phonon_assisted_absorption import nonlocal_velocity_operator
+
+            nl_correction = nonlocal_velocity_operator(nonlocal_velocity, bg, alat)
     electrons = precompute_dense_electrons(
         HRs,
         at,
@@ -747,6 +777,10 @@ def eliashberg_dense_q(
         ispin=ispin,
         fs_window=fs_window,
         orbital_positions=orbital_positions,
+        velocities=transport,
+        alat=alat,
+        diagonal_velocities=transport,
+        nl_correction=nl_correction,
     )
 
     # --- (b) dense q-grid loop (distributed over MPI ranks) ---------------- #
@@ -772,6 +806,7 @@ def eliashberg_dense_q(
     nqd = qmesh.shape[0]
     qstart, qstop = load_balancing(size, rank, nqd)
     lam_qv = np.zeros((nqd, nmodes))
+    lam_tr_qv = np.zeros((nqd, nmodes)) if transport else None
     om_qv = np.zeros((nqd, nmodes))
     # Phonons first: the Fermi-surface coupling needs the highest frequency
     # (over all ranks) for its frequency grid before the coupling loop.
@@ -814,6 +849,7 @@ def eliashberg_dense_q(
         res = lambda_q_dense_ws_fast(
             gR, electrons, q_cryst, zmass, freq_thz,
             pair_coupling=pair_coupling, pair_weights=pair_weights, pair_q_weight=q_weight,
+            transport=transport,
         )  # fmt: skip
         lam = res['lambda_qnu'][isig].copy()
         lam[freq_thz < min_freq_thz] = 0.0  # drop spurious soft/imaginary modes
@@ -821,11 +857,19 @@ def eliashberg_dense_q(
             lam[:] = 0.0  # zero the Gamma acoustic blow-up (QE convention)
         lam_qv[iq] = lam
         om_qv[iq] = np.abs(freq_thz)
+        if transport:
+            lam_tr = res['lambda_tr_qnu'][isig].copy()
+            lam_tr[freq_thz < min_freq_thz] = 0.0  # same exclusions as lambda
+            if is_gamma:
+                lam_tr[:] = 0.0
+            lam_tr_qv[iq] = lam_tr
 
     # Each rank wrote a disjoint slice; a single SUM reduction rebuilds the grid.
     if size > 1:
         comm.Allreduce(MPI.IN_PLACE, lam_qv, op=MPI.SUM)
         comm.Allreduce(MPI.IN_PLACE, om_qv, op=MPI.SUM)
+        if transport:
+            comm.Allreduce(MPI.IN_PLACE, lam_tr_qv, op=MPI.SUM)
 
     win.Free()  # release the shared g(R_e, R_p) window (all reads are done)
 
@@ -835,6 +879,16 @@ def eliashberg_dense_q(
     )
     out['lambda_qv'] = lam_qv
     out['omega_qv_thz'] = om_qv
+    if transport:
+        out_tr = eliashberg_from_modes(
+            lam_tr_qv, om_qv, q_weights=qweights, mu_star=mu_star, sigma_w_frac=sigma_w_frac
+        )
+        out['a2F_tr'] = out_tr['a2F']
+        out['lambda_tr'] = out_tr['lambda']
+        out['lambda_tr_qv'] = lam_tr_qv
+        plasma2 = fermi_surface_plasma_frequency(electrons, cell_volume, isig, spin_degeneracy)
+        out['omega_plasma2_ev2'] = plasma2  # (3, 3) tensor
+        out['omega_plasma_ev'] = float(np.sqrt(np.trace(plasma2) / 3.0))  # isotropic
     if pair_coupling is not None:
         pair_coupling.reduce(comm)
         out['fs_coupling'] = pair_coupling.result(bg, at, nq_dense)
