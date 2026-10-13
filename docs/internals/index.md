@@ -66,6 +66,7 @@ release
 internal-basis
 acbn0
 nonlocal-velocity
+scattering-channels
 sk-edtb
 cli-generators
 

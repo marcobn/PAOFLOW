@@ -29,6 +29,8 @@ matrix elements, and PAOFLOW does all the interpolation.
 | `main.py` | PAOFLOW analysis: PAO electronic structure + Eliashberg on EPW's coupling |
 | `me.py` | isotropic Migdal–Eliashberg on the α²F of `main.py`: gap vs T, real axis, linearised-kernel Tc |
 | `plot_me.py` | plots the `me.py` results |
+| `transport.py` | metal resistivity ρ(T), extended-Drude optics and thermal emissivity from α²F_tr (`main.py --transport`) |
+| `optics/nscf.in`, `optics_eps.py` | optional: interband dielectric function on the extended basis (`dielectric_tensor(intraband=False)`) |
 
 **Pseudopotential:** copy `Pb.upf` (ONCVPSP, from the EPW tutorial material) into
 this directory. Both `phonon/` and `epw/` use `pseudo_dir = '../'`.
@@ -115,6 +117,62 @@ It writes `output/me/` in EPW's formats:
 - `pb.qdos_iso_<T>`: quasiparticle DOS
 - `gap_vs_T.dat`: Δ(T) from the lowest Matsubara frequency and the two real-axis gap edges
 - `max_eigenvalue.dat`: largest eigenvalue of the linearised kernel, which is 1 at Tc
+
+### 5. Resistivity, infrared optics and thermal emissivity
+
+```bash
+mpirun -np 8 python main.py --transport   # adds alpha^2F_tr, lambda_tr, plasma frequency (2 min)
+python transport.py                       # rho(T), extended-Drude eps(omega, T), emissivity
+# optional interband part on the extended basis (separate nscf with nbnd = 40):
+mkdir -p optics/pb.save && cp phonon/pb.save/{charge-density.dat,data-file-schema.xml} optics/pb.save/
+(cd optics && mpirun -np 4 pw.x -nk 4 -in nscf.in > nscf.out)
+python optics_eps.py
+python transport.py --interband-dielectric optics/output
+```
+
+**What `--transport` adds.** It weights the e-ph double-delta sum by the
+velocity change, giving the transport Eliashberg function α²F_tr and λ_tr
+(`output/alpha2F_tr.dat`). It also gives the Fermi-surface plasma frequency.
+
+**What `transport.py` does.**
+- It combines the e-ph channel (Allen's DC rate, and the frequency-dependent
+  rate with mass enhancement for the optics) with an optional residual
+  resistivity (`--rho0`) and Fermi-liquid e-e scattering (`--b-ee`), by
+  Matthiessen's rule.
+- It writes `output/transport/`: `resistivity.dat`, `eps_<T>K.dat`,
+  `emish_<T>K.dat`, `emist.dat` and `emissivity.npz`.
+- The same channels also drive PAOFLOW's Boltzmann transport:
+  `pf.transport(scattering_channels=[TransportSpectralChannel.from_npz(...)])`.
+
+**Pb results** (48³/24³, σ = 0.05 eV, non-local velocity):
+- λ = 1.20, λ_tr = 0.94, ħω_p = 8.1 eV.
+- Resistivity in µΩ cm, linear above about 100 K:
+
+  | T (K) | 20 | 50 | 100 | 200 | 300 | 400 | 600 |
+  |---|---|---|---|---|---|---|---|
+  | ρ | 0.56 | 2.5 | 5.5 | 11.3 | 17.1 | 22.8 | 34.3 |
+
+  Experiment gives about 21 µΩ cm at 300 K.
+- Boltzmann transport on PAOFLOW's 48³ grid with the same channel, at the same
+  chemical potential, gives 19.3 µΩ cm at 300 K.
+- Total hemispherical emissivity of a clean surface: 0.013 (100 K), 0.037
+  (300 K), 0.072 (600 K).
+- The interband part changes the totals by less than 2%. Its main feature is
+  the parallel-band absorption near 2 eV.
+- At room temperature the extended and simple Drude models nearly coincide,
+  because k_BT is already comparable to the phonon energies. The Holstein
+  enhancement of the infrared absorption appears for T well below the Debye
+  temperature.
+
+**Convergence.**
+- **k-grid.** The Fermi-surface quantities need at least 48³ k at
+  σ = 0.05 eV: at 24³, ħω_p is 6.9 eV and λ_tr is 1.23.
+- **q-grid.** Refining q from 24³ to 48³ (k = 48³) changes λ from 1.20 to 1.14,
+  λ_tr from 0.94 to 0.87 and ρ(300 K) from 17.1 to 16.0 µΩ cm. ω_p does not
+  depend on q.
+- **Equal grids.** Equal k- and q-grids are not required for these
+  Fermi-surface averages (the anisotropic Migdal–Eliashberg equations do need
+  them), but the q-grid must still be converged.
 
 ---
 

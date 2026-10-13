@@ -560,6 +560,8 @@ def precompute_dense_electrons(
     orbital_positions=None,
     velocities: bool = False,
     alat: float | None = None,
+    diagonal_velocities: bool = False,
+    nl_correction: Callable | None = None,
 ) -> dict:
     """Dense-grid electron spectrum + Fermi-surface delta, shared by every q.
 
@@ -602,6 +604,13 @@ def precompute_dense_electrons(
         (default ``False``; the other keys are unchanged either way).
     alat : float, optional
         Lattice parameter (bohr); required with ``velocities=True``.
+    diagonal_velocities : bool, optional
+        With ``velocities``, also cache the band velocities
+        ``velocity_diag`` ``(nkd, nawf, 3)`` (Ry bohr, averaged over degenerate
+        subspaces) for the plasma frequency and the transport coupling.
+    nl_correction : callable, optional
+        Non-local velocity correction added to ``velocity_diag``
+        (see :func:`band_velocities`).
 
     Returns
     -------
@@ -688,7 +697,89 @@ def precompute_dense_electrons(
         cache['velocity'] = _velocity_operator_terms(
             Hn_flat, NintH, at, alat, nawf, orbital_positions
         )
+        if diagonal_velocities:
+            cache['velocity_diag'] = _diagonal_velocities(cache, kblock, nl_correction)
     return cache
+
+
+def _diagonal_velocities(
+    electrons: dict,
+    kblock: int,
+    nl_correction: Callable | None = None,
+    degeneracy_tol: float = 1.0e-6,
+) -> NDArray:
+    """Band velocities :math:`\\mathbf v_{n\\mathbf k}` on the dense grid, gauge invariant.
+
+    Parameters
+    ----------
+    electrons : dict
+        Cache of :func:`precompute_dense_electrons` holding ``'velocity'``.
+    kblock : int
+        k-points per block.
+    nl_correction : callable, optional
+        Non-local velocity correction (see :func:`band_velocities`).
+    degeneracy_tol : float, optional
+        Energy tolerance (Ry) of a degenerate subspace.
+
+    Returns
+    -------
+    ndarray, shape ``(nkd, nawf, 3)``
+        Real diagonal velocity matrix elements (Ry bohr), averaged over each
+        degenerate subspace (the diagonal of a degenerate subspace depends on
+        the choice of eigenvectors; its average does not).
+    """
+    energies = electrons['E']
+    nkd, nawf = energies.shape
+    out = np.empty((nkd, nawf, 3))
+    for s0 in range(0, nkd, kblock):
+        block = np.arange(s0, min(s0 + kblock, nkd))
+        v = band_velocities(electrons, block, nl_correction=nl_correction)
+        diag = np.real(np.einsum('kann->kna', v))  # (nb, nawf, 3)
+        e = energies[block]
+        same = np.abs(e[:, :, None] - e[:, None, :]) < degeneracy_tol  # (nb, n, m)
+        out[block] = np.einsum('bnm,bma->bna', same, diag) / same.sum(axis=2)[:, :, None]
+    return out
+
+
+def fermi_surface_plasma_frequency(
+    electrons: dict, cell_volume: float, isig: int = 0, spin_degeneracy: float = 2.0
+) -> NDArray[np.float64]:
+    """Intraband (Drude) plasma-frequency tensor from the dense Fermi surface.
+
+    Parameters
+    ----------
+    electrons : dict
+        Cache of :func:`precompute_dense_electrons` with ``velocities=True``.
+    cell_volume : float
+        Unit-cell volume (bohr^3).
+    isig : int, optional
+        Smearing index of the Fermi-surface delta ``electrons['dk']``.
+    spin_degeneracy : float, optional
+        2 without spin-orbit coupling, 1 with it.
+
+    Returns
+    -------
+    ndarray, shape ``(3, 3)``
+        :math:`(\\hbar\\omega_p)^2_{\\alpha\\beta}` in eV^2.
+
+    Notes
+    -----
+    .. math::
+
+        \\omega^2_{p,\\alpha\\beta} = \\frac{4\\pi e^2 g_s}{\\Omega N_k}
+            \\sum_{n\\mathbf k} v^\\alpha_{n\\mathbf k} v^\\beta_{n\\mathbf k}\\,
+            \\delta(\\varepsilon_{n\\mathbf k} - \\mu),
+
+    with :math:`e^2 = 2` in Rydberg units; for free electrons it reduces to
+    :math:`4\\pi n e^2/m`.
+    """
+    if 'velocity_diag' not in electrons:
+        raise ValueError('needs precompute_dense_electrons(..., diagonal_velocities=True)')
+    v = electrons['velocity_diag']
+    delta = electrons['dk'][isig]  # (nkd, nawf), 1/Ry
+    nkd = v.shape[0]
+    tensor = np.einsum('kna,knb,kn->ab', v, v, delta) / nkd
+    return 8.0 * np.pi * spin_degeneracy / float(cell_volume) * tensor * RY_TO_EV**2
 
 
 def _velocity_operator_terms(
@@ -879,6 +970,7 @@ def lambda_q_dense_ws_fast(
     pair_coupling=None,
     pair_weights=None,
     pair_q_weight=None,
+    transport: bool = False,
 ):
     """``lambda_{q nu}`` for one q, reusing a :func:`precompute_dense_electrons` cache.
 
@@ -909,11 +1001,19 @@ def lambda_q_dense_ws_fast(
     pair_q_weight : float, optional
         q-star multiplicity over the number of q (Coulomb pairs); required with
         ``pair_coupling``.
+    transport : bool, optional
+        Also return the transport coupling ``lambda_tr_qnu`` (needs
+        ``precompute_dense_electrons(..., velocities=True)``): the same double
+        delta weighted by
+        :math:`\\mathbf v_{n\\mathbf k}\\cdot(\\mathbf v_{n\\mathbf k}
+        - \\mathbf v_{m\\mathbf k+\\mathbf q})/\\langle v^2\\rangle_{FS}`
+        (Allen's transport Eliashberg function, trace form).
 
     Returns
     -------
     dict
-        ``{'lambda_qnu', 'gamma_ghz', 'dos_ef', 'nk_dense'}``.
+        ``{'lambda_qnu', 'gamma_ghz', 'dos_ef', 'nk_dense'}``, plus
+        ``'lambda_tr_qnu'`` with ``transport``.
     """
     Nk = electrons['Nk']
     nawf = electrons['nawf']
@@ -958,6 +1058,17 @@ def lambda_q_dense_ws_fast(
     safe = omega_ry > 1.0e-8
     ry_to_ghz = RY_TO_EV * 2.417989242e5
     num = np.zeros((nsig, nmode))
+    if transport:
+        if 'velocity_diag' not in electrons:
+            raise ValueError(
+                'transport=True needs precompute_dense_electrons(..., diagonal_velocities=True)'
+            )
+        vk = electrons['velocity_diag']  # (nkd, nawf, 3)
+        vkq = np.roll(vk.reshape(Nk, Nk, Nk, nawf, 3), roll, axis=(0, 1, 2)).reshape(nkd, nawf, 3)
+        # Fermi-surface average <v^2> for each smearing
+        v2 = np.einsum('kna,kna->kn', vk, vk)
+        v2_fs = np.array([(v2 * dk_all[isig]).sum() / dk_all[isig].sum() for isig in range(nsig)])
+        num_tr = np.zeros((nsig, nmode))
     for s0 in range(0, idx.size, kblock):
         ii = idx[s0 : s0 + kblock]
         gnu = band_vertex(gn_flat, phkg[ii], Vkq[ii], Vk[ii], zmass)
@@ -966,6 +1077,16 @@ def lambda_q_dense_ws_fast(
             num[isig] += np.einsum(
                 'bvmn,bm,bn->v', absg2, dkq_all[isig][ii], dk_all[isig][ii], optimize=True
             )
+        if transport:
+            # w[b, m, n] = v_n(k) . (v_n(k) - v_m(k+q))
+            weight = np.einsum('bna,bna->bn', vk[ii], vk[ii])[:, None, :] - np.einsum(
+                'bna,bma->bmn', vk[ii], vkq[ii]
+            )
+            for isig in range(nsig):
+                num_tr[isig] += np.einsum(
+                    'bvmn,bmn,bm,bn->v', absg2, weight, dkq_all[isig][ii], dk_all[isig][ii],
+                    optimize=True,
+                ) / v2_fs[isig]  # fmt: skip
         if pair_coupling is not None:
             pair_coupling.accumulate(ii, shift, absg2, freqs_thz, pair_weights, pair_q_weight)
 
@@ -975,4 +1096,10 @@ def lambda_q_dense_ws_fast(
     for isig in range(nsig):
         gam_ghz[isig] = np.pi * num[isig] / nkd * ry_to_ghz
         lam[isig, safe] = num[isig, safe] / (nkd * dos[isig] * omega_ry[safe] ** 2)
-    return {'lambda_qnu': lam, 'gamma_ghz': gam_ghz, 'dos_ef': dos, 'nk_dense': Nk}
+    out = {'lambda_qnu': lam, 'gamma_ghz': gam_ghz, 'dos_ef': dos, 'nk_dense': Nk}
+    if transport:
+        lam_tr = np.zeros((nsig, nmode))
+        for isig in range(nsig):
+            lam_tr[isig, safe] = num_tr[isig, safe] / (nkd * dos[isig] * omega_ry[safe] ** 2)
+        out['lambda_tr_qnu'] = lam_tr
+    return out

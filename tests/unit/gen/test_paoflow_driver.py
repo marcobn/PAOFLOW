@@ -641,11 +641,17 @@ def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch, tmp_path):
             '',  # pthr
             '1, 8',  # invalid ME temperatures -> re-prompt
             '1, 8, 15',  # ME temperatures
+            'y',  # transport Eliashberg function
+            '0.5',  # residual resistivity
+            '',  # electron-electron coefficient
+            '100, 300',  # transport temperatures
         ]
     )
     monkeypatch.setattr('builtins.input', lambda prompt='': next(answers))
     cfg = d.collect_elphon(dict(_COMMON, prefix='pb', workdir=str(tmp_path)))
     assert cfg['source'] == 'epw' and cfg['epw_dir'] == 'epw'
+    assert cfg['transport'] is True and cfg['rho0_uohm_cm'] == 0.5
+    assert cfg['b_ee_per_ev'] == 0.0 and cfg['transport_temps_k'] == [100.0, 300.0]
     assert cfg['savedir'] == 'epw/pb.save'
     assert cfg['pw_template'] == 'scf.in' and cfg['pw_template_text'] == _PB_SCF
     assert cfg['pseudo_dir'] == '../' and cfg['masses_amu'] == [207.2]
@@ -762,3 +768,18 @@ def test_build_elphon_absorption_script_emissivity() -> None:
     plot = d.build_elphon_plot_script(_absorption_cfg())
     compile(plot, 'plot.elphon.py', 'exec')
     assert 'plot_thermal_emissivity(' in plot
+
+
+def test_build_elphon_transport_scripts() -> None:
+    cfg = _epw_cfg(transport=True, rho0_uohm_cm=0.5, b_ee_per_ev=0.01, transport_temps_k=[100, 300])
+    main = d.build_elphon_script(cfg)
+    compile(main, 'main.elphon.py', 'exec')
+    assert 'TRANSPORT = True' in main and 'transport=transport' in main
+    assert 'alpha2F_tr.dat' in main and 'NONLOCAL_VELOCITY = True' in main
+    assert 'TRANSPORT = False' in d.build_elphon_script(_epw_cfg())
+    text = d.build_elphon_transport_script(cfg)
+    compile(text, 'transport.elphon.py', 'exec')
+    assert '__' not in re.sub(r'__(name|main|doc|file)__', '', text)
+    assert 'RHO0_UOHM_CM = 0.5' in text and 'B_EE_PER_EV = 0.01' in text
+    assert 'TEMPS_K = [100.0, 300.0]' in text
+    assert 'metal_thermal_emissivity(' in text and 'dc_resistivity(' in text

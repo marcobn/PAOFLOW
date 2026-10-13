@@ -2725,7 +2725,7 @@ class PAOFLOW:
         emin=-1.0,
         emax=1.0,
         ne=1000,
-        doping_conc=0.0,
+        doping_conc=None,
         core_electrons=0.0,
         fname='doping_',
     ):
@@ -2753,8 +2753,11 @@ class PAOFLOW:
 
         if 'delta' not in attr:
             attr['delta'] = delta
-        if 'doping_conc' not in attr:
+        # An explicit doping_conc always wins; otherwise keep a stored value (or 0).
+        if doping_conc is not None:
             attr['doping_conc'] = doping_conc
+        elif 'doping_conc' not in attr:
+            attr['doping_conc'] = 0.0
         if 'core_electrons' not in attr:
             attr['core_electrons'] = core_electrons
 
@@ -2778,7 +2781,7 @@ class PAOFLOW:
         ne=500,
         scattering_channels=[],
         scattering_weights=[],
-        tau_dict={},
+        tau_dict=None,
         do_hall=False,
         write_to_file=True,
         save_tensors=False,
@@ -2794,9 +2797,14 @@ class PAOFLOW:
             emax (float): The maximum energy in the range
             ne (float): The number of energy increments in [emin,emax]
             fit (bool): fit paoflow output to experiments
-            scattering_channels (list): List of strings specifying a built in model and/or TauModel objects to evaluate
+            scattering_channels (list): Built-in model names, TauModel objects and/or
+                ScatteringChannel objects (PAOFLOW.boltzmann.scattering_channels, e.g.
+                TransportSpectralChannel.from_npz('output/eliashberg.npz') for
+                electron-phonon scattering in metals, ResidualResistivity, FermiLiquidRate),
+                combined by Matthiessen's rule
             scattering_weights (list): List of coefficients weighting components of the harmonic sum when computing tau
-            tau_dict (dict): Dictionary housing parameters required for calculating Tau with built-in models
+            tau_dict (dict): Parameters of the built-in models; a dict passed here replaces any
+                stored one (None keeps it)
             do_hall (bool): Set True to calculate hall coefficient
             write_to_file (bool): Set True to write tensors to file
             save_tensors (bool): Set True to save the tensors into the data controller
@@ -2807,8 +2815,10 @@ class PAOFLOW:
         from .boltzmann.do_transport import do_transport
 
         arrays, attr = self.data_controller.data_dicts()
-        if 'tau_dict' not in attr:
+        if tau_dict is not None:
             attr['tau_dict'] = tau_dict
+        elif 'tau_dict' not in attr:
+            attr['tau_dict'] = {}
 
         ene = np.linspace(emin, emax, ne)
         temps = np.linspace(tmin, tmax, nt)
@@ -2854,6 +2864,7 @@ class PAOFLOW:
         emis_angles=(0.0, 30.0, 60.0),
         emis_ntheta=90,
         emis_temperature=300.0,
+        intraband=True,
     ):
         r"""Compute the frequency-dependent dielectric tensor.
 
@@ -2919,6 +2930,11 @@ class PAOFLOW:
         intrasmear : float, optional
             Intraband Drude broadening :math:`\eta` (eV). QE input
             ``intrasmear``. Default 0.05.
+        intraband : bool, optional
+            Include the intraband (Drude) term of metals (default ``True``).
+            ``False`` gives the interband dielectric function, to be combined
+            with an ab initio (extended) Drude term
+            (:func:`PAOFLOW.response.drude.extended_drude_dielectric`).
         emin, emax : float, optional
             Frequency window (eV).
         ne : int, optional
@@ -2926,7 +2942,7 @@ class PAOFLOW:
         d_tensor : list or {'all', 'diag', 'offdiag'}, optional
             Tensor components to compute. ``'diag'`` -> ``[[0,0],[1,1],[2,2]]``,
             ``'offdiag'`` -> the six off-diagonal pairs, or pass an explicit
-            list such as ``[[0,0],[1,2]]``.
+            list such as ``[[0,0],[1,2]]``. Default (None): ``'diag'``.
         degauss : float, optional
             Fermi-Dirac smearing width (eV) used to evaluate occupations
             and (for metals) the Drude :math:`-\partial f/\partial E`
@@ -2999,10 +3015,13 @@ class PAOFLOW:
         if 'delta' not in attr:
             attr['delta'] = delta
         attr['intrasmear'] = intrasmear
+        attr['intraband'] = bool(intraband)
         attr['emissivity'] = emissivity
         attr['emis_angles'] = np.atleast_1d(np.array(emis_angles, dtype=float))
         attr['emis_ntheta'] = int(emis_ntheta)
         attr['emis_temperature'] = np.atleast_1d(np.array(emis_temperature, dtype=float))
+        if d_tensor is None:
+            d_tensor = 'diag'  # the diagonal components (None used to crash)
         if d_tensor == 'all':
             pass
         elif d_tensor == 'diag':
