@@ -590,6 +590,17 @@ i.e. minus PAOFLOW's `dHksp`. The optional non-local pseudopotential term
 `build_nonlocal_velocity_kspace` at the dense k-points, with the calibrated sign
 of `inject_into_dHksp`.
 
+The term is added to the **interband** elements only:
+- **Diagonal and degenerate blocks.** By Hellmann–Feynman these are the group
+  velocities $\partial_{\mathbf k}\varepsilon_{n\mathbf k}$ of the PAO
+  Hamiltonian, which already contains the non-local pseudopotential. The
+  correction would double-count it; on Si it changes them by about 5% rms.
+- **Interband dipoles.** There the correction compensates for the
+  incompleteness of the basis.
+
+All transport quantities therefore use the plain group velocities: α²F_tr, the
+plasma frequency and the carrier rates, through `_diagonal_velocities`.
+
 The validation checks are:
 - **Exact model.** An exactly solvable two-site tight-binding model checks that
   the whole chain (`vertex_pao_R` → `band_vertex`, `band_velocities` →
@@ -743,7 +754,7 @@ Limitations:
 
 ### Metals: transport Eliashberg function, resistivity and infrared optics
 
-`eliashberg_dense_q(..., transport=True, alat=, cell_volume=, nonlocal_velocity=)`
+`eliashberg_dense_q(..., transport=True, alat=, cell_volume=)`
 (driver flag `--transport`) also computes three quantities:
 - **λ_tr and α²F_tr.** The double-delta sum of λ is weighted by
   $\mathbf v_{n\mathbf k}\cdot(\mathbf v_{n\mathbf k}-\mathbf v_{m\mathbf k+\mathbf q})/\langle v^2\rangle_{FS}$
@@ -761,8 +772,8 @@ dielectric function and the thermal emissivity of the metal. The generated
 `transport.elphon.py` runs that chain.
 
 For Pb (48³/24³) the results are:
-- λ_tr = 0.94 and ħω_p = 8.1 eV;
-- ρ(300 K) = 17 µΩ cm, against about 21 measured;
+- λ_tr = 0.94 and ħω_p = 8.3 eV;
+- ρ(300 K) = 16 µΩ cm, against about 21 measured;
 - total emissivity 0.037 at 300 K.
 
 The k- and q-grids do not have to be equal for these Fermi-surface averages:
@@ -772,6 +783,120 @@ Both still have to be converged:
   ≥ 48³ at 0.05 eV).
 - **q-grid.** For Pb, going from 24³ to 48³ q (at 48³ k) lowers λ_tr by 7%,
   from 0.94 to 0.87.
+
+---
+
+## Carrier transport in semiconductors and insulators (SERTA / MRTA)
+
+α²F_tr is a Fermi-surface average, one rate at E_F. In a semiconductor the
+current is carried by the few states within some k_BT of the band edges, so
+transport needs the **state-resolved** rate 1/τ_nk(T).
+`elphon/carrier_scattering.py` computes it on the dense EPW+PAO interpolation.
+It also works for metals, using the states near E_F.
+
+**Rates.** The imaginary part of the Fan–Migdal self-energy (SERTA):
+
+$$
+\frac{1}{\tau_{n\mathbf k}} = \frac{2\pi}{\hbar}\sum_{m\nu\mathbf q} w_{\mathbf q}|g_{mn\nu}(\mathbf k,\mathbf q)|^2
+\big[(n_{\mathbf q\nu}+f_{m\mathbf k+\mathbf q})\,\delta(\varepsilon_{m\mathbf k+\mathbf q}-\varepsilon_{n\mathbf k}-\omega_{\mathbf q\nu})
++ (n_{\mathbf q\nu}+1-f_{m\mathbf k+\mathbf q})\,\delta(\varepsilon_{m\mathbf k+\mathbf q}-\varepsilon_{n\mathbf k}+\omega_{\mathbf q\nu})\big].
+$$
+
+- **Coupling.** $|g|^2 = |\tilde g|^2/2\omega$, with $\tilde g$ from
+  `band_vertex`.
+- **Delta function.** A Gaussian of width `smearing_ev`, cut at 6σ. Modes below
+  `eps_acoustic_cm` are skipped.
+- **MRTA.** Each process is weighted by
+  $1-\mathbf v_{n\mathbf k}\cdot\mathbf v_{m\mathbf k+\mathbf q}/|\mathbf v_{n\mathbf k}|^2$
+  (Claes *et al.* 2022), the state-resolved analogue of α²F_tr. As in EPW, the
+  weight is 1 for $|\mathbf v_{n\mathbf k}|^2 \le 10^{-4}$ Ry a.u.
+  (≈ 1.1·10⁴ m/s).
+- **Velocities.** The group velocities (diagonal of the PAO velocity
+  operator, averaged over degenerate subspaces; no non-local correction, see
+  above). The work is shared between MPI ranks.
+
+**Symmetry.** The point group (with time reversal) reduces the q-sum to the
+**irreducible** dense q-points with star weights. Each k with window states is
+then averaged over its star, which is exact for the scalar rates. Writing
+$F(\mathbf k,\mathbf q)$ for the summand:
+
+$$
+\sum_{\mathbf q}F(\mathbf k,\mathbf q)
+=\frac{1}{|G|}\sum_{S\in G}A(S^{-1}\mathbf k),\qquad
+A(\mathbf k)=\sum_{\mathbf q\in\mathrm{IBZ}}w_{\mathbf q}F(\mathbf k,\mathbf q).
+$$
+
+- **Pruning.** A (k, q) pair is skipped unless k+q has a state within one
+  phonon energy plus 6σ of the window. A q-point's vertex is built only when
+  some k needs it.
+- **Bands.** Only the window bands keep eigenvectors
+  (`precompute_dense_electrons(..., keep_bands=)`).
+- **Check.** On Si (12³ k / 6³ q), the star-averaged rates agree with a
+  full-q run to 2% (median) for the states that carry current. The
+  interpolated |g|² is symmetric over stars to about 1%.
+
+**Carrier statistics.** `fermi_levels_for_doping` solves charge neutrality:
+
+$$
+\frac{g_s}{N_k}\sum f = N_{el} + N_d\Omega,
+$$
+
+with `doping_cm3` > 0 for n type, < 0 for p type and 0 for intrinsic. An
+optional scissor (`target_gap_ev`, fixed or Varshni) shifts the conduction
+bands for the statistics only. The rates depend only on energy differences
+within a band, so the scissor leaves them unchanged.
+
+**Two routes to transport:**
+- **(a) `rta_transport` (k-resolved, the reference).**
+  $\sigma_{\alpha\beta} = \frac{e^2 g_s}{\Omega N_k}\sum v^\alpha v^\beta\tau_{n\mathbf k}(-\partial f/\partial\varepsilon)$
+  over the window states, split into conduction (electrons) and valence
+  (holes). It gives n_e and n_h, the mobilities μ = σ/(e n), and the Seebeck
+  coefficient from the energy moment of the same sum.
+- **(b) `energy_resolved_rates` → `EnergyResolvedRate`.** The
+  transport-weighted $\tau_{eff}(E)=\sum v^2\tau\,\delta(E-\varepsilon)/\sum v^2\delta(E-\varepsilon)$
+  in 5 meV bins. It is written to `scattering_rates.npz` for
+  `pf.transport(scattering_channels=[EnergyResolvedRate.from_npz(...)])`. See
+  [Scattering channels](scattering-channels.md) for the band-edge alignment.
+
+`write_mobility_outputs` writes four files:
+- `mobility.dat` (T, μ_F, n_e, n_h, SERTA/MRTA mobilities, σ, Seebeck);
+- `rates_<T>K.dat`;
+- `carrier_scattering.npz`;
+- `scattering_rates.npz`.
+
+`GPAO.plot_carrier_mobility` plots μ(T) and 1/τ against the energy from the
+band edge.
+
+**Validation.**
+- **Si (intrinsic, 300 K, MRTA, 48³ k = q, σ = 10 meV).** The like-for-like
+  reference is Poncé *et al.* 2018 (PBE, PBE lattice, no SOC): μ_e = 1343 and
+  μ_h = 722 cm²/Vs, converged.
+
+  | DFPT q / H(R) source | μ_e | μ_h |
+  |---|---|---|
+  | 3³ / EPW 6³ nscf | 1763 | 424 |
+  | 3³ / 18³ scf | 1376 | 407 |
+  | 6³ / 6³ | 1492 | 440 |
+  | 6³ / 18³ | 1167 | 423 |
+
+  - **Band structure.** EPW's 6³ nscf makes the transverse electron mass 10%
+    too light. H(R) can come from a denser PAO run in the same basis.
+  - **Coupling grid.** The 3³ DFPT q-grid inflates μ_e by 15–20%.
+  - **Sampling.** Uniform k/q grids still move μ_h by about 5% per step at
+    48–72³.
+  - **Open.** The holes are about 40% below the reference.
+  - **Not the cause.** The smearing (< 10%) and MRTA vs SERTA (< 3%).
+- **Pb (48³ k / 24³ q).** ρ from the MRTA rates is 15.3 µΩ cm at 300 K,
+  against 16.2 from α²F_tr.
+
+**Not included:**
+- **Long-range couplings.** The Fröhlich term: polar materials raise
+  `check_long_range_terms`. The dynamical quadrupoles: in Si-like crystals the
+  missing quadrupoles bias the small-q coupling (Brunin *et al.* 2020;
+  Jhalani *et al.* 2020).
+- **The iterative BTE.** MRTA is usually close to it.
+- **Ionized-impurity scattering.** Add a phenomenological channel in route (b).
+- **Adaptive smearing.**
 
 ---
 
@@ -1056,6 +1181,27 @@ out = phonon_assisted_absorption_dense_q(
 write_absorption_outputs(out, 'output')
 ```
 
+Carrier scattering rates and mobilities on the same inputs (semiconductors;
+equal dense grids, which must be converged together with the smearing):
+
+```python
+from PAOFLOW.elphon.carrier_scattering import (
+    carrier_scattering_dense_q, rta_transport, write_mobility_outputs,
+)
+
+out = carrier_scattering_dense_q(
+    A, HRs, info['kpts_cryst'], info['bg'], info['at'], info['alat'], info['omega'],
+    'epw', (3, 3, 3), (6, 6, 6),
+    masses_amu=atom_masses([28.085], info['species'], info['atom_names']), nelec=8,
+    nk_dense=48, nq_dense=48, temps_k=[200.0, 300.0, 400.0], doping_cm3=0.0,
+    window_ev=0.3, smearing_ev=0.01,
+    sym_rots=info['s_cryst'], tau_cryst=info['tau_cryst'], species=info['atom_names'],
+    orbital_positions=pao_orbital_positions(pf.data_controller, info['at']),
+)
+mobility = rta_transport(out, 'mrta')          # mobility_e, mobility_h (cm^2/Vs), sigma, Seebeck
+write_mobility_outputs(out, 'output/mobility')  # + scattering_rates.npz for pf.transport
+```
+
 The anisotropic equations need the Fermi-surface coupling of a dense-q run with
 equal dense grids, and (for several atoms per cell) the orbital centres:
 
@@ -1101,5 +1247,12 @@ write_me_aniso_outputs(res, coupling, 'output/me_aniso', 'mgb2', lin)
   (1988) (analytic continuation); H. J. Vidberg and J. W. Serene, J. Low Temp.
   Phys. **29**, 179 (1977) (Padé); E. R. Margine and F. Giustino, Phys. Rev. B
   **87**, 024505 (2013) (EPW Migdal–Eliashberg).
+- S. Poncé, E. R. Margine and F. Giustino, Phys. Rev. B **97**, 121201(R)
+  (2018); S. Poncé, W. Li, S. Reichardt and F. Giustino, Rep. Prog. Phys.
+  **83**, 036501 (2020) (ab initio mobilities, SERTA and BTE).
+- R. Claes, G. Brunin, M. Giantomassi, G.-M. Rignanese and G. Hautier, Phys.
+  Rev. B **106**, 094302 (2022) (momentum-relaxation time approximation).
+- G. Brunin *et al.*, Phys. Rev. Lett. **125**, 136601 (2020); V. A. Jhalani
+  *et al.*, Phys. Rev. Lett. **125**, 136602 (2020) (dynamical quadrupoles).
 - See also [Phonon Module](Phonon-Module) and
   [Input and Script Generators (CLI)](Input-and-Script-Generators-CLI).

@@ -337,6 +337,7 @@ def get_tau(data_controller, temp, channels, weights):
                 c.weight = weights[i]
                 models.append(c)
             elif isinstance(c, ScatteringChannel):
+                c.bind(data_controller)
                 rate_channels.append((c, float(weights[i])))
             else:
                 print('Invalid channel type.')

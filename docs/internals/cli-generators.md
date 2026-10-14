@@ -48,7 +48,17 @@ Generates a PAOFLOW property-calculation driver (`main.py`) from a completed QE 
 
   `main.elphon.py` then computes the phonon-assisted and direct Im ε(ω) and α(ω) (EPW `lindabs`), writing EPW-format files and `output/absorption.npz`. `plot.elphon.py` plots them. No `me.elphon.py` is written. See `examples/elphon_example/Si`.
   A follow-up prompt, "Also compute the thermal emissivity", adds the slab thickness and the emission angles. It also switches the defaults to ω from 0.01 eV in 0.01 eV steps, degauss 0.01 eV and T = 300–1500 K. `main.elphon.py --emissivity` then uses the charge-neutral E_F(T), adds the Kramers–Kronig ε₁ and writes `emish_<T>K.dat`, `emis_th<deg>_<T>K.dat`, `eps_<T>K.dat`, `emist.dat` and `emissivity.npz`. `plot.elphon.py` draws the emissivity figure.
-- **Transport Eliashberg function (EPW source, Eliashberg property).** A final prompt, "Also the transport Eliashberg function", sets `TRANSPORT = True` in `main.elphon.py`. That run adds α²F_tr, λ_tr and the plasma frequency. The generator also writes `transport.elphon.py`, which computes ρ(T), the extended-Drude optics and the thermal emissivity of the metal, with residual-resistivity and Fermi-liquid prompts; see [Scattering channels](scattering-channels.md).
+- **Carrier transport (EPW source).** Choosing "carrier transport (mobility, SERTA/MRTA)" as the property prompts for:
+  - equal dense q- and k-grids (default 8 × the coarse grid; mobilities need ≥ 48³);
+  - the temperatures, the net doping (cm⁻³; > 0 n type, < 0 p type, 0 intrinsic), the band-edge window and the delta smearing;
+  - a target gap for the carrier statistics (optionally Varshni) and `pthr`. The band velocities are the group velocities; there is no non-local correction, which is for optical dipoles only.
+
+  `main.elphon.py` computes the state-resolved SERTA and MRTA rates near the band edges and the k-resolved conductivity, electron and hole mobilities and Seebeck coefficient. It writes `output/mobility/` (`mobility.dat`, `rates_<T>K.dat`, `carrier_scattering.npz`, and `scattering_rates.npz` for `pf.transport(scattering_channels=[EnergyResolvedRate.from_npz(...)])`). `plot.elphon.py` plots μ(T) and 1/τ against the energy from the band edge. No `me.elphon.py` is written. See [Scattering channels](scattering-channels.md) and `examples/elphon_example/Si`.
+- **Transport Eliashberg function (EPW source, Eliashberg property).** A final prompt, "Also the transport Eliashberg function", sets `TRANSPORT = True` in `main.elphon.py`. That run adds α²F_tr, λ_tr and the plasma frequency. The generator also writes two scripts:
+  - `transport.elphon.py` computes ρ(T), the extended-Drude optics and the thermal emissivity of the metal, with residual-resistivity and Fermi-liquid prompts;
+  - `plot_transport.elphon.py` plots α²F against α²F_tr, ρ(T) per scattering channel (with an optional measured overlay, `--experiment`) and the emissivity.
+
+  For details, see [Scattering channels](scattering-channels.md).
 - **`plot.elphon.py`** plots α²F and the cumulative λ, and overlays EPW's own `<prefix>.a2f` (dashed) when it exists. After `me.elphon.py` it also draws the Migdal–Eliashberg figure (`output/me/migdal_eliashberg.png`), and after `me_aniso.elphon.py` the anisotropic one (`output/me_aniso/migdal_eliashberg_aniso.png`).
 
 ## A Complete Workflow

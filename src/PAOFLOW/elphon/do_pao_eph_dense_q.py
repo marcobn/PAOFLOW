@@ -633,7 +633,6 @@ def eliashberg_dense_q(
     alat=None,
     cell_volume=None,
     spin_degeneracy=2.0,
-    nonlocal_velocity=None,
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
 
@@ -724,10 +723,9 @@ def eliashberg_dense_q(
     cell_volume : float, optional
         Unit-cell volume (bohr^3), for the plasma frequency.
     spin_degeneracy : float, optional
-        2 without spin-orbit coupling, 1 with it.
-    nonlocal_velocity : DataController, optional
-        Adds the norm-conserving non-local pseudopotential term to the band
-        velocities (:func:`~PAOFLOW.elphon.phonon_assisted_absorption.nonlocal_velocity_operator`).
+        2 without spin-orbit coupling, 1 with it.  The band velocities are the
+        group velocities of the PAO Hamiltonian (no non-local correction, which
+        belongs to interband dipoles only).
 
     Notes
     -----
@@ -759,14 +757,8 @@ def eliashberg_dense_q(
     nmodes = int(mass_flat_ry.size)
 
     # --- electron cache (dense k), shared by every dense q ----------------- #
-    nl_correction = None
-    if transport:
-        if alat is None or cell_volume is None:
-            raise ValueError('transport=True needs alat (bohr) and cell_volume (bohr^3).')
-        if nonlocal_velocity is not None:
-            from .phonon_assisted_absorption import nonlocal_velocity_operator
-
-            nl_correction = nonlocal_velocity_operator(nonlocal_velocity, bg, alat)
+    if transport and (alat is None or cell_volume is None):
+        raise ValueError('transport=True needs alat (bohr) and cell_volume (bohr^3).')
     electrons = precompute_dense_electrons(
         HRs,
         at,
@@ -780,7 +772,6 @@ def eliashberg_dense_q(
         velocities=transport,
         alat=alat,
         diagonal_velocities=transport,
-        nl_correction=nl_correction,
     )
 
     # --- (b) dense q-grid loop (distributed over MPI ranks) ---------------- #

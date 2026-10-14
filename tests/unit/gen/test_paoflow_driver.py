@@ -775,7 +775,7 @@ def test_build_elphon_transport_scripts() -> None:
     main = d.build_elphon_script(cfg)
     compile(main, 'main.elphon.py', 'exec')
     assert 'TRANSPORT = True' in main and 'transport=transport' in main
-    assert 'alpha2F_tr.dat' in main and 'NONLOCAL_VELOCITY = True' in main
+    assert 'alpha2F_tr.dat' in main and 'nonlocal_velocity' not in main
     assert 'TRANSPORT = False' in d.build_elphon_script(_epw_cfg())
     text = d.build_elphon_transport_script(cfg)
     compile(text, 'transport.elphon.py', 'exec')
@@ -783,3 +783,56 @@ def test_build_elphon_transport_scripts() -> None:
     assert 'RHO0_UOHM_CM = 0.5' in text and 'B_EE_PER_EV = 0.01' in text
     assert 'TEMPS_K = [100.0, 300.0]' in text
     assert 'metal_thermal_emissivity(' in text and 'dc_resistivity(' in text
+    plot = d.build_elphon_transport_plot_script(cfg)
+    compile(plot, 'plot_transport.elphon.py', 'exec')
+    assert "OUTPUTDIR = os.path.join(HERE, 'output')" in plot
+    assert 'plot_metal_transport(' in plot and 'plot_thermal_emissivity(' in plot
+
+
+def _mobility_cfg(**kw):
+    cfg = _absorption_cfg(
+        elphon_property='mobility',
+        nk_dense=48,
+        nq_dense=48,
+        temps_k=[200.0, 300.0],
+        doping_cm3=1.0e15,
+        window_ev=0.3,
+        smearing_ev=0.01,
+    )
+    cfg.update(kw)
+    return cfg
+
+
+def test_build_elphon_mobility_script_compiles_and_wires() -> None:
+    text = d.build_elphon_script(_mobility_cfg())
+    compile(text, 'main.elphon.py', 'exec')
+    assert '__' not in re.sub(r'__(name|main|doc|file)__', '', text)  # every token substituted
+    assert 'carrier_scattering_dense_q(' in text
+    assert "write_mobility_outputs(out, os.path.join(OUTPUTDIR, 'mobility'))" in text
+    assert 'NK_DENSE = 48' in text and 'NQ_DENSE = 48' in text
+    assert 'TEMPS_K = [200.0, 300.0]' in text and 'DOPING_CM3 = 1e+15' in text
+    assert 'WINDOW_EV = 0.3' in text and 'SMEARING_EV = 0.01' in text
+    assert 'TARGET_GAP_EV = None' in text and 'VARSHNI = None' in text
+    assert 'EnergyResolvedRate.from_npz' in text and 'nonlocal_velocity' not in text
+    assert 'eliashberg' not in text and 'phonon_assisted_absorption_dense_q' not in text
+    scissored = d.build_elphon_script(_mobility_cfg(target_gap_ev=1.17, varshni=[4.73e-4, 636.0]))
+    assert 'TARGET_GAP_EV = 1.17' in scissored and 'VARSHNI = (0.000473, 636.0)' in scissored
+
+
+def test_build_elphon_mobility_plot_script() -> None:
+    text = d.build_elphon_plot_script(_mobility_cfg())
+    compile(text, 'plot.elphon.py', 'exec')
+    assert 'plot_carrier_mobility(' in text
+    assert "OUTPUTDIR = os.path.join(HERE, 'output')" in text
+
+
+def test_collect_elphon_mobility_prompts(monkeypatch) -> None:
+    answers = iter(['40', '', '250, 300', '-1e16', '0.25', '0.02', '1.17', '4.73e-4 636', ''])
+    monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
+    cfg = d._collect_elphon_mobility({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
+    assert cfg['elphon_property'] == 'mobility'
+    assert (cfg['nq_dense'], cfg['nk_dense']) == (40, 40)
+    assert cfg['temps_k'] == [250.0, 300.0] and cfg['doping_cm3'] == -1e16
+    assert (cfg['window_ev'], cfg['smearing_ev']) == (0.25, 0.02)
+    assert cfg['target_gap_ev'] == 1.17 and cfg['varshni'] == [4.73e-4, 636.0]
+    assert 'nonlocal_velocity' not in cfg and cfg['pthr'] == 0.95

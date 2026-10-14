@@ -561,7 +561,7 @@ def precompute_dense_electrons(
     velocities: bool = False,
     alat: float | None = None,
     diagonal_velocities: bool = False,
-    nl_correction: Callable | None = None,
+    keep_bands: Callable | None = None,
 ) -> dict:
     """Dense-grid electron spectrum + Fermi-surface delta, shared by every q.
 
@@ -607,10 +607,14 @@ def precompute_dense_electrons(
     diagonal_velocities : bool, optional
         With ``velocities``, also cache the band velocities
         ``velocity_diag`` ``(nkd, nawf, 3)`` (Ry bohr, averaged over degenerate
-        subspaces) for the plasma frequency and the transport coupling.
-    nl_correction : callable, optional
-        Non-local velocity correction added to ``velocity_diag``
-        (see :func:`band_velocities`).
+        subspaces) for the plasma frequency and the transport coupling.  These
+        are the group velocities :math:`\\partial_{\\mathbf k}\\varepsilon`; the
+        non-local pseudopotential correction belongs to interband dipoles only.
+    keep_bands : callable, optional
+        ``E (nkd, nawf) [Ry] -> band indices``: store the eigenvectors (and the
+        diagonal velocities) of these bands only, ``V`` ``(nkd, nawf, nband)``,
+        to save memory on dense grids (energies are kept for all bands; the
+        indices are stored as ``'bands'``).  ``None`` keeps all bands.
 
     Returns
     -------
@@ -640,8 +644,21 @@ def precompute_dense_electrons(
     nkd = K.shape[0]
     sigmas = np.atleast_1d(sigmas_ry)
 
+    if keep_bands is not None:
+        # first pass: eigenvalues only, to choose the bands whose vectors are kept
+        E = np.empty((nkd, nawf))
+        for s0 in range(0, nkd, kblock):
+            Kb = K[s0 : s0 + kblock]
+            phk = np.exp(-2j * np.pi * (Kb @ NintH.T))
+            Hk = (phk @ Hn_flat).reshape(Kb.shape[0], nawf, nawf)
+            Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
+            E[s0 : s0 + Kb.shape[0]] = np.linalg.eigvalsh(Hk) / RY_TO_EV
+        kept = np.asarray(keep_bands(E), dtype=int)
+    else:
+        kept = np.arange(nawf)
+
     E = np.empty((nkd, nawf))
-    V = np.empty((nkd, nawf, nawf), dtype=complex)
+    V = np.empty((nkd, nawf, kept.size), dtype=complex)
     for s0 in range(0, nkd, kblock):
         Kb = K[s0 : s0 + kblock]
         phk = np.exp(-2j * np.pi * (Kb @ NintH.T))  # PAOFLOW: H(k) = fftn(HRs)
@@ -649,7 +666,7 @@ def precompute_dense_electrons(
         Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
         e, v = np.linalg.eigh(Hk)
         E[s0 : s0 + Kb.shape[0]] = e / RY_TO_EV
-        V[s0 : s0 + Kb.shape[0]] = v
+        V[s0 : s0 + Kb.shape[0]] = v if keep_bands is None else v[:, :, kept]
 
     ef_sig = np.zeros(sigmas.size)
     dk = np.empty((sigmas.size, nkd, nawf))
@@ -679,6 +696,7 @@ def precompute_dense_electrons(
     cache = {
         'Nk': Nk,
         'nawf': nawf,
+        'bands': kept,
         'K': K,
         'E': E,
         'V': V,
@@ -698,15 +716,15 @@ def precompute_dense_electrons(
             Hn_flat, NintH, at, alat, nawf, orbital_positions
         )
         if diagonal_velocities:
-            cache['velocity_diag'] = _diagonal_velocities(cache, kblock, nl_correction)
+            cache['velocity_diag'] = _diagonal_velocities(cache, kblock)
     return cache
 
 
 def _diagonal_velocities(
     electrons: dict,
     kblock: int,
-    nl_correction: Callable | None = None,
     degeneracy_tol: float = 1.0e-6,
+    k_range: tuple[int, int] | None = None,
 ) -> NDArray:
     """Band velocities :math:`\\mathbf v_{n\\mathbf k}` on the dense grid, gauge invariant.
 
@@ -716,24 +734,34 @@ def _diagonal_velocities(
         Cache of :func:`precompute_dense_electrons` holding ``'velocity'``.
     kblock : int
         k-points per block.
-    nl_correction : callable, optional
-        Non-local velocity correction (see :func:`band_velocities`).
     degeneracy_tol : float, optional
         Energy tolerance (Ry) of a degenerate subspace.
+    k_range : tuple of int, optional
+        Only the k-points ``start <= k < stop`` (the others stay zero), to share
+        the work between MPI ranks.
 
     Returns
     -------
-    ndarray, shape ``(nkd, nawf, 3)``
-        Real diagonal velocity matrix elements (Ry bohr), averaged over each
-        degenerate subspace (the diagonal of a degenerate subspace depends on
-        the choice of eigenvectors; its average does not).
+    ndarray, shape ``(nkd, nband, 3)``
+        Real diagonal velocity matrix elements (Ry bohr) of the cached bands,
+        averaged over each degenerate subspace (the diagonal of a degenerate
+        subspace depends on the choice of eigenvectors; its average does not).
+
+    Notes
+    -----
+    By the Hellmann-Feynman theorem these are the group velocities
+    :math:`\\partial_{\\mathbf k}\\varepsilon_{n\\mathbf k}` of the PAO Hamiltonian,
+    which already contains the non-local pseudopotential: no non-local correction
+    applies to them.
     """
-    energies = electrons['E']
-    nkd, nawf = energies.shape
-    out = np.empty((nkd, nawf, 3))
-    for s0 in range(0, nkd, kblock):
-        block = np.arange(s0, min(s0 + kblock, nkd))
-        v = band_velocities(electrons, block, nl_correction=nl_correction)
+    bands = electrons.get('bands', np.arange(electrons['E'].shape[1]))
+    energies = electrons['E'][:, bands]
+    nkd, nband = energies.shape
+    start, stop = (0, nkd) if k_range is None else k_range
+    out = np.zeros((nkd, nband, 3))
+    for s0 in range(start, stop, kblock):
+        block = np.arange(s0, min(s0 + kblock, stop))
+        v = band_velocities(electrons, block)
         diag = np.real(np.einsum('kann->kna', v))  # (nb, nawf, 3)
         e = energies[block]
         same = np.abs(e[:, :, None] - e[:, None, :]) < degeneracy_tol  # (nb, n, m)
@@ -776,7 +804,8 @@ def fermi_surface_plasma_frequency(
     if 'velocity_diag' not in electrons:
         raise ValueError('needs precompute_dense_electrons(..., diagonal_velocities=True)')
     v = electrons['velocity_diag']
-    delta = electrons['dk'][isig]  # (nkd, nawf), 1/Ry
+    bands = electrons.get('bands', np.arange(electrons['dk'].shape[2]))
+    delta = electrons['dk'][isig][:, bands]  # (nkd, nband), 1/Ry
     nkd = v.shape[0]
     tensor = np.einsum('kna,knb,kn->ab', v, v, delta) / nkd
     return 8.0 * np.pi * spin_degeneracy / float(cell_volume) * tensor * RY_TO_EV**2
@@ -836,6 +865,7 @@ def band_velocities(
     k_indices: NDArray[np.int_],
     bands: NDArray[np.int_] | slice = slice(None),
     nl_correction: Callable[[NDArray[np.float64]], NDArray[np.complex128]] | None = None,
+    degeneracy_tol: float = 1.0e-6,
 ) -> NDArray[np.complex128]:
     """Band-basis velocity matrix elements ``<m k|v_alpha|n k>`` on the dense grid.
 
@@ -855,7 +885,11 @@ def band_velocities(
     nl_correction : callable, optional
         ``K_cryst (nb, 3) -> (nb, 3, nawf, nawf)``: an additional PAO-basis
         velocity term in Ry bohr (e.g. the non-local pseudopotential correction
-        of :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.build_nonlocal_velocity_kspace`).
+        of :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.build_nonlocal_velocity_kspace`),
+        added to the **interband** elements only (see Notes).
+    degeneracy_tol : float, optional
+        Energy tolerance (Ry) below which two bands count as degenerate (no
+        correction between them).
 
     Returns
     -------
@@ -876,6 +910,13 @@ def band_velocities(
     the PAO analogue of EPW's ``vme = 'wannier'`` (and minus PAOFLOW's
     ``dHksp`` of :func:`~PAOFLOW.hamiltonian.do_gradient.do_gradient`).  The band
     matrix is :math:`V_k^\\dagger \\mathbf{v}(\\mathbf{k}) V_k`.
+
+    Its diagonal is exactly the group velocity :math:`\\partial_{\\mathbf k}\\varepsilon_{n\\mathbf k}`
+    (Hellmann-Feynman), with the non-local pseudopotential already inside the PAO
+    Hamiltonian.  The non-local correction compensates for the incompleteness of
+    the basis in the interband dipoles :math:`m \\ne n` (optical transitions); it
+    is therefore not applied within degenerate blocks or on the diagonal, which
+    stay the band velocities used in transport.
     """
     terms = electrons.get('velocity')
     if terms is None:
@@ -892,10 +933,18 @@ def band_velocities(
         dHk = 0.5 * (dHk + np.conjugate(np.transpose(dHk, (0, 2, 1))))
         velocity[:, a] = dHk + 1j * Hk * terms['separation'][a][None]
     velocity /= RY_TO_EV  # eV bohr -> Ry bohr
-    if nl_correction is not None:
-        velocity += nl_correction(K)
     Vb = electrons['V'][k_indices][:, :, bands]
-    return np.einsum('kim,kaij,kjn->kamn', Vb.conj(), velocity, Vb, optimize=True)
+    out = np.einsum('kim,kaij,kjn->kamn', Vb.conj(), velocity, Vb, optimize=True)
+    if nl_correction is not None:
+        # Interband elements only: the diagonal (and degenerate-block) elements of
+        # dH/dk are already the group velocities dE/dk (Hellmann-Feynman), the PAO
+        # Hamiltonian containing the non-local pseudopotential.
+        kept = electrons.get('bands', np.arange(nawf))
+        energies = electrons['E'][k_indices][:, kept][:, bands]
+        interband = np.abs(energies[:, :, None] - energies[:, None, :]) > degeneracy_tol
+        delta = np.einsum('kim,kaij,kjn->kamn', Vb.conj(), nl_correction(K), Vb, optimize=True)
+        out += delta * interband[:, None]
+    return out
 
 
 def vertex_ws_coefficients(gR: NDArray[np.complex128], electrons: dict) -> NDArray[np.complex128]:

@@ -59,8 +59,7 @@ def pao_electronic_structure():
     return projections, pf.data_controller.data_arrays['HRs'], read_nscf(SAVEDIR), pf.data_controller
 
 
-def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, transport=False,
-               data_controller=None):
+def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, transport=False):
     """Isotropic Eliashberg properties (and the transport Eliashberg function) from EPW's coupling."""
     common = dict(
         source='epw',
@@ -82,9 +81,8 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, t
         projections, HRs, *lattice, EPW_DIR, COARSE_GRID, None, None, COARSE_GRID, None,
         nq_dense=nq_dense, sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'],
         species=nscf['atom_names'],
-        # transport: alpha^2F_tr, lambda_tr and the plasma frequency (non-local velocity included)
-        transport=transport, alat=nscf['alat'], cell_volume=nscf['omega'],
-        nonlocal_velocity=data_controller if transport else None, **common,
+        # transport: alpha^2F_tr, lambda_tr and the plasma frequency (band group velocities)
+        transport=transport, alat=nscf['alat'], cell_volume=nscf['omega'], **common,
     )
 
 
@@ -124,9 +122,9 @@ def main():
                         help='also alpha^2F_tr, lambda_tr and the plasma frequency (transport.py)')
     args = parser.parse_args()
 
-    projections, HRs, nscf, data_controller = pao_electronic_structure()
+    projections, HRs, nscf, _ = pao_electronic_structure()
     out = eliashberg(projections, HRs, nscf, args.nk, args.nq, args.sigma_ev, args.coarse_q,
-                     args.transport, data_controller)
+                     args.transport)
 
     if MPI.COMM_WORLD.Get_rank() == 0:
         grids = 'k %d^3, q %s' % (args.nk, 'coarse 6^3' if args.coarse_q else '%d^3' % args.nq)

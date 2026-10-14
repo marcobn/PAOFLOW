@@ -1190,6 +1190,97 @@ class GPAO:
         with np.load(npz_file) as data:
             plot_thermal_emissivity(dict(data), temps=temps, title=title, filename=filename)
 
+    def plot_metal_transport(
+        self,
+        eliashberg_npz: str,
+        resistivity_file: str,
+        experiment_file: str | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot alpha^2F, alpha^2F_tr and the resistivity of a metal.
+
+        Parameters
+        ----------
+        eliashberg_npz : str
+            ``eliashberg.npz`` of ``main.elphon.py --transport``.
+        resistivity_file : str
+            ``resistivity.dat`` of ``transport.elphon.py`` (T, total and per-channel
+            resistivity in micro-ohm cm; channel names in the header).
+        experiment_file : str, optional
+            Two columns: temperature (K), measured resistivity (micro-ohm cm).
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+
+        Returns
+        -------
+        None
+            Shows the figure
+            (:func:`PAOFLOW.graphics.plot_functions.plot_metal_transport`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_metal_transport
+
+        names = None
+        with open(resistivity_file, encoding='utf-8') as handle:
+            header = handle.readline()
+        if ':' in header:
+            names = [n.strip() for n in header.split(':', 1)[1].split(',') if n.strip()]
+        experiment = np.loadtxt(experiment_file) if experiment_file else None
+        with np.load(eliashberg_npz) as data:
+            plot_metal_transport(
+                dict(data), np.loadtxt(resistivity_file), names, experiment, title, filename
+            )
+
+    def plot_carrier_mobility(
+        self,
+        mobility_file: str,
+        scattering_npz: str | None = None,
+        temperature_k: float = 300.0,
+        experiment_file: str | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot the phonon-limited mobilities (SERTA/MRTA) and the scattering rates.
+
+        Parameters
+        ----------
+        mobility_file : str
+            ``mobility.dat`` of :func:`PAOFLOW.elphon.carrier_scattering.write_mobility_outputs`.
+        scattering_npz : str, optional
+            ``carrier_scattering.npz`` of the same run; adds the rates panel.
+        temperature_k : float, optional
+            Temperature of the rates panel.
+        experiment_file : str, optional
+            Three columns: temperature (K), measured electron and hole mobilities
+            (cm^2/(V s)); NaN skips a value.
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+
+        Returns
+        -------
+        None
+            Shows the figure
+            (:func:`PAOFLOW.graphics.plot_functions.plot_carrier_mobility`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_carrier_mobility
+
+        experiment = np.loadtxt(experiment_file) if experiment_file else None
+        scattering = None
+        if scattering_npz is not None:
+            with np.load(scattering_npz) as data:
+                scattering = dict(data)
+        plot_carrier_mobility(
+            np.loadtxt(mobility_file), scattering, temperature_k, experiment, title, filename
+        )
+
     def plot_migdal_eliashberg_aniso(
         self,
         npz_file: str,
