@@ -30,6 +30,8 @@ mid-gap Fermi level.
 | `optics/nscf.in` | `pw.x` nscf with 60 bands (8³ k) for the extended-basis direct dielectric function |
 | `optics_eps.py` | PAOFLOW `dielectric_tensor` on the extended basis with the non-local velocity → `optics/output/epsr_*/epsi_*.dat` |
 | `plot.py` | plots Im ε(ω) and α(ω), overlaying EPW's `epsilon2_indabs_<T>K.dat` when present; after `--emissivity` it also plots the thermal emissivity |
+| `mobility.py` | phonon-limited carrier mobility: state-resolved SERTA/MRTA rates near the band edges, electron and hole mobilities, `scattering_rates.npz` for `pf.transport` |
+| `plot_mobility.py` | plots μ(T) and 1/τ against the energy from the band edge → `output/mobility/mobility.png` |
 
 **Pseudopotential:** copy the PseudoDojo `Si.upf` (nc-sr-05, PBE standard;
 `PSEUDOS/nc-sr-05_pbe_standard_upf/` in this repository) into this directory.
@@ -37,7 +39,8 @@ Both `phonon/` and `epw/` use `pseudo_dir = '../'`.
 
 `paoflow-gen` (electron-phonon workflow, EPW source, property "phonon-assisted
 optical absorption") produces this layout as `main.elphon.py` and
-`plot.elphon.py`.
+`plot.elphon.py`. The property "carrier transport (mobility, SERTA/MRTA)"
+produces `mobility.py` and `plot_mobility.py` under the same names.
 
 ---
 
@@ -211,6 +214,78 @@ which includes local fields.
 - **Convergence.** The free carriers sit near the band edges. At 500 K the
   slab total is 0.11 at 12³/6³, 0.35 at 24³/12³ and 0.37 at 32³/16³, so use at
   least 24³/12³.
+
+### 5. Carrier mobility (SERTA / MRTA)
+
+The same EPW coupling gives the phonon-limited electron and hole mobilities.
+- **Rates.** `mobility.py` computes the state-resolved rates 1/τ_nk(T) in the
+  self-energy (SERTA) and momentum-relaxation (MRTA) approximations, for the
+  states within 0.3 eV of the band edges.
+- **Transport.** It then evaluates the k-resolved conductivity, carrier
+  densities, mobilities and Seebeck coefficient on the same dense grid.
+
+```bash
+mpirun -np 20 python mobility.py                       # 48^3 k = q, 200-500 K, intrinsic (3.5 min)
+mpirun -np 20 python mobility.py --nk 72 --nq 72       # 14 min (3^3 DFPT q)
+mpirun -np 20 python mobility.py --doping 1e18         # n type (cm^-3; negative = p type)
+python plot_mobility.py                                # -> output/mobility/mobility.png
+```
+
+**Benchmark.** The reference is Poncé, Margine and Giustino, Phys. Rev. B
+**97**, 121201(R) (2018), at the same level of theory: PBE, PBE lattice
+(5.47 Å), no spin–orbit and no GW or screening corrections. That calculation
+gives μ_e = 1343 and μ_h = 722 cm²/Vs, converged with about 85k irreducible k
+and 200k irreducible q. Experiment gives about 1400 and 470–500.
+
+At 48³ k = q, σ = 10 meV and 300 K, MRTA (cm²/Vs):
+
+| coupling (DFPT q-grid) | H(R) of the band structure | μ_e | μ_h |
+|---|---|---|---|
+| 3³ (this example) | EPW 6³ nscf | 1763 | 424 |
+| 3³ | 18³ scf, same PAO basis | 1376 | 407 |
+| 6³ | EPW 6³ nscf | 1492 | 440 |
+| 6³ | 18³ scf | 1167 | 423 |
+
+What matters, in order:
+- **Band velocities.** They are the group velocities ∂ε/∂k. Earlier versions
+  added the non-local pseudopotential correction to them, which made μ_e 12%
+  too high. That correction applies to interband optical dipoles only.
+- **Band structure.** Interpolating from EPW's 6³ nscf makes the transverse
+  electron mass 10% too light and the heavy holes 7–10% too light, compared
+  with QE on the same k-points. The coupling is in the fixed PAO orbital gauge,
+  so the band structure can come from a denser PAO run in the same basis. The
+  18³ scf brings m_t and the hole masses within 3% of QE (m_l is 13% heavy).
+- **Coupling grid.** Going from a 3³ to a 6³ DFPT q-grid lowers μ_e by
+  15–20%; μ_h changes by less than 5%.
+- **k/q sampling.** Uniform grids converge slowly: with the earlier velocities
+  μ_h rose 418 → 482 → 504 from 48³ to 72³, and μ_e rose about 6%. The paper
+  uses quasi-random grids densified at the band extrema.
+- **Not the cause.** The smearing: at 48³, σ = 5, 10 and 20 meV change the
+  results by less than 10%. Nor the relaxation-time approximation: MRTA ≈
+  SERTA within 3%, and the paper's IBTE differs from SERTA by +6% for electrons
+  and −1% for holes.
+
+With all corrections, the electrons are within the remaining grid convergence
+of the reference. The holes are about 40% low, and that is still open.
+
+`--doping 1e18` gives n_e = 1.0·10¹⁸ cm⁻³ and the intrinsic μ_e, as expected
+in the non-degenerate regime. The calculation is phonon-limited only; add the
+ionized-impurity scattering through the Boltzmann bridge.
+
+**Boltzmann bridge.** `output/mobility/scattering_rates.npz` holds the
+transport-weighted τ_eff(E, T) for PAOFLOW's Boltzmann module. The channel is
+aligned to the band edges of the run that uses it:
+
+```python
+from PAOFLOW.boltzmann.scattering_channels import EnergyResolvedRate
+eph = EnergyResolvedRate.from_npz('output/mobility/scattering_rates.npz', 'mrta')
+pf.transport(tmin=300, tmax=300, nt=1, emin=-0.3, emax=1.0, ne=261,
+             scattering_channels=[eph, 'impurity'], tau_dict={...})
+```
+
+At 36³, through `pf.transport` on PAOFLOW's band structure of the 18³ scf save,
+the bridge reproduces the k-resolved mobilities to 15–17%. That is the cost of
+an energy-only τ.
 
 ---
 

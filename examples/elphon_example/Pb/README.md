@@ -30,6 +30,7 @@ matrix elements, and PAOFLOW does all the interpolation.
 | `me.py` | isotropic Migdal–Eliashberg on the α²F of `main.py`: gap vs T, real axis, linearised-kernel Tc |
 | `plot_me.py` | plots the `me.py` results |
 | `transport.py` | metal resistivity ρ(T), extended-Drude optics and thermal emissivity from α²F_tr (`main.py --transport`) |
+| `plot_transport.py` | plots α²F vs α²F_tr, ρ(T) (optional measured overlay) and the emissivity |
 | `optics/nscf.in`, `optics_eps.py` | optional: interband dielectric function on the extended basis (`dielectric_tensor(intraband=False)`) |
 
 **Pseudopotential:** copy `Pb.upf` (ONCVPSP, from the EPW tutorial material) into
@@ -123,6 +124,7 @@ It writes `output/me/` in EPW's formats:
 ```bash
 mpirun -np 8 python main.py --transport   # adds alpha^2F_tr, lambda_tr, plasma frequency (2 min)
 python transport.py                       # rho(T), extended-Drude eps(omega, T), emissivity
+python plot_transport.py [--experiment rho.dat]   # -> output/transport/{metal_transport,emissivity}.png
 # optional interband part on the extended basis (separate nscf with nbnd = 40):
 mkdir -p optics/pb.save && cp phonon/pb.save/{charge-density.dat,data-file-schema.xml} optics/pb.save/
 (cd optics && mpirun -np 4 pw.x -nk 4 -in nscf.in > nscf.out)
@@ -144,19 +146,21 @@ velocity change, giving the transport Eliashberg function α²F_tr and λ_tr
 - The same channels also drive PAOFLOW's Boltzmann transport:
   `pf.transport(scattering_channels=[TransportSpectralChannel.from_npz(...)])`.
 
-**Pb results** (48³/24³, σ = 0.05 eV, non-local velocity):
-- λ = 1.20, λ_tr = 0.94, ħω_p = 8.1 eV.
+**Pb results** (48³/24³, σ = 0.05 eV, band group velocities):
+- λ = 1.20, λ_tr = 0.94, ħω_p = 8.34 eV.
 - Resistivity in µΩ cm, linear above about 100 K:
 
   | T (K) | 20 | 50 | 100 | 200 | 300 | 400 | 600 |
   |---|---|---|---|---|---|---|---|
-  | ρ | 0.56 | 2.5 | 5.5 | 11.3 | 17.1 | 22.8 | 34.3 |
+  | ρ | 0.52 | 2.4 | 5.2 | 10.8 | 16.2 | 21.7 | 32.6 |
 
   Experiment gives about 21 µΩ cm at 300 K.
-- Boltzmann transport on PAOFLOW's 48³ grid with the same channel, at the same
-  chemical potential, gives 19.3 µΩ cm at 300 K.
-- Total hemispherical emissivity of a clean surface: 0.013 (100 K), 0.037
-  (300 K), 0.072 (600 K).
+- An earlier Boltzmann run on PAOFLOW's 48³ grid with the same channel, at
+  the same chemical potential, gave 19.3 µΩ cm at 300 K. That run used
+  `gradient_and_momenta(nonlocal_velocity=True)`, which also alters the band
+  velocities.
+- Total hemispherical emissivity of a clean surface: 0.012 (100 K), 0.037
+  (300 K), 0.071 (600 K).
 - The interband part changes the totals by less than 2%. Its main feature is
   the parallel-band absorption near 2 eV.
 - At room temperature the extended and simple Drude models nearly coincide,
@@ -168,7 +172,7 @@ velocity change, giving the transport Eliashberg function α²F_tr and λ_tr
 - **k-grid.** The Fermi-surface quantities need at least 48³ k at
   σ = 0.05 eV: at 24³, ħω_p is 6.9 eV and λ_tr is 1.23.
 - **q-grid.** Refining q from 24³ to 48³ (k = 48³) changes λ from 1.20 to 1.14,
-  λ_tr from 0.94 to 0.87 and ρ(300 K) from 17.1 to 16.0 µΩ cm. ω_p does not
+  λ_tr from 0.94 to 0.87 and ρ(300 K) by about 6%. ω_p does not
   depend on q.
 - **Equal grids.** Equal k- and q-grids are not required for these
   Fermi-surface averages (the anisotropic Migdal–Eliashberg equations do need

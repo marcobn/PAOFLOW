@@ -10,6 +10,7 @@ from PAOFLOW.boltzmann.scattering_channels import (
     HBAR_EV_S,
     KB_EV_K,
     ConstantRate,
+    EnergyResolvedRate,
     FermiLiquidRate,
     PhenomenologicalChannel,
     ResidualResistivity,
@@ -137,3 +138,55 @@ def test_mass_enhancement_einstein_spectrum():
     np.testing.assert_allclose(lam[1:], [exact(w) for w in omega[1:]], rtol=5e-3)
     # temperature suppresses the low-frequency mass enhancement
     assert channel.mass_enhancement(np.array([1e-4]), 1000.0)[0] < lam[0]
+
+
+def test_energy_resolved_rate_interpolation(tmp_path):
+    energy = np.array([0.0, 0.1, 0.2])
+    rates = np.array([[1.0, 2.0, 4.0], [3.0, 6.0, 12.0]]) * 1e13
+    channel = EnergyResolvedRate(energy, [200.0, 400.0], rates)
+    np.testing.assert_allclose(channel.rate(200.0, energy_ev=[0.05, 0.15]), [1.5e13, 3e13])
+    np.testing.assert_allclose(channel.rate(300.0, energy_ev=0.1), 4e13)
+    # constant beyond the tabulated energies
+    np.testing.assert_allclose(channel.rate(400.0, energy_ev=[-1.0, 1.0]), [3e13, 1.2e14])
+    with pytest.raises(ValueError):
+        channel.rate(500.0, energy_ev=0.1)
+    with pytest.raises(ValueError):
+        channel.rate(300.0, omega_ev=0.1)
+    shifted = EnergyResolvedRate(energy, [200.0, 400.0], rates, energy_shift_ev=0.1)
+    np.testing.assert_allclose(shifted.rate(200.0, energy_ev=0.2), 2e13)
+    np.savez(tmp_path / 'r.npz', energy_ev=energy, temps_k=[200.0, 400.0], rate_mrta=rates)
+    loaded = EnergyResolvedRate.from_npz(str(tmp_path / 'r.npz'), 'mrta')
+    np.testing.assert_allclose(
+        loaded.rate(250.0, energy_ev=0.0), channel.rate(250.0, energy_ev=0.0)
+    )
+    # Boltzmann integration: tau = 1/rate at the band energies
+    energies = _energies()
+    dc = _DC(energies, PARAMS)
+    tau = get_tau(dc, KB_EV_K * 300.0, [channel], [])
+    np.testing.assert_allclose(tau, 1.0 / channel.rate(300.0, energy_ev=energies), rtol=1e-12)
+
+
+def test_energy_resolved_rate_band_edge_alignment():
+    # holes: rate grows below the VBM (0); electrons: above the CBM (1)
+    energy = np.array([-0.2, 0.0, 1.0, 1.2])
+    rates = np.array([[3.0, 1.0, 2.0, 6.0]]) * 1e13
+    channel = EnergyResolvedRate(energy, [300.0], rates, band_edges=(0.0, 1.0))
+    # without a target the table energies are absolute
+    np.testing.assert_allclose(channel.rate(300.0, energy_ev=[0.0, 1.0]), [1e13, 2e13])
+    # a band structure with VBM 0.1 and CBM 0.8: rates follow the band edges
+    channel.align_to(0.1, 0.8)
+    np.testing.assert_allclose(
+        channel.rate(300.0, energy_ev=[0.1, -0.1, 0.8, 1.0]), [1e13, 3e13, 2e13, 6e13]
+    )
+    with pytest.raises(ValueError):
+        EnergyResolvedRate(energy, [300.0], rates, band_edges=(1.0, 0.0))
+    with pytest.raises(ValueError):
+        EnergyResolvedRate(energy, [300.0], rates).align_to(0.0, 1.0)
+
+    class _Run:
+        def data_dicts(self):
+            e_k = np.array([[[-0.5], [0.1], [0.8]], [[-0.4], [0.05], [0.9]]])
+            return {'E_k': e_k}, {'nelec': 4, 'dftSO': False}
+
+    channel.bind(_Run())
+    assert channel.target_edges == (0.1, 0.8)

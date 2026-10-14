@@ -172,7 +172,7 @@ def test_velocity_and_vertex_phase_consistency_against_exact_model():
 
 
 def test_band_velocities_finite_difference_and_correction():
-    """Without orbital separation, v is dH/dk; a PAO-basis correction is added before rotation."""
+    """Without orbital separation, v is dH/dk; a PAO-basis correction enters interband elements only."""
     hops, _ = _model_terms(seed=5)
     single_site = [(i, j, R, h) for i, j, R, h in hops if i < 2 and j < 2]
     HRs = _paoflow_HRs(single_site, 4)[:2, :2]
@@ -199,9 +199,11 @@ def test_band_velocities_finite_difference_and_correction():
     )
     for b, ik in enumerate(sel):
         Vk = electrons['V'][ik]
-        np.testing.assert_allclose(
-            corrected[b, 0] - v[b, 0], Vk.conj().T @ extra[0] @ Vk, atol=1e-12
-        )
+        rotated = Vk.conj().T @ extra[0] @ Vk
+        # the diagonal stays the group velocity dE/dk (Hellmann-Feynman)
+        np.testing.assert_allclose(np.diag(corrected[b, 0]), np.diag(v[b, 0]), atol=1e-12)
+        off = ~np.eye(2, dtype=bool)
+        np.testing.assert_allclose((corrected[b, 0] - v[b, 0])[off], rotated[off], atol=1e-12)
         np.testing.assert_allclose(corrected[b], np.conj(np.transpose(corrected[b], (0, 2, 1))))
 
 

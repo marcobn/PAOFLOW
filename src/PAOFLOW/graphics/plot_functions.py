@@ -1377,6 +1377,7 @@ def plot_thermal_emissivity(
     else:
         index = np.array([int(np.argmin(np.abs(all_temps - t))) for t in temps])
     thickness_um = float(data['thickness_m']) * 1.0e6
+    opaque_only = not np.isfinite(thickness_um)  # e.g. a metal: slab == half-space
 
     from matplotlib.colors import LinearSegmentedColormap
 
@@ -1388,24 +1389,33 @@ def plot_thermal_emissivity(
             omega, data['hemispherical_slab'][it], color=color, lw=2,
             label='%g K' % all_temps[it],
         )  # fmt: skip
-        ax_w.plot(omega, data['hemispherical_opaque'][it], color=color, lw=1, ls='--')
-    ax_w.plot([], [], color='#52514e', lw=1, ls='--', label='opaque half-space')
+        if not opaque_only:
+            ax_w.plot(omega, data['hemispherical_opaque'][it], color=color, lw=1, ls='--')
+    if not opaque_only:
+        ax_w.plot([], [], color='#52514e', lw=1, ls='--', label='opaque half-space')
     ax_w.set_xscale('log')
     ax_w.set_xlim(omega[0], omega[-1])
-    ax_w.set_ylim(0.0, 1.0)
     ax_w.set_xlabel('Photon energy (eV)')
     ax_w.set_ylabel(r'Hemispherical emissivity $\varepsilon(\omega, T)$')
-    ax_w.set_title('slab, d = %g µm' % thickness_um, fontsize=10)
 
     ax_t.plot(
         all_temps, data['total_slab'], color=_ME_SERIES[0], lw=2, marker='o', ms=8,
-        label='slab, d = %g µm' % thickness_um,
+        label='opaque surface' if opaque_only else 'slab, d = %g µm' % thickness_um,
     )  # fmt: skip
-    ax_t.plot(
-        all_temps, data['total_opaque'], color=_ME_SERIES[1], lw=2, marker='s', ms=8,
-        ls='--', label='opaque half-space',
-    )  # fmt: skip
-    ax_t.set_ylim(0.0, 1.0)
+    if not opaque_only:
+        ax_t.plot(
+            all_temps, data['total_opaque'], color=_ME_SERIES[1], lw=2, marker='s', ms=8,
+            ls='--', label='opaque half-space',
+        )  # fmt: skip
+    if opaque_only:
+        # a metal emits a few percent: zoom instead of the full [0, 1] range
+        ax_w.set_ylim(0.0, 1.1 * float(np.max(data['hemispherical_slab'][index])))
+        ax_w.set_title('opaque surface', fontsize=10)
+        ax_t.set_ylim(0.0, 1.1 * float(np.max(data['total_slab'])))
+    else:
+        ax_w.set_ylim(0.0, 1.0)
+        ax_w.set_title('slab, d = %g µm' % thickness_um, fontsize=10)
+        ax_t.set_ylim(0.0, 1.0)
     ax_t.set_xlabel('Temperature (K)')
     ax_t.set_ylabel(r'Total hemispherical emissivity $\varepsilon(T)$')
     ax_t.set_title(
@@ -1415,6 +1425,206 @@ def plot_thermal_emissivity(
     ax_t.legend(frameon=False, fontsize=9, loc='lower right')
     for ax in (ax_w, ax_t):
         ax.grid(alpha=0.3)
+    if title is not None:
+        fig.suptitle(title)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_metal_transport(
+    eliashberg: Mapping[str, Any],
+    resistivity: np.ndarray,
+    channel_names: Sequence[str] | None = None,
+    experiment: np.ndarray | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+) -> None:
+    """Plot the transport Eliashberg function and the resistivity of a metal.
+
+    Parameters
+    ----------
+    eliashberg : mapping
+        Contents of ``eliashberg.npz`` from a dense-q run with ``transport=True``
+        (``omega`` in eV, ``a2F``, ``a2F_tr``, ``lambda``, ``lambda_tr``,
+        ``omega_plasma_ev``).
+    resistivity : ndarray, shape ``(ntemp, 2 + nchannel)``
+        Rows of ``resistivity.dat`` written by ``transport.elphon.py``:
+        temperature (K), total and per-channel resistivity (micro-ohm cm).
+    channel_names : sequence of str, optional
+        Labels of the channel columns.
+    experiment : ndarray, shape ``(n, 2)``, optional
+        Measured (temperature, resistivity in micro-ohm cm), drawn as markers.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Left: :math:`\\alpha^2F(\\omega)` and the transport function
+    :math:`\\alpha^2F_{tr}(\\omega)` (the velocity-weighted coupling that relaxes
+    the current), with :math:`\\lambda` and :math:`\\lambda_{tr}`.  Right: the
+    resistivity :math:`\\rho(T)`, total and, with several channels, the
+    contribution of each (Matthiessen's rule).
+    """
+    omega_mev = np.asarray(eliashberg['omega']) * 1.0e3
+    fig, (ax_f, ax_r) = plt.subplots(1, 2, figsize=(10, 4))
+    ax_f.plot(
+        omega_mev, eliashberg['a2F'], color=_ME_SERIES[0], lw=2,
+        label=r'$\alpha^2F$, $\lambda$ = %.2f' % float(eliashberg['lambda']),
+    )  # fmt: skip
+    ax_f.plot(
+        omega_mev, eliashberg['a2F_tr'], color=_ME_SERIES[1], lw=2,
+        label=r'$\alpha^2F_{tr}$, $\lambda_{tr}$ = %.2f' % float(eliashberg['lambda_tr']),
+    )  # fmt: skip
+    ax_f.set_xlim(0.0, omega_mev[-1])
+    ax_f.set_ylim(bottom=0.0)
+    ax_f.set_xlabel(r'$\omega$ (meV)')
+    ax_f.set_ylabel('Eliashberg function')
+    if 'omega_plasma_ev' in eliashberg:
+        ax_f.set_title(
+            r'$\hbar\omega_p$ = %.2f eV' % float(eliashberg['omega_plasma_ev']), fontsize=10
+        )
+
+    rho = np.atleast_2d(np.asarray(resistivity, dtype=float))
+    temps = rho[:, 0]
+    ax_r.plot(temps, rho[:, 1], color=_ME_SERIES[0], lw=2, marker='o', ms=8, label='total')
+    nchannel = rho.shape[1] - 2
+    if nchannel > 1:
+        names = list(channel_names or ['channel %d' % (i + 1) for i in range(nchannel)])
+        for ic in range(nchannel):
+            ax_r.plot(
+                temps, rho[:, 2 + ic], color=_ME_SERIES[(ic + 1) % len(_ME_SERIES)], lw=2,
+                ls='--', label=names[ic],
+            )  # fmt: skip
+    if experiment is not None:
+        exp = np.atleast_2d(np.asarray(experiment, dtype=float))
+        ax_r.plot(exp[:, 0], exp[:, 1], ls='none', marker='s', ms=8, mfc='none',
+                  mec='#52514e', mew=1.5, label='experiment')  # fmt: skip
+    ax_r.set_xlim(0.0, 1.05 * temps.max())
+    ax_r.set_ylim(bottom=0.0)
+    ax_r.set_xlabel('Temperature (K)')
+    ax_r.set_ylabel(r'$\rho$ ($\mu\Omega$ cm)')
+    for ax in (ax_f, ax_r):
+        ax.grid(alpha=0.3)
+        ax.legend(frameon=False, fontsize=9, loc='upper left')
+    if title is not None:
+        fig.suptitle(title)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_carrier_mobility(
+    mobility: np.ndarray,
+    scattering: Mapping[str, Any] | None = None,
+    temperature_k: float = 300.0,
+    experiment: np.ndarray | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+) -> None:
+    """Plot phonon-limited carrier mobilities and the scattering rates of a semiconductor.
+
+    Parameters
+    ----------
+    mobility : ndarray, shape ``(ntemp, 11)``
+        Rows of ``mobility.dat`` (:func:`PAOFLOW.elphon.carrier_scattering.write_mobility_outputs`):
+        T (K), chemical potential, n_e, n_h, SERTA and MRTA electron and hole
+        mobilities (cm^2/(V s)), conductivities and Seebeck coefficient.
+    scattering : mapping, optional
+        Contents of ``carrier_scattering.npz`` (``energies_ev``, ``in_window``,
+        ``carrier``, ``rates_serta``, ``rates_mrta``, ``temps_k``, ``vbm_ev``,
+        ``cbm_ev``); adds the rates panel.
+    temperature_k : float, optional
+        Temperature of the rates panel (the closest computed one).
+    experiment : ndarray, shape ``(n, 3)``, optional
+        Measured (T, electron mobility, hole mobility), drawn as open markers;
+        NaN skips a value.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Left: :math:`\\mu_{e,h}(T)` in the momentum-relaxation (MRTA, solid) and
+    self-energy (SERTA, dashed) relaxation-time approximations, on log-log axes
+    (phonon-limited mobilities fall roughly as :math:`T^{-1.5}` to
+    :math:`T^{-2.5}`).  Right: :math:`1/\\tau_{n\\mathbf k}` (MRTA) of the
+    window states against the carrier energy from the band edge.
+    """
+    data = np.atleast_2d(np.asarray(mobility, dtype=float))
+    temps = data[:, 0]
+    panels = 2 if scattering is not None else 1
+    fig, axes = plt.subplots(1, panels, figsize=(5 * panels, 4), squeeze=False)
+    ax_m = axes[0, 0]
+    carriers = (('electrons', 4, 6, _ME_SERIES[0]), ('holes', 5, 7, _ME_SERIES[1]))
+    for label, col_serta, col_mrta, color in carriers:
+        if not np.isfinite(data[:, col_mrta]).any():
+            continue
+        ax_m.plot(temps, data[:, col_mrta], color=color, lw=2, marker='o', ms=8,
+                  label='%s (MRTA)' % label)  # fmt: skip
+        ax_m.plot(temps, data[:, col_serta], color=color, lw=2, ls='--',
+                  label='%s (SERTA)' % label)  # fmt: skip
+    if experiment is not None:
+        exp = np.atleast_2d(np.asarray(experiment, dtype=float))
+        for column, marker, color, label in ((1, 's', _ME_SERIES[0], 'electrons, experiment'),
+                                             (2, '^', _ME_SERIES[1], 'holes, experiment')):  # fmt: skip
+            if exp.shape[1] > column and np.isfinite(exp[:, column]).any():
+                ax_m.plot(exp[:, 0], exp[:, column], ls='none', marker=marker, ms=8, mfc='none',
+                          mec=color, mew=1.5, label=label)  # fmt: skip
+    if temps.size > 1:
+        from matplotlib.ticker import NullFormatter, ScalarFormatter
+
+        ax_m.set_xscale('log')
+        ax_m.set_xticks(temps)
+        ax_m.xaxis.set_major_formatter(ScalarFormatter())
+        ax_m.xaxis.set_minor_formatter(NullFormatter())
+    ax_m.set_yscale('log')
+    ax_m.set_xlabel('Temperature (K)')
+    ax_m.set_ylabel(r'Mobility (cm$^2$/V s)')
+    ax_m.grid(alpha=0.3, which='both')
+    ax_m.legend(frameon=False, fontsize=9)
+
+    if scattering is not None:
+        ax_r = axes[0, 1]
+        it = int(np.argmin(np.abs(np.asarray(scattering['temps_k']) - temperature_k)))
+        energies = np.asarray(scattering['energies_ev'])
+        window = np.asarray(scattering['in_window'])
+        carrier = np.asarray(scattering['carrier'])
+        rates = np.asarray(scattering['rates_mrta'])[it]
+        if np.all(carrier == 0):
+            sets = (('states', np.ones_like(carrier, bool), 0.0, 1.0, _ME_SERIES[0]),)
+        else:
+            sets = (
+                ('electrons', carrier > 0, float(scattering['cbm_ev']), 1.0, _ME_SERIES[0]),
+                ('holes', carrier < 0, float(scattering['vbm_ev']), -1.0, _ME_SERIES[1]),
+            )
+        for label, bands, edge, sign, color in sets:
+            mask = window & bands[None, :] & (rates > 0.0)
+            if mask.any():
+                ax_r.plot(sign * (energies[mask] - edge) * 1.0e3, rates[mask], ls='none',
+                          marker='o', ms=3, color=color, alpha=0.5, label=label)  # fmt: skip
+        ax_r.set_yscale('log')
+        ax_r.set_xlim(left=0.0)
+        ax_r.set_xlabel('Carrier energy from the band edge (meV)')
+        ax_r.set_ylabel(r'$1/\tau$ MRTA (s$^{-1}$)')
+        ax_r.set_title('T = %.0f K' % float(scattering['temps_k'][it]), fontsize=10)
+        ax_r.grid(alpha=0.3, which='both')
+        ax_r.legend(frameon=False, fontsize=9, markerscale=2)
     if title is not None:
         fig.suptitle(title)
     plt.tight_layout()

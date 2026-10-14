@@ -24,7 +24,10 @@ Channels:
   ``f(kT_eV, |E|_eV, params) -> tau`` function;
 * :class:`TransportSpectralChannel` -- electron-phonon scattering from the
   transport Eliashberg function :math:`\\alpha^2F_{tr}(\\omega)` (Allen), with the
-  frequency-dependent rate and mass enhancement of the extended Drude model.
+  frequency-dependent rate and mass enhancement of the extended Drude model;
+* :class:`EnergyResolvedRate` -- a tabulated :math:`1/\\tau(E, T)`, e.g. the
+  ab initio SERTA/MRTA electron-phonon rates of semiconductors from
+  :mod:`PAOFLOW.elphon.carrier_scattering`.
 
 Units at the interface: temperatures in K, energies and frequencies in eV
 (:math:`\\hbar\\omega`), rates in 1/s.
@@ -89,6 +92,13 @@ class ScatteringChannel:
     def mass_enhancement(self, omega_ev: ArrayLike, temperature_k: float) -> NDArray[np.float64]:
         """Optical mass enhancement :math:`\\lambda(\\omega, T)` (0 unless overridden)."""
         return np.zeros(np.shape(omega_ev))
+
+    def bind(self, data_controller) -> None:
+        """Adapt the channel to the band structure of a Boltzmann run (no-op by default).
+
+        Called by :func:`~PAOFLOW.boltzmann.do_Boltz_tensors.get_tau` on every
+        rank before the rates are evaluated.
+        """
 
     def __repr__(self) -> str:
         return '%s(%s)' % (type(self).__name__, self.name)
@@ -382,6 +392,151 @@ class TransportSpectralChannel(ScatteringChannel):
             tail = (r_w - r0) * (np.arctanh(w / top) / w if w > 0.0 else 1.0 / top)
             lam[i] = 2.0 / np.pi * (np.trapezoid(integrand, grid) + tail)
         return lam.reshape(np.shape(omega_ev)) if np.ndim(omega_ev) else lam[0]
+
+
+class EnergyResolvedRate(ScatteringChannel):
+    """Tabulated rate :math:`1/\\tau(E, T)`, e.g. ab initio electron-phonon scattering.
+
+    Parameters
+    ----------
+    energy_ev : array_like, shape ``(ne,)``
+        Carrier energies (eV), increasing, on the scale of PAOFLOW's band
+        energies ``E_k`` (zero at the DFT Fermi level of the PAO Hamiltonian).
+    temps_k : array_like, shape ``(nt,)``
+        Temperatures (K), increasing.
+    rate_per_s : array_like, shape ``(nt, ne)``
+        Rates (1/s).
+    name : str, optional
+        Label.
+    energy_shift_ev : float, optional
+        Added to ``energy_ev``, to align a table computed with a different
+        energy zero.
+    band_edges : tuple of float, optional
+        ``(vbm, cbm)`` (eV) of the band structure of the table, for a gapped
+        material.  The rates of electrons are then a function of the energy above
+        the conduction-band minimum and those of holes of the energy below the
+        valence-band maximum, aligned to the band edges of the band structure
+        that uses them (:meth:`align_to`, or :meth:`bind` in
+        :meth:`PAOFLOW.PAOFLOW.transport`).
+
+    Notes
+    -----
+    The rate is interpolated linearly in energy (held constant beyond the
+    tabulated range) and in temperature; a temperature outside the table
+    raises.  :func:`PAOFLOW.elphon.carrier_scattering.energy_resolved_rates`
+    builds the table as the transport-weighted average of the state-resolved
+    SERTA/MRTA rates,
+
+    .. math::
+
+        \\tau_{eff}(E) = \\frac{\\sum_{n\\mathbf k} v^2_{n\\mathbf k}\\tau_{n\\mathbf k}
+            \\delta(E - \\varepsilon_{n\\mathbf k})}
+            {\\sum_{n\\mathbf k} v^2_{n\\mathbf k}\\delta(E - \\varepsilon_{n\\mathbf k})},
+
+    which reproduces the trace of the k-resolved RTA conductivity in an
+    energy-only relaxation-time model (:meth:`PAOFLOW.PAOFLOW.transport`).
+    Aligning the band edges matters because the Boltzmann run usually has a
+    different band structure (PAOFLOW's zero-padding interpolation, or another
+    QE run) from the Wigner-Seitz interpolation of the electron-phonon run:
+    a few tens of meV in the gap change the carrier densities, not the rates.
+    """
+
+    def __init__(
+        self,
+        energy_ev: ArrayLike,
+        temps_k: ArrayLike,
+        rate_per_s: ArrayLike,
+        name: str = 'e-ph (energy-resolved)',
+        energy_shift_ev: float = 0.0,
+        band_edges: tuple[float, float] | None = None,
+    ) -> None:
+        shift = float(energy_shift_ev)
+        self.energy_ev = np.asarray(energy_ev, dtype=float) + shift
+        self.temps_k = np.atleast_1d(np.asarray(temps_k, dtype=float))
+        self.rate_per_s = np.asarray(rate_per_s, dtype=float).reshape(
+            self.temps_k.size, self.energy_ev.size
+        )
+        self.name = name
+        self.band_edges = None
+        if band_edges is not None:
+            vbm, cbm = (float(e) + shift for e in band_edges)
+            if cbm <= vbm:
+                raise ValueError('band_edges need a gap (vbm < cbm).')
+            self.band_edges = (vbm, cbm)
+        self.target_edges = None
+
+    @classmethod
+    def from_npz(
+        cls, path: str, kind: str = 'mrta', energy_shift_ev: float = 0.0, align: bool = True
+    ) -> 'EnergyResolvedRate':
+        """Channel from a ``scattering_rates.npz`` (``energy_ev``, ``temps_k``, ``rate_<kind>``).
+
+        With ``align`` (default) and a gapped table (``vbm_ev``, ``cbm_ev``,
+        ``metal`` in the file), the energies are aligned to the band edges of the
+        band structure that uses the channel.
+        """
+        with np.load(path) as data:
+            edges = None
+            if align and 'vbm_ev' in data and not bool(data.get('metal', False)):
+                edges = (float(data['vbm_ev']), float(data['cbm_ev']))
+            return cls(
+                data['energy_ev'], data['temps_k'], data['rate_%s' % kind],
+                name='e-ph (%s)' % kind.upper(), energy_shift_ev=energy_shift_ev,
+                band_edges=edges,
+            )  # fmt: skip
+
+    def align_to(self, vbm_ev: float, cbm_ev: float) -> None:
+        """Use the band edges ``(vbm_ev, cbm_ev)`` of the target band structure."""
+        if self.band_edges is None:
+            raise ValueError('%s has no band edges to align.' % self.name)
+        self.target_edges = (float(vbm_ev), float(cbm_ev))
+
+    def bind(self, data_controller) -> None:
+        """Align to the band edges of a PAOFLOW run (``E_k``, ``nelec``; MPI-reduced)."""
+        if self.band_edges is None:
+            return
+        from mpi4py import MPI
+
+        arrays, attributes = data_controller.data_dicts()
+        nelec = int(round(attributes['nelec']))
+        nocc = nelec if attributes.get('dftSO', False) else nelec // 2
+        energies = np.asarray(arrays['E_k'])
+        vbm = np.array(energies[:, nocc - 1].max() if energies.size else -np.inf)
+        cbm = np.array(energies[:, nocc].min() if energies.size else np.inf)
+        comm = MPI.COMM_WORLD
+        if comm.Get_size() > 1:
+            vbm = comm.allreduce(float(vbm), op=MPI.MAX)
+            cbm = comm.allreduce(float(cbm), op=MPI.MIN)
+        if cbm <= vbm:
+            raise ValueError(
+                '%s: the band structure has no gap above band %d; use align=False.'
+                % (self.name, nocc)
+            )
+        self.align_to(float(vbm), float(cbm))
+
+    def rate(self, temperature_k, energy_ev=None, omega_ev=None):
+        if energy_ev is None:
+            raise ValueError('%s is a DC (energy-resolved) channel: give energy_ev.' % self.name)
+        temp = float(temperature_k)
+        low, high = self.temps_k[0], self.temps_k[-1]
+        tol = 1.0e-6 * max(1.0, high)
+        if temp < low - tol or temp > high + tol:
+            raise ValueError(
+                '%s: T = %g K outside the tabulated range [%g, %g] K.'
+                % (self.name, temp, low, high)
+            )
+        energy = np.asarray(energy_ev, dtype=float)
+        if self.band_edges is not None and self.target_edges is not None:
+            (vbm, cbm), (vbm_t, cbm_t) = self.band_edges, self.target_edges
+            conduction = energy > 0.5 * (vbm_t + cbm_t)
+            energy = np.where(conduction, energy - cbm_t + cbm, energy - vbm_t + vbm)
+        rows = [np.interp(energy, self.energy_ev, r) for r in self.rate_per_s]
+        if self.temps_k.size == 1:
+            return rows[0]
+        j = int(np.clip(np.searchsorted(self.temps_k, temp) - 1, 0, self.temps_k.size - 2))
+        t0, t1 = self.temps_k[j], self.temps_k[j + 1]
+        x = min(max((temp - t0) / (t1 - t0), 0.0), 1.0)
+        return (1.0 - x) * rows[j] + x * rows[j + 1]
 
 
 def matthiessen(
