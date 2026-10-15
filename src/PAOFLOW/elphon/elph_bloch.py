@@ -1085,9 +1085,10 @@ def band_vertex(
     """
     nawf = Vk.shape[1]
     gk = (phkg @ gn_flat).reshape(phkg.shape[0], nawf, nawf, -1)
-    tmp = np.einsum('bim,bijc->bmjc', Vkq.conj(), gk, optimize=True)
-    gband = np.einsum('bmjc,bjn->bmnc', tmp, Vk, optimize=True)
-    return np.einsum('bmnc,vc->bvmn', gband, zmass, optimize=True)
+    # Modes first, then V_{k+q}^dagger g V_k as batched matrix products (BLAS).
+    gk = np.ascontiguousarray(np.moveaxis(gk @ np.asarray(zmass).T, 3, 1))  # (nb, nmode, i, j)
+    left = np.matmul(np.conj(np.swapaxes(Vkq, 1, 2))[:, None], gk)  # (nb, nmode, m, j)
+    return np.matmul(left, Vk[:, None])  # (nb, nmode, m, n)
 
 
 def lambda_q_dense_ws_fast(

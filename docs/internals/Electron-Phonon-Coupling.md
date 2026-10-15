@@ -964,6 +964,33 @@ band edge.
   $16\,n_{\rm awf}^2\,3n_{\rm at}\,N_k^{\rm coarse}N_q^{\rm coarse}$
   bytes per node: 0.38 GB for Si on 6³ k / 3³ q, 3 GB on 6³ / 6³.
 - **Thread/rank balance:** prefer more MPI ranks with 2–4 BLAS threads each.
+- **Cost per dense q (phonon-assisted absorption).** Measured for Si with
+  12³ k / 6³ q coarse grids, 48³ k, one core per rank and 5 scissor groups
+  (Varshni):
+  - **Fourier sum** $g(\mathbf k)=\sum_{\mathbf n}e^{2\pi i\mathbf k\cdot\mathbf n}g(\mathbf n)$
+    in `band_vertex`: a BLAS `zgemm` over 2191 pair-resolved $R_e$ images,
+    about 21 s.
+  - **Rotation to bands:** about 8 s.
+  - **Second-order kernel:** about 8.6 s.
+  - **Vertex phases:** about 3.7 s.
+  - **q-sum** $g(R_e,R_p)\to g_q(R_e)$: about 1.5 s.
+
+  That is about 44 s per q in all. Two earlier bottlenecks are fixed:
+  - **The q-sum (`g_Re_at_q`)** made one strided pass over the vertex for
+    each of the 339 phonon images. It now sums the images of each grid cell
+    first and makes one contiguous pass: 20× faster.
+  - **The rotation** used chained `einsum`s; it is now batched `matmul`:
+    3× faster.
+
+  Both agree with the previous code to 10⁻¹⁵ relative. Two other options were
+  measured and rejected:
+  - **FFT:** an FFT over the dense k-grid would cut the flops of the Fourier
+    sum by about 100×. With Accelerate's `zgemm` (about 100 GFLOP/s per core)
+    the wall time is the same, and it needs all k at once (7 GB per q).
+  - **Truncating $R_e$:** the PAO-gauge vertex still has 1–2% of its maximum
+    at the boundary of the supercell, so a real-space cutoff is not safe.
+  - **Pruning k-points without allowed transitions:** these are only about
+    2%, because the free-carrier intraband transitions reach almost every k.
 
 ---
 

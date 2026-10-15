@@ -153,11 +153,21 @@ def g_Re_at_q(g_ReRp, q_cryst, Nint_p, W_p, Midx_p):
         phase = W_p * np.exp(2j * np.pi * (np.asarray(q_cryst) @ Nint_p.T))  # (nws_p,)
         cells = g_ReRp[..., Midx_p[:, 0], Midx_p[:, 1], Midx_p[:, 2]]  # (..., nws_p)
         return np.tensordot(cells, phase, axes=([-1], [0]))  # (nawf, nawf, ncart, n1e,n2e,n3e)
-    # Pair-resolved weights (nws_p, nawf, nawf, ncart): one phonon cell at a time.
+    # Pair-resolved weights (nws_p, nawf, nawf, ncart).  The Wigner-Seitz images of
+    # one grid cell share its data, so their phases and weights are summed first:
+    # one contiguous pass over g(R_e, R_p) instead of one strided pass per image.
     phase = np.exp(2j * np.pi * (np.asarray(q_cryst) @ Nint_p.T))
-    vertex = np.zeros(g_ReRp.shape[:6], dtype=complex)
-    for cell, (m1, m2, m3) in enumerate(Midx_p):
-        vertex += g_ReRp[..., m1, m2, m3] * (phase[cell] * W_p[cell])[..., None, None, None]
+    grid_p = g_ReRp.shape[6:]
+    image_cell = np.ravel_multi_index(np.asarray(Midx_p).T, grid_p)
+    cell_weights = np.zeros((int(np.prod(grid_p)),) + W_p.shape[1:], dtype=complex)
+    np.add.at(cell_weights, image_cell, phase[:, None, None, None] * W_p)
+    cell_weights = np.moveaxis(cell_weights, 0, -1)  # (nawf, nawf, ncart, nRp)
+    rows = g_ReRp.reshape(g_ReRp.shape[:3] + (-1, cell_weights.shape[-1]))
+    vertex = np.empty(g_ReRp.shape[:6], dtype=complex)
+    for orbital in range(g_ReRp.shape[0]):
+        vertex[orbital] = np.einsum('jcrp,jcp->jcr', rows[orbital], cell_weights[orbital]).reshape(
+            g_ReRp.shape[1:6]
+        )
     return vertex
 
 
