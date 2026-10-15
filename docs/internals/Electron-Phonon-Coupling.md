@@ -289,9 +289,32 @@ unfolding an irreducible set of PAO vertices is not implemented.
   file per q of a full-grid run or the irreducible-q files of a symmetric run
   works, as long as the grid is covered.
 
-Both share `_phonon_interp_from_force_constants`: Fourier transform to phonon
-cells, a simple acoustic sum rule, then WS interpolation and diagonalisation.
-A `min_freq_thz` guard drops spurious soft modes.
+Both share `_phonon_interp_from_force_constants`, which delegates to
+`PAOFLOW.phonon.qe_force_constants`. The steps are the Fourier transform to
+phonon cells (`real_space_force_constants`), a simple acoustic sum rule, and WS
+interpolation and diagonalisation (`phonon_interpolator`). A `min_freq_thz`
+guard drops spurious soft modes. `phonon_interp_from_dyn(...,
+atom_positions=tau_cryst)` uses atom-pair WS images, as QE `matdyn.x` does. Use
+them with several atoms per cell: on Si, single-site images shift the acoustic
+branches by about 0.2 THz at general q.
+
+**Stand-alone q2r.x + matdyn.x.** `PAOFLOW.phonon.qe_force_constants` provides
+the same chain for phonon dispersions:
+- `read_dynamical_matrices(prefix, directory)` reads `<prefix>.dyn0`–`dynN`,
+  with ε∞ and Z*.
+- `write_qe_force_constants` writes QE's `flfrc` file.
+- `phonon_dispersion` follows the high-symmetry path of the Bravais lattice;
+  `phonon_density_of_states` gives the DOS.
+- `q2r_matdyn` does it all and writes `<fname>_band.dat`, `_band.labels` and
+  `_dos.dat` for `GPAO.plot_phonons`.
+
+Validation on Si (ph.x, 3³ q):
+- The force constants equal QE `q2r.x` to 10⁻¹⁷.
+- The frequencies equal `matdyn.x` (`asr='simple'`) to 2·10⁻⁶ THz along the
+  whole path.
+
+Polar materials get a warning: the non-analytic LO–TO term is not included.
+See `examples/elphon_example/Si/phonon/q2r_matdyn.py`.
 
 ---
 

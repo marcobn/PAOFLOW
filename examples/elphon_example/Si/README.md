@@ -23,6 +23,7 @@ mid-gap Fermi level.
 |------|---------|
 | `phonon/scf.in` | `pw.x` scf (18³ k, 38 Ry, PBE norm-conserving) |
 | `phonon/ph.in` | `ph.x` DFPT on the 3³ q-grid (4 irreducible q, `fildvscf`) |
+| `phonon/q2r_matdyn.py` | `q2r.x` + `matdyn.x` in PAOFLOW: force constants (`output/Si2.fc`), dispersion and DOS from the `Si2.dyn*` files, plotted with `GPAO.plot_phonons` |
 | `epw/nscf.in` | `pw.x` nscf on the full 6³ grid as an explicit `K_POINTS crystal` list (`nbnd = 21`) |
 | `epw/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, all 21 bands kept |
 | `epw/write_ukk.py` | writes `Si2.ukk` (band bookkeeping for `wannierize = .false.`) and empty `Si2.bvec`/`Si2.mmn` stubs |
@@ -53,6 +54,8 @@ cd phonon
 mpirun -np 8 pw.x -in scf.in > scf.out
 mpirun -np 8 ph.x -in ph.in  > ph.out
 python3 /path/to/q-e/EPW/bin/pp.py           # prefix 'Si2' -> collects dvscf, patterns, dyn into save/
+
+python q2r_matdyn.py                         # optional: phonon dispersion + DOS (q2r + matdyn) -> output/si_phonons.png
 
 cd ../epw
 mkdir -p Si2.save

@@ -53,7 +53,6 @@ Deferred / to validate
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -76,12 +75,14 @@ from .elph_bloch import (
     lambda_q_dense_ws_fast,
     precompute_dense_electrons,
 )
+from ..phonon.qe_force_constants import (
+    PHONON_WS_SIGN,  # noqa: F401  (re-exported for backward compatibility)
+    phonon_interpolator,
+    read_dynamical_matrix_file,
+    real_space_force_constants,
+)
 from .eph_kq import eliashberg_from_modes
 from .fermi_surface_coupling import FermiSurfacePairCoupling
-
-# Sign of the cell vector in the atom-pair separation of the force constants
-# (see :func:`~PAOFLOW.elphon.elph_bloch._ws_lattice_pairs`).
-PHONON_WS_SIGN = 1
 
 
 # --------------------------------------------------------------------------- #
@@ -209,7 +210,7 @@ def vertex_phonon_ws_weights(
 # --------------------------------------------------------------------------- #
 # 3. Phonon modes at a dense q (frequencies + Cartesian eigenvectors)
 # --------------------------------------------------------------------------- #
-def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at):
+def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at, atom_positions=None):
     """Dense-q phonon interpolator built from the coarse ``*.dyn`` files.
 
     Reconstructs the mass-weighted dynamical matrix ``D(q)`` on the full coarse
@@ -236,6 +237,10 @@ def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at):
         Coarse phonon q-grid.
     bg, at : ndarray ``(3, 3)``
         Reciprocal- and real-lattice vectors (rows).
+    atom_positions : ndarray ``(nat, 3)``, optional
+        Atomic positions (crystal coordinates) for atom-pair Wigner-Seitz images
+        (as ``matdyn.x``; recommended with several atoms per cell).  ``None``
+        keeps the single-site images.
 
     Returns
     -------
@@ -270,7 +275,7 @@ def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at):
                 filled[lab] = True
     if not filled.all():
         raise ValueError('dyn files cover only %d/%d q of the grid.' % (filled.sum(), nq))
-    return _phonon_interp_from_force_constants(Cgrid, masses_ry, qgrid, at)
+    return _phonon_interp_from_force_constants(Cgrid, masses_ry, qgrid, at, atom_positions)
 
 
 def phonon_interp_from_epw(
@@ -358,105 +363,29 @@ def _phonon_interp_from_force_constants(
     callable
         ``phonon_at_q(q_cryst) -> (freq_thz (nmode,), z (nmode, ncart))``.
     """
-    nq = qgrid[0] * qgrid[1] * qgrid[2]
-    # q -> R_p (same 1/N, sign convention as build_g_ReRp); grid axes stay leading.
-    Cr = np.fft.fftn(Cgrid, axes=(0, 1, 2)) / nq  # (nq1, nq2, nq3, nmode, nmode)
-
-    # Simple acoustic sum rule: force sum_R C_{a,b}(R) = 0 per Cartesian pair /
-    # atom, so the acoustic modes go to zero at Gamma and interpolated branches
-    # stay real (matdyn asr='simple').  For our monatomic/diagonal-mass grid the
-    # correction lands on the R=0 self block.
-    nat = masses_ry.size
-    Csum = Cr.sum(axis=(0, 1, 2))  # (nmode, nmode) == C(Gamma)
-    for a in range(3):
-        for b in range(3):
-            for na in range(nat):
-                tot = sum(Csum[3 * na + a, 3 * nb + b] for nb in range(nat))
-                Cr[0, 0, 0, 3 * na + a, 3 * na + b] -= tot
-
-    inv_sqrt_m = 1.0 / np.sqrt(np.repeat(masses_ry, 3))  # (nmode,)
-    mass_weight = np.outer(inv_sqrt_m, inv_sqrt_m)  # D = C / sqrt(Ma Mb)
-    if atom_positions is None:
-        Nint_p, W_p, Midx_p = _ws_lattice(qgrid, at)
-        cells = Cr[Midx_p[:, 0], Midx_p[:, 1], Midx_p[:, 2]]  # (nws_p, nmode, nmode)
-    else:
-        mode_positions = np.repeat(np.asarray(atom_positions, dtype=float), 3, axis=0)
-        Nint_p, W_pairs, Midx_p = _ws_lattice_pairs(qgrid, at, mode_positions, sign=PHONON_WS_SIGN)
-        cells = Cr[Midx_p[:, 0], Midx_p[:, 1], Midx_p[:, 2]] * W_pairs
-        W_p = np.ones(Nint_p.shape[0])
-
-    def phonon_at_q(q_cryst):
-        phase = W_p * np.exp(2j * np.pi * (np.asarray(q_cryst, dtype=float) @ Nint_p.T))
-        C = np.tensordot(phase, cells, axes=([0], [0]))  # (nmode, nmode)
-        D = 0.5 * (C + C.conj().T) * mass_weight  # mass-weighted -> eig = omega^2 (Ry^2)
-        w2, ev = np.linalg.eigh(D)
-        freq_thz = np.sign(w2) * np.sqrt(np.abs(w2)) * RY_TO_THZ
-        return freq_thz, ev.T  # (nmode,), (nmode, ncart)
-
-    return phonon_at_q
+    # q -> R_p (same 1/N, sign convention as build_g_ReRp), simple acoustic sum
+    # rule and Wigner-Seitz interpolation: the q2r/matdyn chain of
+    # PAOFLOW.phonon.qe_force_constants.
+    return phonon_interpolator(
+        real_space_force_constants(Cgrid), masses_ry, qgrid, at, atom_positions
+    )
 
 
 def _read_dyn_matrices(path):
-    """Parse the full-precision force-constant matrices from a QE ``*.dyn`` file.
-
-    Reads every ``Dynamical Matrix in cartesian axes`` block (one per star-q) as
-    the ``(3*nat, 3*nat)`` force-constant matrix ``C`` (atom-major layout
-    ``3*na + alpha``) plus the atomic masses (QE Rydberg units).  ``eig(C)/M`` is
-    ``omega^2``; mass-weight with ``1/sqrt(Ma Mb)`` to get the dynamical matrix.
+    """Force-constant matrices of every star-q in a QE ``*.dyn`` file.
 
     Returns
     -------
     dict
-        ``{'q_cart': list of (3,), 'C': list of (3*nat, 3*nat), 'masses_ry': (nat,)}``.
+        ``{'q_cart': list of (3,), 'C': list of (3*nat, 3*nat), 'masses_ry': (nat,)}``
+        (see :func:`PAOFLOW.phonon.qe_force_constants.read_dynamical_matrix_file`).
     """
-    lines = open(path).read().splitlines()
-    hdr = lines[2].split()
-    ntyp, nat = int(hdr[0]), int(hdr[1])
-    type_mass = {}
-    i = 3
-    for _ in range(ntyp):
-        parts = lines[i].split("'")
-        idx = int(parts[0].split()[0])
-        type_mass[idx] = float(parts[2].split()[0])
-        i += 1
-    masses_ry = np.empty(nat)
-    for _ in range(nat):
-        tok = lines[i].split()
-        masses_ry[int(tok[0]) - 1] = type_mass[int(tok[1])]
-        i += 1
-
-    nmode = 3 * nat
-    re_q = re.compile(r'q\s*=\s*\(\s*([-+0-9.EeDd]+)\s+([-+0-9.EeDd]+)\s+([-+0-9.EeDd]+)')
-    q_cart, mats = [], []
-    k = 0
-    while k < len(lines):
-        if 'Dynamical' in lines[k] and 'cartesian' in lines[k]:
-            j = k + 1
-            while j < len(lines) and 'q =' not in lines[j]:
-                j += 1
-            mq = re_q.search(lines[j])
-            q = np.array([_dyn_float(mq.group(t)) for t in (1, 2, 3)])
-            C = np.zeros((nmode, nmode), dtype=complex)
-            j += 1
-            while j < len(lines):
-                s = lines[j].split()
-                if len(s) == 2 and all(t.isdigit() for t in s):
-                    na, nb = int(s[0]) - 1, int(s[1]) - 1
-                    for a in range(3):
-                        v = [_dyn_float(x) for x in lines[j + 1 + a].split()]
-                        for b in range(3):
-                            C[3 * na + a, 3 * nb + b] = v[2 * b] + 1j * v[2 * b + 1]
-                    j += 4
-                elif 'Dynamical' in lines[j] or 'Diagonalizing' in lines[j]:
-                    break
-                else:
-                    j += 1
-            q_cart.append(q)
-            mats.append(C)
-            k = j
-            continue
-        k += 1
-    return {'q_cart': q_cart, 'C': mats, 'masses_ry': masses_ry}
+    parsed = read_dynamical_matrix_file(path)
+    return {
+        'q_cart': parsed['q_cart'],
+        'C': parsed['force_constants'],
+        'masses_ry': parsed['masses_ry'],
+    }
 
 
 def _dyn_float(tok):
