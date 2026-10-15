@@ -40,6 +40,8 @@ from .elph_bloch import (
     RY_TO_THZ,
     band_velocities,
     band_vertex,
+    release_dense_electrons,
+    vertex_phases,
     precompute_dense_electrons,
     vertex_ws_coefficients,
 )
@@ -300,6 +302,7 @@ def direct_absorption_kernel(
     weight: float = 1.0,
     spin_degeneracy: float = 2.0,
     fermi_levels: Sequence[float] | None = None,
+    pair_block: int = 2048,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Direct (vertical) ``Im eps(omega)`` from one block of k-points (EPW ``dirabs``).
 
@@ -324,6 +327,9 @@ def direct_absorption_kernel(
     fermi_levels : sequence of float, optional
         Fermi level of each temperature (Ry), as in
         :func:`indirect_absorption_kernel`.
+    pair_block : int, optional
+        Transitions per batch: the delta functions are ``(pair_block, nomega)``
+        arrays, which bounds the memory of wide photon grids and many bands.
 
     Returns
     -------
@@ -348,15 +354,21 @@ def direct_absorption_kernel(
         transition < photon_energy.max() + cutoff
     )
     k_idx, i_idx, j_idx = np.nonzero(candidate)
-    delta_e = transition[k_idx, i_idx, j_idx]
-    v2 = np.abs(velocity_k[k_idx, :, j_idx, i_idx]) ** 2  # (P, 3)
-    x = delta_e[:, None] - photon_energy[None, :]
-    keep = np.abs(x) <= cutoff
     mu = _fermi_levels(fermi_levels, temperatures.size)
     occ = np.stack([fermi_occupation(energy_k - m, t) for m, t in zip(mu, temperatures)])
-    pfac = occ[:, k_idx, i_idx] - occ[:, k_idx, j_idx]  # (nT, P)
-    gauss = np.einsum('tp,pa,pw->taw', pfac, v2, gaussian_delta(x, degauss) * keep)
-    lorentz = np.einsum('tp,pa,pw->taw', pfac, v2, lorentzian_delta(x, degauss) * keep)
+    gauss = np.zeros((temperatures.size, 3, photon_energy.size))
+    lorentz = np.zeros((temperatures.size, 3, photon_energy.size))
+    for start in range(0, k_idx.size, pair_block):
+        kp = k_idx[start : start + pair_block]
+        ip = i_idx[start : start + pair_block]
+        jp = j_idx[start : start + pair_block]
+        delta_e = transition[kp, ip, jp]
+        v2 = np.abs(velocity_k[kp, :, jp, ip]) ** 2  # (P, 3)
+        x = delta_e[:, None] - photon_energy[None, :]
+        keep = np.abs(x) <= cutoff
+        pfac = occ[:, kp, ip] - occ[:, kp, jp]  # (nT, P)
+        gauss += np.einsum('tp,pa,pw->taw', pfac, v2, gaussian_delta(x, degauss) * keep)
+        lorentz += np.einsum('tp,pa,pw->taw', pfac, v2, lorentzian_delta(x, degauss) * keep)
     prefactor = weight * 8.0 * np.pi**2 * spin_degeneracy / photon_energy**2
     return gauss * prefactor, lorentz * prefactor
 
@@ -922,7 +934,7 @@ def phonon_assisted_absorption_dense_q(
         Indirect gap (eV) to reproduce instead of the DFT one: a number (e.g. the
         experimental gap, or the dense-grid gap of an eACBN0 PAO Hamiltonian from
         :func:`pao_band_gaps`) or ``T (K) -> E_g(T)`` (:func:`varshni_gap`).  The
-        scissor is :math:`\Delta(T) = E_g^{target}(T) - E_g^{DFT}`; the coupling
+        scissor is :math:`\\Delta(T) = E_g^{target}(T) - E_g^{DFT}`; the coupling
         and the wavefunctions stay those of the DFT (DFPT) calculation.
     scissor_velocity : {'renormalized', 'ks'}, optional
         Velocities of the scissor-corrected Hamiltonian
@@ -1012,7 +1024,7 @@ def phonon_assisted_absorption_dense_q(
     degauss = degauss_ev / RY_TO_EV
     electrons = precompute_dense_electrons(
         HRs, at, nk_dense, [degauss], None, tuple(ng), ispin=ispin,
-        orbital_positions=orbital_positions, velocities=True, alat=alat,
+        orbital_positions=orbital_positions, velocities=True, alat=alat, comm=comm,
     )  # fmt: skip
     energies = electrons['E']  # (nkd, nawf), Ry, scale of HRs
     nkd = energies.shape[0]
@@ -1111,7 +1123,6 @@ def phonon_assisted_absorption_dense_q(
     tasks = [(iq, ib) for iq in range(qmesh.shape[0]) for ib in range(len(kblocks))]
     tstart, tstop = load_balancing(size, rank, len(tasks))
     V = electrons['V']
-    phkg = electrons['phkg']
     current_q = None
     for iq, ib in tasks[tstart:tstop]:
         if iq != current_q:
@@ -1128,7 +1139,9 @@ def phonon_assisted_absorption_dense_q(
             weight = qweights[iq] / (nkd * cell_volume)
         kk = kblocks[ib]
         kq = ikq[kk]
-        coupling = band_vertex(gn_flat, phkg[kk], V[kq][:, :, bands], V[kk][:, :, bands], zmass)
+        coupling = band_vertex(
+            gn_flat, vertex_phases(electrons, kk), V[kq][:, :, bands], V[kk][:, :, bands], zmass
+        )
         for (delta, tidx), energy_g in zip(groups, group_energy):
             v_k = scissor_velocities(
                 velocities[kk], energies[kk][:, bands], delta, conduction, scissor_velocity
@@ -1185,6 +1198,7 @@ def phonon_assisted_absorption_dense_q(
     comm.Barrier()
     velocity_window.Free()
     vertex['window'].Free()
+    release_dense_electrons(electrons)
 
     if sym_rots is not None:  # only the polarisation average survives the q-folding
         eps_ind[...] = eps_ind.mean(axis=2, keepdims=True)

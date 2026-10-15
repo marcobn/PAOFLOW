@@ -43,6 +43,8 @@ from .elph_bloch import (
     _diagonal_velocities,
     band_vertex,
     precompute_dense_electrons,
+    release_dense_electrons,
+    vertex_phases,
     vertex_ws_coefficients,
 )
 from .phonon_assisted_absorption import (
@@ -383,6 +385,7 @@ def carrier_scattering_dense_q(
     electrons = precompute_dense_electrons(
         HRs, at, nk_dense, [smearing_ev / RY_TO_EV], None, tuple(ng), ispin=ispin,
         orbital_positions=orbital_positions, velocities=True, alat=alat, keep_bands=keep,
+        comm=comm,
     )  # fmt: skip
     # band velocities (with the non-local term): k-points shared between ranks
     vstart, vstop = load_balancing(size, rank, electrons['K'].shape[0])
@@ -470,7 +473,7 @@ def carrier_scattering_dense_q(
     serta = np.zeros((temps_k.size, window_k.size, nband))
     mrta = np.zeros((temps_k.size, window_k.size, nband))
     grid_index = np.round(electrons['K'] * nk_dense).astype(int) % nk_dense
-    V, phkg = electrons['V'], electrons['phkg']
+    V = electrons['V']
     eps_acoustic = eps_acoustic_cm / EV_TO_CM1
     stat_shift = scissor[:, None, None] * conduction[None, None, :] - mu[:, None, None]
     current_q = None
@@ -495,7 +498,9 @@ def carrier_scattering_dense_q(
             gn_flat = vertex_ws_coefficients(
                 g_Re_at_q(g_ReRp, q_cryst, Nint_p, W_p, Midx_p), electrons
             )
-        coupling = band_vertex(gn_flat, phkg[kk], V[kq], V[kk], zmass)  # (nb, nu, m, n)
+        coupling = band_vertex(
+            gn_flat, vertex_phases(electrons, kk), V[kq], V[kk], zmass
+        )  # (nb, nu, m, n)
         g2 = np.abs(coupling) ** 2 / (2.0 * safe)[None, :, None, None] * RY_TO_EV**2
         g2[:, omega_ry <= 1.0e-8] = 0.0
         occupation_kq = energies[kq][None] + stat_shift  # (ntemp, nb, m)
@@ -511,6 +516,7 @@ def carrier_scattering_dense_q(
         comm.Allreduce(MPI.IN_PLACE, mrta, op=MPI.SUM)
     comm.Barrier()
     vertex['window'].Free()
+    release_dense_electrons(electrons)
 
     e_window = energies[window_k]
     same = (np.abs(e_window[:, :, None] - e_window[:, None, :]) < 1.0e-5).astype(float)

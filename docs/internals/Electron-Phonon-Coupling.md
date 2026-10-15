@@ -928,10 +928,41 @@ band edge.
 - **MPI over the q loop** (both workflows), with `load_balancing` and
   `Allreduce(SUM)`. Cap the rank count at the number of q evaluated.
 - **Node-shared vertex.** $g(R_e,R_p)$ is allocated once per node
-  (`MPI.Win.Allocate_shared`), built by the node-local rank 0.
+  (`MPI.Win.Allocate_shared`). The node-local rank 0 builds it in place: each
+  coarse $g_q(R_e)$ goes to its q-cell, then the q → $R_p$ FFT runs one orbital
+  row at a time. There are no full-size temporaries.
 - **EPW coupling.** `load_epw_coupling` reads the full `epmatq`
-  ($n_{\rm bndep}^2\,N_k\,3n_{\rm at}\,N_q$ complex) on every rank. In the
-  dense-q driver it is released once $g(R_e,R_p)$ is built.
+  ($n_{\rm bndep}^2\,N_k\,3n_{\rm at}\,N_q$ complex) on node rank 0
+  only. It is released once $g(R_e,R_p)$ is built. The other ranks receive the
+  q-points, force constants, Z* and ε by broadcast.
+- **Node-shared dense electrons.** `precompute_dense_electrons(...,
+  comm=comm)` keeps E and V in node-shared memory. Each rank of the node
+  diagonalises its own slice of k, with results identical to the private
+  arrays. `release_dense_electrons` frees them.
+- **Vertex phases.** These are $e^{2\pi i\mathbf k\cdot\mathbf n}$. They
+  are computed per k-block (`vertex_phases`) instead of stored for the whole
+  grid, which saved $16\,N_k^3 n_{ws}$ bytes per rank.
+- **k+q eigenvectors.** `lambda_q_dense_ws_fast` gathers V(k+q) through an
+  index map instead of rolling a copy of V for each q.
+- **Absorption kernels.** Both process the transitions in blocks of
+  `pair_block`. The direct kernel used to build its delta functions for all
+  the pairs of a k-block at once: with the Kramers–Kronig grid up to 10 eV
+  this took 6–7 GB per rank.
+- **Measured memory (Si emissivity run).** The run was 24³ k / 12³ q,
+  7 temperatures, ω to 3 eV, Kramers–Kronig to 10 eV, on 24 ranks:
+
+  | | before | after |
+  |---|---|---|
+  | node used-memory growth, 3³ DFPT q | 62 GB | 20 GB |
+  | per-rank peak RSS, 3³ DFPT q (shared pages counted in every rank) | 7.7 GB | 2.5 GB |
+  | node used-memory growth, 6³ DFPT q | 71 GB | 23.5 GB |
+  | largest rank, 6³ DFPT q | 17.7 GB | 5.6 GB |
+
+  The results are bitwise identical before and after the change, for the
+  absorption, the carrier rates and α²F / α²F_tr. The remaining private
+  memory is about 0.85 GB per rank. The shared vertex costs
+  $16\,n_{\rm awf}^2\,3n_{\rm at}\,N_k^{\rm coarse}N_q^{\rm coarse}$
+  bytes per node: 0.38 GB for Si on 6³ k / 3³ q, 3 GB on 6³ / 6³.
 - **Thread/rank balance:** prefer more MPI ranks with 2–4 BLAS threads each.
 
 ---
