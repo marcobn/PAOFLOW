@@ -27,6 +27,7 @@ mid-gap Fermi level.
 | `epw/nscf.in` | `pw.x` nscf on the full 6³ grid as an explicit `K_POINTS crystal` list (`nbnd = 21`) |
 | `epw/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, all 21 bands kept |
 | `epw/write_ukk.py` | writes `Si2.ukk` (band bookkeeping for `wannierize = .false.`) and empty `Si2.bvec`/`Si2.mmn` stubs |
+| `epw/kmesh.py` | sets the coarse k-mesh: `python kmesh.py NK1 NK2 NK3` rewrites the `K_POINTS crystal` list of `nscf.in`, `nk1-3` of `epw.in`, `write_ukk.py` and `COARSE_GRID` of `main.py`/`mobility.py` (the q-grid must divide it) |
 | `main.py` | PAOFLOW analysis: PAO electronic structure, then phonon-assisted + direct absorption |
 | `optics/nscf.in` | `pw.x` nscf with 60 bands (8³ k) for the extended-basis direct dielectric function |
 | `optics_eps.py` | PAOFLOW `dielectric_tensor` on the extended basis with the non-local velocity → `optics/output/epsr_*/epsi_*.dat` |
@@ -58,6 +59,7 @@ python3 /path/to/q-e/EPW/bin/pp.py           # prefix 'Si2' -> collects dvscf, p
 python q2r_matdyn.py                         # optional: phonon dispersion + DOS (q2r + matdyn) -> output/si_phonons.png
 
 cd ../epw
+python kmesh.py 6 6 6                         # coarse k-mesh (default 6x6x6; any multiple of the 3x3x3 q-grid)
 mkdir -p Si2.save
 cp ../phonon/Si2.save/{charge-density.dat,data-file-schema.xml} Si2.save/
 mpirun -np 8 pw.x -in nscf.in > nscf.out
