@@ -74,6 +74,7 @@ from .elph_bloch import (
     fermi_surface_plasma_frequency,
     lambda_q_dense_ws_fast,
     precompute_dense_electrons,
+    release_dense_electrons,
 )
 from ..phonon.qe_force_constants import (
     PHONON_WS_SIGN,  # noqa: F401  (re-exported for backward compatibility)
@@ -701,6 +702,7 @@ def eliashberg_dense_q(
         velocities=transport,
         alat=alat,
         diagonal_velocities=transport,
+        comm=comm,
     )
 
     # --- (b) dense q-grid loop (distributed over MPI ranks) ---------------- #
@@ -812,6 +814,7 @@ def eliashberg_dense_q(
     if pair_coupling is not None:
         pair_coupling.reduce(comm)
         out['fs_coupling'] = pair_coupling.result(bg, at, nq_dense)
+    release_dense_electrons(electrons)
     return out
 
 
@@ -885,14 +888,34 @@ def prepare_dense_vertex(
     qgrid_coarse = tuple(int(n) for n in qgrid_coarse)
     nbnd, nk = int(A.shape[0]), int(A.shape[2])
     nmodes = 3 * int(masses_amu.size)
+    from mpi4py import MPI
+
+    if comm is None:
+        comm = MPI.COMM_WORLD
+    # g(R_e, R_p) is large (~GBs) and read-only, and every rank needs all of it.
+    # Allocate ONE copy per node in MPI shared memory (built by the node-local
+    # rank 0 only) instead of an independent copy per rank, which otherwise
+    # multiplies the memory by the number of ranks on the node.
+    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    node_rank = node_comm.Get_rank()
+
     epw = None
     if source == 'epw':
         # EPW provides the full coarse q-grid (unfolded from the irreducible ph.x
-        # q) and its force constants; both default from the .epb files.
-        epw = load_epw_coupling(coupling_dir, nbnd, nk, masses_amu.size, bg)
-        check_long_range_terms(epw['zstar'], epw['epsi'], allow_missing_long_range)
+        # q) and its force constants; both default from the .epb files.  Only
+        # node rank 0, which builds g(R_e, R_p), reads the couplings (GBs for
+        # dense coarse grids); the other ranks receive the small arrays.
+        if node_rank == 0:
+            epw = load_epw_coupling(coupling_dir, nbnd, nk, masses_amu.size, bg)
+        small = node_comm.bcast(
+            {key: epw[key] for key in ('zstar', 'epsi', 'q_cryst', 'dynq')}
+            if node_rank == 0
+            else None,
+            root=0,
+        )
+        check_long_range_terms(small['zstar'], small['epsi'], allow_missing_long_range)
         if q_cryst_coarse is None:
-            q_cryst_coarse = epw['q_cryst']
+            q_cryst_coarse = small['q_cryst']
         if phonon_at_q is None:
             atom_positions = None
             if orbital_positions is not None:
@@ -900,21 +923,9 @@ def prepare_dense_vertex(
                     raise ValueError('orbital_positions requires tau_cryst (atom-pair phonon WS).')
                 atom_positions = tau_cryst
             phonon_at_q = phonon_interp_from_epw(
-                epw['dynq'], epw['q_cryst'], masses_amu, qgrid_coarse, at, atom_positions
+                small['dynq'], small['q_cryst'], masses_amu, qgrid_coarse, at, atom_positions
             )
     q_cryst_coarse = np.asarray(q_cryst_coarse, dtype=float)
-
-    from mpi4py import MPI
-
-    if comm is None:
-        comm = MPI.COMM_WORLD
-
-    # g(R_e, R_p) is large (~GBs) and read-only, and every rank needs all of it.
-    # Allocate ONE copy per node in MPI shared memory (built by the node-local
-    # rank 0 only) instead of an independent copy per rank, which otherwise
-    # multiplies the memory by the number of ranks on the node.
-    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
-    node_rank = node_comm.Get_rank()
     nawf = int(A.shape[1])
     qg = qgrid_coarse
     shape = (nawf, nawf, nmodes, ng[0], ng[1], ng[2], qg[0], qg[1], qg[2])
@@ -927,8 +938,18 @@ def prepare_dense_vertex(
     g_ReRp = np.ndarray(buffer=buf, dtype=np.complex128, shape=shape)
 
     # --- (a) coarse half-vertices g_q(R_e) -> g(R_e, R_p), on node rank 0 --- #
+    # Each g_q(R_e) goes straight to its q-cell of the shared buffer, which is
+    # then Fourier transformed q -> R_p in place one orbital row at a time
+    # (the arithmetic of build_g_ReRp without its full-size temporaries).
     if node_rank == 0:
-        g_list = []
+        nq_coarse = qg[0] * qg[1] * qg[2]
+        labels = np.round(q_cryst_coarse * np.asarray(qg)).astype(int) % np.asarray(qg)
+        if q_cryst_coarse.shape[0] != nq_coarse or len({tuple(lab) for lab in labels}) != nq_coarse:
+            raise ValueError(
+                'the coarse q-points (%d) must tile the full %s grid; unfold the irreducible '
+                'set first.' % (q_cryst_coarse.shape[0], 'x'.join(map(str, qg)))
+            )
+        g_ReRp[...] = 0.0
         for iq, q_cryst in enumerate(q_cryst_coarse):
             if source == 'epw':
                 gR = vertex_from_epw(
@@ -941,11 +962,11 @@ def prepare_dense_vertex(
             else:
                 path = '%s/elphmat.%d.dat' % (coupling_dir, iq + 1)
                 gR, _q = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng)
-            g_list.append(gR)
-        g_ReRp[...] = build_g_ReRp(np.stack(g_list, axis=0), q_cryst_coarse, qgrid_coarse)
-        del g_list
-    if epw is not None:
-        del epw['epmatq']  # only the shared g(R_e, R_p) is needed from here on
+            g_ReRp[..., labels[iq, 0], labels[iq, 1], labels[iq, 2]] = gR
+        if epw is not None:
+            del epw['epmatq']  # only the shared g(R_e, R_p) is needed from here on
+        for row in range(nawf):
+            g_ReRp[row] = np.fft.fftn(g_ReRp[row], axes=(-3, -2, -1)) / nq_coarse
     node_comm.Barrier()  # ensure the shared buffer is filled before any rank reads
 
     if orbital_positions is None:

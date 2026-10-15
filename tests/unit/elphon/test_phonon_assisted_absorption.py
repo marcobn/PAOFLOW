@@ -12,6 +12,7 @@ from PAOFLOW.elphon.elph_bloch import (
     kq_index_map,
     precompute_dense_electrons,
     vertex_pao_R,
+    vertex_phases,
     vertex_ws_coefficients,
 )
 from PAOFLOW.elphon.phonon_assisted_absorption import (
@@ -134,7 +135,7 @@ def test_velocity_and_vertex_phase_consistency_against_exact_model():
     sel = np.array([1, 7, 30, 77, 200, 311, 450])  # off the coarse 4^3 grid
     V = electrons['V']
     coupling = band_vertex(
-        vertex_ws_coefficients(gR, electrons), electrons['phkg'][sel], V[ikq_dense[sel]],
+        vertex_ws_coefficients(gR, electrons), vertex_phases(electrons, sel), V[ikq_dense[sel]],
         V[sel], np.ones((1, 1)),
     )  # fmt: skip
     vk = band_velocities(electrons, sel)

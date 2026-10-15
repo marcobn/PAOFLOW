@@ -562,6 +562,7 @@ def precompute_dense_electrons(
     alat: float | None = None,
     diagonal_velocities: bool = False,
     keep_bands: Callable | None = None,
+    comm=None,
 ) -> dict:
     """Dense-grid electron spectrum + Fermi-surface delta, shared by every q.
 
@@ -615,14 +616,21 @@ def precompute_dense_electrons(
         diagonal velocities) of these bands only, ``V`` ``(nkd, nawf, nband)``,
         to save memory on dense grids (energies are kept for all bands; the
         indices are stored as ``'bands'``).  ``None`` keeps all bands.
+    comm : mpi4py communicator, optional
+        With a communicator, ``E`` and ``V`` live in MPI shared memory, one copy
+        per node, and the diagonalisation is split between the ranks of each
+        node (identical results).  Release them with
+        :func:`release_dense_electrons` once every rank is done.  ``None`` keeps
+        private arrays (serial use).
 
     Returns
     -------
     dict
         Cache consumed by :func:`lambda_q_dense_ws_fast` -- keys ``Nk``, ``nawf``,
         ``E`` ``(nkd, nawf)`` (Ry), ``V`` ``(nkd, nawf, nawf)``, ``dk``
-        ``(nsigma, nkd, nawf)``, ``dos`` ``(nsigma,)``, plus the cached vertex
-        Wigner-Seitz phase (``phkg``, ``Midxg``, ``Wg``, ``ng_vertex``).  With
+        ``(nsigma, nkd, nawf)``, ``dos`` ``(nsigma,)``, plus the vertex
+        Wigner-Seitz images (``Nintg``, ``Midxg``, ``Wg``, ``ng_vertex``; the
+        phases of a block of k come from :func:`vertex_phases`).  With
         ``velocities=True`` it also holds ``'velocity'``, the input of
         :func:`band_velocities`.
     """
@@ -644,29 +652,59 @@ def precompute_dense_electrons(
     nkd = K.shape[0]
     sigmas = np.atleast_1d(sigmas_ry)
 
+    # One copy of E and V per node (MPI shared memory), each rank of the node
+    # diagonalising its own slice of k; private arrays without a communicator.
+    windows = []
+    if comm is not None:
+        from mpi4py import MPI
+
+        from ..utils.communication import load_balancing
+
+        node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+        kstart, kstop = load_balancing(node_comm.Get_size(), node_comm.Get_rank(), nkd)
+    else:
+        node_comm, kstart, kstop = None, 0, nkd
+
+    def allocate(shape, dtype):
+        if node_comm is None:
+            return np.empty(shape, dtype=dtype)
+        itemsize = np.dtype(dtype).itemsize
+        nbytes = int(np.prod(shape)) * itemsize if node_comm.Get_rank() == 0 else 0
+        window = MPI.Win.Allocate_shared(nbytes, itemsize, comm=node_comm)
+        windows.append(window)
+        buffer, _ = window.Shared_query(0)
+        return np.ndarray(buffer=buffer, dtype=dtype, shape=shape)
+
+    def hamiltonian_block(s0, s1):
+        Kb = K[s0:s1]
+        phk = np.exp(-2j * np.pi * (Kb @ NintH.T))  # PAOFLOW: H(k) = fftn(HRs)
+        Hk = (phk @ Hn_flat).reshape(Kb.shape[0], nawf, nawf)
+        return 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
+
+    E = allocate((nkd, nawf), float)
     if keep_bands is not None:
         # first pass: eigenvalues only, to choose the bands whose vectors are kept
-        E = np.empty((nkd, nawf))
-        for s0 in range(0, nkd, kblock):
-            Kb = K[s0 : s0 + kblock]
-            phk = np.exp(-2j * np.pi * (Kb @ NintH.T))
-            Hk = (phk @ Hn_flat).reshape(Kb.shape[0], nawf, nawf)
-            Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
-            E[s0 : s0 + Kb.shape[0]] = np.linalg.eigvalsh(Hk) / RY_TO_EV
+        for s0 in range(kstart, kstop, kblock):
+            s1 = min(s0 + kblock, kstop)
+            E[s0:s1] = np.linalg.eigvalsh(hamiltonian_block(s0, s1)) / RY_TO_EV
+        if node_comm is not None:
+            node_comm.Barrier()
         kept = np.asarray(keep_bands(E), dtype=int)
+        if node_comm is not None:
+            node_comm.Barrier()  # every rank has read E before it is overwritten
     else:
         kept = np.arange(nawf)
 
-    E = np.empty((nkd, nawf))
-    V = np.empty((nkd, nawf, kept.size), dtype=complex)
-    for s0 in range(0, nkd, kblock):
-        Kb = K[s0 : s0 + kblock]
-        phk = np.exp(-2j * np.pi * (Kb @ NintH.T))  # PAOFLOW: H(k) = fftn(HRs)
-        Hk = (phk @ Hn_flat).reshape(Kb.shape[0], nawf, nawf)
-        Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
-        e, v = np.linalg.eigh(Hk)
-        E[s0 : s0 + Kb.shape[0]] = e / RY_TO_EV
-        V[s0 : s0 + Kb.shape[0]] = v if keep_bands is None else v[:, :, kept]
+    V = allocate((nkd, nawf, kept.size), complex)
+    for s0 in range(kstart, kstop, kblock):
+        s1 = min(s0 + kblock, kstop)
+        e, v = np.linalg.eigh(hamiltonian_block(s0, s1))
+        E[s0:s1] = e / RY_TO_EV
+        V[s0:s1] = v if keep_bands is None else v[:, :, kept]
+    if node_comm is not None:
+        node_comm.Barrier()
+        E.setflags(write=False)
+        V.setflags(write=False)
 
     ef_sig = np.zeros(sigmas.size)
     dk = np.empty((sigmas.size, nkd, nawf))
@@ -692,7 +730,6 @@ def precompute_dense_electrons(
         Nintg, Wg, Midxg = _ws_lattice_pairs(
             tuple(ng_vertex), at, orbital_positions, sign=VERTEX_WS_SIGN
         )
-    phkg = np.exp(2j * np.pi * (K @ Nintg.T))  # (nkd, nwsg)
     cache = {
         'Nk': Nk,
         'nawf': nawf,
@@ -709,7 +746,8 @@ def precompute_dense_electrons(
         'ng_vertex': tuple(int(n) for n in ng_vertex),
         'Wg': Wg,
         'Midxg': Midxg,
-        'phkg': phkg,
+        'Nintg': Nintg,
+        'windows': windows,
     }
     if velocities:
         cache['velocity'] = _velocity_operator_terms(
@@ -718,6 +756,49 @@ def precompute_dense_electrons(
         if diagonal_velocities:
             cache['velocity_diag'] = _diagonal_velocities(cache, kblock)
     return cache
+
+
+def vertex_phases(electrons: dict, k_indices: NDArray[np.int_]) -> NDArray[np.complex128]:
+    """Wigner-Seitz phases of the coupling vertex for a block of dense k-points.
+
+    Parameters
+    ----------
+    electrons : dict
+        Output of :func:`precompute_dense_electrons`.
+    k_indices : ndarray of int, shape ``(nb,)``
+        Flat indices into ``electrons['K']``.
+
+    Returns
+    -------
+    ndarray, shape ``(nb, nws)``, complex
+        :math:`e^{2\\pi i\\,\\mathbf k\\cdot\\mathbf n}` for the vertex cells
+        ``electrons['Nintg']`` (computed per block instead of stored for the whole
+        grid, which would cost ``16 nkd nws`` bytes per rank).
+    """
+    if 'phkg' in electrons:  # explicit table (tests, older caches)
+        return electrons['phkg'][k_indices]
+    K = electrons['K'][np.asarray(k_indices)]
+    return np.exp(2j * np.pi * (K @ electrons['Nintg'].T))
+
+
+def release_dense_electrons(electrons: dict) -> None:
+    """Free the MPI shared memory of :func:`precompute_dense_electrons` (``comm`` given).
+
+    Collective over the communicator passed to :func:`precompute_dense_electrons`;
+    the arrays ``E`` and ``V`` must not be used afterwards.
+
+    Parameters
+    ----------
+    electrons : dict
+        Output of :func:`precompute_dense_electrons`.
+    """
+    windows = electrons.get('windows', [])
+    for key in ('E', 'V'):
+        if windows:
+            electrons.pop(key, None)
+    for window in windows:
+        window.Free()
+    electrons['windows'] = []
 
 
 def _diagonal_velocities(
@@ -960,7 +1041,7 @@ def vertex_ws_coefficients(gR: NDArray[np.complex128], electrons: dict) -> NDArr
     Returns
     -------
     ndarray, shape ``(nws, nawf*nawf*ncart)``, complex
-        Coefficients ``gn`` with ``g(k) = phkg[k] @ gn``.
+        Coefficients ``gn`` with ``g(k) = vertex_phases(electrons, k) @ gn``.
     """
     if tuple(int(n) for n in gR.shape[3:6]) != electrons['ng_vertex']:
         raise ValueError(
@@ -989,7 +1070,7 @@ def band_vertex(
     gn_flat : ndarray, shape ``(nws, nawf*nawf*ncart)``, complex
         Output of :func:`vertex_ws_coefficients`.
     phkg : ndarray, shape ``(nb, nws)``, complex
-        Vertex Wigner-Seitz phases of the block (``electrons['phkg'][k_indices]``).
+        Vertex Wigner-Seitz phases of the block (:func:`vertex_phases`).
     Vkq, Vk : ndarray, shape ``(nb, nawf, nband)``, complex
         Eigenvectors at ``k+q`` (rows ``m``) and ``k`` (columns ``n``); a band
         subset may be passed as column slices.
@@ -1079,14 +1160,13 @@ def lambda_q_dense_ws_fast(
     roll = (-int(shift[0]), -int(shift[1]), -int(shift[2]))
 
     Vk = electrons['V']
-    Vkq = np.roll(Vk.reshape(Nk, Nk, Nk, nawf, nawf), roll, axis=(0, 1, 2)).reshape(nkd, nawf, nawf)
+    # k+q of every k as an index (gathered per block, no copy of V per q)
+    kq_index = np.roll(np.arange(nkd).reshape(Nk, Nk, Nk), roll, axis=(0, 1, 2)).reshape(nkd)
     dk_all = electrons['dk']  # (nsig, nkd, nawf)
     nsig = dk_all.shape[0]
     dkq_all = np.roll(dk_all.reshape(nsig, Nk, Nk, Nk, nawf), roll, axis=(1, 2, 3)).reshape(
         nsig, nkd, nawf
     )
-
-    phkg = electrons['phkg']
 
     # Restrict to the Fermi-surface shell: only k with a band near E_F at BOTH k
     # and k+q give a non-negligible double delta (exact to exp(-fs_window^2)).
@@ -1120,7 +1200,7 @@ def lambda_q_dense_ws_fast(
         num_tr = np.zeros((nsig, nmode))
     for s0 in range(0, idx.size, kblock):
         ii = idx[s0 : s0 + kblock]
-        gnu = band_vertex(gn_flat, phkg[ii], Vkq[ii], Vk[ii], zmass)
+        gnu = band_vertex(gn_flat, vertex_phases(electrons, ii), Vk[kq_index[ii]], Vk[ii], zmass)
         absg2 = np.abs(gnu) ** 2
         for isig in range(nsig):
             num[isig] += np.einsum(
