@@ -112,7 +112,11 @@ def fermi_levels_for_doping(
         \\frac{g_s}{N_k}\\sum_{n\\mathbf k} f\\left(\\frac{\\varepsilon_{n\\mathbf k} - \\mu}{k_BT}\\right)
             = N_{el} + N_d\\,\\Omega
 
-    by bisection; for :math:`N_d = 0` it is the intrinsic level.
+    by bisection; for :math:`N_d = 0` it is the intrinsic level.  With
+    ``conduction`` given (and integer band filling) the balance is solved as
+    :math:`n_e - n_h = N_d`, the holes evaluated as :math:`f(-x)`, so that
+    carrier densities far below :math:`10^{-16}` per cell (wide gaps, low
+    temperatures) are resolved exactly.
     """
     energies = np.asarray(energies_ev, dtype=float)
     temps = np.atleast_1d(np.asarray(temps_k, dtype=float))
@@ -121,9 +125,17 @@ def fermi_levels_for_doping(
         if cell_volume_bohr3 is None:
             raise ValueError('doping_cm3 needs cell_volume_bohr3')
         extra = float(doping_cm3) * float(cell_volume_bohr3) * (BOHR_M * 1.0e2) ** 3
-    target = float(nelec) + extra
     nk = energies.shape[0]
     shifts = np.zeros(temps.size) if scissor_ev is None else np.asarray(scissor_ev, dtype=float)
+    # Count carriers, not electrons: with full valence bands sum(f) - N_occ =
+    # sum_c f - sum_v (1 - f), and 1 - f = f(-x) is evaluated directly, so carrier
+    # densities far below the 1e-16 resolution of the total electron count (wide
+    # gaps, low temperatures) stay exact.
+    occupied = float(nelec) / spin_degeneracy
+    carrier_count = conduction is not None and abs(occupied - round(occupied)) < 1.0e-9
+    if carrier_count:
+        conduction = np.asarray(conduction, dtype=bool)
+        carrier_count = int(np.count_nonzero(~conduction)) == int(round(occupied))
     levels = np.empty(temps.size)
     for it, temp in enumerate(temps):
         shifted = energies if conduction is None else energies + shifts[it] * conduction
@@ -131,8 +143,15 @@ def fermi_levels_for_doping(
         low, high = float(shifted.min()) - 1.0, float(shifted.max()) + 1.0
         for _ in range(niter):
             mid = 0.5 * (low + high)
-            electrons = spin_degeneracy / nk * fermi_occupation(shifted - mid, kt).sum()
-            if electrons > target:
+            if carrier_count:
+                electrons = fermi_occupation(shifted[:, conduction] - mid, kt).sum()
+                holes = fermi_occupation(mid - shifted[:, ~conduction], kt).sum()
+                excess = spin_degeneracy / nk * (electrons - holes) - extra
+            else:
+                excess = spin_degeneracy / nk * fermi_occupation(shifted - mid, kt).sum() - (
+                    float(nelec) + extra
+                )
+            if excess > 0.0:
                 high = mid
             else:
                 low = mid
@@ -417,7 +436,8 @@ def carrier_scattering_dense_q(
     for it in range(temps_k.size):
         occ = fermi_occupation(energies_all + scissor[it] * conduction_all - mu[it], temps_ev[it])
         n_e[it] = spin_degeneracy * occ[:, conduction_all].sum() / (nkd * omega_cm3)
-        n_h[it] = spin_degeneracy * (1.0 - occ[:, ~conduction_all]).sum() / (nkd * omega_cm3)
+        hole = fermi_occupation(mu[it] - energies_all[:, ~conduction_all], temps_ev[it])  # 1 - f
+        n_h[it] = spin_degeneracy * hole.sum() / (nkd * omega_cm3)
 
     # transport window
     if metal:
@@ -618,7 +638,8 @@ def rta_transport(results: dict, kind: str = 'mrta') -> dict:
         kt = KELVIN_TO_EV * temp
         x = energies + scissor[it] * conduction[None, :] - mu[it]
         f = fermi_occupation(x, kt)
-        minus_df = f * (1.0 - f) / (kt * ELEMENTARY_CHARGE)  # 1/J
+        # f (1 - f) with 1 - f = f(-x): no cancellation for deep valence states
+        minus_df = f * fermi_occupation(-x, kt) / (kt * ELEMENTARY_CHARGE)  # 1/J
         with np.errstate(divide='ignore'):
             tau = np.where(
                 window & (rates[it] > 0.0), 1.0 / np.where(rates[it] > 0, rates[it], 1.0), 0.0

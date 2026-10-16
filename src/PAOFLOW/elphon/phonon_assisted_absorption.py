@@ -425,13 +425,26 @@ def intrinsic_fermi_levels(
     """
     energies = np.asarray(energies, dtype=float)
     nk = energies.shape[0]
+    # With integer filling, balance electrons in the empty bands against holes
+    # (1 - f = f(-x)) in the full ones: exact for carrier densities far below the
+    # 1e-16 resolution of the total electron count (wide gaps, low T).
+    occupied = float(nelec) / spin_degeneracy
+    nocc = int(round(occupied)) if abs(occupied - round(occupied)) < 1.0e-9 else None
     levels = []
     for temperature in np.atleast_1d(np.asarray(temperatures, dtype=float)):
         low, high = float(energies.min()) - 1.0, float(energies.max()) + 1.0
         for _ in range(niter):
             mid = 0.5 * (low + high)
-            electrons = spin_degeneracy / nk * fermi_occupation(energies - mid, temperature).sum()
-            if electrons > nelec:
+            if nocc is not None:
+                electrons = fermi_occupation(energies[:, nocc:] - mid, temperature).sum()
+                holes = fermi_occupation(mid - energies[:, :nocc], temperature).sum()
+                excess = electrons - holes
+            else:
+                excess = (
+                    spin_degeneracy / nk * fermi_occupation(energies - mid, temperature).sum()
+                    - nelec
+                )
+            if excess > 0.0:
                 high = mid
             else:
                 low = mid

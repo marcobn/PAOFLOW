@@ -236,3 +236,34 @@ def test_kernel_mrta_velocity_floor():
         e_k, e_kq, slow, v_kq, g2, omega, temps, occ, 0.02, 0.005, velocity_floor=1.0e-2
     )
     np.testing.assert_allclose(mrta, serta, rtol=1e-12)
+
+
+def test_fermi_levels_resolve_tiny_carrier_densities():
+    # wide gap at low T: carriers ~1e-30 per cell, far below the total-electron resolution
+    rng = np.random.default_rng(7)
+    nk = 1500
+    energies = np.hstack([-0.4 + 0.4 * rng.random((nk, 4)), 1.8 + 0.5 * rng.random((nk, 4))])
+    conduction = np.arange(8) >= 4
+    volume, temps = 275.7, [150.0, 300.0]
+    omega_cm3 = volume * (BOHR_M * 1e2) ** 3
+
+    def densities(mu, temp):
+        kt = KELVIN_TO_EV * temp
+        n_e = 2.0 * fermi_occupation(energies[:, conduction] - mu, kt).sum() / (nk * omega_cm3)
+        n_h = 2.0 * fermi_occupation(mu - energies[:, ~conduction], kt).sum() / (nk * omega_cm3)
+        return n_e, n_h
+
+    mu_i = fermi_levels_for_doping(energies, temps, 8, conduction=conduction)
+    np.testing.assert_allclose(
+        mu_i, intrinsic_fermi_levels(energies, np.array(temps) * KELVIN_TO_EV, 8), atol=1e-12
+    )
+    for it, temp in enumerate(temps):
+        n_e, n_h = densities(mu_i[it], temp)
+        # below the ~2e8 cm^-3 resolution of counting all 8 electrons per cell
+        assert 0.0 < n_e < 1e8 and np.isclose(n_e, n_h, rtol=1e-8)
+    mu_n = fermi_levels_for_doping(energies, temps, 8, 1e16, volume, conduction=conduction)
+    for it, temp in enumerate(temps):
+        n_e, n_h = densities(mu_n[it], temp)
+        n_i = densities(mu_i[it], temp)[0]
+        np.testing.assert_allclose(n_e, 1e16, rtol=1e-8)
+        np.testing.assert_allclose(n_h, n_i**2 / 1e16, rtol=1e-4)  # mass-action law (Boltzmann limit)
