@@ -2478,7 +2478,7 @@ class PAOFLOW:
         self.report_module_time('Quantum Oscillations')
         return results
 
-    def spin_texture(self, fermi_up=1.0, fermi_dw=-1.0):
+    def spin_texture(self, fermi_up=1.0, fermi_dw=-1.0, write_to_file=False):
         """
         Calculate the Spin Texture
 
@@ -2502,7 +2502,7 @@ class PAOFLOW:
             if attr['nspin'] == 1:
                 if 'Sj' not in arry:
                     self.spin_operator()
-                do_spin_texture(self.data_controller)
+                do_spin_texture(self.data_controller, write_to_file)
                 self.report_module_time('Spin Texture')
             else:
                 if self.rank == 0:

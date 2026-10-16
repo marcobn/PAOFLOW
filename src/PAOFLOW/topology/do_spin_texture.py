@@ -1,4 +1,4 @@
-def do_spin_texture(data_controller):
+def do_spin_texture(data_controller, write_to_file):
     """Compute the spin texture for Fermi-surface bands and write output files.
 
     Parameters
@@ -98,33 +98,34 @@ def do_spin_texture(data_controller):
             )
 
     sktxtaux = np.take(np.diagonal(sktxtaux, axis1=2, axis2=3), ind_plot, axis=2)
-    sktxt = gather_full(np.ascontiguousarray(sktxtaux), attributes['npool'])
+    arrays['sktxt'] = np.ascontiguousarray(sktxtaux)
     sktxtaux = None
 
-    if rank == 0:
-        if 'kq' in arrays and E_k_full.shape[0] == arrays['kq'].shape[1]:
-            f = open(os.path.join(attributes['opath'], 'spin-texture-bands' + '.dat'), 'w')
-            for ik in range(E_k_full.shape[0]):
-                for ib in range(icount):
-                    idx = ind_plot[ib]
-                    f.write(
-                        '\t'.join(
-                            ['%d' % ik]
-                            + ['% 5.8f' % E_k_full[ik, idx]]
-                            + ['% 5.8f' % j for j in sktxt[ik, :, ib].real]
+    if write_to_file:
+        sktxt = gather_full(np.ascontiguousarray(sktxtaux), attributes['npool'])
+        if rank == 0:
+            if 'kq' in arrays and E_k_full.shape[0] == arrays['kq'].shape[1]:
+                f = open(os.path.join(attributes['opath'], 'spin-texture-bands' + '.dat'), 'w')
+                for ik in range(E_k_full.shape[0]):
+                    for ib in range(icount):
+                        idx = ind_plot[ib]
+                        f.write(
+                            '\t'.join(
+                                ['%d' % ik]
+                                + ['% 5.8f' % E_k_full[ik, idx]]
+                                + ['% 5.8f' % j for j in sktxt[ik, :, ib].real]
+                            )
+                            + '\n'
                         )
-                        + '\n'
+                    f.write('\n')
+                f.close()
+            else:
+                sktxt = np.reshape(sktxt, (nk1, nk2, nk3, 3, icount), order='C')
+                for ib in range(icount):
+                    np.savez(
+                        os.path.join(attributes['opath'], 'spin_text_band_' + str(ib)),
+                        spinband=sktxt[:, :, :, :, ib],
                     )
-                f.write('\n')
-            f.close()
-        else:
-            sktxt = np.reshape(sktxt, (nk1, nk2, nk3, 3, icount), order='C')
-            for ib in range(icount):
-                np.savez(
-                    os.path.join(attributes['opath'], 'spin_text_band_' + str(ib)),
-                    spinband=sktxt[:, :, :, :, ib],
-                )
+        sktxt = None
 
-    arrays['sktxt'] = sktxt
-    sktxt = None
     E_k_full = None
