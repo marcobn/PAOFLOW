@@ -1,6 +1,6 @@
 # SKEAF agentic workflow
 
-This workflow compares PAOFLOW pyskeaf / SKEAF extremal-orbit calculations with measured quantum oscillations (dHvA, SdH, torque). The experimental data can be tables, free text or images, such as FFT-vs-angle maps or slide decks. An AI agent drives the analysis through the `PAOFLOW.qo_analysis` library and follows the playbook in this folder. You steer it with the prompts.
+This workflow compares PAOFLOW pyskeaf / SKEAF extremal-orbit calculations with measured quantum oscillations (dHvA, SdH, torque). The experimental data can be tables, free text or images, such as FFT-vs-angle maps or slide decks. An AI agent drives the analysis through the `PAOFLOW.agentic.qo_analysis` library and follows the playbook in this folder. You steer it with the prompts.
 
 ## Before you start
 

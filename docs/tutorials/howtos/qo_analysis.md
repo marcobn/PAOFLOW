@@ -1,13 +1,13 @@
-# Agentic analysis of quantum oscillations (`PAOFLOW.qo_analysis`)
+# Agentic analysis of quantum oscillations (`PAOFLOW.agentic.qo_analysis`)
 
-`PAOFLOW.qo_analysis` compares the extremal orbits computed by `pyskeaf` with measured dHvA, SdH or torque frequencies. It was developed on NbSn2 and is system-agnostic. The workflow is designed to be driven by an AI agent, whose playbook and prompts live in the repository folder `agentic/skeaf/` (see *Agent resources* below), but every step is an ordinary Python method.
+`PAOFLOW.agentic.qo_analysis` compares the extremal orbits computed by `pyskeaf` with measured dHvA, SdH or torque frequencies. It was developed on NbSn2 and is system-agnostic. The workflow is designed to be driven by an AI agent, whose playbook and prompts live in the repository folder `agentic/skeaf/` (see *Agent resources* below), but every step is an ordinary Python method.
 
 Install the optional dependencies with `pip install -e ".[qo_analysis]"`.
 
 ## Workflow
 
 ```python
-from PAOFLOW.qo_analysis import QuantumOscillationAnalysis
+from PAOFLOW.agentic.qo_analysis import QuantumOscillationAnalysis
 
 qo = QuantumOscillationAnalysis(skeaf_dir='output', output_dir='qo_analysis',
                                 primitive_cell=cell, conventional_from_primitive=centring,

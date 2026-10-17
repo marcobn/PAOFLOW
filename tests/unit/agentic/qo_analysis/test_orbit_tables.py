@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from PAOFLOW.qo_analysis.orbit_tables import (
+from PAOFLOW.agentic.qo_analysis.orbit_tables import (
     angular_coverage,
     copy_count_histogram,
     merge_into_sheets,
@@ -10,7 +10,7 @@ from PAOFLOW.qo_analysis.orbit_tables import (
     per_angle_listing,
     robust_orbits,
 )
-from PAOFLOW.qo_analysis.skeaf_output import read_orbits
+from PAOFLOW.agentic.qo_analysis.skeaf_output import read_orbits
 
 pytestmark = pytest.mark.unit
 

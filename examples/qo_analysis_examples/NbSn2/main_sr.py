@@ -5,7 +5,7 @@ the band groups are set explicitly (no degeneracy without SOC) and the gap map i
 Run:  python main_sr.py   (about 30 s; needs data/exp_sweep_peaks.csv from main.py or the bundled copy)
 """
 
-from PAOFLOW.qo_analysis import QuantumOscillationAnalysis
+from PAOFLOW.agentic.qo_analysis import QuantumOscillationAnalysis
 
 qo = QuantumOscillationAnalysis(
     skeaf_dir='calc/sr_81_320',

@@ -1,6 +1,6 @@
 import pytest
 
-from PAOFLOW.qo_analysis.fermi_sheets import (
+from PAOFLOW.agentic.qo_analysis.fermi_sheets import (
     bands_at_fermi_level,
     breakdown_field,
     degenerate_groups,

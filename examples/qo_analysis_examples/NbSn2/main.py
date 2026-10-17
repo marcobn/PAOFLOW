@@ -8,7 +8,7 @@ plane containing c and the (110) normal (azimuthal 29.95 deg, polar 0 -> 90 deg,
 Run:  python main.py            (about 2 minutes; set RUN_NETWORK = True for the heavy step)
 """
 
-from PAOFLOW.qo_analysis import QuantumOscillationAnalysis
+from PAOFLOW.agentic.qo_analysis import QuantumOscillationAnalysis
 
 RUN_NETWORK = False   # breakdown network over 19 angles: ~15 min on 24 cores
 

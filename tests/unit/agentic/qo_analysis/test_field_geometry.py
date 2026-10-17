@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from PAOFLOW.qo_analysis.field_geometry import (
+from PAOFLOW.agentic.qo_analysis.field_geometry import (
     conventional_cell,
     direction_report,
     direction_to_field_angles,

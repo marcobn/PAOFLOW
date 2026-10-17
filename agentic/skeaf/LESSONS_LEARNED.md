@@ -1,6 +1,6 @@
 # Lessons learned (NbSn2, October 2026)
 
-Read together with `AGENT_WORKFLOW.md`. Method names refer to `PAOFLOW.qo_analysis`.
+Read together with `AGENT_WORKFLOW.md`. Method names refer to `PAOFLOW.agentic.qo_analysis`.
 
 Each entry: **symptom → cause → what to do**, with the NbSn2 instance. These are the reasons behind the rules in `AGENT_WORKFLOW.md`.
 

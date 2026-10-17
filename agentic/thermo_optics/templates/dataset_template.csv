@@ -1,0 +1,6 @@
+# <Author et al., Journal Vol, page (year)>, <Fig./Table N>: <quantity, sample, conditions>.
+# <Provenance and method: measured | transcribed | vector-extracted | digitised (file, dpi, calibration residuals)>.
+# <Assumptions (axis reading, label inference, curve ordering) and the overlay check file>.
+dataset,quantity,x,x_unit,y,y_unit,temperature_k,conditions,provenance,source,locator,y_rel_uncertainty,note
+Author2020_alpha_300K,absorption_coefficient,1.10,eV,3.5,cm-1,300,thickness_m=0.0005; sample=intrinsic,digitised,"Author et al., J. 1, 2 (2020)",Fig. 2,0.05,marker centre
+Author2020_alpha_300K,absorption_coefficient,1.20,eV,64,cm-1,300,thickness_m=0.0005; sample=intrinsic,digitised,"Author et al., J. 1, 2 (2020)",Fig. 2,0.05,marker centre

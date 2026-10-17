@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from PAOFLOW.qo_analysis.experiment_data import (
+from PAOFLOW.agentic.qo_analysis.experiment_data import (
     digitize_fft_map,
     extract_slide_deck,
     lk_rows_for_direction,
