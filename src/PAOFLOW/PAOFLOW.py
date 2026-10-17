@@ -1086,9 +1086,10 @@ class PAOFLOW:
             lambda_d = []
             lambda_f = []
             for i in range(len(arry['atoms'])):
-                lambda_p.append(soc_strengh[arry['atoms'][i]][0])
-                lambda_d.append(soc_strengh[arry['atoms'][i]][1])
-                lambda_f.append(soc_strengh[arry['atoms'][i]][2])
+                vals = soc_strengh[arry['atoms'][i]]
+                lambda_p.append(vals[0] if len(vals) > 0 else 0.0)
+                lambda_d.append(vals[1] if len(vals) > 1 else 0.0)
+                lambda_f.append(vals[2] if len(vals) > 2 else 0.0)
             arry['lambda_p'] = lambda_p
             arry['lambda_d'] = lambda_d
             arry['lambda_f'] = lambda_f
