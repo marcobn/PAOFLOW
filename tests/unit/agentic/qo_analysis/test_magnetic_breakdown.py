@@ -3,12 +3,12 @@ import math
 import pandas as pd
 import pytest
 
-from PAOFLOW.qo_analysis.magnetic_breakdown import (
+from PAOFLOW.agentic.qo_analysis.magnetic_breakdown import (
     group_network_copies,
     network_orbits_at_angle,
     single_angle_orbits,
 )
-from PAOFLOW.qo_analysis.skeaf_output import AREA_TO_KILOTESLA
+from PAOFLOW.agentic.qo_analysis.skeaf_output import AREA_TO_KILOTESLA
 
 pytestmark = pytest.mark.unit
 

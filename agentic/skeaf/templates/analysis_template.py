@@ -4,7 +4,7 @@ Stages follow the agent playbook (PAOFLOW/agentic/skeaf/AGENT_WORKFLOW.md).
 Heavy steps (breakdown network, new pyskeaf runs) are commented out: ask before running them.
 """
 
-from PAOFLOW.qo_analysis import QuantumOscillationAnalysis
+from PAOFLOW.agentic.qo_analysis import QuantumOscillationAnalysis
 
 qo = QuantumOscillationAnalysis(
     skeaf_dir='<folder with qo_EF_*_freqvsangle_*.out>',

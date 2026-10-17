@@ -6,7 +6,7 @@ You are running the SKEAF agentic workflow: interpreting PAOFLOW pyskeaf / SKEAF
    - `AGENT_WORKFLOW.md` (operating rules, Stages 0–10, decision tree);
    - `LESSONS_LEARNED.md` (pitfalls).
    Follow them; do not re-derive the method.
-2. **Use the library** `PAOFLOW.qo_analysis` (class `QuantumOscillationAnalysis`) from an analysis script. Write the script as `projects/<system>/analysis.py`, starting from `templates/analysis_template.py`. Inputs are Python arguments; do not use config files. The worked example is `../../examples/qo_analysis_examples/NbSn2/main.py`.
+2. **Use the library** `PAOFLOW.agentic.qo_analysis` (class `QuantumOscillationAnalysis`) from an analysis script. Write the script as `projects/<system>/analysis.py`, starting from `templates/analysis_template.py`. Inputs are Python arguments; do not use config files. The worked example is `../../examples/qo_analysis_examples/NbSn2/main.py`.
 3. **Where to write:**
    - Write only inside `projects/<system>/`. Never write into calculation folders.
    - Do not modify `src/PAOFLOW/` or the files in this folder unless the user asks.

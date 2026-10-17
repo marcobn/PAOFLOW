@@ -67,6 +67,7 @@ internal-basis
 acbn0
 nonlocal-velocity
 scattering-channels
+thermo-optics
 sk-edtb
 cli-generators
 

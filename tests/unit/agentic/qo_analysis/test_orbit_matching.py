@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from PAOFLOW.qo_analysis.orbit_matching import (
+from PAOFLOW.agentic.qo_analysis.orbit_matching import (
     anisotropy_candidates,
     chance_baselines,
     combination_test,

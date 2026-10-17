@@ -6,7 +6,7 @@ user-invocable: true
 
 # SKEAF agentic workflow
 
-Use the `PAOFLOW.qo_analysis` subpackage and follow its playbook. Do not re-derive it.
+Use the `PAOFLOW.agentic.qo_analysis` subpackage and follow its playbook. Do not re-derive it.
 
 1. **Read first:**
    - `agentic/skeaf/AGENT_WORKFLOW.md`: operating rules, Stages 0–10, decision tree.
@@ -22,4 +22,4 @@ Use the `PAOFLOW.qo_analysis` subpackage and follow its playbook. Do not re-deri
    - label digitised or transcribed experimental numbers as such;
    - correct earlier statements explicitly.
 4. **Units:** BXSF energies in Ry, pyskeaf `fermi_energy` in eV, BXSF reciprocal vectors in a.u.⁻¹ without 2π, SKEAF frequencies in kT.
-5. **Tests:** `pytest tests/unit/qo_analysis` (fast, synthetic data with known answers) and `pytest -m integration tests/integration/qo_analysis` (NbSn2 example, about 2 minutes).
+5. **Tests:** `pytest tests/unit/agentic/qo_analysis` (fast, synthetic data with known answers) and `pytest -m integration tests/integration/agentic/qo_analysis` (NbSn2 example, about 2 minutes).

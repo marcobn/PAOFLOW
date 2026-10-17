@@ -2,10 +2,10 @@
 
 This is the operating manual for an AI agent (or a person) interpreting **PAOFLOW pyskeaf / SKEAF** extremal-orbit calculations against **experimental quantum-oscillation data** (dHvA, SdH, torque) for *any* compound. It distils a complete analysis (NbSn2, October 2026) into stages, decision rules and checks.
 
-The tooling is `PAOFLOW.qo_analysis`, driven from a PAOFLOW-style analysis script. Paths below are relative to this folder (`PAOFLOW/agentic/skeaf/`). A template is in `templates/analysis_template.py`; a worked example is `../../examples/qo_analysis_examples/NbSn2/main.py`. Each study lives in its own folder `projects/<system>/` (analysis script, canonical CSVs, outputs, reports); calculation folders stay where they are and are only read.
+The tooling is `PAOFLOW.agentic.qo_analysis`, driven from a PAOFLOW-style analysis script. Paths below are relative to this folder (`PAOFLOW/agentic/skeaf/`). A template is in `templates/analysis_template.py`; a worked example is `../../examples/qo_analysis_examples/NbSn2/main.py`. Each study lives in its own folder `projects/<system>/` (analysis script, canonical CSVs, outputs, reports); calculation folders stay where they are and are only read.
 
 ```python
-from PAOFLOW.qo_analysis import QuantumOscillationAnalysis
+from PAOFLOW.agentic.qo_analysis import QuantumOscillationAnalysis
 qo = QuantumOscillationAnalysis(skeaf_dir='output', primitive_cell=..., ...)
 qo.fermi_surface_inventory()
 ...

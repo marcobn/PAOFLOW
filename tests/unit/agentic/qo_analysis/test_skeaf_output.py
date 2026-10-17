@@ -4,7 +4,7 @@ import shutil
 import numpy as np
 import pytest
 
-from PAOFLOW.qo_analysis.skeaf_output import (
+from PAOFLOW.agentic.qo_analysis.skeaf_output import (
     fermi_tokens,
     find_frequency_files,
     frequency_file_inventory,

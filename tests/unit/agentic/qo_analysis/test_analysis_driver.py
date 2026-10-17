@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from PAOFLOW.qo_analysis import QuantumOscillationAnalysis
+from PAOFLOW.agentic.qo_analysis import QuantumOscillationAnalysis
 
 pytestmark = pytest.mark.unit
 

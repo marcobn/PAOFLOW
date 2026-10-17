@@ -45,7 +45,10 @@ user-invocable: true
       elphon/             Electron–phonon coupling (g(k,q), dvscf, QE elph I/O, folding, symmetry)
       models/             Tight-binding models, Slater–Koster fitting, band unfolding, surface projection
       pyskeaf/            Python SKEAF: de Haas–van Alphen extremal Fermi-surface orbits (CLI + adapter)
-      qo_analysis/        pyskeaf orbits vs measured quantum oscillations (QuantumOscillationAnalysis)
+      agentic/            Library code of the agentic workflows (agentic/ folder below): qo_analysis/ (pyskeaf
+                          orbits vs quantum oscillations; PAOFLOW.qo_analysis is a back-compat shim),
+                          thermo_optics/ (T-dependent optics vs experimental data of any form: datasets with
+                          provenance, PDF/raster digitising, metrics, plots)
       basis_gen/          Generates atomic-orbital basis from pseudopotentials (paoflow-genbasis-ps)
       gen/                Generators: QE input from AFLOW/C2DB (paoflow-gen-qe), main.py driver (paoflow-gen),
                           fermi_plotter
@@ -63,6 +66,7 @@ user-invocable: true
     PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard)
     agentic/              Agentic workflows run on top of the library (not installed). skeaf/: playbook,
                           prompts, templates, git-ignored projects/; has its own AGENTS.md / CLAUDE.md
+                          thermo_optics/: same layout, optics-vs-experiment playbook (PAOFLOW.agentic.*)
     docs/                 Sphinx + MyST site (Read the Docs); docs/internals/ holds developer notes
     .github/              CI workflows and asset_generation scripts for integration-test tarballs
     ```

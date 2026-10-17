@@ -1,6 +1,6 @@
 # NbSn2: torque rotation [001] → [110] vs pyskeaf
 
-The system on which `PAOFLOW.qo_analysis` was developed: NbSn2, Fddd, F-centred orthorhombic (b/a = 1.7356, c/a = 3.3813).
+The system on which `PAOFLOW.agentic.qo_analysis` was developed: NbSn2, Fddd, F-centred orthorhombic (b/a = 1.7356, c/a = 3.3813).
 
 | Path | Content |
 |---|---|
@@ -14,7 +14,7 @@ The system on which `PAOFLOW.qo_analysis` was developed: NbSn2, Fddd, F-centred 
 | `data/exp_LK_table.csv` | LK values **transcribed** from slide text, plus a VSM [110] set |
 | `data/branch_assignments_soc.csv` | final branch labels |
 | `data/NbSn2.cell.in` | cell (QE ibrav 10 primitive vectors in units of a) |
-| `expected_results.json` | reference numbers, checked by `tests/integration/qo_analysis` |
+| `expected_results.json` | reference numbers, checked by `tests/integration/agentic/qo_analysis` |
 
 Run with `python main.py` (about 2 minutes without the network). Results go to `qo_analysis_soc/`.
 

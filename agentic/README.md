@@ -4,7 +4,8 @@ Each folder here is a self-contained workflow that an AI coding agent (Claude Co
 
 | Folder | Workflow | Library code |
 |---|---|---|
-| `skeaf/` | Interpreting pyskeaf / SKEAF extremal-orbit calculations against experimental quantum-oscillation data (dHvA, SdH, torque) given as tables, text or images | `PAOFLOW.qo_analysis` |
+| `skeaf/` | Interpreting pyskeaf / SKEAF extremal-orbit calculations against experimental quantum-oscillation data (dHvA, SdH, torque) given as tables, text or images | `PAOFLOW.agentic.qo_analysis` |
+| `thermo_optics/` | Comparing PAOFLOW's temperature-dependent optical response (absorption, free carriers, refractive index, emissivity) with experimental data given as tables, text, vector or scanned PDF figures, slide decks or images: canonical datasets with provenance, model at the measured conditions, metrics with baselines, diagnosis, publication figures | `PAOFLOW.agentic.thermo_optics` |
 
 How to start any workflow:
 1. Go to its folder.
