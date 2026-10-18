@@ -250,6 +250,11 @@ def test_dense_absorption_with_a_decoupled_hamiltonian(tmp_path):
     np.testing.assert_allclose(out_n['alpha_cm'] * n_grid, out['alpha_cm'] * 3.4, rtol=1e-10)
     np.testing.assert_array_equal(out_n['eps2_indirect'], out['eps2_indirect'])
 
+    # None = the EPW constant 3.4
+    out_none = _run(tmp_path, HRs, refractive_index=None)
+    np.testing.assert_array_equal(out_none['alpha_cm'], out['alpha_cm'])
+    assert float(out_none['refractive_index']) == 3.4
+
     # a Hamiltonian in another basis is refused before any heavy work
     with pytest.raises(ValueError, match='same PAO basis'):
         _run(tmp_path, HRs[:3, :3])

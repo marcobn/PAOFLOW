@@ -896,7 +896,7 @@ def phonon_assisted_absorption_dense_q(
     fermi_energy_ev: float | str | None = None,
     etas_ev: Sequence[float] = EPW_ETAS_EV,
     eps_acoustic_cm: float = 0.1,
-    refractive_index: float | NDArray[np.float64] = 3.4,
+    refractive_index: float | NDArray[np.float64] | tuple | None = 3.4,
     nonlocal_velocity=None,
     kk_omega_max_ev: float | None = None,
     kk_degauss_ev: float = 0.1,
@@ -961,10 +961,10 @@ def phonon_assisted_absorption_dense_q(
         Intermediate-state broadenings (eV); EPW's nine values by default.
     eps_acoustic_cm : float, optional
         Phonons below this energy (cm^-1) are skipped (EPW ``eps_acoustic``).
-    refractive_index : float, ndarray or (omega_ev, n) pair, optional
+    refractive_index : float, ndarray, (omega_ev, n) pair or None, optional
         Real refractive index of ``alpha = omega Im eps / (n c)``: a constant
-        (default 3.4, the EPW tutorial value for Si), ``n`` on the photon grid, or
-        a pair ``(omega_ev, n)`` interpolated on it, e.g.
+        (default 3.4, the EPW tutorial value for Si; ``None`` means the same),
+        ``n`` on the photon grid, or a pair ``(omega_ev, n)`` interpolated on it, e.g.
         :func:`external_refractive_index` of the ``dielectric_tensor`` run that
         provides ``direct_dielectric``.  The emissivity does not use it (it works
         with the full dielectric function).
@@ -1135,7 +1135,11 @@ def phonon_assisted_absorption_dense_q(
     omin, omax, ostep = omega_ev
     photon_ev = omin + ostep * np.arange(int(np.floor((omax - omin) / ostep + 1.0e-6)) + 1)
     photon = photon_ev / RY_TO_EV
-    if isinstance(refractive_index, (tuple, list)):  # (omega_ev, n) of another run
+    if refractive_index is None:
+        refractive_index = (
+            3.4  # EPW's constant; the drivers pass n(omega) of the optics run instead
+        )
+    elif isinstance(refractive_index, (tuple, list)):  # (omega_ev, n) of another run
         ext_omega, ext_n = (np.asarray(a, dtype=float) for a in refractive_index)
         refractive_index = np.interp(photon_ev, ext_omega, ext_n)
     eps_acoustic = eps_acoustic_cm / EV_TO_CM1 / RY_TO_EV
