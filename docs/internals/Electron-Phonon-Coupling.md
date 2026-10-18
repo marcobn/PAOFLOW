@@ -752,7 +752,15 @@ scissor corrects the band energies only:
   `scissor` does.
 - **External direct ε.** It gets the same scissor
   (`scissor_shift_dielectric`: ε₂ shifted rigidly, ε₁ corrected by the KK
-  difference).
+  difference). With `'ks'` the shifted ε₂ is also multiplied by
+  $((\omega-\Delta)/\omega)^2$ (constant momentum matrix elements). For
+  Δ < 0 this factor diverges as ω → 0, so it would amplify the broadening
+  tail of the external ε₂ below its onset $E_{\rm on}$. Below
+  $E_{\rm on}+\Delta$ the factor is therefore held at
+  $(E_{\rm on}/(E_{\rm on}+\Delta))^2$ (`dielectric_onset_ev`), and a Δ that
+  closes the direct gap raises an error. Before October 18, 2026, the tail was
+  amplified: at λ > 4 μm and high T the emissivity of KS runs with Δ < 0
+  came out 0.01–0.02 too high (eACBN0 Si, Δ = −0.54 eV at 1073 K).
 - **Cost.** Temperatures with equal Δ are processed together. A T-dependent
   scissor repeats only the second-order kernel per temperature.
 
@@ -798,7 +806,20 @@ of the same crystal can replace the PBE one altogether
   used to be an error); `--gap-reference-save` and `--electrons-save` are
   mutually exclusive.
 - **Direct dielectric function.** `DIRECT_DIELECTRIC_DIR` must then come from a
-  `dielectric_tensor` run on the eACBN0 optics save (`optics_eps.py --savedir`);
+  `dielectric_tensor` run on the eACBN0 optics save (`optics_eps.py --savedir`).
+  `thermal_emissivity(..., direct_scissor=)` sets its shift: `'same'` (default)
+  the run's Δ(T); `'thermal'` only Δ(T) − Δ(0) (`results['scissor_0k_ev']`),
+  when the external spectrum already has the right 0 K direct gap and a scissor
+  (`--target-gap-ev`) corrects the indirect gap only — eACBN0 Si: direct gap
+  3.44 eV, indirect 0.22 eV too high, so `'same'` would move the direct
+  transitions to 3.22 eV and raise ε₁(0.05 eV, 20 K) from 12.4 to 14.0, while
+  `'thermal'` keeps 12.4 and brings n at 0.45–2 μm to −5.5…+4.7 % of experiment;
+  `'none'`; or explicit shifts. With `'ks'` velocities the thermal shift
+  overestimates dn/dT (×1.1–1.8 for Si), with `'renormalized'` it
+  underestimates it (×0.65–0.9). The taper below the direct gap stays at the run's
+  scissor-corrected direct gap, where its phonon-assisted term diverges.
+  `examples/elphon_example/Si/emissivity_from_absorption.py` recomputes the
+  emissivity of a finished run this way, without a new kernel pass;
   `thermal_emissivity` compares the onset of the external $\varepsilon_2$ (5 %
   of its maximum, which lands on the direct gap for PAOFLOW's Si spectrum)
   with the Hamiltonian's direct gap and warns beyond 0.3 eV

@@ -2159,7 +2159,10 @@ Not included: the Hubbard contribution to the coupling (dV_Hub/du), the
 Hubbard term of the velocity commutator and the change of screening.  The
 direct dielectric function (DIRECT_DIELECTRIC_DIR) must then come from a
 dielectric_tensor run on the matching eACBN0 save (a warning compares its
-onset with the Hamiltonian's direct gap).
+onset with the Hamiltonian's direct gap).  If its direct gap is already right
+and a scissor (--target-gap-ev) only corrects the indirect gap, use
+--direct-scissor thermal: the external spectrum then gets only the
+temperature-dependent part of the scissor.
 
 With EMISSIVITY (or --emissivity) the run also gives the thermal emissivity of
 a free-standing slab of THICKNESS_UM at every temperature (Kirchhoff's law:
@@ -2251,6 +2254,10 @@ KK_OMEGA_MAX_EV = 10.0  # Kramers-Kronig range of the direct term (check the f-s
 # bands than extended-basis orbitals).  None = direct term from this run's PAO basis
 # by Kramers-Kronig.
 DIRECT_DIELECTRIC_DIR = __DIRECT_DIELECTRIC_DIR__
+# Shift of the direct dielectric function: 'same' = the scissor of the run (PBE optics with PBE
+# electrons); 'thermal' = only its temperature-dependent part, when the optics run already has
+# the right 0 K direct gap and the scissor corrects the indirect gap (eACBN0); 'none'.
+DIRECT_SCISSOR = __DIRECT_SCISSOR__
 
 
 def pao_electronic_structure(electrons_save=None):
@@ -2373,14 +2380,17 @@ def report(out, args, direct=None):
     if not args.emissivity:
         return
     emissivity = thermal_emissivity(
-        out, args.thickness_um * 1.0e-6, angles_deg=EMIS_ANGLES, direct_dielectric=direct
+        out, args.thickness_um * 1.0e-6, angles_deg=EMIS_ANGLES, direct_dielectric=direct,
+        direct_scissor=args.direct_scissor,
     )
     print('Thermal emissivity (slab, d = %g um; direct eps from %s, f-sum ratio %.2f):'
           % (args.thickness_um, args.direct_dielectric or 'Kramers-Kronig of this run',
              emissivity['f_sum_ratio'].mean()))
     if 'direct_onset_ev' in emissivity:
-        print('  external direct eps: onset %.2f eV, direct gap of the Hamiltonian %.2f eV'
-              % (emissivity['direct_onset_ev'], emissivity['direct_gap_h_ev']))
+        print('  external direct eps: onset %.2f eV, direct gap of the Hamiltonian %.2f eV; shifted by '
+              '%+.3f ... %+.3f eV (%s)' % (emissivity['direct_onset_ev'], emissivity['direct_gap_h_ev'],
+                                         emissivity['direct_scissor_ev'].min(),
+                                         emissivity['direct_scissor_ev'].max(), emissivity['direct_scissor']))
     print('    T (K)   E_F (eV)   total slab   total opaque   Planck coverage')
     for it, temp in enumerate(emissivity['temps_k']):
         print('  %7.1f  %9.4f  %11.4f  %13.4f  %16.4f'
@@ -2419,6 +2429,9 @@ def main():
                              'or relative to the Hamiltonian gap without one (Si: 4.73e-4 636)')
     parser.add_argument('--scissor-velocity', choices=('renormalized', 'ks'), default=SCISSOR_VELOCITY,
                         help='velocities of the scissor-corrected Hamiltonian')
+    parser.add_argument('--direct-scissor', choices=('same', 'thermal', 'none'), default=DIRECT_SCISSOR,
+                        help='shift of the direct dielectric function: the run scissor, its thermal part only, '
+                             'or none (default %(default)s)')
     parser.add_argument('--direct-dielectric', default=DIRECT_DIELECTRIC_DIR,
                         help='output dir of an extended-basis dielectric_tensor run (epsr/epsi_*.dat)')
     args = parser.parse_args()
@@ -2490,6 +2503,7 @@ def build_elphon_absorption_script(cfg: dict[str, Any]) -> str:
         '__THICKNESS_UM__': repr(float(cfg.get('thickness_um', 500.0))),
         '__EMIS_ANGLES__': repr(tuple(float(a) for a in cfg.get('emis_angles', (0.0, 30.0, 60.0)))),
         '__DIRECT_DIELECTRIC_DIR__': repr(cfg.get('direct_dielectric_dir') or None),
+        '__DIRECT_SCISSOR__': repr(cfg.get('direct_scissor') or 'same'),
         '__TARGET_GAP_EV__': repr(cfg.get('target_gap_ev')),
         '__GAP_REFERENCE_SAVE__': repr(cfg.get('gap_reference_save') or None),
         '__VARSHNI__': repr(tuple(cfg['varshni']) if cfg.get('varshni') else None),

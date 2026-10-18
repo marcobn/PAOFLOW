@@ -670,6 +670,39 @@ def test_scissor_shift_dielectric():
     assert ks2[i] == pytest.approx(new2[i] * (3.0 / 3.5) ** 2, rel=1e-6)
 
 
+def test_scissor_shift_dielectric_ks_negative_keeps_the_tail_bounded():
+    """KS factor ((w - D)/w)^2 diverges for D < 0 as w -> 0: the broadening tail must not blow up."""
+    from PAOFLOW.elphon.phonon_assisted_absorption import scissor_shift_dielectric
+
+    omega = np.arange(0.0, 20.0 + 1e-9, 0.0125)
+    e0, gamma, strength = (
+        3.4,
+        0.1,
+        40.0,
+    )  # a sharp edge with a Drude-Lorentz tail, as dielectric_tensor
+    denominator = (e0**2 - omega**2) ** 2 + (gamma * omega) ** 2
+    eps2 = strength * gamma * omega / denominator
+    eps1 = 1.0 + strength * (e0**2 - omega**2) / denominator
+    low = (omega > 0.0) & (omega < 0.3)
+    previous = None
+    for shift in (-0.2, -0.3, -0.5):
+        e1, e2 = scissor_shift_dielectric(omega, eps1, eps2, shift, 'ks', onset_ev=e0)
+        # the tail: the shifted tail scaled like the edge, never by the divergent factor
+        expected = np.interp(omega[low] - shift, omega, eps2) * (e0 / (e0 + shift)) ** 2
+        np.testing.assert_allclose(e2[low], expected, rtol=1e-10)
+        # above the shifted onset the exact KS factor is kept
+        j = np.argmin(abs(omega - 4.0))
+        assert e2[j] == pytest.approx(
+            np.interp(4.0 - shift, omega, eps2) * ((4.0 - shift) / 4.0) ** 2, rel=1e-6
+        )
+        # a larger downward shift raises the static dielectric constant monotonically
+        if previous is not None:
+            assert e1[4] > previous
+        previous = e1[4]
+    with pytest.raises(ValueError, match='closes the direct gap'):
+        scissor_shift_dielectric(omega, eps1, eps2, -3.5, 'ks', onset_ev=e0)
+
+
 def test_pao_band_gaps_matches_brute_force():
     from PAOFLOW.elphon.phonon_assisted_absorption import pao_band_gaps
 
@@ -707,3 +740,38 @@ def test_thermal_emissivity_uses_per_temperature_scissor(tmp_path):
         emis['eps2'][1, above], np.interp(omega[above] - 0.3, omega_ext, direct[2]), rtol=1e-6
     )
     assert emis['eps1'][1, 0] < emis['eps1'][0, 0]
+    assert emis['direct_scissor'] == 'same'
+    np.testing.assert_array_equal(emis['direct_scissor_ev'], results['scissor_ev'])
+
+    # only the temperature-dependent part of the scissor on the external spectrum
+    results['scissor_0k_ev'] = 0.1
+    thermal = thermal_emissivity(
+        results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor='thermal'
+    )
+    np.testing.assert_allclose(thermal['direct_scissor_ev'], [-0.1, 0.2])
+    np.testing.assert_allclose(
+        thermal['eps2'][1, above], np.interp(omega[above] - 0.2, omega_ext, direct[2]), rtol=1e-6
+    )
+    explicit = thermal_emissivity(
+        results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor=[-0.1, 0.2]
+    )
+    np.testing.assert_array_equal(explicit['eps2'], thermal['eps2'])
+    none = thermal_emissivity(
+        results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor='none'
+    )
+    np.testing.assert_allclose(
+        none['eps2'][1, above], np.interp(omega[above], omega_ext, direct[2])
+    )
+    with pytest.raises(ValueError):
+        thermal_emissivity(
+            results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor='half'
+        )
+    with pytest.raises(ValueError):
+        thermal_emissivity(
+            results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor=[0.0, 0.1, 0.2]
+        )
+    del results['scissor_0k_ev']
+    with pytest.raises(KeyError, match='scissor_0k_ev'):
+        thermal_emissivity(
+            results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor='thermal'
+        )

@@ -31,6 +31,7 @@ mid-gap Fermi level.
 | `main.py` | PAOFLOW analysis: PAO electronic structure, then phonon-assisted + direct absorption |
 | `optics/nscf.in` | `pw.x` nscf with 60 bands (8³ k) for the extended-basis direct dielectric function |
 | `optics_eps.py` | PAOFLOW `dielectric_tensor` on the extended basis with the non-local velocity → `optics/output/epsr_*/epsi_*.dat` |
+| `emissivity_from_absorption.py` | recomputes the thermal emissivity of a finished run from `absorption.npz` with another direct dielectric function or `--direct-scissor` (writes to a new directory) |
 | `make_hubbard_nscf.py` | from the converged `HUBBARD` card of an eACBN0 run: the nscf inputs for eACBN0 electrons (`acbn0/epw_nscf/`, the EPW k list) and for the eACBN0 optics run (`acbn0/optics/`) |
 | `plot.py` | plots Im ε(ω) and α(ω), overlaying EPW's `epsilon2_indabs_<T>K.dat` when present; after `--emissivity` it also plots the thermal emissivity |
 | `mobility.py` | phonon-limited carrier mobility: state-resolved SERTA/MRTA rates near the band edges, electron and hole mobilities, `scattering_rates.npz` for `pf.transport` |
@@ -253,6 +254,13 @@ mpirun -np 8 python main.py --electrons-save acbn0/epw_nscf/Si2.save --emissivit
   together with `--electrons-save`).
 - `--direct-dielectric` must point to the eACBN0 optics run: `main.py` warns if
   the onset of the external ε₂ and the Hamiltonian's direct gap disagree.
+- With a scissor on the eACBN0 bands (`--target-gap-ev 1.17`, the eACBN0
+  indirect gap being 0.22 eV too high while its direct gap is right), add
+  `--direct-scissor thermal`: the external ε then receives only the
+  temperature-dependent part of the scissor. For a finished run,
+  `python emissivity_from_absorption.py output --direct-dielectric <optics output>
+  --direct-scissor thermal --outdir output_thermal` recomputes the emissivity
+  in seconds.
 - Not included: the Hubbard contribution to the coupling and to the velocity
   commutator, and the change of screening. Compare the f-sum ratio printed by
   the emissivity step with the PBE one (0.87–0.88) to size the latter.

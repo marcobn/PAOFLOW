@@ -635,6 +635,7 @@ def scissor_shift_dielectric(
     eps2: NDArray[np.float64],
     scissor_ev: float,
     mode: str = 'renormalized',
+    onset_ev: float | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Apply a scissor to an independent-particle dielectric function.
 
@@ -648,11 +649,21 @@ def scissor_shift_dielectric(
         Rigid conduction-band shift (eV).
     mode : {'renormalized', 'ks'}, optional
         Velocity convention of :func:`scissor_velocities`.
+    onset_ev : float, optional
+        Absorption onset (direct gap) of the unshifted spectrum, used with
+        ``mode='ks'`` and a negative scissor (default
+        :func:`dielectric_onset_ev` of ``eps2``).
 
     Returns
     -------
     eps1, eps2 : ndarray, shape ``(nomega,)``
         Scissor-corrected real and imaginary parts.
+
+    Raises
+    ------
+    ValueError
+        For an unknown ``mode``, or a negative scissor that closes the direct gap
+        (``mode='ks'``).
 
     Notes
     -----
@@ -663,6 +674,15 @@ def scissor_shift_dielectric(
     Kramers-Kronig transform of the change of :math:`\\varepsilon_2` (so the
     contribution of the spectrum beyond the grid is kept); weight shifted past
     the end of the grid is dropped.
+
+    The Kohn-Sham factor is the ratio of the transition energies before and after
+    the shift, exact for the transitions themselves.  Below the onset only the
+    broadening tail of the spectrum remains (Drude-Lorentz ``delta`` of
+    ``dielectric_tensor``); for a negative scissor the factor would diverge there
+    as :math:`\\omega \\to 0`, so below the shifted onset
+    :math:`E_{on} + \\Delta` the tail is scaled like the edge transitions that
+    produce it, by :math:`E_{on}^2/(E_{on} + \\Delta)^2`.  Positive scissors keep
+    the plain factor (it is bounded).
     """
     from ..response.do_epsilon import kramers_kronig_eps1
 
@@ -677,7 +697,17 @@ def scissor_shift_dielectric(
     shifted = np.interp(grid - scissor_ev, grid, original, left=0.0, right=0.0)
     if mode == 'ks':
         with np.errstate(divide='ignore', invalid='ignore'):
-            shifted = np.where(grid > 0.0, shifted * ((grid - scissor_ev) / grid) ** 2, 0.0)
+            factor = np.where(grid > 0.0, ((grid - scissor_ev) / grid) ** 2, 0.0)
+        if scissor_ev < 0.0:
+            onset = dielectric_onset_ev(omega, eps2) if onset_ev is None else float(onset_ev)
+            if not onset + scissor_ev > 0.0:
+                raise ValueError(
+                    'a scissor of %.3f eV closes the direct gap (onset %.3f eV)'
+                    % (scissor_ev, onset)
+                )
+            tail = (grid > 0.0) & (grid < onset + scissor_ev)  # broadening tail only
+            factor[tail] = (onset / (onset + scissor_ev)) ** 2
+        shifted = shifted * factor
     delta_eps1 = kramers_kronig_eps1(grid, shifted) - kramers_kronig_eps1(grid, original)
     return (
         np.asarray(eps1, dtype=float) + np.interp(omega, grid, delta_eps1),
@@ -1107,6 +1137,10 @@ def phonon_assisted_absorption_dense_q(
         scissor_per_temperature(temps_k, (cbm - vbm) * RY_TO_EV, scissor_ev, target_gap_ev)
         / RY_TO_EV
     )  # Ry, (ntemp,)
+    # the 0 K part of the scissor (the gap correction proper), for thermal_emissivity(direct_scissor='thermal')
+    scissor_0k_ev = float(
+        scissor_per_temperature([0.0], (cbm - vbm) * RY_TO_EV, scissor_ev, target_gap_ev)[0]
+    )
     if np.any(scissor_t != 0.0) and cbm <= vbm:
         raise ValueError('A scissor needs a gap above band %d.' % nocc)
     if scissor_velocity not in ('renormalized', 'ks'):
@@ -1287,6 +1321,7 @@ def phonon_assisted_absorption_dense_q(
         'indirect_gap_ev_t': (cbm - vbm + scissor_t) * RY_TO_EV,
         'direct_gap_ev_t': (direct_gap + scissor_t) * RY_TO_EV,
         'scissor_ev': scissor_t * RY_TO_EV,
+        'scissor_0k_ev': scissor_0k_ev,
         'scissor_velocity': scissor_velocity,
         'etas_ev': np.asarray(etas_ev, dtype=float),
         'temps_k': temps_k,
@@ -1313,6 +1348,7 @@ def thermal_emissivity(
     taper_ev: float = 0.1,
     direct_dielectric: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]
     | None = None,
+    direct_scissor: str | float | Sequence[float] = 'same',
 ) -> dict:
     """Spectral and total hemispherical emissivity of a slab at each temperature.
 
@@ -1344,7 +1380,24 @@ def thermal_emissivity(
         the vacuum 1 and the grid (uniform) must cover ``results['omega_ev']``.
         When given, the wide-range direct term of ``results`` is not used.  A
         scissor of ``results`` (``scissor_ev``, ``scissor_velocity``) is applied
-        to it too (:func:`scissor_shift_dielectric`).
+        to it too (:func:`scissor_shift_dielectric`), as set by ``direct_scissor``.
+    direct_scissor : {'same', 'thermal', 'none'}, float or sequence of float, optional
+        Rigid shift of ``direct_dielectric`` at each temperature:
+
+        * ``'same'`` (default): the scissor ``Delta(T)`` of the run, when the
+          external spectrum shares the gap error of the Hamiltonian (PBE optics
+          with PBE electrons);
+        * ``'thermal'``: only its temperature-dependent part
+          ``Delta(T) - Delta(0)`` (``results['scissor_0k_ev']``), when the
+          external spectrum already has the right 0 K direct gap and the scissor
+          corrects the indirect gap only (eACBN0 Si: direct gap 3.44 eV, indirect
+          gap 0.22 eV too high);
+        * ``'none'``: no shift;
+        * explicit shifts (eV), one value or one per temperature.
+
+        The taper below the direct gap always follows the run's own
+        (scissor-corrected) direct gap ``direct_gap_ev_t``, where its
+        phonon-assisted term diverges.
 
     Returns
     -------
@@ -1354,7 +1407,9 @@ def thermal_emissivity(
         ``directional_slab`` ``(ntemp, nangle, nomega)``, ``total_slab``,
         ``total_opaque``, ``planck_coverage`` ``(ntemp,)``, ``thickness_m``,
         ``angles_deg``, ``eta_ev``, ``direct_source`` (``'external'`` or
-        ``'kramers-kronig'``) and, when ``results`` carries ``nelec`` and
+        ``'kramers-kronig'``), with ``direct_dielectric`` also ``direct_scissor``
+        (the mode) and ``direct_scissor_ev`` ``(ntemp,)`` (the shifts applied to
+        it), ``direct_onset_ev``, ``direct_gap_h_ev``, and, when ``results`` carries ``nelec`` and
         ``cell_volume_bohr3``, ``f_sum_ratio`` ``(ntemp,)``: the f-sum
         :math:`\\int \\omega\\, \\varepsilon_2\\, d\\omega` of the direct
         spectrum divided by :math:`\\pi \\omega_p^2 / 2` of all valence
@@ -1365,9 +1420,11 @@ def thermal_emissivity(
     NotImplementedError
         For a metal (no gap): the intraband (Drude) term is not included.
     KeyError
-        If neither a wide-range direct term nor ``direct_dielectric`` is given.
+        If neither a wide-range direct term nor ``direct_dielectric`` is given,
+        or ``direct_scissor='thermal'`` without ``results['scissor_0k_ev']``.
     ValueError
-        If ``direct_dielectric`` does not cover the photon-energy grid.
+        If ``direct_dielectric`` does not cover the photon-energy grid, or for an
+        unknown ``direct_scissor``.
 
     Notes
     -----
@@ -1463,9 +1520,10 @@ def thermal_emissivity(
                 % (ext_omega.min(), ext_omega.max(), omega.min(), omega.max())
             )
         onset = check_direct_dielectric_gap(results, (ext_omega, ext_eps1, ext_eps2))
+        ext_shifts = direct_scissor_shifts(results, direct_scissor, scissors)
         kk_grid = np.arange(0.0, omega.max() + 0.5 * step, step)  # uniform, from 0
         shifted_ext = {}  # scissor (eV) -> external (eps1, eps2) on the photon grid
-        for scissor in np.unique(scissors):
+        for scissor in np.unique(ext_shifts):
             e1, e2 = scissor_shift_dielectric(ext_omega, ext_eps1, ext_eps2, scissor, scissor_mode)
             shifted_ext[scissor] = (
                 np.interp(omega, ext_omega, e1),
@@ -1486,7 +1544,7 @@ def thermal_emissivity(
         else:
             direct = np.asarray(results['eps2_direct'])[it].mean(axis=0)
             weight = taper(omega, direct_gaps[it])
-            eps1_ext, eps2_ext = shifted_ext[scissors[it]]
+            eps1_ext, eps2_ext = shifted_ext[ext_shifts[it]]
             eps2 = weight * (direct + indirect) + (1.0 - weight) * eps2_ext
             phonon_assisted = np.interp(kk_grid, omega, weight * indirect, left=0.0, right=0.0)
             delta_eps1 = kramers_kronig_eps1(kk_grid, phonon_assisted) - 1.0
@@ -1501,13 +1559,76 @@ def thermal_emissivity(
     if direct_dielectric is not None:
         out['direct_onset_ev'] = onset['onset_ev']
         out['direct_gap_h_ev'] = onset['direct_gap_ev']
+        out['direct_scissor'] = direct_scissor if isinstance(direct_scissor, str) else 'explicit'
+        out['direct_scissor_ev'] = ext_shifts
     if f_sum_ratio is not None:
         out['f_sum_ratio'] = f_sum_ratio
     return out
 
 
+def direct_scissor_shifts(
+    results: dict,
+    direct_scissor: str | float | Sequence[float] = 'same',
+    scissors: NDArray[np.float64] | None = None,
+) -> NDArray[np.float64]:
+    """Shift (eV) of an external direct dielectric function at each temperature.
+
+    Parameters
+    ----------
+    results : dict
+        Output of :func:`phonon_assisted_absorption_dense_q` (``scissor_ev``,
+        ``temps_k`` and, for ``'thermal'``, ``scissor_0k_ev``).
+    direct_scissor : {'same', 'thermal', 'none'}, float or sequence of float, optional
+        See :func:`thermal_emissivity`.
+    scissors : ndarray, optional
+        The run's scissor per temperature (default ``results['scissor_ev']``).
+
+    Returns
+    -------
+    ndarray, shape ``(ntemp,)``
+        Shifts (eV); ``'same'`` returns the run's scissor unchanged.
+
+    Raises
+    ------
+    KeyError
+        For ``'thermal'`` when ``results`` has no ``scissor_0k_ev`` (outputs of
+        older runs: pass the shifts explicitly, ``scissor_ev - Delta(0)``).
+    ValueError
+        For an unknown mode or a wrong number of explicit shifts.
+    """
+    ntemp = np.atleast_1d(np.asarray(results['temps_k'], dtype=float)).size
+    if scissors is None:
+        scissors = np.asarray(results.get('scissor_ev', np.zeros(ntemp)), dtype=float)
+    scissors = np.broadcast_to(np.asarray(scissors, dtype=float), (ntemp,))
+    if isinstance(direct_scissor, str):
+        if direct_scissor == 'same':
+            shifts = scissors
+        elif direct_scissor == 'none':
+            shifts = np.zeros(ntemp)
+        elif direct_scissor == 'thermal':
+            if 'scissor_0k_ev' not in results:
+                raise KeyError(
+                    "direct_scissor='thermal' needs results['scissor_0k_ev'] (the 0 K scissor); "
+                    'for the output of an older run pass the shifts explicitly, scissor_ev - Delta(0).'
+                )
+            shifts = scissors - float(np.asarray(results['scissor_0k_ev']))
+        else:
+            raise ValueError(
+                "direct_scissor must be 'same', 'thermal', 'none' or shifts in eV, got %r"
+                % direct_scissor
+            )
+    else:
+        values = np.atleast_1d(np.asarray(direct_scissor, dtype=float))
+        if values.size not in (1, ntemp):
+            raise ValueError(
+                'direct_scissor has %d values for %d temperatures' % (values.size, ntemp)
+            )
+        shifts = np.broadcast_to(values, (ntemp,))
+    return np.array(shifts, dtype=float)
+
+
 def dielectric_onset_ev(
-    omega_ev: NDArray[np.float64], eps2: NDArray[np.float64], fraction: float = 0.02
+    omega_ev: NDArray[np.float64], eps2: NDArray[np.float64], fraction: float = 0.05
 ) -> float:
     """Onset of an absorption spectrum: lowest energy where ``eps2`` reaches a fraction of its maximum.
 
@@ -1518,7 +1639,8 @@ def dielectric_onset_ev(
     eps2 : ndarray, shape ``(nomega,)``
         Imaginary part of the dielectric function.
     fraction : float, optional
-        Threshold relative to ``max(eps2)`` (default 2 %).
+        Threshold relative to ``max(eps2)`` (default 5 %: on PAOFLOW's Si spectra,
+        Drude-Lorentz ``delta = 0.1`` eV, it lands on the direct gap within 0.04 eV).
 
     Returns
     -------

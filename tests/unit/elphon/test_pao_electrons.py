@@ -222,6 +222,16 @@ def test_dense_absorption_with_a_decoupled_hamiltonian(tmp_path):
     HRs = _gapped_HRs()
     out = _run(tmp_path, HRs)
     assert out['indirect_gap_dft_ev'] > 1.5 and np.asarray(out['eps2_indirect']).max() > 0.0
+    assert out['scissor_0k_ev'] == 0.0
+
+    # the 0 K scissor is recorded: target gap minus the Hamiltonian gap (Varshni: E0 at 0 K)
+    from PAOFLOW.elphon.phonon_assisted_absorption import varshni_gap
+
+    target = _run(tmp_path, HRs, target_gap_ev=varshni_gap(1.2, 4.73e-4, 636.0))
+    assert target['scissor_0k_ev'] == pytest.approx(1.2 - out['indirect_gap_dft_ev'])
+    assert target['scissor_ev'][0] == pytest.approx(
+        varshni_gap(1.2, 4.73e-4, 636.0)(300.0) - out['indirect_gap_dft_ev']
+    )
 
     # a rigid shift of every band (same eigenvectors) changes nothing
     shifted = HRs.copy()

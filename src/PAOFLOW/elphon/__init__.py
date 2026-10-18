@@ -58,6 +58,7 @@ from .anisotropic_eliashberg import (
 from .phonon_assisted_absorption import (
     absorption_coefficient,
     direct_absorption_kernel,
+    direct_scissor_shifts,
     external_refractive_index,
     indirect_absorption_kernel,
     intrinsic_fermi_levels,
@@ -117,6 +118,7 @@ __all__ = [
     'default_temperatures',
     'default_wscut',
     'direct_absorption_kernel',
+    'direct_scissor_shifts',
     'el_ph_mat_to_cartesian',
     'eliashberg',
     'eliashberg_from_modes',

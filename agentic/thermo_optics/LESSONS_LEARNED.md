@@ -42,13 +42,17 @@ Each entry: **symptom → cause → what to do**, with the Si instance. These ar
 | 22 | Many discrepancies, many candidate causes | One underlying offset propagates | Look for one cause explaining several (n excess → opaque emissivity, long-λ saturation, α from κ) | ε∞ = 15.1 vs 11.7. |
 | 23 | Proposing a run to test a parameter already stored | Not reading the output | Check sensitivities in the existing output first | α vs η in `absorption.npz`: < 0.2 % change, so η ruled out. |
 | 24 | A global rms says "bad" where the model is right in part of the range | Mechanisms differ across the range | Physics windows; mark out-of-scope mechanisms | Multiphonon bands at 6–15 μm absent from the model; the free-carrier window agrees within 0.03–0.13 dex. |
+| 25 | A run looks 2.5× better or worse than another in α | One curve rigidly shifted onto the data, the other not; on a steep edge a 0.06 eV onset offset is −0.4 dex | Apply the same diagnostic (`best_shift`, then the median ratio) to every run before comparing magnitudes | PBE+scissor "×0.41" was ×0.72–0.77 after a −0.06 eV shift, the same as eACBN0; the Levine–Allan explanation was withdrawn. |
+| 26 | Fixing the gap with a scissor degrades another observable | The model's error is not rigid in k (eACBN0: direct gap right, indirect 0.22 eV high); one conduction-band shift moves the direct transitions too | Check which gaps the scissor should move; shift the external direct ε only by the thermal part when its direct gap is already right | eACBN0+scissor: ε₁(0.05 eV) 12.4 → 14.0, n −7…+4 % → +4…+11 %; with `direct_scissor='thermal'` 12.4 and −5.5…+4.7 %, opaque emissivity −0.05 → −0.025 at 1073 K. |
+| 27 | A quantity that should be monotonic in a model parameter is not | A numerical artifact in the transformation the parameter enters, not physics | Scan the parameter on the stored output before interpreting; find the term that breaks monotonicity | ε₁(0.05 eV, 1073 K) fell from 14 to 11 as the KS scissor grew more negative: ((ω−Δ)/ω)² blew up the broadening tail of the external ε₂ (fixed; 6–15 μm emissivity 0.01–0.02 lower). |
+| 28 | dn/dT too high or too low depending on a convention | The scissor velocity convention scales ε₂ by ((ω−Δ)/ω)² (KS) or not (Levine–Allan), and the T-dependent Δ then sets dn/dT | Recompute n(T) with both conventions on the stored output; quote the experiment as bracketed | Thermal shift of the eACBN0 direct ε: KS ×1.1–1.8, renormalized ×0.65–0.9 of Sato's dn/dT. |
 
 ## Figures
 
 | # | Symptom | Cause | What to do |
 |---|---|---|---|
-| 25 | Figure becomes extremely wide | Long one-line provenance note enlarges the tight bounding box | `provenance_note` wraps to the figure width |
-| 26 | Direct labels missing | Placed at curve ends outside the axes | Place them at a level crossing inside the frame (`threshold_crossing`), else at the frame edge |
-| 27 | Shaded sensitivity bands swamp the panel | Bracketing curves differ by more than the signal | Drop the bands, quote the sensitivity in the table and caption |
-| 28 | Seven temperatures in one panel | More than the ramp's 5 distinguishable steps | Facet (543–693 K / 743–1073 K) |
-| 29 | Legend on top of data or panel labels | Default placement | Panel labels above the frame; style legend in an empty region or above the axes; look at the PNG |
+| 29 | Figure becomes extremely wide | Long one-line provenance note enlarges the tight bounding box | `provenance_note` wraps to the figure width |
+| 30 | Direct labels missing | Placed at curve ends outside the axes | Place them at a level crossing inside the frame (`threshold_crossing`), else at the frame edge |
+| 31 | Shaded sensitivity bands swamp the panel | Bracketing curves differ by more than the signal | Drop the bands, quote the sensitivity in the table and caption |
+| 32 | Seven temperatures in one panel | More than the ramp's 5 distinguishable steps | Facet (543–693 K / 743–1073 K) |
+| 33 | Legend on top of data or panel labels | Default placement | Panel labels above the frame; style legend in an empty region or above the axes; look at the PNG |
