@@ -657,7 +657,7 @@ stages:
 | `fsthick` | `fsthick_ev` | 4 eV |
 | `efermi_read`, `fermi_energy` | `fermi_energy_ev` (`None` = mid-gap) | mid-gap |
 | `eps_acoustic` | `eps_acoustic_cm` | 0.1 cm⁻¹ |
-| `n_r` (tutorial: constant 3.4) | `refractive_index` | 3.4 |
+| `n_r` (tutorial: constant 3.4) | `refractive_index` (constant, `n` on the photon grid, or `(omega, n)` of the `dielectric_tensor` run: `external_refractive_index`) | 3.4; the drivers use n(ω) of `DIRECT_DIELECTRIC_DIR` when given |
 | `mp_mesh_k` | `sym_rots` (folds **q**; the polarisation average is exact) | |
 | `eig_read`, `scissor` | a scissor (`target_gap_ev` / `scissor_ev`), or an eACBN0 PAO Hamiltonian through `ELECTRONS_SAVE` (energies *and* eigenvectors; the coupling stays PBE in the orbital basis) | PAO (DFT) energies |
 

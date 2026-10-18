@@ -44,7 +44,7 @@ Generates a PAOFLOW property-calculation driver (`main.py`) from a completed QE 
 - **Phonon-assisted optical absorption (EPW source).** After `nelec`, the generator asks for the property to compute. Choosing "phonon-assisted optical absorption" prompts for:
   - the dense q- and k-grids (EPW `nqf`, `nkf`; default `nq` = coarse k-grid, `nk` = 2 × `nq`);
   - the photon energies (`omegamin`, `omegamax`, `omegastep`), the temperatures, `degaussw` and `fsthick`;
-  - the refractive index, the non-local velocity correction and `pthr`;
+  - a constant refractive index for α (blank = n(ω) of the direct-dielectric run when given, else 3.4), the non-local velocity correction and `pthr`;
   - an eACBN0 electrons save (`ELECTRONS_SAVE`, `--electrons-save`: the PAO Hamiltonian of a DFT+U+V nscf in the same basis replaces the PBE one, no 0 K scissor) or a scissor (`target_gap_ev`, `gap_reference_save`), and the Varshni parameters (relative to the Hamiltonian gap when no target is given).
 
   `main.elphon.py` then computes the phonon-assisted and direct Im ε(ω) and α(ω) (EPW `lindabs`), writing EPW-format files and `output/absorption.npz`. `plot.elphon.py` plots them. No `me.elphon.py` is written. See `examples/elphon_example/Si`.

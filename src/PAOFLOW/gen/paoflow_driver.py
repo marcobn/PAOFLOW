@@ -2132,6 +2132,9 @@ the phonon-assisted Im eps for EPW's nine intermediate-state broadenings eta),
 epsilon2_dirabs_<T>K.dat (direct Im eps), alpha_<T>K.dat (absorption
 coefficient, cm^-1) and absorption.npz.
 
+alpha = omega Im eps / (n_r c) uses n(omega) of the DIRECT_DIELECTRIC_DIR run when
+given (REFRACTIVE_INDEX = None), else the constant REFRACTIVE_INDEX (3.4 is EPW's
+tutorial value for Si); the emissivity always uses the full dielectric function.
 The Fermi level sits mid-gap (EPW: efermi_read + fermi_energy) unless
 FERMI_ENERGY_EV is set.  The band energies are the PAO (DFT) ones unless a
 scissor fixes the gap: TARGET_GAP_EV (--target-gap-ev, e.g. the experiment) or
@@ -2182,6 +2185,7 @@ import argparse
 import os
 import sys
 
+import numpy as np
 from mpi4py import MPI
 
 from PAOFLOW.elphon.elph_bloch import atom_masses
@@ -2193,6 +2197,7 @@ from PAOFLOW.elphon.pao_electrons import (
 from PAOFLOW.elphon.phonon_assisted_absorption import (
     pao_band_gaps,
     phonon_assisted_absorption_dense_q,
+    external_refractive_index,
     read_direct_dielectric,
     thermal_emissivity,
     varshni_gap,
@@ -2225,7 +2230,7 @@ TEMPS_K = __TEMPS_K__  # temperatures (EPW temps)
 DEGAUSS_EV = __DEGAUSS_EV__  # energy-conserving delta smearing (EPW degaussw)
 FSTHICK_EV = __FSTHICK_EV__  # states within FSTHICK_EV of the Fermi level (EPW fsthick)
 FERMI_ENERGY_EV = None  # Fermi level on the PAO energy scale; None = mid-gap
-REFRACTIVE_INDEX = __REFRACTIVE_INDEX__  # constant n_r of alpha = omega Im eps / (n_r c)
+REFRACTIVE_INDEX = __REFRACTIVE_INDEX__  # n_r of alpha = omega Im eps / (n_r c); None = n(omega) of DIRECT_DIELECTRIC_DIR, else 3.4
 NONLOCAL_VELOCITY = __NONLOCAL_VELOCITY__  # non-local PP velocity term (norm-conserving PPs)
 # Scissor: rigid conduction-band shift to a target indirect gap (the e-ph coupling stays DFT).
 TARGET_GAP_EV = __TARGET_GAP_EV__  # e.g. 1.17 (Si, 0 K) or an eACBN0 gap; None = DFT gap
@@ -2318,8 +2323,15 @@ def scissor_settings(args):
 
 
 def optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev=None,
-                       target_gap_ev=None):
+                       target_gap_ev=None, direct=None):
     """Phonon-assisted + direct Im eps(omega) and alpha(omega) on the dense grids."""
+    # n_r of alpha: the user constant, else n(omega) of the direct dielectric run, else 3.4 (EPW)
+    if args.refractive_index is not None:
+        refractive_index = args.refractive_index
+    elif direct is not None:
+        refractive_index = external_refractive_index(direct)
+    else:
+        refractive_index = 3.4
     return phonon_assisted_absorption_dense_q(
         projections, HRs, nscf['kpts_cryst'], nscf['bg'], nscf['at'], nscf['alat'],
         nscf['omega'], EPW_DIR, QGRID, COARSE_GRID,
@@ -2329,7 +2341,7 @@ def optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev
         degauss_ev=args.degauss_ev, fsthick_ev=FSTHICK_EV,
         fermi_energy_ev='intrinsic' if args.emissivity else FERMI_ENERGY_EV,
         kk_omega_max_ev=KK_OMEGA_MAX_EV if args.emissivity and not args.direct_dielectric else None,
-        refractive_index=REFRACTIVE_INDEX,
+        refractive_index=refractive_index,
         scissor_ev=scissor_ev, target_gap_ev=target_gap_ev,
         scissor_velocity=args.scissor_velocity,
         nonlocal_velocity=data_controller if args.nonlocal_velocity else None,
@@ -2338,10 +2350,13 @@ def optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev
     )
 
 
-def report(out, args):
+def report(out, args, direct=None):
     """Print the gaps and write the spectra to OUTPUTDIR."""
     print('PAOFLOW phonon-assisted absorption (k %d^3, q %d^3, degauss %.3f eV%s):'
           % (args.nk, args.nq, args.degauss_ev, ', non-local velocity' if args.nonlocal_velocity else ''))
+    n = out['refractive_index']
+    print('  alpha = omega Im eps / (n c) with n %s' % ('= %.3g' % n if np.ndim(n) == 0 else
+          'of the direct dielectric run, %.3g-%.3g' % (n.min(), n.max())))
     print('  %s gaps: indirect %.3f eV, direct %.3f eV'
           % (out['electrons_dft'], out['indirect_gap_dft_ev'], out['direct_gap_dft_ev']))
     if out['electrons_save']:
@@ -2357,7 +2372,6 @@ def report(out, args):
         print('  wrote %s' % path)
     if not args.emissivity:
         return
-    direct = read_direct_dielectric(args.direct_dielectric) if args.direct_dielectric else None
     emissivity = thermal_emissivity(
         out, args.thickness_um * 1.0e-6, angles_deg=EMIS_ANGLES, direct_dielectric=direct
     )
@@ -2395,6 +2409,8 @@ def main():
                         help='target indirect gap (eV) of a scissor (0 K value with --varshni)')
     parser.add_argument('--gap-reference-save', default=GAP_REFERENCE_SAVE,
                         help='QE save of an eACBN0 (DFT+U+V) run whose PAO gap is the target')
+    parser.add_argument('--refractive-index', type=float, default=REFRACTIVE_INDEX,
+                        help='constant n_r of alpha (default: n(omega) of --direct-dielectric, else 3.4)')
     parser.add_argument('--electrons-save', default=ELECTRONS_SAVE,
                         help='QE save of an eACBN0 (DFT+U+V) nscf in the same PAO basis: its PAO '
                              'Hamiltonian replaces the PBE one (band energies and eigenvectors)')
@@ -2415,12 +2431,14 @@ def main():
 
     projections, HRs, nscf, data_controller, provenance = pao_electronic_structure(args.electrons_save)
     scissor_ev, target_gap_ev, provenance['scissor_mode'] = scissor_settings(args)
-    out = optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev, target_gap_ev)
+    direct = read_direct_dielectric(args.direct_dielectric) if args.direct_dielectric else None
+    out = optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev, target_gap_ev,
+                             direct)
     out.update(provenance)
 
     # The result is identical on every rank; only rank 0 reports and writes files.
     if MPI.COMM_WORLD.Get_rank() == 0:
-        report(out, args)
+        report(out, args, direct)
 
 
 if __name__ == '__main__':
@@ -2464,7 +2482,9 @@ def build_elphon_absorption_script(cfg: dict[str, Any]) -> str:
         '__TEMPS_K__': repr([float(t) for t in cfg.get('temps_k', [300.0])]),
         '__DEGAUSS_EV__': repr(float(cfg.get('degauss_ev', 0.05))),
         '__FSTHICK_EV__': repr(float(cfg.get('fsthick_ev') or 4.0)),
-        '__REFRACTIVE_INDEX__': repr(float(cfg.get('refractive_index', 3.4))),
+        '__REFRACTIVE_INDEX__': repr(
+            float(cfg['refractive_index']) if cfg.get('refractive_index') is not None else None
+        ),
         '__NONLOCAL_VELOCITY__': str(bool(cfg.get('nonlocal_velocity', True))),
         '__EMISSIVITY__': str(bool(cfg.get('emissivity', False))),
         '__THICKNESS_UM__': repr(float(cfg.get('thickness_um', 500.0))),
@@ -5604,7 +5624,12 @@ def _collect_elphon_absorption(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
     cfg['temps_k'] = [float(t) for t in temps.replace(',', ' ').split() if t.strip()] or [300.0]
     cfg['degauss_ev'] = ask_float('Delta smearing (eV, EPW degaussw)', 0.01 if emis else 0.05)
     cfg['fsthick_ev'] = ask_float('Energy window around E_F (eV, EPW fsthick)', 4.0)
-    cfg['refractive_index'] = ask_float('Refractive index n_r for alpha', 3.4)
+    n_r = ask(
+        'Constant refractive index n_r for alpha (blank = n(omega) of the direct dielectric run '
+        'when given, else 3.4)',
+        '',
+    )
+    cfg['refractive_index'] = float(n_r) if n_r.strip() else None
     cfg['nonlocal_velocity'] = ask_yes_no(
         'Non-local pseudopotential velocity correction (norm-conserving PPs only)?', True
     )

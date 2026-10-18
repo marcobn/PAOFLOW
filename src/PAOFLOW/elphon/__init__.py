@@ -58,6 +58,7 @@ from .anisotropic_eliashberg import (
 from .phonon_assisted_absorption import (
     absorption_coefficient,
     direct_absorption_kernel,
+    external_refractive_index,
     indirect_absorption_kernel,
     intrinsic_fermi_levels,
     pao_band_gaps,
@@ -120,6 +121,7 @@ __all__ = [
     'eliashberg',
     'eliashberg_from_modes',
     'eliashberg_from_qe_coupling',
+    'external_refractive_index',
     'FermiSurfacePairCoupling',
     'gap_edge',
     'indirect_absorption_kernel',

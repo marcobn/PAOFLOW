@@ -405,6 +405,23 @@ def test_absorption_coefficient_and_outputs(tmp_path):
 # --------------------------------------------------------------------------- #
 # Temperature-dependent Fermi levels and thermal emissivity
 # --------------------------------------------------------------------------- #
+def test_external_refractive_index_pair():
+    from PAOFLOW.elphon.phonon_assisted_absorption import (
+        absorption_coefficient,
+        external_refractive_index,
+    )
+
+    omega = np.linspace(0.1, 5.0, 50)
+    eps1 = np.tile(12.0 + 0.2 * omega, (3, 1))
+    eps2 = np.tile(0.5 * omega, (3, 1))
+    omega_out, n = external_refractive_index((omega, eps1, eps2))
+    np.testing.assert_array_equal(omega_out, omega)
+    np.testing.assert_allclose(n, np.sqrt(eps1[0] + 1j * eps2[0]).real)
+    alpha_pair = absorption_coefficient(omega, eps2[0], n)
+    alpha_const = absorption_coefficient(omega, eps2[0], 3.4)
+    np.testing.assert_allclose(alpha_pair * n, alpha_const * 3.4)
+
+
 def test_fermi_levels_equal_a_rigid_energy_shift():
     from PAOFLOW.elphon.phonon_assisted_absorption import indirect_absorption_kernel as kernel
 

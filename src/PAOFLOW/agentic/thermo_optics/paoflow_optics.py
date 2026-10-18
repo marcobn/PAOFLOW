@@ -73,6 +73,9 @@ class OpticsModel:
                 'scissor_velocity', 'cell_volume_bohr3', 'nelec', 'coupling_save', 'electrons_save',
                 'electrons_dft', 'electrons_hubbard')  # fmt: skip
         out = {key: a[key].item() if np.ndim(a[key]) == 0 else a[key] for key in keys if key in a}
+        if np.ndim(out.get('refractive_index', 0.0)) > 0:  # n(omega) of the direct dielectric run
+            n = np.asarray(out['refractive_index'], dtype=float)
+            out['refractive_index'] = 'n(omega) %.3g-%.3g' % (n.min(), n.max())
         for key in ('indirect_gap_ev_t', 'direct_gap_ev_t', 'scissor_ev', 'fermi_levels_ev'):
             if key in a:
                 out[key] = dict(zip(self.temperatures.tolist(), np.asarray(a[key]).tolist()))

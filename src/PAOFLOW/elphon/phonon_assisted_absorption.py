@@ -961,8 +961,13 @@ def phonon_assisted_absorption_dense_q(
         Intermediate-state broadenings (eV); EPW's nine values by default.
     eps_acoustic_cm : float, optional
         Phonons below this energy (cm^-1) are skipped (EPW ``eps_acoustic``).
-    refractive_index : float or ndarray, optional
-        Real refractive index for the absorption coefficient (default 3.4).
+    refractive_index : float, ndarray or (omega_ev, n) pair, optional
+        Real refractive index of ``alpha = omega Im eps / (n c)``: a constant
+        (default 3.4, the EPW tutorial value for Si), ``n`` on the photon grid, or
+        a pair ``(omega_ev, n)`` interpolated on it, e.g.
+        :func:`external_refractive_index` of the ``dielectric_tensor`` run that
+        provides ``direct_dielectric``.  The emissivity does not use it (it works
+        with the full dielectric function).
     nonlocal_velocity : DataController, optional
         When given, adds the norm-conserving non-local pseudopotential velocity
         correction (:func:`nonlocal_velocity_operator`) built from it.
@@ -1130,6 +1135,9 @@ def phonon_assisted_absorption_dense_q(
     omin, omax, ostep = omega_ev
     photon_ev = omin + ostep * np.arange(int(np.floor((omax - omin) / ostep + 1.0e-6)) + 1)
     photon = photon_ev / RY_TO_EV
+    if isinstance(refractive_index, (tuple, list)):  # (omega_ev, n) of another run
+        ext_omega, ext_n = (np.asarray(a, dtype=float) for a in refractive_index)
+        refractive_index = np.interp(photon_ev, ext_omega, ext_n)
     eps_acoustic = eps_acoustic_cm / EV_TO_CM1 / RY_TO_EV
 
     # Per scissor group: reference energy, window energies, Fermi levels.
@@ -1577,6 +1585,29 @@ def check_direct_dielectric_gap(
             stacklevel=3,
         )
     return {'onset_ev': onset, 'direct_gap_ev': gap, 'consistent': consistent}
+
+
+def external_refractive_index(
+    direct_dielectric: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Real refractive index of a dielectric function, ``(omega_ev, n)``.
+
+    Parameters
+    ----------
+    direct_dielectric : tuple of ndarray
+        ``(omega_ev, eps1, eps2)`` as read by :func:`read_direct_dielectric`
+        (``eps1``/``eps2`` of shape ``(nomega,)`` or ``(ncomp, nomega)``, averaged).
+
+    Returns
+    -------
+    omega_ev, n : ndarray, shape ``(nomega,)``
+        Photon energies and :math:`n = \\mathrm{Re}\\sqrt{\\varepsilon_1 + i\\varepsilon_2}`,
+        the ``refractive_index`` input of :func:`phonon_assisted_absorption_dense_q`.
+    """
+    omega, eps1, eps2 = (np.asarray(a, dtype=float) for a in direct_dielectric)
+    if eps1.ndim > 1:
+        eps1, eps2 = eps1.mean(axis=0), eps2.mean(axis=0)
+    return omega, np.sqrt(eps1 + 1j * eps2).real
 
 
 def read_direct_dielectric(

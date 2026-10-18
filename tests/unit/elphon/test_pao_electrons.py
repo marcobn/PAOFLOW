@@ -204,7 +204,7 @@ def _synthetic_epw(path, ng, nat=1, seed=5):
     return q_cryst
 
 
-def _run(epw_dir, HRs, ng=2):
+def _run(epw_dir, HRs, ng=2, **extra):
     from PAOFLOW.elphon.phonon_assisted_absorption import phonon_assisted_absorption_dense_q
 
     A = np.repeat(np.eye(NAWF, dtype=complex)[:, :, None], ng**3, axis=2)  # PAO basis = Bloch basis
@@ -212,7 +212,7 @@ def _run(epw_dir, HRs, ng=2):
         A, HRs, _grid(ng), np.eye(3), np.eye(3), 10.0, 1000.0, str(epw_dir), (ng, ng, ng),
         (ng, ng, ng), masses_amu=[28.0], nelec=4, nk_dense=4, nq_dense=2,
         omega_ev=(0.5, 8.0, 0.5), temps_k=(300.0,), degauss_ev=0.1, fsthick_ev=10.0,
-        etas_ev=(0.05,), tau_cryst=np.zeros((1, 3)), species=['X'],
+        etas_ev=(0.05,), tau_cryst=np.zeros((1, 3)), species=['X'], **extra,
     )  # fmt: skip
 
 
@@ -241,6 +241,14 @@ def test_dense_absorption_with_a_decoupled_hamiltonian(tmp_path):
     assert out_scaled['indirect_gap_dft_ev'] == pytest.approx(1.1 * out['indirect_gap_dft_ev'])
     assert out_scaled['direct_gap_dft_ev'] == pytest.approx(1.1 * out['direct_gap_dft_ev'])
     assert not np.allclose(out_scaled['eps2_direct'], out['eps2_direct'])
+
+    # n(omega) of another run enters alpha only, interpolated on the photon grid
+    omega = np.linspace(0.0, 10.0, 101)
+    out_n = _run(tmp_path, HRs, refractive_index=(omega, 3.0 + 0.1 * omega))
+    n_grid = np.interp(out_n['omega_ev'], omega, 3.0 + 0.1 * omega)
+    np.testing.assert_allclose(out_n['refractive_index'], n_grid)
+    np.testing.assert_allclose(out_n['alpha_cm'] * n_grid, out['alpha_cm'] * 3.4, rtol=1e-10)
+    np.testing.assert_array_equal(out_n['eps2_indirect'], out['eps2_indirect'])
 
     # a Hamiltonian in another basis is refused before any heavy work
     with pytest.raises(ValueError, match='same PAO basis'):

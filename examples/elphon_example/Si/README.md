@@ -367,7 +367,8 @@ Hamiltonian (see section 4); the rates keep the PBE coupling. The energies of
 
 Gaps of the dense PAO spectrum: indirect 0.608 eV, direct (at Γ) 2.548 eV.
 
-Phonon-assisted Im ε and α (direct + indirect, n_r = 3.4), without the non-local
+Phonon-assisted Im ε and α (direct + indirect, constant n_r = 3.4 here; with
+`--direct-dielectric` the drivers use n(ω) of that run), without the non-local
 velocity term:
 
 | ω (eV) | Im ε 12³/6³ | 16³/8³ | 24³/12³ | α (cm⁻¹) 24³/12³ |
