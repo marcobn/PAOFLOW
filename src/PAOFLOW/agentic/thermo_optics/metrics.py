@@ -128,8 +128,10 @@ def best_shift(
     for shift in shifts:
         scores.append(curve_deviation(x_exp, y_exp, x_model + shift, y_model, space, window)['rms'])
     scores = np.asarray(scores)
-    k = int(np.nanargmin(scores))
     base = curve_deviation(x_exp, y_exp, x_model, y_model, space, window)
+    if not np.any(np.isfinite(scores)):  # no shift brings the model onto the experimental points
+        return {'shift': np.nan, 'rms_unshifted': base['rms'], 'rms_shifted': np.nan, 'n': base['n']}
+    k = int(np.nanargmin(scores))
     return {'shift': float(shifts[k]), 'rms_unshifted': base['rms'], 'rms_shifted': float(scores[k]),
             'n': base['n']}  # fmt: skip
 

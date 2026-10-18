@@ -55,6 +55,12 @@ def test_curve_deviation_log10_and_shift():
     assert shifted['shift'] == pytest.approx(-0.1, abs=1e-9) and shifted['rms_shifted'] < 1e-9
 
 
+def test_best_shift_without_overlap_returns_nan():
+    x = np.linspace(1.0, 2.0, 11)
+    out = mt.best_shift(x, np.exp(x), x + 5.0, np.exp(x), np.arange(-0.5, 0.51, 0.1), 'log10')
+    assert np.isnan(out['shift']) and np.isnan(out['rms_shifted']) and out['n'] == 0
+
+
 def test_threshold_arrhenius_and_matching():
     x = np.linspace(0.0, 1.0, 11)
     assert mt.threshold_crossing(x, x**2, 0.25) == pytest.approx(0.5, abs=0.01)
