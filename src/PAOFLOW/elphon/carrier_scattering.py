@@ -54,6 +54,7 @@ from .phonon_assisted_absorption import (
     fermi_occupation,
     scissor_per_temperature,
 )
+from .pao_electrons import check_orbital_dimensions
 
 HBAR_EV_S = 6.582119569e-16
 BOHR_M = 0.529177210903e-10
@@ -265,6 +266,42 @@ def _window_bands(energies_ry: NDArray, nocc: int, window_ev: float, metal_level
     return np.array(valence + conduction, dtype=int)
 
 
+def statistics_scissor(
+    temps_k: Sequence[float],
+    gap_ev: float,
+    scissor_ev: float | Callable[[float], float] | None = None,
+    target_gap_ev: float | Callable[[float], float] | None = None,
+    metal: bool = False,
+) -> NDArray[np.float64]:
+    """Scissor of the carrier statistics at each temperature.
+
+    Parameters
+    ----------
+    temps_k : sequence of float
+        Temperatures (K).
+    gap_ev : float
+        Indirect gap of the Hamiltonian on the dense grid (eV).
+    scissor_ev : float or callable, optional
+        Shift (eV) or ``T -> Delta(T)``
+        (:func:`~PAOFLOW.elphon.phonon_assisted_absorption.varshni_shift`).
+    target_gap_ev : float or callable, optional
+        Target gap (eV) or ``T -> E_g(T)``
+        (:func:`~PAOFLOW.elphon.phonon_assisted_absorption.varshni_gap`).
+    metal : bool, optional
+        No scissor for metals.
+
+    Returns
+    -------
+    ndarray, shape ``(ntemp,)``
+        The conduction-band shift per temperature (eV); zeros for a metal or when
+        nothing is given.
+    """
+    temps = np.atleast_1d(np.asarray(temps_k, dtype=float))
+    if metal or (scissor_ev is None and target_gap_ev is None):
+        return np.zeros(temps.size)
+    return scissor_per_temperature(temps, gap_ev, scissor_ev, target_gap_ev)
+
+
 def carrier_scattering_dense_q(
     A: NDArray[np.complex128],
     HRs: NDArray[np.complex128],
@@ -285,6 +322,7 @@ def carrier_scattering_dense_q(
     doping_cm3: float = 0.0,
     window_ev: float = 0.3,
     smearing_ev: float = 0.01,
+    scissor_ev: float | Callable[[float], float] | None = None,
     target_gap_ev: float | Callable[[float], float] | None = None,
     eps_acoustic_cm: float = 5.0,
     spin_degeneracy: float = 2.0,
@@ -319,6 +357,11 @@ def carrier_scattering_dense_q(
         (semiconductors and insulators) or of the Fermi level (metals).
     smearing_ev : float, optional
         Gaussian width of the energy-conserving delta (eV).
+    scissor_ev : float or callable, optional
+        Scissor of the carrier statistics: a shift (eV) or ``T -> Delta(T)``
+        relative to the Hamiltonian's own gap
+        (:func:`~PAOFLOW.elphon.phonon_assisted_absorption.varshni_shift`, for a
+        ``HRs`` that already has the 0 K gap).
     target_gap_ev : float or callable, optional
         Scissor target gap (eV, or ``T -> E_g(T)``) for the carrier statistics
         (:func:`~PAOFLOW.elphon.phonon_assisted_absorption.scissor_per_temperature`);
@@ -383,6 +426,7 @@ def carrier_scattering_dense_q(
     temps_k = np.atleast_1d(np.asarray(temps_k, dtype=float))
     temps_ev = temps_k * KELVIN_TO_EV
     nocc = int(round(nelec / spin_degeneracy))
+    check_orbital_dimensions(A, HRs, orbital_positions)
 
     vertex = prepare_dense_vertex(
         A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, None,
@@ -422,10 +466,7 @@ def carrier_scattering_dense_q(
     conduction = conduction_all[bands]
 
     # carrier statistics (scissor on the conduction bands only)
-    if target_gap_ev is not None and not metal:
-        scissor = scissor_per_temperature(temps_k, cbm - vbm, None, target_gap_ev)
-    else:
-        scissor = np.zeros(temps_k.size)
+    scissor = statistics_scissor(temps_k, cbm - vbm, scissor_ev, target_gap_ev, metal)
     mu = fermi_levels_for_doping(
         energies_all, temps_k, nelec, doping_cm3, cell_volume, spin_degeneracy,
         conduction_all, scissor,

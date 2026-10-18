@@ -193,9 +193,7 @@ def detect_pw_input(workdir):
 
 def _read_namelist_value(text, name):
     """Value of a namelist variable in a QE input (quotes stripped), or None."""
-    match = re.search(
-        r"(?im)^[^!]*\b%s\s*=\s*('[^']*'|\"[^\"]*\"|[^,\s]+)" % re.escape(name), text
-    )
+    match = re.search(r"(?im)^[^!]*\b%s\s*=\s*('[^']*'|\"[^\"]*\"|[^,\s]+)" % re.escape(name), text)
     return match.group(1).strip('\'"') if match else None
 
 
@@ -2082,7 +2080,7 @@ def build_elphon_epw_script(cfg):
         '__MU_STAR__': repr(float(cfg['mu_star'])),
         '__PTHR__': repr(float(cfg['pthr'])),
         '__TRANSPORT__': str(bool(cfg.get('transport', False))),
-                '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
+        '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
         '__PROJECTION_CALL__': '\n'.join(
             _projection_lines(cfg, var='pf', basispath='BASISDIR', configuration="'standard'")
         ),
@@ -2147,6 +2145,19 @@ supports Hubbard U only with atomic projectors.  NONLOCAL_VELOCITY adds the
 non-local pseudopotential term of the velocity operator (norm-conserving
 pseudopotentials only); it changes the magnitude of Im eps, not the edge.
 
+ELECTRONS_SAVE (--electrons-save) replaces the scissor at 0 K: the band energies
+and eigenvectors come from the PAO Hamiltonian of an eACBN0 (DFT+U+V,
+ortho-atomic) nscf of the same crystal in the same PAO basis (same
+pseudopotential, BASIS tables, configuration, PTHR), while the coupling in the
+orbital basis stays that of the DFPT/EPW run: ph.x and epw.x cannot use U+V or
+ortho-atomic projectors, so the mixing happens in PAOFLOW.  --varshni without a
+target then applies the Varshni shift relative to the Hamiltonian's own gap.
+Not included: the Hubbard contribution to the coupling (dV_Hub/du), the
+Hubbard term of the velocity commutator and the change of screening.  The
+direct dielectric function (DIRECT_DIELECTRIC_DIR) must then come from a
+dielectric_tensor run on the matching eACBN0 save (a warning compares its
+onset with the Hamiltonian's direct gap).
+
 With EMISSIVITY (or --emissivity) the run also gives the thermal emissivity of
 a free-standing slab of THICKNESS_UM at every temperature (Kirchhoff's law:
 emissivity = absorptance): Re eps from Kramers-Kronig of Im eps (direct term
@@ -2173,14 +2184,19 @@ import sys
 
 from mpi4py import MPI
 
-from PAOFLOW import PAOFLOW
-from PAOFLOW.elphon.elph_bloch import atom_masses, pao_orbital_positions, read_nscf
+from PAOFLOW.elphon.elph_bloch import atom_masses
+from PAOFLOW.elphon.pao_electrons import (
+    check_same_pao_basis,
+    format_hubbard_info,
+    pao_hamiltonian_from_save,
+)
 from PAOFLOW.elphon.phonon_assisted_absorption import (
     pao_band_gaps,
     phonon_assisted_absorption_dense_q,
     read_direct_dielectric,
     thermal_emissivity,
     varshni_gap,
+    varshni_shift,
     write_absorption_outputs,
     write_emissivity_outputs,
 )
@@ -2200,6 +2216,8 @@ QGRID = __QGRID__  # ph.x / EPW q-grid (nq1..3); must divide COARSE_GRID
 MASSES_AMU = __MASSES__  # mass of each species (amu), ATOMIC_SPECIES order (EPW amass)
 NELEC = __NELEC__  # valence electrons (locates the gap)
 PTHR = __PTHR__  # projectability threshold
+PROJECTOR = __PROJECTOR__  # 'internal' (BASISDIR tables) or 'projwfc' (projwfc.x projections of the save)
+SAVE_OVERLAPS = __SAVE_OVERLAPS__  # projwfc overlaps (projwfc projector only)
 NK_DENSE = __NK_DENSE__  # dense electron grid (EPW nkf1..3)
 NQ_DENSE = __NQ_DENSE__  # dense phonon grid (EPW nqf1..3); NK_DENSE % NQ_DENSE == 0
 OMEGA_EV = __OMEGA_EV__  # photon energies (min, max, step): EPW omegamin, omegamax, omegastep
@@ -2212,6 +2230,11 @@ NONLOCAL_VELOCITY = __NONLOCAL_VELOCITY__  # non-local PP velocity term (norm-co
 # Scissor: rigid conduction-band shift to a target indirect gap (the e-ph coupling stays DFT).
 TARGET_GAP_EV = __TARGET_GAP_EV__  # e.g. 1.17 (Si, 0 K) or an eACBN0 gap; None = DFT gap
 GAP_REFERENCE_SAVE = __GAP_REFERENCE_SAVE__  # QE save of an eACBN0 (DFT+U+V) run: target = its PAO gap
+# eACBN0 electrons: QE save of a DFT+U+V (ortho-atomic) nscf of the same crystal with the SAME
+# pseudopotential, BASIS tables, configuration and PTHR.  Its PAO Hamiltonian gives the band
+# energies and eigenvectors (no 0 K scissor); A, the .epb coupling, the k list and the symmetries
+# stay those of SAVEDIR, so the coupling in the orbital basis is the DFPT (PBE) one.
+ELECTRONS_SAVE = __ELECTRONS_SAVE__  # None = the electrons of SAVEDIR
 VARSHNI = __VARSHNI__  # (alpha eV/K, beta K): E_g(T) = E0 - alpha T^2 / (T + beta), E0 = target
 SCISSOR_VELOCITY = 'renormalized'  # Levine-Allan velocities; 'ks' = EPW's scissor
 EMISSIVITY = __EMISSIVITY__  # also the thermal emissivity of a slab (--emissivity)
@@ -2225,54 +2248,77 @@ KK_OMEGA_MAX_EV = 10.0  # Kramers-Kronig range of the direct term (check the f-s
 DIRECT_DIELECTRIC_DIR = __DIRECT_DIELECTRIC_DIR__
 
 
-def pao_electronic_structure():
-    """PAO projections, Hamiltonian and orbital centres on the EPW nscf save."""
-    pf = PAOFLOW.PAOFLOW(
-        workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=__SAVE_OVERLAPS__, verbose=False
-    )
-__PROJECTION_CALL__
-    pf.projectability(pthr=PTHR)
-    # The projections A_k = <phi|psi_k> rotate EPW's matrix elements to the PAO
-    # gauge; pao_hamiltonian deletes them, so keep a copy first.
-    projections = pf.data_controller.full_projections()[:, :, :, 0].copy()
-    # The explicit K_POINTS list already spans the whole Brillouin zone.
-    pf.pao_hamiltonian(expand_wedge=False)
-    nscf = read_nscf(SAVEDIR)
-    # Orbital centres: pair-resolved Wigner-Seitz interpolation and the
-    # intersite position term of the velocity operator.
-    nscf['orbital_positions'] = pao_orbital_positions(pf.data_controller, nscf['at'])
-    return projections, pf.data_controller.data_arrays['HRs'], nscf, pf.data_controller
+def pao_electronic_structure(electrons_save=None):
+    """PAO projections and Hamiltonian; the Hamiltonian optionally from another save.
+
+    The coupling (the projections A, the .epb files, the k list and the
+    symmetries) always comes from SAVEDIR, the nscf EPW read.  With
+    ``electrons_save`` (an eACBN0 nscf of the same crystal in the same PAO basis)
+    the band energies and eigenvectors are those of its PAO Hamiltonian, while the
+    coupling in the orbital basis stays that of the DFPT/EPW run.  Returns the
+    projections, HRs, the lattice data (with the orbital centres), the data
+    controller of the coupling save and a provenance dict for the outputs.
+    """
+    options = dict(basispath=BASISDIR, configuration='standard', pthr=PTHR, projector=PROJECTOR,
+                   workpath=HERE, outputdir=OUTPUTDIR, save_overlaps=SAVE_OVERLAPS)
+    # The explicit K_POINTS list of the EPW nscf already spans the whole Brillouin zone.
+    coupling = pao_hamiltonian_from_save(SAVEDIR, expand_wedge=False, verbose=False, **options)
+    kind = lambda run: run.hubbard['kind'] if run.hubbard else 'PBE'  # noqa: E731
+    provenance = {'coupling_save': SAVEDIR, 'electrons_save': '', 'electrons_dft': kind(coupling),
+                  'electrons_hubbard': format_hubbard_info(coupling.hubbard)}
+    if electrons_save is None:
+        return coupling.projections, coupling.HRs, coupling.nscf, coupling.data_controller, provenance
+    # Same basis (pseudopotentials, BASIS tables, configuration, structure, atom order), or stop.
+    electrons = pao_hamiltonian_from_save(electrons_save, keep_projections=False, **options)
+    summary = check_same_pao_basis(coupling.data_controller, electrons.data_controller)
+    if MPI.COMM_WORLD.Get_rank() == 0:
+        print('  electrons from %s: %s' % (electrons_save, format_hubbard_info(electrons.hubbard)))
+        print('  same PAO basis as %s (bands with projectability > %g: %s vs %s)'
+              % (SAVEDIR, PTHR, summary['bnd'][0], summary['bnd'][1]))
+    nscf = dict(coupling.nscf, orbital_positions=electrons.nscf['orbital_positions'])
+    provenance.update(electrons_save=os.path.abspath(electrons_save), electrons_dft=kind(electrons),
+                      electrons_hubbard=format_hubbard_info(electrons.hubbard))
+    return coupling.projections, electrons.HRs, nscf, coupling.data_controller, provenance
 
 
 def reference_gap(savedir, nk):
     """Indirect gap (eV) of the PAO Hamiltonian of another QE run (e.g. eACBN0) on the dense grid."""
-    pf = PAOFLOW.PAOFLOW(
-        workpath=HERE, outputdir=OUTPUTDIR, savedir=savedir, save_overlaps=__SAVE_OVERLAPS__, verbose=False
+    electrons = pao_hamiltonian_from_save(
+        savedir, BASISDIR, 'standard', PTHR, projector=PROJECTOR, keep_projections=False,
+        workpath=HERE, outputdir=OUTPUTDIR, save_overlaps=SAVE_OVERLAPS,
     )
-__PROJECTION_CALL__
-    pf.projectability(pthr=PTHR)
-    pf.pao_hamiltonian()
-    info = read_nscf(savedir)
-    positions = pao_orbital_positions(pf.data_controller, info['at'])
-    gaps = pao_band_gaps(pf.data_controller.data_arrays['HRs'], info['at'], nk, NELEC, positions)
+    gaps = pao_band_gaps(
+        electrons.HRs, electrons.nscf['at'], nk, NELEC, electrons.nscf['orbital_positions']
+    )
     return gaps['indirect_gap_ev']
 
 
-def target_gap(args):
-    """Target indirect gap of the scissor: None, a number (eV) or T (K) -> E_g(T)."""
+def scissor_settings(args):
+    """Scissor of the band energies: ``(scissor_ev, target_gap_ev, mode)``.
+
+    ``'target'``: the conduction bands are shifted to TARGET_GAP_EV (or to the gap
+    of GAP_REFERENCE_SAVE), optionally temperature dependent (Varshni);
+    ``'relative'``: no 0 K scissor, only the Varshni shift -alpha T^2/(T + beta)
+    on top of the Hamiltonian's own gap (eACBN0 electrons, or the PBE gap at 0 K);
+    ``'none'``: no scissor.
+    """
+    if args.electrons_save and args.gap_reference_save:
+        sys.exit('--gap-reference-save is a scissor target for PBE electrons; with --electrons-save '
+                 'the Hamiltonian already is the eACBN0 one (--target-gap-ev fine-tunes its gap).')
     e0 = args.target_gap_ev
     if args.gap_reference_save:
         e0 = reference_gap(args.gap_reference_save, args.nk)
         if MPI.COMM_WORLD.Get_rank() == 0:
             print('  reference gap of %s: %.3f eV' % (args.gap_reference_save, e0))
-    if e0 is None:
-        if args.varshni:
-            sys.exit('--varshni needs --target-gap-ev or --gap-reference-save (the 0 K gap).')
-        return None
-    return varshni_gap(e0, *args.varshni) if args.varshni else e0
+    if e0 is not None:
+        return None, (varshni_gap(e0, *args.varshni) if args.varshni else e0), 'target'
+    if args.varshni:
+        return varshni_shift(*args.varshni), None, 'relative'
+    return None, None, 'none'
 
 
-def optical_absorption(projections, HRs, nscf, data_controller, args):
+def optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev=None,
+                       target_gap_ev=None):
     """Phonon-assisted + direct Im eps(omega) and alpha(omega) on the dense grids."""
     return phonon_assisted_absorption_dense_q(
         projections, HRs, nscf['kpts_cryst'], nscf['bg'], nscf['at'], nscf['alat'],
@@ -2284,7 +2330,8 @@ def optical_absorption(projections, HRs, nscf, data_controller, args):
         fermi_energy_ev='intrinsic' if args.emissivity else FERMI_ENERGY_EV,
         kk_omega_max_ev=KK_OMEGA_MAX_EV if args.emissivity and not args.direct_dielectric else None,
         refractive_index=REFRACTIVE_INDEX,
-        target_gap_ev=target_gap(args), scissor_velocity=args.scissor_velocity,
+        scissor_ev=scissor_ev, target_gap_ev=target_gap_ev,
+        scissor_velocity=args.scissor_velocity,
         nonlocal_velocity=data_controller if args.nonlocal_velocity else None,
         sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'], species=nscf['atom_names'],
         orbital_positions=nscf['orbital_positions'],
@@ -2295,10 +2342,15 @@ def report(out, args):
     """Print the gaps and write the spectra to OUTPUTDIR."""
     print('PAOFLOW phonon-assisted absorption (k %d^3, q %d^3, degauss %.3f eV%s):'
           % (args.nk, args.nq, args.degauss_ev, ', non-local velocity' if args.nonlocal_velocity else ''))
-    print('  DFT gaps: indirect %.3f eV, direct %.3f eV'
-          % (out['indirect_gap_dft_ev'], out['direct_gap_dft_ev']))
+    print('  %s gaps: indirect %.3f eV, direct %.3f eV'
+          % (out['electrons_dft'], out['indirect_gap_dft_ev'], out['direct_gap_dft_ev']))
+    if out['electrons_save']:
+        print('  band energies and eigenvectors from %s; coupling from %s'
+              % (out['electrons_save'], out['coupling_save']))
     if abs(out['scissor_ev']).max() > 0.0:
-        print('  scissor (%s velocities):' % out['scissor_velocity'])
+        relative = out['scissor_mode'] == 'relative'
+        print('  scissor (%s velocities%s):' % (out['scissor_velocity'],
+              '; Varshni shift relative to the Hamiltonian gap' if relative else ''))
         for temp, delta, gap in zip(out['temps_k'], out['scissor_ev'], out['indirect_gap_ev_t']):
             print('    T = %7.1f K   scissor %+.3f eV   indirect gap %.3f eV' % (temp, delta, gap))
     for path in write_absorption_outputs(out, OUTPUTDIR):
@@ -2312,6 +2364,9 @@ def report(out, args):
     print('Thermal emissivity (slab, d = %g um; direct eps from %s, f-sum ratio %.2f):'
           % (args.thickness_um, args.direct_dielectric or 'Kramers-Kronig of this run',
              emissivity['f_sum_ratio'].mean()))
+    if 'direct_onset_ev' in emissivity:
+        print('  external direct eps: onset %.2f eV, direct gap of the Hamiltonian %.2f eV'
+              % (emissivity['direct_onset_ev'], emissivity['direct_gap_h_ev']))
     print('    T (K)   E_F (eV)   total slab   total opaque   Planck coverage')
     for it, temp in enumerate(emissivity['temps_k']):
         print('  %7.1f  %9.4f  %11.4f  %13.4f  %16.4f'
@@ -2340,8 +2395,12 @@ def main():
                         help='target indirect gap (eV) of a scissor (0 K value with --varshni)')
     parser.add_argument('--gap-reference-save', default=GAP_REFERENCE_SAVE,
                         help='QE save of an eACBN0 (DFT+U+V) run whose PAO gap is the target')
+    parser.add_argument('--electrons-save', default=ELECTRONS_SAVE,
+                        help='QE save of an eACBN0 (DFT+U+V) nscf in the same PAO basis: its PAO '
+                             'Hamiltonian replaces the PBE one (band energies and eigenvectors)')
     parser.add_argument('--varshni', type=float, nargs=2, default=VARSHNI, metavar=('ALPHA', 'BETA'),
-                        help='temperature-dependent target gap (Si: 4.73e-4 636)')
+                        help='temperature-dependent gap E0 - alpha T^2/(T + beta): around the target, '
+                             'or relative to the Hamiltonian gap without one (Si: 4.73e-4 636)')
     parser.add_argument('--scissor-velocity', choices=('renormalized', 'ks'), default=SCISSOR_VELOCITY,
                         help='velocities of the scissor-corrected Hamiltonian')
     parser.add_argument('--direct-dielectric', default=DIRECT_DIELECTRIC_DIR,
@@ -2354,8 +2413,10 @@ def main():
     if not any(f.startswith(PREFIX + '.epb') for f in os.listdir(EPW_DIR)):
         sys.exit('No %s.epb* files in %s. Run epw.x with epbwrite = .true. first.' % (PREFIX, EPW_DIR))
 
-    projections, HRs, nscf, data_controller = pao_electronic_structure()
-    out = optical_absorption(projections, HRs, nscf, data_controller, args)
+    projections, HRs, nscf, data_controller, provenance = pao_electronic_structure(args.electrons_save)
+    scissor_ev, target_gap_ev, provenance['scissor_mode'] = scissor_settings(args)
+    out = optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev, target_gap_ev)
+    out.update(provenance)
 
     # The result is identical on every rank; only rank 0 reports and writes files.
     if MPI.COMM_WORLD.Get_rank() == 0:
@@ -2377,7 +2438,8 @@ def build_elphon_absorption_script(cfg: dict[str, Any]) -> str:
         ``elphon_property = 'absorption'`` (keys ``omega_ev``, ``temps_k``,
         ``degauss_ev``, ``fsthick_ev``, ``refractive_index``,
         ``nonlocal_velocity``, ``emissivity``, ``thickness_um``, ``emis_angles``,
-        ``direct_dielectric_dir`` besides the common EPW ones).
+        ``direct_dielectric_dir``, the scissor keys and ``electrons_save``
+        besides the common EPW ones).
 
     Returns
     -------
@@ -2412,9 +2474,8 @@ def build_elphon_absorption_script(cfg: dict[str, Any]) -> str:
         '__GAP_REFERENCE_SAVE__': repr(cfg.get('gap_reference_save') or None),
         '__VARSHNI__': repr(tuple(cfg['varshni']) if cfg.get('varshni') else None),
         '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
-        '__PROJECTION_CALL__': '\n'.join(
-            _projection_lines(cfg, var='pf', basispath='BASISDIR', configuration="'standard'")
-        ),
+        '__PROJECTOR__': repr('projwfc' if _uses_projwfc(cfg) else 'internal'),
+        '__ELECTRONS_SAVE__': repr(cfg.get('electrons_save') or None),
     }
     content = ELPHON_EPW_ABSORPTION_TEMPLATE
     for token, value in subs.items():
@@ -2469,9 +2530,10 @@ carrier_scattering.npz (all state-resolved arrays) and scattering_rates.npz
     eph = EnergyResolvedRate.from_npz('OUTPUTDIR/mobility/scattering_rates.npz', 'mrta')
     pf.transport(tmin=300, tmax=300, nt=1, scattering_channels=[eph, 'impurity'])
 
-Its energies are on the PAO energy scale (that of PAOFLOW's E_k), so the
-Boltzmann run must use the same QE save (otherwise align the band edges with
-energy_shift_ev), and its temperatures within TEMPS_K.
+Its energies are on the PAO energy scale of the Hamiltonian used (that of
+PAOFLOW's E_k on ELECTRONS_SAVE when set, else on SAVEDIR), so the Boltzmann run
+must use that QE save (otherwise align the band edges with energy_shift_ev),
+and its temperatures within TEMPS_K.
 
 Carriers: DOPING_CM3 > 0 adds electrons (n type), < 0 holes (p type), 0 gives
 the intrinsic carriers; the mobilities do not depend on the carrier density in
@@ -2483,6 +2545,14 @@ missing quadrupoles overestimate the acoustic intravalley scattering at small q)
 the iterative Boltzmann solution (MRTA is usually close to it), and
 impurity scattering.  Converge NK_DENSE = NQ_DENSE (mobilities typically need
 >= 48^3) and SMEARING_EV together.
+
+ELECTRONS_SAVE (--electrons-save) takes the band energies and eigenvectors from
+the PAO Hamiltonian of an eACBN0 (DFT+U+V, ortho-atomic) nscf of the same
+crystal in the same PAO basis, keeping the DFPT/EPW coupling in the orbital
+basis (ph.x and epw.x cannot use U+V or ortho-atomic projectors): the gap, the
+masses and the carrier statistics are then the eACBN0 ones without a scissor,
+and --varshni without a target applies the Varshni shift relative to that gap.
+Not included: the Hubbard contribution to the coupling (dV_Hub/du).
 """
 
 import argparse
@@ -2491,14 +2561,18 @@ import sys
 
 from mpi4py import MPI
 
-from PAOFLOW import PAOFLOW
 from PAOFLOW.elphon.carrier_scattering import (
     carrier_scattering_dense_q,
     rta_transport,
     write_mobility_outputs,
 )
-from PAOFLOW.elphon.elph_bloch import atom_masses, pao_orbital_positions, read_nscf
-from PAOFLOW.elphon.phonon_assisted_absorption import varshni_gap
+from PAOFLOW.elphon.elph_bloch import atom_masses
+from PAOFLOW.elphon.pao_electrons import (
+    check_same_pao_basis,
+    format_hubbard_info,
+    pao_hamiltonian_from_save,
+)
+from PAOFLOW.elphon.phonon_assisted_absorption import varshni_gap, varshni_shift
 
 # ----------------------------------------------------------------------- #
 # Configuration  (edit freely -- masses / NELEC are system-specific)      #
@@ -2515,6 +2589,8 @@ QGRID = __QGRID__  # ph.x / EPW q-grid (nq1..3); must divide COARSE_GRID
 MASSES_AMU = __MASSES__  # mass of each species (amu), ATOMIC_SPECIES order (EPW amass)
 NELEC = __NELEC__  # valence electrons (locates the gap)
 PTHR = __PTHR__  # projectability threshold
+PROJECTOR = __PROJECTOR__  # 'internal' (BASISDIR tables) or 'projwfc' (projwfc.x projections of the save)
+SAVE_OVERLAPS = __SAVE_OVERLAPS__  # projwfc overlaps (projwfc projector only)
 NK_DENSE = __NK_DENSE__  # dense electron grid (EPW nkf1..3)
 NQ_DENSE = __NQ_DENSE__  # dense phonon grid (EPW nqf1..3); NK_DENSE % NQ_DENSE == 0
 TEMPS_K = __TEMPS_K__  # temperatures (K)
@@ -2524,37 +2600,62 @@ SMEARING_EV = __SMEARING_EV__  # energy-conserving delta smearing (EPW degaussw)
 # Scissor of the carrier statistics: target indirect gap (eV), optionally T dependent.
 TARGET_GAP_EV = __TARGET_GAP_EV__  # e.g. 1.17 (Si, 0 K); None = DFT gap
 VARSHNI = __VARSHNI__  # (alpha eV/K, beta K): E_g(T) = E0 - alpha T^2 / (T + beta), E0 = target
+# eACBN0 electrons: QE save of a DFT+U+V (ortho-atomic) nscf of the same crystal with the SAME
+# pseudopotential, BASIS tables, configuration and PTHR.  Its PAO Hamiltonian gives the band
+# energies and eigenvectors (no 0 K scissor); A, the .epb coupling, the k list and the symmetries
+# stay those of SAVEDIR, so the coupling in the orbital basis is the DFPT (PBE) one.
+ELECTRONS_SAVE = __ELECTRONS_SAVE__  # None = the electrons of SAVEDIR
 
 
-def pao_electronic_structure():
-    """PAO projections, Hamiltonian and orbital centres on the EPW nscf save."""
-    pf = PAOFLOW.PAOFLOW(
-        workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=__SAVE_OVERLAPS__, verbose=False
-    )
-__PROJECTION_CALL__
-    pf.projectability(pthr=PTHR)
-    # The projections A_k = <phi|psi_k> rotate EPW's matrix elements to the PAO
-    # gauge; pao_hamiltonian deletes them, so keep a copy first.
-    projections = pf.data_controller.full_projections()[:, :, :, 0].copy()
-    # The explicit K_POINTS list already spans the whole Brillouin zone.
-    pf.pao_hamiltonian(expand_wedge=False)
-    nscf = read_nscf(SAVEDIR)
-    # Orbital centres: pair-resolved Wigner-Seitz interpolation and the
-    # intersite position term of the velocity operator.
-    nscf['orbital_positions'] = pao_orbital_positions(pf.data_controller, nscf['at'])
-    return projections, pf.data_controller.data_arrays['HRs'], nscf, pf.data_controller
+def pao_electronic_structure(electrons_save=None):
+    """PAO projections and Hamiltonian; the Hamiltonian optionally from another save.
+
+    The coupling (the projections A, the .epb files, the k list and the
+    symmetries) always comes from SAVEDIR, the nscf EPW read.  With
+    ``electrons_save`` (an eACBN0 nscf of the same crystal in the same PAO basis)
+    the band energies and eigenvectors are those of its PAO Hamiltonian, while the
+    coupling in the orbital basis stays that of the DFPT/EPW run.  Returns the
+    projections, HRs, the lattice data (with the orbital centres), the data
+    controller of the coupling save and a provenance dict for the outputs.
+    """
+    options = dict(basispath=BASISDIR, configuration='standard', pthr=PTHR, projector=PROJECTOR,
+                   workpath=HERE, outputdir=OUTPUTDIR, save_overlaps=SAVE_OVERLAPS)
+    # The explicit K_POINTS list of the EPW nscf already spans the whole Brillouin zone.
+    coupling = pao_hamiltonian_from_save(SAVEDIR, expand_wedge=False, verbose=False, **options)
+    kind = lambda run: run.hubbard['kind'] if run.hubbard else 'PBE'  # noqa: E731
+    provenance = {'coupling_save': SAVEDIR, 'electrons_save': '', 'electrons_dft': kind(coupling),
+                  'electrons_hubbard': format_hubbard_info(coupling.hubbard)}
+    if electrons_save is None:
+        return coupling.projections, coupling.HRs, coupling.nscf, coupling.data_controller, provenance
+    # Same basis (pseudopotentials, BASIS tables, configuration, structure, atom order), or stop.
+    electrons = pao_hamiltonian_from_save(electrons_save, keep_projections=False, **options)
+    summary = check_same_pao_basis(coupling.data_controller, electrons.data_controller)
+    if MPI.COMM_WORLD.Get_rank() == 0:
+        print('  electrons from %s: %s' % (electrons_save, format_hubbard_info(electrons.hubbard)))
+        print('  same PAO basis as %s (bands with projectability > %g: %s vs %s)'
+              % (SAVEDIR, PTHR, summary['bnd'][0], summary['bnd'][1]))
+    nscf = dict(coupling.nscf, orbital_positions=electrons.nscf['orbital_positions'])
+    provenance.update(electrons_save=os.path.abspath(electrons_save), electrons_dft=kind(electrons),
+                      electrons_hubbard=format_hubbard_info(electrons.hubbard))
+    return coupling.projections, electrons.HRs, nscf, coupling.data_controller, provenance
 
 
-def target_gap(args):
-    """Target indirect gap of the scissor: None, a number (eV) or T (K) -> E_g(T)."""
-    if args.target_gap_ev is None:
-        if args.varshni:
-            sys.exit('--varshni needs --target-gap-ev (the 0 K gap).')
-        return None
-    return varshni_gap(args.target_gap_ev, *args.varshni) if args.varshni else args.target_gap_ev
+def scissor_settings(args):
+    """Scissor of the carrier statistics: ``(scissor_ev, target_gap_ev, mode)``.
+
+    ``'target'``: TARGET_GAP_EV, optionally temperature dependent (Varshni);
+    ``'relative'``: only the Varshni shift -alpha T^2/(T + beta) on top of the
+    Hamiltonian's own gap (eACBN0 electrons, or the PBE gap at 0 K); ``'none'``.
+    """
+    if args.target_gap_ev is not None:
+        target = varshni_gap(args.target_gap_ev, *args.varshni) if args.varshni else args.target_gap_ev
+        return None, target, 'target'
+    if args.varshni:
+        return varshni_shift(*args.varshni), None, 'relative'
+    return None, None, 'none'
 
 
-def carrier_scattering(projections, HRs, nscf, args):
+def carrier_scattering(projections, HRs, nscf, args, scissor_ev=None, target_gap_ev=None):
     """SERTA/MRTA rates of the window states on the dense grids."""
     return carrier_scattering_dense_q(
         projections, HRs, nscf['kpts_cryst'], nscf['bg'], nscf['at'], nscf['alat'],
@@ -2562,7 +2663,7 @@ def carrier_scattering(projections, HRs, nscf, args):
         masses_amu=atom_masses(MASSES_AMU, nscf['species'], nscf['atom_names']),
         nelec=NELEC, nk_dense=args.nk, nq_dense=args.nq, temps_k=args.temps,
         doping_cm3=args.doping, window_ev=args.window_ev, smearing_ev=args.smearing_ev,
-        target_gap_ev=target_gap(args),
+        scissor_ev=scissor_ev, target_gap_ev=target_gap_ev,
         sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'], species=nscf['atom_names'],
         orbital_positions=nscf['orbital_positions'],
     )
@@ -2575,7 +2676,13 @@ def report(out, args):
     if out['metal']:
         print('  metal: conductivity only')
     else:
-        print('  DFT gap %.3f eV, doping %.3e cm^-3' % (out['cbm_ev'] - out['vbm_ev'], args.doping))
+        print('  %s gap %.3f eV, doping %.3e cm^-3'
+              % (out['electrons_dft'], out['cbm_ev'] - out['vbm_ev'], args.doping))
+    if out['electrons_save']:
+        print('  band energies and eigenvectors from %s; coupling from %s'
+              % (out['electrons_save'], out['coupling_save']))
+    if out['scissor_mode'] == 'relative':
+        print('  carrier statistics: Varshni shift relative to the Hamiltonian gap')
     serta, mrta = rta_transport(out, 'serta'), rta_transport(out, 'mrta')
     print('    T (K)  mu_F (eV)   n_e (cm^-3)   n_h (cm^-3)   mobility e / h (cm^2/Vs): '
           'SERTA             MRTA')
@@ -2599,8 +2706,12 @@ def main():
     parser.add_argument('--smearing-ev', type=float, default=SMEARING_EV, help='delta smearing (eV)')
     parser.add_argument('--target-gap-ev', type=float, default=TARGET_GAP_EV,
                         help='target indirect gap (eV) of the statistics scissor (0 K with --varshni)')
+    parser.add_argument('--electrons-save', default=ELECTRONS_SAVE,
+                        help='QE save of an eACBN0 (DFT+U+V) nscf in the same PAO basis: its PAO '
+                             'Hamiltonian replaces the PBE one (band energies and eigenvectors)')
     parser.add_argument('--varshni', type=float, nargs=2, default=VARSHNI, metavar=('ALPHA', 'BETA'),
-                        help='temperature-dependent target gap (Si: 4.73e-4 636)')
+                        help='temperature-dependent gap E0 - alpha T^2/(T + beta): around the target, '
+                             'or relative to the Hamiltonian gap without one (Si: 4.73e-4 636)')
     args = parser.parse_args()
     if args.nk % args.nq:
         sys.exit('--nk (%d) must be a multiple of --nq (%d).' % (args.nk, args.nq))
@@ -2609,8 +2720,10 @@ def main():
     if not any(f.startswith(PREFIX + '.epb') for f in os.listdir(EPW_DIR)):
         sys.exit('No %s.epb* files in %s. Run epw.x with epbwrite = .true. first.' % (PREFIX, EPW_DIR))
 
-    projections, HRs, nscf, _ = pao_electronic_structure()
-    out = carrier_scattering(projections, HRs, nscf, args)
+    projections, HRs, nscf, _, provenance = pao_electronic_structure(args.electrons_save)
+    scissor_ev, target_gap_ev, provenance['scissor_mode'] = scissor_settings(args)
+    out = carrier_scattering(projections, HRs, nscf, args, scissor_ev, target_gap_ev)
+    out.update(provenance)
 
     # The result is identical on every rank; only rank 0 reports and writes files.
     if MPI.COMM_WORLD.Get_rank() == 0:
@@ -2630,8 +2743,8 @@ def build_elphon_mobility_script(cfg: dict[str, Any]) -> str:
     cfg : dict
         Configuration of :func:`_collect_elphon_epw` with
         ``elphon_property = 'mobility'`` (keys ``temps_k``, ``doping_cm3``,
-        ``window_ev``, ``smearing_ev``, ``target_gap_ev``, ``varshni`` besides
-        the common EPW ones).
+        ``window_ev``, ``smearing_ev``, ``target_gap_ev``, ``varshni``,
+        ``electrons_save`` besides the common EPW ones).
 
     Returns
     -------
@@ -2658,12 +2771,11 @@ def build_elphon_mobility_script(cfg: dict[str, Any]) -> str:
         else '0.0',
         '__WINDOW_EV__': repr(float(cfg.get('window_ev', 0.3))),
         '__SMEARING_EV__': repr(float(cfg.get('smearing_ev', 0.01))),
-                '__TARGET_GAP_EV__': repr(cfg.get('target_gap_ev')),
+        '__TARGET_GAP_EV__': repr(cfg.get('target_gap_ev')),
         '__VARSHNI__': repr(tuple(cfg['varshni']) if cfg.get('varshni') else None),
         '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
-        '__PROJECTION_CALL__': '\n'.join(
-            _projection_lines(cfg, var='pf', basispath='BASISDIR', configuration="'standard'")
-        ),
+        '__PROJECTOR__': repr('projwfc' if _uses_projwfc(cfg) else 'internal'),
+        '__ELECTRONS_SAVE__': repr(cfg.get('electrons_save') or None),
     }
     content = ELPHON_EPW_MOBILITY_TEMPLATE
     for token, value in subs.items():
@@ -2962,8 +3074,10 @@ def _write_ukk_script(cfg):
     excluded = [int(b) for b in cfg.get('exclude_bands', [])]
     nbnd = int(cfg['nbnd'])
     if excluded:
-        exclusion = 'of which\nbands %s are excluded from the electron-phonon calculation, matching\n' \
+        exclusion = (
+            'of which\nbands %s are excluded from the electron-phonon calculation, matching\n'
             '``bands_skipped`` in epw.in.' % exclude_bands_string(excluded).split('= ')[1]
+        )
     else:
         exclusion = 'all of them kept in the\nelectron-phonon calculation.'
     subs = {
@@ -3006,8 +3120,13 @@ def build_elphon_epw_inputs(cfg):
     else:
         files['epw/nscf.kpoints'] = kpoints_card(kgrid)
     files['epw/epw.in'] = epw_input(
-        prefix, cfg['masses_amu'], kgrid, qgrid, nbnd - len(excluded),
-        dvscf_dir='../phonon/save', exclude_bands=excluded,
+        prefix,
+        cfg['masses_amu'],
+        kgrid,
+        qgrid,
+        nbnd - len(excluded),
+        dvscf_dir='../phonon/save',
+        exclude_bands=excluded,
     )
     files['epw/write_ukk.py'] = _write_ukk_script(cfg)
     return files
@@ -5411,8 +5530,9 @@ def _collect_elphon_absorption(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
     dict
         ``cfg`` with ``elphon_property = 'absorption'`` and the dense grids,
         photon energies, temperatures, smearing, window, refractive index, the
-        non-local velocity flag, the scissor (``target_gap_ev``,
-        ``gap_reference_save``, ``varshni``) and the thermal-emissivity settings
+        non-local velocity flag, the electrons save (``electrons_save``), the
+        scissor (``target_gap_ev``, ``gap_reference_save``, ``varshni``) and the
+        thermal-emissivity settings
         (``emissivity``, ``thickness_um``, ``emis_angles``,
         ``direct_dielectric_dir``).
     """
@@ -5422,15 +5542,31 @@ def _collect_elphon_absorption(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
     cfg['nk_dense'] = _ask_divisible(
         'Dense electron k-grid per axis (EPW nkf)', 2 * cfg['nq_dense'], cfg['nq_dense'], 'NK_DENSE'
     )
-    gap = ask(
-        'Target indirect gap for a scissor (eV, e.g. experiment or eACBN0; blank = DFT gap)', ''
-    )
-    cfg['target_gap_ev'] = float(gap) if gap.strip() else None
-    cfg['gap_reference_save'] = (
-        ask('QE save of an eACBN0 (DFT+U+V) run whose PAO gap is the target (blank = none)', '')
+    cfg['electrons_save'] = (
+        ask(
+            'QE save of an eACBN0 (DFT+U+V, ortho-atomic) nscf in the same PAO basis, whose PAO '
+            'Hamiltonian replaces the PBE one (blank = PBE electrons)',
+            '',
+        )
         or None
     )
-    varshni = ask('Temperature-dependent gap: Varshni alpha (eV/K), beta (K) (blank = fixed)', '')
+    gap = ask(
+        'Target indirect gap for a scissor (eV, e.g. experiment or eACBN0; blank = the '
+        'Hamiltonian gap)',
+        '',
+    )
+    cfg['target_gap_ev'] = float(gap) if gap.strip() else None
+    cfg['gap_reference_save'] = None
+    if not cfg['electrons_save']:
+        cfg['gap_reference_save'] = (
+            ask('QE save of an eACBN0 (DFT+U+V) run whose PAO gap is the target (blank = none)', '')
+            or None
+        )
+    varshni = ask(
+        'Temperature-dependent gap: Varshni alpha (eV/K), beta (K) (blank = fixed; without a '
+        'target the shift is relative to the Hamiltonian gap)',
+        '',
+    )
     parsed_v = [float(x) for x in varshni.replace(',', ' ').split() if x.strip()]
     cfg['varshni'] = parsed_v if len(parsed_v) == 2 else None
     cfg['emissivity'] = ask_yes_no(
@@ -5495,8 +5631,9 @@ def _collect_elphon_mobility(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
     -------
     dict
         ``cfg`` with ``elphon_property = 'mobility'``, equal dense k- and
-        q-grids, temperatures, doping, window, smearing and the statistics
-        scissor (``target_gap_ev``, ``varshni``).
+        q-grids, temperatures, doping, window, smearing, the electrons save
+        (``electrons_save``) and the statistics scissor (``target_gap_ev``,
+        ``varshni``).
     """
     cfg['elphon_property'] = 'mobility'
     cfg['dense_q'] = True
@@ -5511,12 +5648,24 @@ def _collect_elphon_mobility(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
     cfg['doping_cm3'] = ask_float('Net doping (cm^-3; > 0 n type, < 0 p type, 0 intrinsic)', 0.0)
     cfg['window_ev'] = ask_float('Energy window from the band edges (eV, EPW fsthick)', 0.3)
     cfg['smearing_ev'] = ask_float('Delta smearing (eV, EPW degaussw)', 0.01)
-    gap = ask('Target indirect gap for the carrier statistics (eV; blank = DFT gap)', '')
+    cfg['electrons_save'] = (
+        ask(
+            'QE save of an eACBN0 (DFT+U+V, ortho-atomic) nscf in the same PAO basis, whose PAO '
+            'Hamiltonian replaces the PBE one (blank = PBE electrons)',
+            '',
+        )
+        or None
+    )
+    gap = ask(
+        'Target indirect gap for the carrier statistics (eV; blank = the Hamiltonian gap)', ''
+    )
     cfg['target_gap_ev'] = float(gap) if gap.strip() else None
     varshni = ''
-    if cfg['target_gap_ev'] is not None:
+    if cfg['target_gap_ev'] is not None or cfg['electrons_save']:
         varshni = ask(
-            'Temperature-dependent gap: Varshni alpha (eV/K), beta (K) (blank = fixed)', ''
+            'Temperature-dependent gap: Varshni alpha (eV/K), beta (K) (blank = fixed; without a '
+            'target the shift is relative to the Hamiltonian gap)',
+            '',
         )
     parsed_v = [float(x) for x in varshni.replace(',', ' ').split() if x.strip()]
     cfg['varshni'] = parsed_v if len(parsed_v) == 2 else None
@@ -5796,7 +5945,7 @@ def main(argv: list[str] | None = None) -> int:
             if not cfg.get('pw_template_text'):
                 print(
                     '  0) write phonon/scf.in and epw/nscf.in (nscf: K_POINTS card of '
-                    f"epw/nscf.kpoints, nbnd = {cfg['nbnd']})"
+                    f'epw/nscf.kpoints, nbnd = {cfg["nbnd"]})'
                 )
             print('  1) cd phonon:  pw.x -in scf.in;  ph.x -in ph.in;  python3 <q-e>/EPW/bin/pp.py')
             print(f'  2) cd ../epw:  mkdir -p {prefix}.save')
@@ -5804,7 +5953,9 @@ def main(argv: list[str] | None = None) -> int:
                 f'     cp ../phonon/{prefix}.save/{{charge-density.dat,data-file-schema.xml}} '
                 f'{prefix}.save/'
             )
-            print('     pw.x -in nscf.in;  python3 write_ukk.py;  mpirun -np N epw.x -nk N -in epw.in')
+            print(
+                '     pw.x -in nscf.in;  python3 write_ukk.py;  mpirun -np N epw.x -nk N -in epw.in'
+            )
             if mobility:
                 print(
                     f'  3) cd ..:  mpirun -np N python {script}   # PAO interpolation -> 1/tau_nk, mobilities'
@@ -5824,7 +5975,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             print('  4) python me.elphon.py     # Migdal-Eliashberg gap vs T, linearised-kernel Tc')
             if _wants_fs_coupling(cfg):
-                print('     python me_aniso.elphon.py   # anisotropic gaps Delta_nk(T) on the Fermi surface')
+                print(
+                    '     python me_aniso.elphon.py   # anisotropic gaps Delta_nk(T) on the Fermi surface'
+                )
             print(f'  5) python plot.elphon.py   # overlays EPW epw/{prefix}.a2f when present')
             if cfg.get('transport'):
                 print(

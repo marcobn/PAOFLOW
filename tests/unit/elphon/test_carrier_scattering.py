@@ -16,6 +16,7 @@ from PAOFLOW.elphon.carrier_scattering import (
     fermi_levels_for_doping,
     rta_transport,
     scattering_rate_kernel,
+    statistics_scissor,
     write_mobility_outputs,
 )
 from PAOFLOW.elphon.elph_bloch import RY_TO_EV
@@ -266,4 +267,23 @@ def test_fermi_levels_resolve_tiny_carrier_densities():
         n_e, n_h = densities(mu_n[it], temp)
         n_i = densities(mu_i[it], temp)[0]
         np.testing.assert_allclose(n_e, 1e16, rtol=1e-8)
-        np.testing.assert_allclose(n_h, n_i**2 / 1e16, rtol=1e-4)  # mass-action law (Boltzmann limit)
+        np.testing.assert_allclose(
+            n_h, n_i**2 / 1e16, rtol=1e-4
+        )  # mass-action law (Boltzmann limit)
+
+
+def test_statistics_scissor():
+    from PAOFLOW.elphon.phonon_assisted_absorption import varshni_shift
+
+    temps = [300.0, 600.0]
+    np.testing.assert_array_equal(statistics_scissor(temps, 0.6), 0.0)
+    np.testing.assert_array_equal(
+        statistics_scissor(temps, 0.6, target_gap_ev=1.1, metal=True), 0.0
+    )
+    np.testing.assert_allclose(statistics_scissor(temps, 0.6, target_gap_ev=1.1), 0.5)
+    shift = varshni_shift(4.73e-4, 636.0)
+    np.testing.assert_allclose(
+        statistics_scissor(temps, 1.2, scissor_ev=shift), [shift(300.0), shift(600.0)]
+    )
+    with pytest.raises(ValueError):
+        statistics_scissor(temps, 0.6, scissor_ev=0.1, target_gap_ev=1.1)

@@ -82,6 +82,8 @@ def read_nscf(save_dir):
         ).reshape(-1, 3, 3)
 
     ef_ha = out.find('band_structure/fermi_energy')
+    if ef_ha is None:  # fixed occupations without a Fermi level: the highest occupied level
+        ef_ha = out.find('band_structure/highestOccupiedLevel')
     ef_ry = float(ef_ha.text) * HARTREE_TO_RY
 
     ks = out.findall('band_structure/ks_energies')

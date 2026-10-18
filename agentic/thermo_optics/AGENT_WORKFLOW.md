@@ -66,7 +66,7 @@ Read `LESSONS_LEARNED.md` once before starting.
 
 ## Stage 0: intake
 
-1. **Model.** Find the driver and its parameters: grids, temperatures, energy grid, scissor, smearing, approximations. Read the output files and their units. For PAOFLOW optics, `OpticsModel(output).describe()` gives the table. Note what the model *cannot* contain: missing physics, energy-grid limits, absent temperatures.
+1. **Model.** Find the driver and its parameters: grids, temperatures, energy grid, scissor, smearing, approximations. Read the output files and their units. For PAOFLOW optics, `OpticsModel(output).describe()` gives the table, including the `electrons` provenance when the run recorded it (PBE or eACBN0 Hamiltonian, Hubbard parameters). Note what the model *cannot* contain: missing physics, energy-grid limits, absent temperatures.
 2. **Sources.** For each file, record its form:
    - text-PDF vs scanned PDF: `ingest.pdf_inventory`, which lists words, images and vector paths per page;
    - embedded bitmap vs vector figure: `ingest.image_placements`, `ingest.pdf_drawing_summary`;

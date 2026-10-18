@@ -563,6 +563,27 @@ def test_varshni_and_scissor_per_temperature():
         scissor_per_temperature(temps, 0.6, scissor_ev=0.5, target_gap_ev=1.1)
 
 
+def test_varshni_shift_is_relative_to_the_hamiltonian_gap():
+    from PAOFLOW.elphon.phonon_assisted_absorption import (
+        scissor_per_temperature,
+        varshni_gap,
+        varshni_shift,
+    )
+
+    shift = varshni_shift(4.73e-4, 636.0)
+    assert shift(0.0) == 0.0
+    temps = [0.0, 300.0, 900.0]
+    # the shift on top of the Hamiltonian's own gap equals a Varshni target anchored at that gap
+    np.testing.assert_allclose(
+        scissor_per_temperature(temps, 1.2, scissor_ev=shift),
+        scissor_per_temperature(temps, 1.2, target_gap_ev=varshni_gap(1.2, 4.73e-4, 636.0)),
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(scissor_per_temperature(temps, 1.2, scissor_ev=0.5), 0.5)
+    with pytest.raises(ValueError):
+        scissor_per_temperature(temps, 1.2, scissor_ev=shift, target_gap_ev=1.1)
+
+
 def _gapped_case(seed, nk=3, nval=2, ncond=3):
     rng = np.random.default_rng(seed)
     ev = np.sort(rng.uniform(-0.12, -0.03, (nk, nval)), axis=1)

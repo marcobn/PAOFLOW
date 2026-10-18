@@ -304,9 +304,17 @@ def epw_input(
 
 # pw.x input cards (any other upper-case line outside a namelist is card data).
 _PW_CARDS = (
-    'ATOMIC_SPECIES', 'ATOMIC_POSITIONS', 'K_POINTS', 'ADDITIONAL_K_POINTS',
-    'CELL_PARAMETERS', 'CONSTRAINTS', 'OCCUPATIONS', 'ATOMIC_VELOCITIES',
-    'ATOMIC_FORCES', 'SOLVENTS', 'HUBBARD',
+    'ATOMIC_SPECIES',
+    'ATOMIC_POSITIONS',
+    'K_POINTS',
+    'ADDITIONAL_K_POINTS',
+    'CELL_PARAMETERS',
+    'CONSTRAINTS',
+    'OCCUPATIONS',
+    'ATOMIC_VELOCITIES',
+    'ATOMIC_FORCES',
+    'SOLVENTS',
+    'HUBBARD',
 )
 _ASSIGNMENT = re.compile(r"([A-Za-z_]\w*(?:\([\d,\s]*\))?)\s*=\s*('[^']*'|\"[^\"]*\"|[^,\s]+)\s*,?")
 
@@ -337,7 +345,9 @@ def edit_pw_input(
     str
         The edited input.
     """
-    values = {nl.lower(): {k.lower(): v for k, v in kv.items()} for nl, kv in (values or {}).items()}
+    values = {
+        nl.lower(): {k.lower(): v for k, v in kv.items()} for nl, kv in (values or {}).items()
+    }
     remove = {r.lower() for r in remove}
     out, namelist, pending, in_kpoints = [], None, {}, False
     for line in text.splitlines():
@@ -363,9 +373,9 @@ def edit_pw_input(
             for match in reversed(matches):
                 name = match.group(1).lower().replace(' ', '')
                 if name in remove:
-                    line = line[: match.start()] + line[match.end():]
+                    line = line[: match.start()] + line[match.end() :]
                 elif name in pending:
-                    line = line[: match.start(2)] + pending.pop(name) + line[match.end(2):]
+                    line = line[: match.start(2)] + pending.pop(name) + line[match.end(2) :]
             if line.strip():
                 out.append(line.rstrip())
             continue
@@ -397,7 +407,7 @@ def species_masses(text: str) -> list[float]:
     for i, line in enumerate(lines):
         if line.strip().upper().startswith('ATOMIC_SPECIES'):
             masses = []
-            for row in lines[i + 1:]:
+            for row in lines[i + 1 :]:
                 fields = row.split()
                 if not fields:
                     continue
@@ -435,8 +445,9 @@ def scf_input(template: str, prefix: str, pseudo_dir: str | None = None) -> str:
     return edit_pw_input(template, {'control': control}, remove=('nosym', 'noinv', 'nosym_evc'))
 
 
-def nscf_input(template: str, prefix: str, nk: tuple[int, int, int], nbnd: int,
-               pseudo_dir: str | None = None) -> str:
+def nscf_input(
+    template: str, prefix: str, nk: tuple[int, int, int], nbnd: int, pseudo_dir: str | None = None
+) -> str:
     """``pw.x`` nscf of the ``epw/`` run directory: the full grid as an explicit list.
 
     Parameters
@@ -458,7 +469,10 @@ def nscf_input(template: str, prefix: str, nk: tuple[int, int, int], nbnd: int,
         The nscf input (``verbosity = 'high'``, no forces or stress).
     """
     control = {
-        'calculation': "'nscf'", 'prefix': "'%s'" % prefix, 'outdir': "'./'", 'verbosity': "'high'",
+        'calculation': "'nscf'",
+        'prefix': "'%s'" % prefix,
+        'outdir': "'./'",
+        'verbosity': "'high'",
     }
     if pseudo_dir is not None:
         control['pseudo_dir'] = "'%s'" % pseudo_dir
@@ -467,6 +481,87 @@ def nscf_input(template: str, prefix: str, nk: tuple[int, int, int], nbnd: int,
         {'control': control, 'system': {'nbnd': str(int(nbnd))}},
         remove=('tprnfor', 'tstress', 'nosym', 'noinv', 'nosym_evc'),
         kpoints=kpoints_card(nk),
+    )
+
+
+def hubbard_nscf_input(
+    template: str, prefix: str, nk: tuple[int, int, int], nbnd: int, pseudo_dir: str | None = None
+) -> str:
+    """``pw.x`` nscf on the EPW k list for a DFT+U(+V) run (the ``HUBBARD`` card kept).
+
+    Parameters
+    ----------
+    template : str
+        A ``pw.x`` input with the converged ``HUBBARD`` card (e.g. the final
+        ``scf.in`` of an eACBN0 loop).
+    prefix, nk, nbnd, pseudo_dir
+        As :func:`nscf_input`.
+
+    Returns
+    -------
+    str
+        The nscf input: the same structure and Hubbard card, the full k-grid as
+        an explicit list.  The run directory must hold the save of the Hubbard
+        scf (charge density, ``data-file-schema.xml`` and ``occup.txt``).
+
+    Raises
+    ------
+    ValueError
+        If the template has no ``HUBBARD`` card.
+    """
+    if not _has_card(template, 'HUBBARD'):
+        raise ValueError(
+            'the template has no HUBBARD card: give the final input of the DFT+U(+V) run.'
+        )
+    return nscf_input(template, prefix, nk, nbnd, pseudo_dir)
+
+
+def optics_nscf_input(
+    template: str, prefix: str, nk: tuple[int, int, int], nbnd: int, pseudo_dir: str | None = None
+) -> str:
+    """``pw.x`` nscf of the optics (``dielectric_tensor``) run: automatic grid, many bands.
+
+    Parameters
+    ----------
+    template : str
+        A ``pw.x`` input of the system (cards other than ``K_POINTS``, including
+        a ``HUBBARD`` card, are kept).
+    prefix : str
+        Calculation prefix.
+    nk : tuple of int
+        Monkhorst-Pack grid (``K_POINTS automatic``, no shift).
+    nbnd : int
+        Number of bands (more than the orbitals of the extended PAO basis).
+    pseudo_dir : str, optional
+        ``pseudo_dir`` for the run directory (unchanged if ``None``).
+
+    Returns
+    -------
+    str
+        The nscf input.
+    """
+    control = {
+        'calculation': "'nscf'",
+        'prefix': "'%s'" % prefix,
+        'outdir': "'./'",
+        'verbosity': "'high'",
+    }
+    if pseudo_dir is not None:
+        control['pseudo_dir'] = "'%s'" % pseudo_dir
+    card = 'K_POINTS automatic\n  %d %d %d 0 0 0\n' % tuple(int(n) for n in nk)
+    return edit_pw_input(
+        template,
+        {'control': control, 'system': {'nbnd': str(int(nbnd))}},
+        remove=('tprnfor', 'tstress', 'nosym', 'noinv', 'nosym_evc'),
+        kpoints=card,
+    )
+
+
+def _has_card(text: str, card: str) -> bool:
+    """Whether a ``pw.x`` input has the card ``card`` (outside namelists)."""
+    return any(
+        line.strip().upper().split('(')[0].split('{')[0].strip() == card
+        for line in text.splitlines()
     )
 
 

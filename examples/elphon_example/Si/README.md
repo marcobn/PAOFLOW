@@ -31,6 +31,7 @@ mid-gap Fermi level.
 | `main.py` | PAOFLOW analysis: PAO electronic structure, then phonon-assisted + direct absorption |
 | `optics/nscf.in` | `pw.x` nscf with 60 bands (8³ k) for the extended-basis direct dielectric function |
 | `optics_eps.py` | PAOFLOW `dielectric_tensor` on the extended basis with the non-local velocity → `optics/output/epsr_*/epsi_*.dat` |
+| `make_hubbard_nscf.py` | from the converged `HUBBARD` card of an eACBN0 run: the nscf inputs for eACBN0 electrons (`acbn0/epw_nscf/`, the EPW k list) and for the eACBN0 optics run (`acbn0/optics/`) |
 | `plot.py` | plots Im ε(ω) and α(ω), overlaying EPW's `epsilon2_indabs_<T>K.dat` when present; after `--emissivity` it also plots the thermal emissivity |
 | `mobility.py` | phonon-limited carrier mobility: state-resolved SERTA/MRTA rates near the band edges, electron and hole mobilities, `scattering_rates.npz` for `pf.transport` |
 | `plot_mobility.py` | plots μ(T) and 1/τ against the energy from the band edge → `output/mobility/mobility.png` |
@@ -220,6 +221,44 @@ which includes local fields.
   slab total is 0.11 at 12³/6³, 0.35 at 24³/12³ and 0.37 at 32³/16³, so use at
   least 24³/12³.
 
+**eACBN0 electrons instead of a scissor.** The scissor keeps the PBE
+eigenvectors and renormalises the velocities. With an eACBN0 (DFT+U+V,
+ortho-atomic) run of this crystal — `examples/acbn0_examples/Si`, run on the
+same `Si.upf` and lattice (the loop gives U_p ≈ 3.0 eV, V_pp ≈ 1.7 eV and a gap
+of ≈ 1.2 eV) — the band energies **and eigenvectors** can come from its PAO
+Hamiltonian, while the coupling in the orbital basis stays the PBE one. Neither
+`ph.x` nor `epw.x` accepts U+V or ortho-atomic projectors, so this mixing is
+done by PAOFLOW (`--electrons-save`). It needs two pw.x nscf runs with the
+converged `HUBBARD` card, on the EPW k list (21 bands, the Hamiltonian) and on an
+automatic grid with 60 bands (the extended-basis dielectric function), both
+started from the eACBN0 save (charge density **and** `occup.txt`):
+
+```bash
+python make_hubbard_nscf.py <eACBN0 workdir>/scf.in --nk 6 6 6 --nbnd 21   # -> acbn0/epw_nscf/nscf.in, acbn0/optics/nscf.in
+for run in epw_nscf optics; do
+  cp <eACBN0 outdir>/Si2.save/{charge-density.dat,data-file-schema.xml,occup.txt} acbn0/$run/Si2.save/; done
+(cd acbn0/epw_nscf && mpirun -np 8 pw.x -in nscf.in > nscf.out)
+(cd acbn0/optics && mpirun -np 8 pw.x -nk 8 -in nscf.in > nscf.out)
+python optics_eps.py --savedir acbn0/optics/Si2.save --outdir acbn0/optics/output
+mpirun -np 8 python main.py --electrons-save acbn0/epw_nscf/Si2.save --emissivity \
+    --direct-dielectric acbn0/optics/output --varshni 4.73e-4 636 --nk 24 --nq 12 \
+    --omega-min 0.01 --omega-step 0.01 --degauss-ev 0.01 --temps 300 500 700 900 1100 1300 1500
+```
+
+- The two saves must share the PAO basis (pseudopotential, `BASIS_PS`,
+  `'standard'`, `PTHR`, structure and atom order); `main.py` checks it and
+  stops otherwise. The eACBN0 nscf may also be on another grid.
+- No 0 K scissor: `--varshni` alone applies `-alpha T^2/(T + beta)` on top of
+  the eACBN0 gap. `--gap-reference-save` is not needed any more (and is refused
+  together with `--electrons-save`).
+- `--direct-dielectric` must point to the eACBN0 optics run: `main.py` warns if
+  the onset of the external ε₂ and the Hamiltonian's direct gap disagree.
+- Not included: the Hubbard contribution to the coupling and to the velocity
+  commutator, and the change of screening. Compare the f-sum ratio printed by
+  the emissivity step with the PBE one (0.87–0.88) to size the latter.
+- `absorption.npz` records `electrons_save`, `electrons_dft` and the Hubbard
+  parameters (`electrons_hubbard`).
+
 ### 5. Carrier mobility (SERTA / MRTA)
 
 The same EPW coupling gives the phonon-limited electron and hole mobilities.
@@ -293,6 +332,11 @@ the bridge reproduces the k-resolved mobilities to 15–17%. That is the cost of
 an energy-only τ.
 
 ---
+
+`mobility.py --electrons-save acbn0/epw_nscf/Si2.save [--varshni 4.73e-4 636]`
+takes the gap, the masses and the carrier statistics from the eACBN0 PAO
+Hamiltonian (see section 4); the rates keep the PBE coupling. The energies of
+`scattering_rates.npz` are then on the scale of that save.
 
 ## Method
 

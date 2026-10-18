@@ -659,7 +659,7 @@ stages:
 | `eps_acoustic` | `eps_acoustic_cm` | 0.1 cm⁻¹ |
 | `n_r` (tutorial: constant 3.4) | `refractive_index` | 3.4 |
 | `mp_mesh_k` | `sym_rots` (folds **q**; the polarisation average is exact) | |
-| `eig_read`, `scissor` | not implemented: PAO (DFT) energies | |
+| `eig_read`, `scissor` | a scissor (`target_gap_ev` / `scissor_ev`), or an eACBN0 PAO Hamiltonian through `ELECTRONS_SAVE` (energies *and* eigenvectors; the coupling stays PBE in the orbital basis) | PAO (DFT) energies |
 
 Some limitations and conventions apply:
 - **Irreducible q.** With `sym_rots`, the dense q-grid is folded to its
@@ -756,6 +756,69 @@ scissor corrects the band energies only:
 - **Cost.** Temperatures with equal Δ are processed together. A T-dependent
   scissor repeats only the second-order kernel per temperature.
 
+**Beyond-PBE electrons: an eACBN0 Hamiltonian instead of a scissor.** The
+scissor fixes the gap but keeps the PBE eigenvectors and the Levine–Allan
+velocity renormalisation. The eACBN0 (DFT+U+V, ortho-atomic) PAO Hamiltonian
+of the same crystal can replace the PBE one altogether
+(`elphon/pao_electrons.py`; drivers: `ELECTRONS_SAVE` / `--electrons-save`):
+- **Why in PAOFLOW.** `ph.x` refuses Hubbard with ortho-atomic projectors and any
+  U+V (`phq_readin.f90`), and `epw.x` (up to 6.0) has no Hubbard code at all:
+  its `epbwrite` path reaches `commutator_Vhubx_psi` on units it never opens.
+  EPW's only beyond-DFT hook, `eig_read`, replaces the eigenvalues and keeps
+  the DFT wavefunctions; PAOFLOW discards the `.epb` eigenvalues anyway. The
+  dense pipeline, however, takes the coupling (`A`, `.epb`) and `HRs` as
+  separate inputs: `prepare_dense_vertex` builds $g$ in the orthonormal PAO
+  basis from the EPW save, `precompute_dense_electrons` diagonalises whatever
+  `HRs` it is given, and `band_vertex` rotates $g$ with those eigenvectors.
+- **What is mixed.** $g_{mn}(\mathbf k,\mathbf q) = V_U^\dagger(\mathbf k+\mathbf q)\,
+  g^{\rm PAO,PBE}\,V_U(\mathbf k)$ with the eACBN0 eigenvectors $V_U$, the eACBN0
+  energies in every δ function, denominator, occupation and $\mu(T)$, and the
+  velocities of the eACBN0 $H(R)$ (plus the pseudopotential non-local term).
+  Δ(0) = 0: no scissor at 0 K. The PAO analogue of `eig_read`, with eigenvectors.
+- **What is not.** The Hubbard contribution to the coupling ($dV_{\rm Hub}/du$
+  and the response of the occupations; `ph.x` computes it only for DFPT+U with
+  atomic projectors), the change of the screening of `dvscf`, and the Hubbard
+  term $i[V_U, \mathbf r]$ of the velocity (the intersite V lives in $H(R \ne 0)$
+  and is captured by $\partial H/\partial k$; the on-site U lacks the
+  intra-atomic dipoles). The projector onto the PBE nscf bands truncates
+  $g^{\rm PAO}$: eACBN0 states with weight outside their span see a truncated
+  vertex (far above the window only). The f-sum ratio of the eACBN0 and PBE
+  `dielectric_tensor` runs (`thermal_emissivity['f_sum_ratio']`) is the
+  diagnostic for the missing velocity term.
+- **Basis identity.** Same pseudopotentials, structure and atom order, BASIS
+  tables, `configuration` and `pthr`; `check_same_pao_basis` compares species,
+  positions, lattice, orbital identities and configuration and raises on any
+  mismatch; `bnd` and `shift` (the projectability outcome) differ between
+  functionals and are reported. The eACBN0 nscf need not be on the EPW k list:
+  the H grid is read from `HRs.shape` (`pao_hamiltonian_from_save` infers
+  `expand_wedge` from the k set).
+- **Temperature dependence.** `varshni_shift(alpha, beta)` is the `scissor_ev`
+  $\Delta(T) = -\alpha T^2/(T+\beta)$ on top of the Hamiltonian's own gap. In the
+  drivers `--varshni` without a 0 K target now means this relative shift (it
+  used to be an error); `--gap-reference-save` and `--electrons-save` are
+  mutually exclusive.
+- **Direct dielectric function.** `DIRECT_DIELECTRIC_DIR` must then come from a
+  `dielectric_tensor` run on the eACBN0 optics save (`optics_eps.py --savedir`);
+  `thermal_emissivity` compares the onset of the external $\varepsilon_2$ (5 %
+  of its maximum, which lands on the direct gap for PAOFLOW's Si spectrum)
+  with the Hamiltonian's direct gap and warns beyond 0.3 eV
+  (`check_direct_dielectric_gap`), because only Δ(T) is applied to it.
+- **Energy scale.** `HRs` is on the scale of its own save (Fermi level or
+  highest occupied level at zero); `FERMI_ENERGY_EV`, and the
+  `scattering_rates.npz` of the mobility run for `pf.transport`, refer to the
+  electrons save.
+- **Provenance.** The drivers add `coupling_save`, `electrons_save`,
+  `electrons_dft` (`PBE`, `DFT+U+V`, ...) and `electrons_hubbard` (the U and V
+  values of the save, `hubbard_info_from_save`) to `absorption.npz` /
+  `carrier_scattering.npz`; `OpticsModel.describe()` of the thermo-optics
+  workflow shows them.
+- **Later stages (not implemented).** The Hubbard velocity commutator (the
+  on-site intra-atomic dipoles with the two-centre tables of
+  `nonlocal_velocity.py`); a Poncé-style rescaling of the long-wavelength
+  coupling by $\varepsilon_{\rm PBE}(q)/\varepsilon_{\rm eACBN0}(q)$; the Hubbard
+  contribution to $g$ by finite differences of the eACBN0 PAO Hamiltonian on
+  displaced supercells.
+
 For Si with the Varshni experimental gap (500 µm, 24³/12³, extended-basis ε),
 the slab becomes opaque at 700–900 K: ε = 0.003, 0.25 and 0.61 at 500, 700 and
 900 K.
@@ -815,7 +878,11 @@ Both still have to be converged:
 current is carried by the few states within some k_BT of the band edges, so
 transport needs the **state-resolved** rate 1/τ_nk(T).
 `elphon/carrier_scattering.py` computes it on the dense EPW+PAO interpolation.
-It also works for metals, using the states near E_F.
+It also works for metals, using the states near E_F. The electrons can come
+from an eACBN0 PAO Hamiltonian (`ELECTRONS_SAVE`, see the absorption section):
+the gap, the masses, the velocities and the carrier statistics are then the
+eACBN0 ones, with `scissor_ev=varshni_shift(...)` for the temperature
+dependence; the rates still use the PBE coupling in the orbital basis.
 
 **Rates.** The imaginary part of the Fan–Migdal self-energy (SERTA):
 
@@ -1166,6 +1233,13 @@ remains a convergence statement, not a code defect.
   The list must be the complete grid in `K_POINTS automatic` order (third index
   fastest), as written by `kpoints_card` or wannier90's `kmesh.pl`.
 - **`expand_wedge=False`** for the EPW save (see above).
+- **Hamiltonian from another save.** `phonon_assisted_absorption_dense_q` and
+  `carrier_scattering_dense_q` only check that `A` and `HRs` have the same
+  orbital count (`check_orbital_dimensions`); the physical requirement (same
+  PAO basis on the same crystal) is checked in the drivers with
+  `check_same_pao_basis`. Build such Hamiltonians with
+  `pao_hamiltonian_from_save`, which reproduces the drivers' call sequence
+  bitwise.
 - **EPW band window.** Bands excluded with `exclude_bands` are handled through
   `ibndkept`. Packing by an outer disentanglement window (`lwin` false for some
   bands) is not supported.
@@ -1211,6 +1285,14 @@ out = eliashberg_from_qe_coupling(
     'epw', None, ng, None, source='epw',
     masses_amu=[207.2], nk_dense=48, sigmas_ry=[0.05 / 13.6057], nelec=14, mu_star=0.10,
 )
+
+# Hamiltonian of another save (eACBN0 electrons, PBE coupling):
+from PAOFLOW.elphon.pao_electrons import check_same_pao_basis, pao_hamiltonian_from_save
+coupling = pao_hamiltonian_from_save('epw/Si2.save', BASIS, 'standard', 0.95, expand_wedge=False)
+electrons = pao_hamiltonian_from_save('acbn0/epw_nscf/Si2.save', BASIS, 'standard', 0.95)
+check_same_pao_basis(coupling.data_controller, electrons.data_controller)   # raises on mismatch
+# ... phonon_assisted_absorption_dense_q(coupling.projections, electrons.HRs, ...,
+#         scissor_ev=varshni_shift(4.73e-4, 636.0))
 
 # Workflow 2 (dense q; coarse q and phonons taken from the .epb files):
 out = eliashberg_dense_q(

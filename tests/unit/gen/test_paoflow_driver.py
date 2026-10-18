@@ -439,19 +439,27 @@ K_POINTS {automatic}
 def test_epw_inputs_follow_the_example_layout(tmp_path):
     files = d.build_elphon_epw_inputs(
         _epw_cfg(
-            kgrid=[4, 4, 4], qgrid=[2, 2, 2], nbnd=16, exclude_bands=[1, 2, 3, 4, 5],
-            pw_template_text=_PB_SCF, pseudo_dir='../',
+            kgrid=[4, 4, 4],
+            qgrid=[2, 2, 2],
+            nbnd=16,
+            exclude_bands=[1, 2, 3, 4, 5],
+            pw_template_text=_PB_SCF,
+            pseudo_dir='../',
         )
     )
     assert sorted(files) == [
-        'epw/epw.in', 'epw/nscf.in', 'epw/write_ukk.py', 'phonon/ph.in', 'phonon/scf.in'
+        'epw/epw.in',
+        'epw/nscf.in',
+        'epw/write_ukk.py',
+        'phonon/ph.in',
+        'phonon/scf.in',
     ]
     scf = files['phonon/scf.in']
     assert "prefix          = 'pb'," in scf and "outdir          = './'" in scf
     assert "pseudo_dir      = '../'," in scf and 'nosym' not in scf
     assert '8 8 8  0 0 0' in scf
     nscf = files['epw/nscf.in']
-    assert "calculation     = 'nscf'" in nscf and "verbosity" in nscf and 'nbnd' in nscf
+    assert "calculation     = 'nscf'" in nscf and 'verbosity' in nscf and 'nbnd' in nscf
     assert 'tprnfor' not in nscf and 'K_POINTS crystal\n64\n' in nscf and '8 8 8' not in nscf
     assert 'nq1 = 2,' in files['phonon/ph.in'] and "fildvscf  = 'dvscf'" in files['phonon/ph.in']
     epw_in = files['epw/epw.in']
@@ -711,7 +719,24 @@ def test_build_elphon_absorption_plot_script() -> None:
 
 def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
     answers = iter(
-        ['6', '', '', '', '', 'n', '0.1', '2.5', '0.02', '10, 300', '0.04', '3.0', '3.5', 'n', '']
+        [
+            '6',
+            '',
+            '',
+            '',
+            '',
+            '',
+            'n',
+            '0.1',
+            '2.5',
+            '0.02',
+            '10, 300',
+            '0.04',
+            '3.0',
+            '3.5',
+            'n',
+            '',
+        ]
     )
     monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
     cfg = d._collect_elphon_absorption({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
@@ -724,12 +749,35 @@ def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
     assert cfg['pthr'] == 0.95
     assert cfg['emissivity'] is False
     assert cfg['target_gap_ev'] is None and cfg['varshni'] is None
+    assert cfg['electrons_save'] is None and cfg['gap_reference_save'] is None
+
+
+def test_collect_elphon_absorption_electrons_save_skips_reference_gap(monkeypatch) -> None:
+    # an eACBN0 electrons save: no reference-gap prompt; Varshni relative to its gap
+    answers = iter(['6', '', 'acbn0/Si2.save', '', '4.73e-4 636', 'n'] + [''] * 10)
+    monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
+    cfg = d._collect_elphon_absorption({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
+    assert cfg['electrons_save'] == 'acbn0/Si2.save'
+    assert cfg['target_gap_ev'] is None and cfg['gap_reference_save'] is None
+    assert cfg['varshni'] == [4.73e-4, 636.0]
+    assert cfg['emissivity'] is False and cfg['omega_ev'] == [0.05, 3.0, 0.05]
 
 
 def test_collect_elphon_absorption_emissivity_defaults(monkeypatch) -> None:
     # emissivity on: thickness and angles, then low-omega / multi-T defaults
     answers = iter(
-        ['6', '', '1.17', 'acbn0/si.save', '4.73e-4, 636', 'y', '250', '0, 45', '../optics/output']
+        [
+            '6',
+            '',
+            '',
+            '1.17',
+            'acbn0/si.save',
+            '4.73e-4, 636',
+            'y',
+            '250',
+            '0, 45',
+            '../optics/output',
+        ]
         + [''] * 10
     )
     monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
@@ -762,6 +810,15 @@ def test_build_elphon_absorption_script_emissivity() -> None:
     compile(scissored, 'main.elphon.py', 'exec')
     assert 'TARGET_GAP_EV = 1.17' in scissored and 'VARSHNI = (0.000473, 636.0)' in scissored
     assert "GAP_REFERENCE_SAVE = 'ref.save'" in scissored and 'pao_band_gaps(' in scissored
+    assert 'ELECTRONS_SAVE = None' in text and "PROJECTOR = 'internal'" in text
+    assert 'pao_hamiltonian_from_save(' in text and 'check_same_pao_basis(' in text
+    assert "'--electrons-save'" in text and 'varshni_shift' in text
+    electrons = d.build_elphon_script(_absorption_cfg(electrons_save='acbn0/epw_nscf/Si2.save'))
+    compile(electrons, 'main.elphon.py', 'exec')
+    assert "ELECTRONS_SAVE = 'acbn0/epw_nscf/Si2.save'" in electrons
+    projwfc = d.build_elphon_script(_absorption_cfg(projector='projwfc'))
+    compile(projwfc, 'main.elphon.py', 'exec')
+    assert "PROJECTOR = 'projwfc'" in projwfc and 'SAVE_OVERLAPS = True' in projwfc
     assert 'thermal_emissivity(' in text and 'write_emissivity_outputs(' in text
     assert "fermi_energy_ev='intrinsic' if args.emissivity" in text
     assert 'EMISSIVITY = False' in d.build_elphon_script(_absorption_cfg())
@@ -817,6 +874,11 @@ def test_build_elphon_mobility_script_compiles_and_wires() -> None:
     assert 'eliashberg' not in text and 'phonon_assisted_absorption_dense_q' not in text
     scissored = d.build_elphon_script(_mobility_cfg(target_gap_ev=1.17, varshni=[4.73e-4, 636.0]))
     assert 'TARGET_GAP_EV = 1.17' in scissored and 'VARSHNI = (0.000473, 636.0)' in scissored
+    assert 'ELECTRONS_SAVE = None' in text and 'pao_hamiltonian_from_save(' in text
+    assert 'scissor_ev=scissor_ev, target_gap_ev=target_gap_ev' in text
+    electrons = d.build_elphon_script(_mobility_cfg(electrons_save='acbn0/epw_nscf/Si2.save'))
+    compile(electrons, 'main.elphon.py', 'exec')
+    assert "ELECTRONS_SAVE = 'acbn0/epw_nscf/Si2.save'" in electrons
 
 
 def test_build_elphon_mobility_plot_script() -> None:
@@ -827,12 +889,21 @@ def test_build_elphon_mobility_plot_script() -> None:
 
 
 def test_collect_elphon_mobility_prompts(monkeypatch) -> None:
-    answers = iter(['40', '', '250, 300', '-1e16', '0.25', '0.02', '1.17', '4.73e-4 636', ''])
+    answers = iter(['40', '', '250, 300', '-1e16', '0.25', '0.02', '', '1.17', '4.73e-4 636', ''])
     monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
     cfg = d._collect_elphon_mobility({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
+    assert cfg['electrons_save'] is None
     assert cfg['elphon_property'] == 'mobility'
     assert (cfg['nq_dense'], cfg['nk_dense']) == (40, 40)
     assert cfg['temps_k'] == [250.0, 300.0] and cfg['doping_cm3'] == -1e16
     assert (cfg['window_ev'], cfg['smearing_ev']) == (0.25, 0.02)
     assert cfg['target_gap_ev'] == 1.17 and cfg['varshni'] == [4.73e-4, 636.0]
     assert 'nonlocal_velocity' not in cfg and cfg['pthr'] == 0.95
+
+
+def test_collect_elphon_mobility_electrons_save_asks_varshni(monkeypatch) -> None:
+    answers = iter(['40', '', '300', '0', '0.3', '0.01', 'acbn0/Si2.save', '', '4.73e-4 636', ''])
+    monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
+    cfg = d._collect_elphon_mobility({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
+    assert cfg['electrons_save'] == 'acbn0/Si2.save' and cfg['target_gap_ev'] is None
+    assert cfg['varshni'] == [4.73e-4, 636.0]

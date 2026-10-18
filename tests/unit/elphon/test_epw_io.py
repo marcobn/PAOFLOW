@@ -7,32 +7,9 @@ import pytest
 
 from PAOFLOW.elphon.qe_elph_io import read_epw_epb, read_epw_ukk
 
-
-def _write_record(path, payload, split=None):
-    """Write one sequential unformatted record, optionally as gfortran subrecords."""
-    data = np.ascontiguousarray(payload).view(np.uint8)
-    cuts = [0] + list(split or []) + [data.size]
-    with open(path, 'wb') as fh:
-        for i, (a, b) in enumerate(zip(cuts[:-1], cuts[1:])):
-            n = b - a
-            more = i < len(cuts) - 2
-            np.array([-n if more else n], np.int32).tofile(fh)
-            data[a:b].tofile(fh)
-            np.array([n], np.int32).tofile(fh)
-
-
-def _epb_payload(nq, xqc, et, dynq, epmatq, zstar, epsi):
-    """Byte payload of one EPW pool record, Fortran (column-major) ordering."""
-    parts = [
-        np.array([nq], np.int32),
-        np.asarray(xqc, np.float64).ravel(),  # xqc(3, nq): q-major rows == C ravel of (nq, 3)
-        np.asarray(et, np.float64).ravel(order='F'),
-        np.asarray(dynq, np.complex128).ravel(order='F'),
-        np.asarray(epmatq, np.complex128).ravel(order='F'),
-        np.asarray(zstar, np.float64).ravel(order='F'),
-        np.asarray(epsi, np.float64).ravel(order='F'),
-    ]
-    return np.concatenate([p.view(np.uint8) for p in parts])
+from .synthetic_epw import epb_payload as _epb_payload
+from .synthetic_epw import write_record as _write_record
+from .synthetic_epw import write_ukk as _write_ukk
 
 
 def _synthetic_epw(rng, nbnd, nbndep, nk, nat, nq):
@@ -183,17 +160,6 @@ def test_vertex_from_epw_rejects_incommensurate_q():
             (2, 2, 2),
             np.array([0]),
         )
-
-
-def _write_ukk(path, nk, nbnd, nbndskip, lwin=None):
-    nbndep = nbnd - nbndskip
-    lwin = np.ones((nk, nbndep), bool) if lwin is None else lwin
-    lines = ['%12d%12d' % (nbndep, nbndskip)] + ['%12d' % (b + 1) for b in range(nbndskip, nbnd)]
-    lines += [' (1.0000000000000000E+00,0.0000000000000000E+00)'] * (nk * nbndep)  # nwann = 1
-    lines += [' T' if f else ' F' for f in lwin.ravel()]
-    lines += [' T' if b < nbndskip else ' F' for b in range(nbnd)]
-    lines += ['  0.0E+00  0.0E+00  0.0E+00']
-    path.write_text('\n'.join(lines) + '\n')
 
 
 def test_load_epw_coupling_infers_prefix_and_converts_q(tmp_path):

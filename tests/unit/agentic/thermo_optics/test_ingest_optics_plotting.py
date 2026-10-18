@@ -72,6 +72,19 @@ def test_optics_model_alpha_and_temperature_interpolation(tmp_path):
     assert '| temperatures (K) | 300, 600, 750 |' in model.describe()
 
 
+def test_optics_model_reports_electrons_provenance(tmp_path):
+    synthetic_optics(tmp_path)
+    with np.load(tmp_path / 'absorption.npz') as data:
+        arrays = dict(data)
+    arrays.update(electrons_save='acbn0/Si2.save', electrons_dft='DFT+U+V',
+                  electrons_hubbard='DFT+U+V (ortho-atomic): Hubbard_U Si 3p 3.000 eV')  # fmt: skip
+    np.savez(tmp_path / 'absorption.npz', **arrays)
+    model = OpticsModel(tmp_path)
+    assert model.metadata['electrons_dft'] == 'DFT+U+V'
+    text = model.describe()
+    assert 'DFT+U+V' in text and 'acbn0/Si2.save' in text
+
+
 def test_temperature_colors_and_save(tmp_path):
     matplotlib = pytest.importorskip('matplotlib')
     matplotlib.use('Agg')

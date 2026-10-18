@@ -70,7 +70,8 @@ class OpticsModel:
     def _metadata(self) -> dict:
         a = self.absorption
         keys = ('nk_dense', 'nq_dense', 'refractive_index', 'indirect_gap_dft_ev', 'direct_gap_dft_ev',
-                'scissor_velocity', 'cell_volume_bohr3', 'nelec')  # fmt: skip
+                'scissor_velocity', 'cell_volume_bohr3', 'nelec', 'coupling_save', 'electrons_save',
+                'electrons_dft', 'electrons_hubbard')  # fmt: skip
         out = {key: a[key].item() if np.ndim(a[key]) == 0 else a[key] for key in keys if key in a}
         for key in ('indirect_gap_ev_t', 'direct_gap_ev_t', 'scissor_ev', 'fermi_levels_ev'):
             if key in a:
@@ -197,7 +198,8 @@ class OpticsModel:
         lines.append('| temperatures (K) | %s |' % ', '.join('%g' % t for t in self.temperatures))
         lines.append('| photon grid (eV) | %.3f-%.3f, step %.3f |' % m['omega_grid_ev'])
         for key in ('nk_dense', 'nq_dense', 'indirect_gap_dft_ev', 'direct_gap_dft_ev', 'refractive_index',
-                    'scissor_velocity', 'eta_ev', 'emissivity_thickness_m', 'direct_source'):  # fmt: skip
+                    'scissor_velocity', 'eta_ev', 'emissivity_thickness_m', 'direct_source',
+                    'electrons_dft', 'electrons_hubbard', 'electrons_save'):  # fmt: skip
             if key in m:
                 value = m[key]
                 lines.append(

@@ -68,8 +68,17 @@ from .phonon_assisted_absorption import (
     scissor_velocities,
     thermal_emissivity,
     varshni_gap,
+    varshni_shift,
     write_absorption_outputs,
     write_emissivity_outputs,
+)
+from .pao_electrons import (
+    PAOElectrons,
+    check_orbital_dimensions,
+    check_same_pao_basis,
+    format_hubbard_info,
+    hubbard_info_from_save,
+    pao_hamiltonian_from_save,
 )
 from .qe_elph_io import (
     el_ph_mat_to_cartesian,
@@ -93,6 +102,12 @@ from .qe_matdyn import (
 __all__ = [
     'a2f_from_epw',
     'absorption_coefficient',
+    'PAOElectrons',
+    'check_orbital_dimensions',
+    'check_same_pao_basis',
+    'format_hubbard_info',
+    'hubbard_info_from_save',
+    'pao_hamiltonian_from_save',
     'a2f_from_modes',
     'a2f_from_npz',
     'allen_dynes_tc',
@@ -142,6 +157,7 @@ __all__ = [
     'solve_imag_iso',
     'thermal_emissivity',
     'varshni_gap',
+    'varshni_shift',
     'vertex_from_qe_ahc',
     'vertex_from_qe_elphmat',
     'write_absorption_outputs',

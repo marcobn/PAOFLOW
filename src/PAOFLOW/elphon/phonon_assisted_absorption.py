@@ -21,6 +21,7 @@ public driver takes and returns electron-volts.
 from __future__ import annotations
 
 import os
+import warnings
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -45,6 +46,7 @@ from .elph_bloch import (
     precompute_dense_electrons,
     vertex_ws_coefficients,
 )
+from .pao_electrons import check_orbital_dimensions
 
 # Denominator broadenings of the second-order amplitudes (EPW ``indabs.f90``), eV.
 EPW_ETAS_EV = (0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5)
@@ -486,10 +488,42 @@ def varshni_gap(
     return gap
 
 
+def varshni_shift(
+    alpha_ev_per_k: float = SILICON_VARSHNI[1], beta_k: float = SILICON_VARSHNI[2]
+) -> Callable[[float], float]:
+    """Varshni temperature dependence as a rigid shift of a Hamiltonian's own gap.
+
+    Parameters
+    ----------
+    alpha_ev_per_k : float, optional
+        Varshni ``alpha`` (eV/K); default Si.
+    beta_k : float, optional
+        Varshni ``beta`` (K); default Si.
+
+    Returns
+    -------
+    callable
+        ``T (K) -> Delta(T)`` in eV, the ``scissor_ev`` of
+        :func:`phonon_assisted_absorption_dense_q` and
+        :func:`~PAOFLOW.elphon.carrier_scattering.carrier_scattering_dense_q`.
+
+    Notes
+    -----
+    .. math::
+
+        \\Delta(T) = -\\frac{\\alpha T^2}{T + \\beta}, \\qquad \\Delta(0) = 0,
+
+    i.e. :func:`varshni_gap` with :math:`E_0 = 0`.  Use it when the Hamiltonian
+    already has the 0 K gap (an eACBN0 PAO Hamiltonian): the band energies then
+    follow :math:`E_g^{H} + \\Delta(T)` without a 0 K scissor.
+    """
+    return varshni_gap(0.0, alpha_ev_per_k, beta_k)
+
+
 def scissor_per_temperature(
     temps_k: Sequence[float],
     dft_gap_ev: float,
-    scissor_ev: float | None = None,
+    scissor_ev: float | Callable[[float], float] | None = None,
     target_gap_ev: float | Callable[[float], float] | None = None,
 ) -> NDArray[np.float64]:
     """Rigid conduction-band shift at each temperature.
@@ -499,9 +533,11 @@ def scissor_per_temperature(
     temps_k : sequence of float
         Temperatures (K).
     dft_gap_ev : float
-        Indirect gap of the (DFT) PAO spectrum on the dense grid (eV).
-    scissor_ev : float, optional
-        Explicit shift (eV), the same at every temperature.
+        Indirect gap of the PAO spectrum on the dense grid (eV).
+    scissor_ev : float or callable, optional
+        Explicit shift (eV), the same at every temperature, or
+        ``T (K) -> Delta(T)`` (:func:`varshni_shift`) relative to the
+        Hamiltonian's own gap.
     target_gap_ev : float or callable, optional
         Gap to reproduce (eV), fixed or ``T (K) -> E_g(T)`` (:func:`varshni_gap`).
 
@@ -520,6 +556,8 @@ def scissor_per_temperature(
     if scissor_ev is not None and target_gap_ev is not None:
         raise ValueError('give either scissor_ev or target_gap_ev, not both.')
     if scissor_ev is not None:
+        if callable(scissor_ev):
+            return np.array([float(scissor_ev(t)) for t in temps])
         return np.full(temps.size, float(scissor_ev))
     if target_gap_ev is None:
         return np.zeros(temps.size)
@@ -862,7 +900,7 @@ def phonon_assisted_absorption_dense_q(
     nonlocal_velocity=None,
     kk_omega_max_ev: float | None = None,
     kk_degauss_ev: float = 0.1,
-    scissor_ev: float | None = None,
+    scissor_ev: float | Callable[[float], float] | None = None,
     target_gap_ev: float | Callable[[float], float] | None = None,
     scissor_velocity: str = 'renormalized',
     spin_degeneracy: float = 2.0,
@@ -941,8 +979,11 @@ def phonon_assisted_absorption_dense_q(
         weakly smeared spectrum oscillates (even below zero) and spoils the
         reflectivity; it also smooths the direct term the emissivity uses above
         the gap.
-    scissor_ev : float, optional
-        Rigid shift (eV) of the conduction bands (scissor operator).
+    scissor_ev : float or callable, optional
+        Rigid shift (eV) of the conduction bands (scissor operator), or
+        ``T (K) -> Delta(T)`` (:func:`varshni_shift`): the Varshni temperature
+        dependence on top of the Hamiltonian's own gap, for a ``HRs`` that
+        already has the 0 K gap (eACBN0 electrons, see Notes).
     target_gap_ev : float or callable, optional
         Indirect gap (eV) to reproduce instead of the DFT one: a number (e.g. the
         experimental gap, or the dense-grid gap of an eACBN0 PAO Hamiltonian from
@@ -1024,6 +1065,7 @@ def phonon_assisted_absorption_dense_q(
         raise ValueError(f'nk_dense={nk_dense} must be a multiple of nq_dense={nq_dense}.')
     masses_amu = np.asarray(masses_amu, dtype=float)
     mass_flat_ry = np.repeat(masses_amu, 3) * AMU_RY
+    check_orbital_dimensions(A, HRs, orbital_positions)
 
     vertex = prepare_dense_vertex(
         A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, None,
@@ -1408,6 +1450,7 @@ def thermal_emissivity(
                 'direct_dielectric covers %.3f-%.3f eV, the photon-energy grid %.3f-%.3f eV'
                 % (ext_omega.min(), ext_omega.max(), omega.min(), omega.max())
             )
+        onset = check_direct_dielectric_gap(results, (ext_omega, ext_eps1, ext_eps2))
         kk_grid = np.arange(0.0, omega.max() + 0.5 * step, step)  # uniform, from 0
         shifted_ext = {}  # scissor (eV) -> external (eps1, eps2) on the photon grid
         for scissor in np.unique(scissors):
@@ -1443,9 +1486,97 @@ def thermal_emissivity(
     out = emissivity_from_dielectric(omega, eps1_t, eps2_t, temps, thickness_m, angles_deg, ntheta)
     out['eta_ev'] = float(etas[ieta])
     out['direct_source'] = 'kramers-kronig' if direct_dielectric is None else 'external'
+    if direct_dielectric is not None:
+        out['direct_onset_ev'] = onset['onset_ev']
+        out['direct_gap_h_ev'] = onset['direct_gap_ev']
     if f_sum_ratio is not None:
         out['f_sum_ratio'] = f_sum_ratio
     return out
+
+
+def dielectric_onset_ev(
+    omega_ev: NDArray[np.float64], eps2: NDArray[np.float64], fraction: float = 0.02
+) -> float:
+    """Onset of an absorption spectrum: lowest energy where ``eps2`` reaches a fraction of its maximum.
+
+    Parameters
+    ----------
+    omega_ev : ndarray, shape ``(nomega,)``
+        Photon energies (eV).
+    eps2 : ndarray, shape ``(nomega,)``
+        Imaginary part of the dielectric function.
+    fraction : float, optional
+        Threshold relative to ``max(eps2)`` (default 2 %).
+
+    Returns
+    -------
+    float
+        The onset energy (eV); ``nan`` if ``eps2`` has no positive value.
+    """
+    omega = np.asarray(omega_ev, dtype=float)
+    eps2 = np.asarray(eps2, dtype=float)
+    peak = eps2.max() if eps2.size else 0.0
+    if not peak > 0.0:
+        return float('nan')
+    above = np.nonzero(eps2 >= fraction * peak)[0]
+    return float(omega[above[0]])
+
+
+def check_direct_dielectric_gap(
+    results: dict,
+    direct_dielectric: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
+    tol_ev: float = 0.3,
+    fraction: float = 0.05,
+) -> dict:
+    """Warn when an external direct dielectric function does not match the Hamiltonian's direct gap.
+
+    Parameters
+    ----------
+    results : dict
+        Output of :func:`phonon_assisted_absorption_dense_q` (uses
+        ``direct_gap_dft_ev``, the unshifted direct gap of the Hamiltonian, or
+        ``direct_gap_ev`` when the former is absent).
+    direct_dielectric : tuple of ndarray
+        ``(omega_ev, eps1, eps2)`` as read by :func:`read_direct_dielectric`
+        (``eps2`` may be ``(ncomp, nomega)``; its average is used).
+    tol_ev : float, optional
+        Largest accepted difference between the onset of ``eps2`` and the gap.
+    fraction : float, optional
+        Onset threshold of :func:`dielectric_onset_ev` (5 % of the maximum: on
+        PAOFLOW's Si spectrum, Drude-Lorentz ``delta = 0.1`` eV, this lands on
+        the direct gap within 0.01 eV).
+
+    Returns
+    -------
+    dict
+        ``onset_ev``, ``direct_gap_ev`` and ``consistent`` (bool).
+
+    Notes
+    -----
+    The external spectrum is shifted only by the scissor :math:`\\Delta(T)` of
+    the run.  A ``dielectric_tensor`` run of another functional than the one
+    behind ``HRs`` (PBE optics with eACBN0 electrons, or the reverse) would be
+    placed at the wrong energy: the gap difference between the two functionals
+    is not a scissor of the run.  The Drude-Lorentz tails of the external
+    spectrum make the onset approximate, hence the generous tolerance and a
+    warning rather than an error.
+    """
+    omega, _eps1, eps2 = (np.asarray(a, dtype=float) for a in direct_dielectric)
+    if eps2.ndim > 1:
+        eps2 = eps2.mean(axis=0)
+    onset = dielectric_onset_ev(omega, eps2, fraction)
+    gap = float(results.get('direct_gap_dft_ev', results.get('direct_gap_ev', np.nan)))
+    consistent = bool(np.isfinite(onset) and abs(onset - gap) <= tol_ev)
+    if not consistent:
+        warnings.warn(
+            'direct_dielectric onset %.2f eV vs the direct gap %.2f eV of the Hamiltonian: the '
+            'external dielectric function seems to come from a different functional (PBE optics '
+            'with eACBN0 electrons, or the reverse); only the scissor Delta(T) of this run is '
+            'applied to it.  Rerun dielectric_tensor on the matching save.' % (onset, gap),
+            UserWarning,
+            stacklevel=3,
+        )
+    return {'onset_ev': onset, 'direct_gap_ev': gap, 'consistent': consistent}
 
 
 def read_direct_dielectric(

@@ -1,5 +1,7 @@
 """EPW input generation for the PAO electron-phonon route."""
 
+import re
+
 import numpy as np
 import pytest
 
@@ -9,8 +11,10 @@ from PAOFLOW.gen.epw_inputs import (
     epw_input,
     exclude_bands_string,
     parse_exclude_bands,
+    hubbard_nscf_input,
     kpoints_card,
     nscf_input,
+    optics_nscf_input,
     species_masses,
     uniform_kpoint_list,
     write_placeholder_ukk,
@@ -142,3 +146,52 @@ def test_species_masses_and_nscf_from_template():
     nscf = nscf_input(_PW, 'si', (2, 2, 2), 12, pseudo_dir='../')
     assert "calculation='nscf'" in nscf and "outdir = './'," in nscf
     assert "pseudo_dir      = '../'" in nscf and 'K_POINTS crystal\n8\n' in nscf
+
+
+_PW_HUBBARD = """&control
+  calculation='scf', prefix='Si2', outdir='./tmp', nosym=.true., noinv=.true.
+/
+&system
+  ibrav=2, celldm(1)=10.33, nat=2, ntyp=1, ecutwfc=38, nbnd=12
+/
+&electrons
+/
+ATOMIC_SPECIES
+  Si 28.085 Si.upf
+ATOMIC_POSITIONS crystal
+  Si 0.00 0.00 0.00
+  Si 0.25 0.25 0.25
+K_POINTS automatic
+  12 12 12 0 0 0
+HUBBARD (ortho-atomic)
+ U Si-3s 0.0
+ U Si-3p 3.0012
+ V Si-3p Si-3p 1 2 1.6621
+"""
+
+
+def test_nscf_input_keeps_hubbard_card_and_drops_symmetry_switches():
+    text = hubbard_nscf_input(_PW_HUBBARD, 'Si2', (2, 2, 2), 21, pseudo_dir='../../')
+    assert 'HUBBARD (ortho-atomic)' in text and ' V Si-3p Si-3p 1 2 1.6621' in text
+    assert 'U Si-3p 3.0012' in text
+    assert "calculation     = 'nscf'" in text.replace('calculation=', 'calculation     = ')
+    assert 'nosym' not in text and 'noinv' not in text
+    assert 'K_POINTS crystal' in text and text.count('\n  0.') >= 1
+    assert 'nbnd' in text and '21' in text
+    assert "pseudo_dir      = '../../'" in text
+
+
+def test_hubbard_nscf_input_requires_the_card():
+    plain = _PW_HUBBARD.split('HUBBARD')[0]
+    with pytest.raises(ValueError, match='HUBBARD'):
+        hubbard_nscf_input(plain, 'Si2', (2, 2, 2), 21)
+
+
+def test_optics_nscf_input_automatic_grid_and_bands():
+    text = optics_nscf_input(_PW_HUBBARD, 'Si2', (8, 8, 8), 60, pseudo_dir='../../')
+    lines = text.splitlines()
+    k = lines.index('K_POINTS automatic')
+    assert lines[k + 1].split() == ['8', '8', '8', '0', '0', '0']
+    assert 'HUBBARD (ortho-atomic)' in text  # other cards are kept
+    assert re.search(r'nbnd\s*=\s*60\b', text)
+    assert 'nosym' not in text
