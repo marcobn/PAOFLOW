@@ -65,6 +65,12 @@ basis (ph.x and epw.x cannot use U+V or ortho-atomic projectors): the gap, the
 masses and the carrier statistics are then the eACBN0 ones without a scissor,
 and --varshni without a target applies the Varshni shift relative to that gap.
 Not included: the Hubbard contribution to the coupling (dV_Hub/du).
+
+SCREENING_EPS (--screening-eps) corrects the DFT overscreening of the coupling
+as Ponce, Margine and Giustino, PRB 97, 121201(R) (2018): every matrix element
+is multiplied by eps_DFT(|q|)/eps(|q|), the ratio of two Resta model dielectric
+functions with the DFPT static dielectric constant (stored in the .epb files,
+or SCREENING_EPS_DFT) and the target one, e.g. the measured value (Si: 11.94).
 """
 
 import argparse
@@ -78,6 +84,7 @@ from PAOFLOW.elphon.carrier_scattering import (
     rta_transport,
     write_mobility_outputs,
 )
+from PAOFLOW.elphon.coupling_screening import screening_report
 from PAOFLOW.elphon.elph_bloch import atom_masses
 from PAOFLOW.elphon.pao_electrons import (
     check_same_pao_basis,
@@ -117,6 +124,9 @@ VARSHNI = None  # (alpha eV/K, beta K): E_g(T) = E0 - alpha T^2 / (T + beta), E0
 # energies and eigenvectors (no 0 K scissor); A, the .epb coupling, the k list and the symmetries
 # stay those of SAVEDIR, so the coupling in the orbital basis is the DFPT (PBE) one.
 ELECTRONS_SAVE = None  # None = the electrons of SAVEDIR
+# Coupling screening (Ponce et al. 2018): g -> g eps_DFT(|q|)/eps(|q|), Resta model dielectric functions.
+SCREENING_EPS = None  # target static dielectric constant, e.g. 11.94 (Si, measured); None = DFPT
+SCREENING_EPS_DFT = None  # dielectric constant of the DFPT coupling; None = the tensor in the .epb files
 
 
 def pao_electronic_structure(electrons_save=None):
@@ -176,6 +186,7 @@ def carrier_scattering(projections, HRs, nscf, args, scissor_ev=None, target_gap
         nelec=NELEC, nk_dense=args.nk, nq_dense=args.nq, temps_k=args.temps,
         doping_cm3=args.doping, window_ev=args.window_ev, smearing_ev=args.smearing_ev,
         scissor_ev=scissor_ev, target_gap_ev=target_gap_ev,
+        screening_eps=args.screening_eps, screening_eps_dft=args.screening_eps_dft,
         sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'], species=nscf['atom_names'],
         orbital_positions=nscf['orbital_positions'],
     )
@@ -195,6 +206,7 @@ def report(out, args):
               % (out['electrons_save'], out['coupling_save']))
     if out['scissor_mode'] == 'relative':
         print('  carrier statistics: Varshni shift relative to the Hamiltonian gap')
+    print(screening_report(out))
     serta, mrta = rta_transport(out, 'serta'), rta_transport(out, 'mrta')
     print('    T (K)  mu_F (eV)   n_e (cm^-3)   n_h (cm^-3)   mobility e / h (cm^2/Vs): '
           'SERTA             MRTA')
@@ -224,6 +236,10 @@ def main():
     parser.add_argument('--varshni', type=float, nargs=2, default=VARSHNI, metavar=('ALPHA', 'BETA'),
                         help='temperature-dependent gap E0 - alpha T^2/(T + beta): around the target, '
                              'or relative to the Hamiltonian gap without one (Si: 4.73e-4 636)')
+    parser.add_argument('--screening-eps', type=float, default=SCREENING_EPS,
+                        help='target dielectric constant of the Ponce screening correction of g (Si: 11.94)')
+    parser.add_argument('--screening-eps-dft', type=float, default=SCREENING_EPS_DFT,
+                        help='DFT dielectric constant of the coupling (default: the .epb tensor)')
     args = parser.parse_args()
     if args.nk % args.nq:
         sys.exit('--nk (%d) must be a multiple of --nq (%d).' % (args.nk, args.nq))

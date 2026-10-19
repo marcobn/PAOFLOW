@@ -74,6 +74,15 @@ from .phonon_assisted_absorption import (
     write_absorption_outputs,
     write_emissivity_outputs,
 )
+from .coupling_screening import (
+    CouplingScreening,
+    folded_q_norm,
+    resolve_coupling_screening,
+    resta_dielectric,
+    resta_screening_radius,
+    screening_report,
+    thomas_fermi_wavevector,
+)
 from .pao_electrons import (
     PAOElectrons,
     check_orbital_dimensions,
@@ -104,6 +113,13 @@ from .qe_matdyn import (
 __all__ = [
     'a2f_from_epw',
     'absorption_coefficient',
+    'CouplingScreening',
+    'folded_q_norm',
+    'resolve_coupling_screening',
+    'resta_dielectric',
+    'resta_screening_radius',
+    'screening_report',
+    'thomas_fermi_wavevector',
     'PAOElectrons',
     'check_orbital_dimensions',
     'check_same_pao_basis',

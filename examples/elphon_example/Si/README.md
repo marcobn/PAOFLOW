@@ -262,8 +262,14 @@ mpirun -np 8 python main.py --electrons-save acbn0/epw_nscf/Si2.save --emissivit
   --direct-scissor thermal --outdir output_thermal` recomputes the emissivity
   in seconds.
 - Not included: the Hubbard contribution to the coupling and to the velocity
-  commutator, and the change of screening. Compare the f-sum ratio printed by
-  the emissivity step with the PBE one (0.87–0.88) to size the latter.
+  commutator. Compare the f-sum ratio printed by the emissivity step with the
+  PBE one (0.87–0.88) to size the latter.
+- The DFPT coupling is overscreened (ε = 12.97 against 11.94 measured), with
+  either electrons. `--screening-eps 11.94` applies the correction of Poncé,
+  Margine and Giustino (2018): g is multiplied by ε_DFT(|q|)/ε(|q|) of Resta's
+  model. It raises the phonon-assisted ε₂ by 3–5 % and α below the direct edge
+  by 4 %. Give it the measured constant, not the eACBN0 ε₁(0) of
+  `optics_eps.py`, which is an independent-particle value on another footing.
 - `absorption.npz` records `electrons_save`, `electrons_dft` and the Hubbard
   parameters (`electrons_hubbard`).
 
@@ -316,6 +322,22 @@ What matters, in order:
   results by less than 10%. Nor the relaxation-time approximation: MRTA ≈
   SERTA within 3%, and the paper's IBTE differs from SERTA by +6% for electrons
   and −1% for holes.
+
+**Screening correction (Poncé 2018).** `screening_eps=11.94` (`--screening-eps`)
+rescales g by ε_DFT(|q|)/ε(|q|) of Resta's model, with ε_DFT = 12.97 from the
+`.epb` files (`elphon/coupling_screening.py`). On the 6³-q coupling with H(R)
+from the EPW 12³ nscf (48³ k = q, σ = 10 meV, 300 K, MRTA):
+
+| | μ_e | μ_h |
+|---|---|---|
+| DFPT screening | 1292 | 432 |
+| ε → 11.94 | 1164 | 371 |
+| change | −9.9 % | −14.2 % |
+| Poncé *et al.* 2018 | −8.8 % | −12.4 % |
+
+SERTA changes by the same amounts. The correction belongs on top of a
+converged PBE baseline, as in the paper; it moves the holes further below the
+PBE reference.
 
 With all corrections, the electrons are within the remaining grid convergence
 of the reference. The holes are about 40% low, and that is still open.

@@ -28,6 +28,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.special import expit
 
+from .coupling_screening import resolve_coupling_screening, screening_report
 from .do_pao_eph_dense_q import (
     _crystal_point_group,
     _phonon_modes_at_q,
@@ -933,6 +934,8 @@ def phonon_assisted_absorption_dense_q(
     scissor_ev: float | Callable[[float], float] | None = None,
     target_gap_ev: float | Callable[[float], float] | None = None,
     scissor_velocity: str = 'renormalized',
+    screening_eps: float | None = None,
+    screening_eps_dft: float | None = None,
     spin_degeneracy: float = 2.0,
     sym_rots: NDArray[np.int_] | None = None,
     tau_cryst: NDArray[np.float64] | None = None,
@@ -1029,6 +1032,15 @@ def phonon_assisted_absorption_dense_q(
         Velocities of the scissor-corrected Hamiltonian
         (:func:`scissor_velocities`): Levine-Allan renormalized (default) or the
         Kohn-Sham ones (EPW's ``scissor``).
+    screening_eps : float, optional
+        Static dielectric constant that should screen the coupling (e.g. the
+        measured one, 11.94 for Si).  When given, every matrix element is
+        rescaled by :math:`\\epsilon^{DFT}(|q|)/\\epsilon^{target}(|q|)` (Poncé
+        *et al.* 2018, Resta model; :mod:`~PAOFLOW.elphon.coupling_screening`).
+        ``None`` (default) keeps the DFPT screening.
+    screening_eps_dft : float, optional
+        Dielectric constant of the DFPT run that screened the coupling; ``None``
+        takes the isotropic average of the tensor in the ``.epb`` files.
     spin_degeneracy : float, optional
         2 without spin-orbit coupling, 1 with it.
     sym_rots, tau_cryst, species : optional
@@ -1062,7 +1074,10 @@ def phonon_assisted_absorption_dense_q(
         ``fermi_levels_ev`` ``(ntemp,)``, ``scissor_ev``, ``indirect_gap_ev_t``,
         ``direct_gap_ev_t`` ``(ntemp,)`` (scissor-corrected; the scalar
         ``indirect_gap_ev``/``direct_gap_ev`` are those of the first temperature
-        and ``*_gap_dft_ev`` the uncorrected ones), ``scissor_velocity``; with
+        and ``*_gap_dft_ev`` the uncorrected ones), ``scissor_velocity``,
+        ``coupling_screening`` (``'none'`` or ``'ponce-resta'``, then also the
+        ``screening_*`` constants and factors of
+        :meth:`~PAOFLOW.elphon.coupling_screening.CouplingScreening.summary`); with
         ``kk_omega_max_ev`` also
         ``omega_kk_ev`` and ``eps2_direct_wide`` ``(ntemp, 3, nomega_kk)``.
 
@@ -1070,7 +1085,8 @@ def phonon_assisted_absorption_dense_q(
     ------
     ValueError
         If the grids are incommensurate or no gap is found for the mid-gap
-        Fermi level.
+        Fermi level, or ``screening_eps`` is given for couplings without a
+        dielectric tensor and no ``screening_eps_dft``.
 
     Notes
     -----
@@ -1088,6 +1104,12 @@ def phonon_assisted_absorption_dense_q(
     unchanged, but not the individual components (each star is represented by a
     single orientation of q), so with ``sym_rots`` the indirect components are
     replaced by their average.
+
+    With ``screening_eps`` the coupling at each dense q is multiplied by
+    :math:`\\epsilon^{DFT}(|\\mathbf q|)/\\epsilon^{target}(|\\mathbf q|)`, with
+    :math:`|\\mathbf q|` the shortest image of q.  The factor depends on
+    :math:`|\\mathbf q|` only, so the irreducible-q reduction stays exact.  For Si
+    (12.97 -> 11.94) :math:`|g|^2` grows by 18 % at :math:`\\Gamma` and 2 % at X.
     """
     from mpi4py import MPI
 
@@ -1101,6 +1123,8 @@ def phonon_assisted_absorption_dense_q(
     masses_amu = np.asarray(masses_amu, dtype=float)
     mass_flat_ry = np.repeat(masses_amu, 3) * AMU_RY
     check_orbital_dimensions(A, HRs, orbital_positions)
+    if screening_eps is None and screening_eps_dft is not None:
+        raise ValueError('screening_eps_dft needs screening_eps (the target dielectric constant).')
 
     vertex = prepare_dense_vertex(
         A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, None,
@@ -1110,6 +1134,14 @@ def phonon_assisted_absorption_dense_q(
     )  # fmt: skip
     g_ReRp, phonon_at_q = vertex['g_ReRp'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']
+    screening = resolve_coupling_screening(
+        screening_eps, screening_eps_dft, vertex['epsi'], nelec, cell_volume
+    )
+    screening_info = {'coupling_screening': 'none'}
+    if screening is not None:
+        screening_info = screening.summary(bg, alat)
+        if rank == 0:
+            print(screening_report(screening_info), flush=True)
 
     degauss = degauss_ev / RY_TO_EV
     electrons = precompute_dense_electrons(
@@ -1231,6 +1263,8 @@ def phonon_assisted_absorption_dense_q(
             q_cryst = qmesh[iq]
             freq_thz, z = _phonon_modes_at_q(q_cryst, phonon_at_q)
             zmass = z / np.sqrt(mass_flat_ry)[None, :]
+            if screening is not None:  # g is linear in zmass
+                zmass = zmass * screening.factor(q_cryst, bg, alat)
             omega_ry = freq_thz / RY_TO_THZ  # imaginary modes are negative -> skipped
             gn_flat = vertex_ws_coefficients(
                 g_Re_at_q(g_ReRp, q_cryst, Nint_p, W_p, Midx_p), electrons
@@ -1323,6 +1357,7 @@ def phonon_assisted_absorption_dense_q(
         'scissor_ev': scissor_t * RY_TO_EV,
         'scissor_0k_ev': scissor_0k_ev,
         'scissor_velocity': scissor_velocity,
+        **screening_info,
         'etas_ev': np.asarray(etas_ev, dtype=float),
         'temps_k': temps_k,
         'nk_dense': nk_dense,

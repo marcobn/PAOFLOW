@@ -184,7 +184,7 @@ def _gapped_HRs(ng=2, onsite=(-3.0, -2.5, 3.0, 3.5), hopping=0.2):
     return HRs
 
 
-def _synthetic_epw(path, ng, nat=1, seed=5):
+def _synthetic_epw(path, ng, nat=1, seed=5, epsi=None):
     from .synthetic_epw import write_epw_dir
 
     rng = np.random.default_rng(seed)
@@ -200,7 +200,7 @@ def _synthetic_epw(path, ng, nat=1, seed=5):
         axis=-1,
     ).astype(complex)
     et = rng.standard_normal((NAWF, nk))
-    write_epw_dir(path, 'tb', q_cryst, np.eye(3), et, dynq, epmatq, NAWF, nk, nat)
+    write_epw_dir(path, 'tb', q_cryst, np.eye(3), et, dynq, epmatq, NAWF, nk, nat, epsi=epsi)
     return q_cryst
 
 

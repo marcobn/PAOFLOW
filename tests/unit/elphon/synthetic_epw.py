@@ -42,11 +42,18 @@ def write_ukk(path, nk, nbnd, nbndskip, lwin=None):
     path.write_text('\n'.join(lines) + '\n')
 
 
-def write_epw_dir(path, prefix, q_cryst, bg, et, dynq, epmatq, nbnd, nk, nat, nbndskip=0):
-    """One-pool EPW directory (``prefix.epb1`` + ``prefix.ukk``) for ``load_epw_coupling``."""
+def write_epw_dir(
+    path, prefix, q_cryst, bg, et, dynq, epmatq, nbnd, nk, nat, nbndskip=0, epsi=None
+):
+    """One-pool EPW directory (``prefix.epb1`` + ``prefix.ukk``) for ``load_epw_coupling``.
+
+    ``epsi`` is the dielectric tensor stored with the coupling (zero, as for ph.x
+    without ``epsil``, by default).
+    """
     nq = len(q_cryst)
     xqc = np.asarray(q_cryst, float) @ np.asarray(bg, float)
-    payload = epb_payload(nq, xqc, et, dynq, epmatq, np.zeros((3, 3, nat)), np.zeros((3, 3)))
+    epsi = np.zeros((3, 3)) if epsi is None else np.asarray(epsi, float)
+    payload = epb_payload(nq, xqc, et, dynq, epmatq, np.zeros((3, 3, nat)), epsi)
     write_record(path / ('%s.epb1' % prefix), payload)
     write_ukk(path / ('%s.ukk' % prefix), nk, nbnd, nbndskip)
     return path

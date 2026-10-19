@@ -30,6 +30,8 @@ ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 - [Isotropic Migdal–Eliashberg: gap, Padé, analytic continuation, linearised $T_c$](#isotropic-migdaleliashberg-gap-padé-analytic-continuation-linearised-t_c)
 - [Anisotropic Migdal–Eliashberg (Fermi-surface restricted)](#anisotropic-migdaleliashberg-fermi-surface-restricted)
 - [Phonon-assisted optical absorption](#phonon-assisted-optical-absorption)
+- [Carrier transport in semiconductors and insulators (SERTA / MRTA)](#carrier-transport-in-semiconductors-and-insulators-serta--mrta)
+- [Screening correction of the coupling (Poncé 2018)](#screening-correction-of-the-coupling-poncé-2018)
 - [Parallelisation and memory](#parallelisation-and-memory)
 - [Grid consistency rules](#grid-consistency-rules)
 - [The `paoflow-gen elphon` CLI workflow](#the-paoflow-gen-elphon-cli-workflow)
@@ -163,6 +165,7 @@ Paths relative to `src/PAOFLOW/`.
 | `elphon/migdal_eliashberg.py` | Isotropic Migdal–Eliashberg solver on $\alpha^2F$: `solve_imag_iso`, `pade_continuation`, `analytic_continuation_iso`, `gap_edge`, `quasiparticle_dos`, `linearized_max_eigenvalue`; drivers `migdal_eliashberg_iso` / `linearized_eigenvalues`; I/O `a2f_from_npz`, `a2f_from_epw`, `write_me_outputs`. |
 | `elphon/fermi_surface_coupling.py` | `FermiSurfacePairCoupling`: irreducible Fermi-surface states and the folded pair coupling $\Lambda_{ab}(\omega)$, filled during the dense-q loop; `write_fs_coupling` / `read_fs_coupling`. |
 | `elphon/anisotropic_eliashberg.py` | Anisotropic (FSR) Migdal–Eliashberg solver: `coupling_strength`, `matsubara_kernel`, `solve_imag_aniso`, `linearized_max_eigenvalue_aniso`, `pade_continuation_aniso`, `gap_distribution`; drivers `migdal_eliashberg_aniso` / `linearized_eigenvalues_aniso`; `write_me_aniso_outputs`. |
+| `elphon/coupling_screening.py` | Poncé–Resta screening correction of the coupling: `resta_dielectric`, `thomas_fermi_wavevector`, `folded_q_norm`, `CouplingScreening`, `resolve_coupling_screening` (see [Screening correction](#screening-correction-of-the-coupling-poncé-2018)). |
 | `elphon/qe_matdyn.py` | WS interpolation of QE force-constant files, used by the property-only route. |
 | `gen/epw_inputs.py` | EPW input helpers: `kpoints_card` / `uniform_kpoint_list` (explicit full nscf grid), `write_placeholder_ukk` (EPW without Wannierization), `epw_input`. |
 | `inputs/read_QE_xml.py` | `uniform_grid_from_kpoints`: recovers the grid of an explicit `K_POINTS crystal` nscf list, which has no `monkhorst_pack` element. |
@@ -785,7 +788,8 @@ of the same crystal can replace the PBE one altogether
   Δ(0) = 0: no scissor at 0 K. The PAO analogue of `eig_read`, with eigenvectors.
 - **What is not.** The Hubbard contribution to the coupling ($dV_{\rm Hub}/du$
   and the response of the occupations; `ph.x` computes it only for DFPT+U with
-  atomic projectors), the change of the screening of `dvscf`, and the Hubbard
+  atomic projectors), the change of the screening of `dvscf` (beyond the
+  [Poncé rescaling](#screening-correction-of-the-coupling-poncé-2018)), and the Hubbard
   term $i[V_U, \mathbf r]$ of the velocity (the intersite V lives in $H(R \ne 0)$
   and is captured by $\partial H/\partial k$; the on-site U lacks the
   intra-atomic dipoles). The projector onto the PBE nscf bands truncates
@@ -835,10 +839,12 @@ of the same crystal can replace the PBE one altogether
   workflow shows them.
 - **Later stages (not implemented).** The Hubbard velocity commutator (the
   on-site intra-atomic dipoles with the two-centre tables of
-  `nonlocal_velocity.py`); a Poncé-style rescaling of the long-wavelength
-  coupling by $\varepsilon_{\rm PBE}(q)/\varepsilon_{\rm eACBN0}(q)$; the Hubbard
-  contribution to $g$ by finite differences of the eACBN0 PAO Hamiltonian on
-  displaced supercells.
+  `nonlocal_velocity.py`); the Hubbard contribution to $g$ by finite
+  differences of the eACBN0 PAO Hamiltonian on displaced supercells. The
+  screening of the coupling can be corrected with the
+  [Poncé rescaling](#screening-correction-of-the-coupling-poncé-2018); its
+  target should be the measured dielectric constant, not the eACBN0 one (see
+  there).
 
 For Si with the Varshni experimental gap (500 µm, 24³/12³, extended-basis ε),
 the slab becomes opaque at 700–900 K: ε = 0.003, 0.25 and 0.61 at 500, 700 and
@@ -1010,6 +1016,67 @@ band edge.
 - **Adaptive smearing.**
 
 ---
+
+## Screening correction of the coupling (Poncé 2018)
+
+DFT underestimates the gap of a semiconductor, so DFPT overscreens the phonon
+perturbation: `dvscf`, and with it $g$, is too weak at long wavelength.
+Recomputing the phonons with a better screening is prohibitive. Poncé, Margine
+and Giustino (PRB 97, 121201(R) (2018)) rescale the matrix elements instead:
+
+$$
+g'_{mn\nu}(\mathbf k,\mathbf q) = g_{mn\nu}(\mathbf k,\mathbf q)\,
+\frac{\epsilon^{\rm DFT}(|\mathbf q|)}{\epsilon^{\rm target}(|\mathbf q|)} .
+$$
+
+Both dielectric functions are Resta's Thomas–Fermi model (PRB 16, 2717 (1977)),
+whose only input is the static dielectric constant $\epsilon(0)$:
+
+$$
+\epsilon(q) = \frac{q_{TF}^2 + q^2}{q_{TF}^2\,\sin(qR)/(\epsilon(0)\,qR) + q^2},
+\qquad \frac{\sinh(q_{TF}R)}{q_{TF}R} = \epsilon(0),
+$$
+
+with $q_{TF} = (4k_F/\pi)^{1/2}$ the Thomas–Fermi wave vector of the valence
+electrons. The paper neglects local-field effects (a few per cent).
+
+- **Usage.** `screening_eps=` in `phonon_assisted_absorption_dense_q` and
+  `carrier_scattering_dense_q`; `SCREENING_EPS` / `--screening-eps` in the
+  absorption and mobility drivers, and a paoflow-gen prompt. The DFT constant
+  defaults to the isotropic average of the dielectric tensor in the `.epb`
+  files, which ph.x computes at Γ for insulators. `screening_eps_dft=` sets it
+  when the coupling has none, otherwise the run stops.
+- **Implementation** (`elphon/coupling_screening.py`). $|\mathbf q|$ is the
+  shortest image $|\mathbf q + \mathbf G|$. The factor multiplies the
+  mass-scaled phonon eigenvectors at each dense q, so it costs nothing. It
+  depends on $|\mathbf q|$ only, so the irreducible-q reduction stays exact.
+  The outputs record `coupling_screening` (`'none'` or `'ponce-resta'`) and the
+  `screening_*` constants and factors.
+- **Size for Si** (DFPT 12.97, measured 11.94, $q_{TF}$ = 1.100 bohr⁻¹, a =
+  10.332 bohr). The factor on $|g|^2$:
+
+  | q | Γ | L | X | Brillouin-zone average |
+  |---|---|---|---|---|
+  | $|g'|^2/|g|^2$ | 1.180 | 1.031 | 1.019 | 1.051 |
+
+  Small-q (intravalley) scattering is enhanced most. Large-q intervalley
+  phonons and the phonon-assisted absorption, which goes through phonons near
+  X, change by a few per cent.
+- **Effect on the Si absorption** (PBE coupling 12³/6³, dense 12³ k / 6³ q,
+  scissor to 1.17 eV, 78 and 296 K). The phonon-assisted ε₂ grows by 3 % at
+  the indirect edge and by 4–5 % at 2–3 eV; α below the direct edge by 3.9 %
+  (+0.017 dex). The direct term is unchanged. This is a small part of the
+  ×0.6–0.8 α deficit of the Si study.
+- **Effect on the Si mobility** (6³-q coupling, H(R) from the EPW 12³ nscf,
+  48³ k = q, σ = 10 meV, 300 K, MRTA). μ_e goes from 1292 to 1164 cm²/Vs
+  (−9.9 %) and μ_h from 432 to 371 (−14.2 %). Poncé *et al.* find −8.8 % and
+  −12.4 %. SERTA changes by the same amounts.
+- **Which target.** The measured static dielectric constant (Si 11.94, as in
+  the paper). It is a macroscopic constant with local fields, like the DFPT
+  value. PAOFLOW's `dielectric_tensor` ε₁(0) is an independent-particle value
+  on another footing: 17.0 for PBE Si against 12.97 from DFPT. It should not be
+  the target, nor should the eACBN0 one (12.3); scaled by the PBE ratio that
+  would give 9.4, far below experiment.
 
 ## Parallelisation and memory
 
@@ -1379,6 +1446,7 @@ out = carrier_scattering_dense_q(
     masses_amu=atom_masses([28.085], info['species'], info['atom_names']), nelec=8,
     nk_dense=48, nq_dense=48, temps_k=[200.0, 300.0, 400.0], doping_cm3=0.0,
     window_ev=0.3, smearing_ev=0.01,
+    screening_eps=11.94,  # optional: Poncé screening correction, measured eps of Si
     sym_rots=info['s_cryst'], tau_cryst=info['tau_cryst'], species=info['atom_names'],
     orbital_positions=pao_orbital_positions(pf.data_controller, info['at']),
 )

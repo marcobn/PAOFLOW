@@ -706,6 +706,12 @@ def test_build_elphon_absorption_script_compiles_and_wires() -> None:
     assert 'eliashberg' not in text
     off = d.build_elphon_script(_absorption_cfg(nonlocal_velocity=False))
     assert 'NONLOCAL_VELOCITY = False' in off
+    assert 'SCREENING_EPS = None' in text and 'SCREENING_EPS_DFT = None' in text
+    assert 'screening_eps=args.screening_eps, screening_eps_dft=args.screening_eps_dft' in text
+    assert "'--screening-eps'" in text and 'print(screening_report(out))' in text
+    screened = d.build_elphon_script(_absorption_cfg(screening_eps=11.94))
+    compile(screened, 'main.elphon.py', 'exec')
+    assert 'SCREENING_EPS = 11.94' in screened
 
 
 def test_build_elphon_absorption_plot_script() -> None:
@@ -721,6 +727,7 @@ def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
     answers = iter(
         [
             '6',
+            '',
             '',
             '',
             '',
@@ -750,16 +757,17 @@ def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
     assert cfg['emissivity'] is False
     assert cfg['target_gap_ev'] is None and cfg['varshni'] is None
     assert cfg['electrons_save'] is None and cfg['gap_reference_save'] is None
+    assert cfg['screening_eps'] is None
 
 
 def test_collect_elphon_absorption_electrons_save_skips_reference_gap(monkeypatch) -> None:
     # an eACBN0 electrons save: no reference-gap prompt; Varshni relative to its gap
-    answers = iter(['6', '', 'acbn0/Si2.save', '', '4.73e-4 636', 'n'] + [''] * 10)
+    answers = iter(['6', '', 'acbn0/Si2.save', '', '4.73e-4 636', '11.94', 'n'] + [''] * 10)
     monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
     cfg = d._collect_elphon_absorption({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
     assert cfg['electrons_save'] == 'acbn0/Si2.save'
     assert cfg['target_gap_ev'] is None and cfg['gap_reference_save'] is None
-    assert cfg['varshni'] == [4.73e-4, 636.0]
+    assert cfg['varshni'] == [4.73e-4, 636.0] and cfg['screening_eps'] == 11.94
     assert cfg['emissivity'] is False and cfg['omega_ev'] == [0.05, 3.0, 0.05]
 
 
@@ -773,6 +781,7 @@ def test_collect_elphon_absorption_emissivity_defaults(monkeypatch) -> None:
             '1.17',
             'acbn0/si.save',
             '4.73e-4, 636',
+            '',
             'y',
             '250',
             '0, 45',
@@ -879,6 +888,11 @@ def test_build_elphon_mobility_script_compiles_and_wires() -> None:
     electrons = d.build_elphon_script(_mobility_cfg(electrons_save='acbn0/epw_nscf/Si2.save'))
     compile(electrons, 'main.elphon.py', 'exec')
     assert "ELECTRONS_SAVE = 'acbn0/epw_nscf/Si2.save'" in electrons
+    assert 'SCREENING_EPS = None' in text and "'--screening-eps'" in text
+    assert 'screening_eps=args.screening_eps, screening_eps_dft=args.screening_eps_dft' in text
+    screened = d.build_elphon_script(_mobility_cfg(screening_eps=11.94))
+    compile(screened, 'main.elphon.py', 'exec')
+    assert 'SCREENING_EPS = 11.94' in screened
 
 
 def test_build_elphon_mobility_plot_script() -> None:
@@ -889,7 +903,9 @@ def test_build_elphon_mobility_plot_script() -> None:
 
 
 def test_collect_elphon_mobility_prompts(monkeypatch) -> None:
-    answers = iter(['40', '', '250, 300', '-1e16', '0.25', '0.02', '', '1.17', '4.73e-4 636', ''])
+    answers = iter(
+        ['40', '', '250, 300', '-1e16', '0.25', '0.02', '', '1.17', '4.73e-4 636', '11.94', '']
+    )
     monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
     cfg = d._collect_elphon_mobility({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
     assert cfg['electrons_save'] is None
@@ -899,10 +915,13 @@ def test_collect_elphon_mobility_prompts(monkeypatch) -> None:
     assert (cfg['window_ev'], cfg['smearing_ev']) == (0.25, 0.02)
     assert cfg['target_gap_ev'] == 1.17 and cfg['varshni'] == [4.73e-4, 636.0]
     assert 'nonlocal_velocity' not in cfg and cfg['pthr'] == 0.95
+    assert cfg['screening_eps'] == 11.94
 
 
 def test_collect_elphon_mobility_electrons_save_asks_varshni(monkeypatch) -> None:
-    answers = iter(['40', '', '300', '0', '0.3', '0.01', 'acbn0/Si2.save', '', '4.73e-4 636', ''])
+    answers = iter(
+        ['40', '', '300', '0', '0.3', '0.01', 'acbn0/Si2.save', '', '4.73e-4 636', '', '']
+    )
     monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
     cfg = d._collect_elphon_mobility({'nbnd': 21, 'masses_amu': [28.085], 'nelec': 8}, kg=6)
     assert cfg['electrons_save'] == 'acbn0/Si2.save' and cfg['target_gap_ev'] is None

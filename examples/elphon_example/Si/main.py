@@ -60,13 +60,20 @@ orbital basis stays that of the DFPT/EPW run: ph.x and epw.x cannot use U+V or
 ortho-atomic projectors, so the mixing happens in PAOFLOW.  --varshni without a
 target then applies the Varshni shift relative to the Hamiltonian's own gap.
 Not included: the Hubbard contribution to the coupling (dV_Hub/du), the
-Hubbard term of the velocity commutator and the change of screening.  The
+Hubbard term of the velocity commutator and the change of screening (beyond
+the SCREENING_EPS rescaling below).  The
 direct dielectric function (DIRECT_DIELECTRIC_DIR) must then come from a
 dielectric_tensor run on the matching eACBN0 save (a warning compares its
 onset with the Hamiltonian's direct gap).  If its direct gap is already right
 and a scissor (--target-gap-ev) only corrects the indirect gap, use
 --direct-scissor thermal: the external spectrum then gets only the
 temperature-dependent part of the scissor.
+
+SCREENING_EPS (--screening-eps) corrects the DFT overscreening of the coupling
+as Ponce, Margine and Giustino, PRB 97, 121201(R) (2018): every matrix element
+is multiplied by eps_DFT(|q|)/eps(|q|), the ratio of two Resta model dielectric
+functions with the DFPT static dielectric constant (stored in the .epb files,
+or SCREENING_EPS_DFT) and the target one, e.g. the measured value (Si: 11.94).
 
 With EMISSIVITY (or --emissivity) the run also gives the thermal emissivity of
 a free-standing slab of THICKNESS_UM at every temperature (Kirchhoff's law:
@@ -95,6 +102,7 @@ import sys
 import numpy as np
 from mpi4py import MPI
 
+from PAOFLOW.elphon.coupling_screening import screening_report
 from PAOFLOW.elphon.elph_bloch import atom_masses
 from PAOFLOW.elphon.pao_electrons import (
     check_same_pao_basis,
@@ -149,6 +157,9 @@ GAP_REFERENCE_SAVE = None  # QE save of an eACBN0 (DFT+U+V) run: target = its PA
 ELECTRONS_SAVE = None  # None = the electrons of SAVEDIR
 VARSHNI = None  # (alpha eV/K, beta K): E_g(T) = E0 - alpha T^2 / (T + beta), E0 = target
 SCISSOR_VELOCITY = 'renormalized'  # Levine-Allan velocities; 'ks' = EPW's scissor
+# Coupling screening (Ponce et al. 2018): g -> g eps_DFT(|q|)/eps(|q|), Resta model dielectric functions.
+SCREENING_EPS = None  # target static dielectric constant, e.g. 11.94 (Si, measured); None = DFPT
+SCREENING_EPS_DFT = None  # dielectric constant of the DFPT coupling; None = the tensor in the .epb files
 EMISSIVITY = False  # also the thermal emissivity of a slab (--emissivity)
 THICKNESS_UM = 500.0  # slab thickness (um); float('inf') = opaque half-space
 EMIS_ANGLES = (0.0, 30.0, 60.0)  # emission angles (deg) of the directional spectra
@@ -255,6 +266,7 @@ def optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev
         refractive_index=refractive_index,
         scissor_ev=scissor_ev, target_gap_ev=target_gap_ev,
         scissor_velocity=args.scissor_velocity,
+        screening_eps=args.screening_eps, screening_eps_dft=args.screening_eps_dft,
         nonlocal_velocity=data_controller if args.nonlocal_velocity else None,
         sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'], species=nscf['atom_names'],
         orbital_positions=nscf['orbital_positions'],
@@ -273,6 +285,7 @@ def report(out, args, direct=None):
     if out['electrons_save']:
         print('  band energies and eigenvectors from %s; coupling from %s'
               % (out['electrons_save'], out['coupling_save']))
+    print(screening_report(out))
     if abs(out['scissor_ev']).max() > 0.0:
         relative = out['scissor_mode'] == 'relative'
         print('  scissor (%s velocities%s):' % (out['scissor_velocity'],
@@ -338,6 +351,10 @@ def main():
                              'or none (default %(default)s)')
     parser.add_argument('--direct-dielectric', default=DIRECT_DIELECTRIC_DIR,
                         help='output dir of an extended-basis dielectric_tensor run (epsr/epsi_*.dat)')
+    parser.add_argument('--screening-eps', type=float, default=SCREENING_EPS,
+                        help='target dielectric constant of the Ponce screening correction of g (Si: 11.94)')
+    parser.add_argument('--screening-eps-dft', type=float, default=SCREENING_EPS_DFT,
+                        help='DFT dielectric constant of the coupling (default: the .epb tensor)')
     args = parser.parse_args()
     if args.nk % args.nq:
         sys.exit('--nk (%d) must be a multiple of --nq (%d).' % (args.nk, args.nq))

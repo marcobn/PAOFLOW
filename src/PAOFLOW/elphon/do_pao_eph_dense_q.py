@@ -891,8 +891,9 @@ def prepare_dense_vertex(
     dict
         ``g_ReRp`` ``(nawf, nawf, ncart, n1e, n2e, n3e, nq1, nq2, nq3)`` (one copy per
         node in MPI shared memory), ``window`` (the ``MPI.Win`` to ``Free`` once
-        all reads are done), ``phonon_ws`` ``(Nint_p, W_p, Midx_p)`` and
-        ``phonon_at_q``.
+        all reads are done), ``phonon_ws`` ``(Nint_p, W_p, Midx_p)``,
+        ``phonon_at_q``, and the ``epsi`` ``(3, 3)`` and ``zstar`` ``(nat, 3, 3)``
+        stored with EPW couplings (``None`` for the other sources).
     """
     masses_amu = np.asarray(masses_amu, dtype=float)
     qgrid_coarse = tuple(int(n) for n in qgrid_coarse)
@@ -910,6 +911,7 @@ def prepare_dense_vertex(
     node_rank = node_comm.Get_rank()
 
     epw = None
+    small = {'epsi': None, 'zstar': None}
     if source == 'epw':
         # EPW provides the full coarse q-grid (unfolded from the irreducible ph.x
         # q) and its force constants; both default from the .epb files.  Only
@@ -993,6 +995,8 @@ def prepare_dense_vertex(
         'window': win,
         'phonon_ws': (Nint_p, W_p, Midx_p),
         'phonon_at_q': phonon_at_q,
+        'epsi': small['epsi'],
+        'zstar': small['zstar'],
     }
 
 

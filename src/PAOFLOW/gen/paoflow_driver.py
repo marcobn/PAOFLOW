@@ -2156,13 +2156,20 @@ orbital basis stays that of the DFPT/EPW run: ph.x and epw.x cannot use U+V or
 ortho-atomic projectors, so the mixing happens in PAOFLOW.  --varshni without a
 target then applies the Varshni shift relative to the Hamiltonian's own gap.
 Not included: the Hubbard contribution to the coupling (dV_Hub/du), the
-Hubbard term of the velocity commutator and the change of screening.  The
-direct dielectric function (DIRECT_DIELECTRIC_DIR) must then come from a
+Hubbard term of the velocity commutator and the change of screening (beyond
+the SCREENING_EPS rescaling below).  The direct dielectric function (DIRECT_DIELECTRIC_DIR) must then come from a
 dielectric_tensor run on the matching eACBN0 save (a warning compares its
 onset with the Hamiltonian's direct gap).  If its direct gap is already right
 and a scissor (--target-gap-ev) only corrects the indirect gap, use
 --direct-scissor thermal: the external spectrum then gets only the
 temperature-dependent part of the scissor.
+
+SCREENING_EPS (--screening-eps) corrects the DFT overscreening of the coupling
+as Ponce, Margine and Giustino, PRB 97, 121201(R) (2018): every matrix element
+is multiplied by eps_DFT(|q|)/eps(|q|), the ratio of two Resta model dielectric
+functions with the DFPT static dielectric constant (stored in the .epb files,
+or SCREENING_EPS_DFT) and the target one, e.g. the measured value (Si: 11.94).
+For Si, |g|^2 grows by 18 % at Gamma and by about 2 % at the zone boundary.
 
 With EMISSIVITY (or --emissivity) the run also gives the thermal emissivity of
 a free-standing slab of THICKNESS_UM at every temperature (Kirchhoff's law:
@@ -2191,6 +2198,7 @@ import sys
 import numpy as np
 from mpi4py import MPI
 
+from PAOFLOW.elphon.coupling_screening import screening_report
 from PAOFLOW.elphon.elph_bloch import atom_masses
 from PAOFLOW.elphon.pao_electrons import (
     check_same_pao_basis,
@@ -2245,6 +2253,9 @@ GAP_REFERENCE_SAVE = __GAP_REFERENCE_SAVE__  # QE save of an eACBN0 (DFT+U+V) ru
 ELECTRONS_SAVE = __ELECTRONS_SAVE__  # None = the electrons of SAVEDIR
 VARSHNI = __VARSHNI__  # (alpha eV/K, beta K): E_g(T) = E0 - alpha T^2 / (T + beta), E0 = target
 SCISSOR_VELOCITY = 'renormalized'  # Levine-Allan velocities; 'ks' = EPW's scissor
+# Coupling screening (Ponce et al. 2018): g -> g eps_DFT(|q|)/eps(|q|), Resta model dielectric functions.
+SCREENING_EPS = __SCREENING_EPS__  # target static dielectric constant, e.g. 11.94 (Si, measured); None = DFPT
+SCREENING_EPS_DFT = None  # dielectric constant of the DFPT coupling; None = the tensor in the .epb files
 EMISSIVITY = __EMISSIVITY__  # also the thermal emissivity of a slab (--emissivity)
 THICKNESS_UM = __THICKNESS_UM__  # slab thickness (um); float('inf') = opaque half-space
 EMIS_ANGLES = __EMIS_ANGLES__  # emission angles (deg) of the directional spectra
@@ -2351,6 +2362,7 @@ def optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev
         refractive_index=refractive_index,
         scissor_ev=scissor_ev, target_gap_ev=target_gap_ev,
         scissor_velocity=args.scissor_velocity,
+        screening_eps=args.screening_eps, screening_eps_dft=args.screening_eps_dft,
         nonlocal_velocity=data_controller if args.nonlocal_velocity else None,
         sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'], species=nscf['atom_names'],
         orbital_positions=nscf['orbital_positions'],
@@ -2369,6 +2381,7 @@ def report(out, args, direct=None):
     if out['electrons_save']:
         print('  band energies and eigenvectors from %s; coupling from %s'
               % (out['electrons_save'], out['coupling_save']))
+    print(screening_report(out))
     if abs(out['scissor_ev']).max() > 0.0:
         relative = out['scissor_mode'] == 'relative'
         print('  scissor (%s velocities%s):' % (out['scissor_velocity'],
@@ -2434,6 +2447,10 @@ def main():
                              'or none (default %(default)s)')
     parser.add_argument('--direct-dielectric', default=DIRECT_DIELECTRIC_DIR,
                         help='output dir of an extended-basis dielectric_tensor run (epsr/epsi_*.dat)')
+    parser.add_argument('--screening-eps', type=float, default=SCREENING_EPS,
+                        help='target dielectric constant of the Ponce screening correction of g (Si: 11.94)')
+    parser.add_argument('--screening-eps-dft', type=float, default=SCREENING_EPS_DFT,
+                        help='DFT dielectric constant of the coupling (default: the .epb tensor)')
     args = parser.parse_args()
     if args.nk % args.nq:
         sys.exit('--nk (%d) must be a multiple of --nq (%d).' % (args.nk, args.nq))
@@ -2469,8 +2486,8 @@ def build_elphon_absorption_script(cfg: dict[str, Any]) -> str:
         ``elphon_property = 'absorption'`` (keys ``omega_ev``, ``temps_k``,
         ``degauss_ev``, ``fsthick_ev``, ``refractive_index``,
         ``nonlocal_velocity``, ``emissivity``, ``thickness_um``, ``emis_angles``,
-        ``direct_dielectric_dir``, the scissor keys and ``electrons_save``
-        besides the common EPW ones).
+        ``direct_dielectric_dir``, the scissor keys, ``electrons_save`` and
+        ``screening_eps`` besides the common EPW ones).
 
     Returns
     -------
@@ -2510,6 +2527,9 @@ def build_elphon_absorption_script(cfg: dict[str, Any]) -> str:
         '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
         '__PROJECTOR__': repr('projwfc' if _uses_projwfc(cfg) else 'internal'),
         '__ELECTRONS_SAVE__': repr(cfg.get('electrons_save') or None),
+        '__SCREENING_EPS__': repr(
+            float(cfg['screening_eps']) if cfg.get('screening_eps') is not None else None
+        ),
     }
     content = ELPHON_EPW_ABSORPTION_TEMPLATE
     for token, value in subs.items():
@@ -2587,6 +2607,13 @@ basis (ph.x and epw.x cannot use U+V or ortho-atomic projectors): the gap, the
 masses and the carrier statistics are then the eACBN0 ones without a scissor,
 and --varshni without a target applies the Varshni shift relative to that gap.
 Not included: the Hubbard contribution to the coupling (dV_Hub/du).
+
+SCREENING_EPS (--screening-eps) corrects the DFT overscreening of the coupling
+as Ponce, Margine and Giustino, PRB 97, 121201(R) (2018): every matrix element
+is multiplied by eps_DFT(|q|)/eps(|q|), the ratio of two Resta model dielectric
+functions with the DFPT static dielectric constant (stored in the .epb files,
+or SCREENING_EPS_DFT) and the target one, e.g. the measured value (Si: 11.94,
+which lowered the electron and hole mobilities by 8.8 and 12.4 % in that paper).
 """
 
 import argparse
@@ -2600,6 +2627,7 @@ from PAOFLOW.elphon.carrier_scattering import (
     rta_transport,
     write_mobility_outputs,
 )
+from PAOFLOW.elphon.coupling_screening import screening_report
 from PAOFLOW.elphon.elph_bloch import atom_masses
 from PAOFLOW.elphon.pao_electrons import (
     check_same_pao_basis,
@@ -2639,6 +2667,9 @@ VARSHNI = __VARSHNI__  # (alpha eV/K, beta K): E_g(T) = E0 - alpha T^2 / (T + be
 # energies and eigenvectors (no 0 K scissor); A, the .epb coupling, the k list and the symmetries
 # stay those of SAVEDIR, so the coupling in the orbital basis is the DFPT (PBE) one.
 ELECTRONS_SAVE = __ELECTRONS_SAVE__  # None = the electrons of SAVEDIR
+# Coupling screening (Ponce et al. 2018): g -> g eps_DFT(|q|)/eps(|q|), Resta model dielectric functions.
+SCREENING_EPS = __SCREENING_EPS__  # target static dielectric constant, e.g. 11.94 (Si, measured); None = DFPT
+SCREENING_EPS_DFT = None  # dielectric constant of the DFPT coupling; None = the tensor in the .epb files
 
 
 def pao_electronic_structure(electrons_save=None):
@@ -2698,6 +2729,7 @@ def carrier_scattering(projections, HRs, nscf, args, scissor_ev=None, target_gap
         nelec=NELEC, nk_dense=args.nk, nq_dense=args.nq, temps_k=args.temps,
         doping_cm3=args.doping, window_ev=args.window_ev, smearing_ev=args.smearing_ev,
         scissor_ev=scissor_ev, target_gap_ev=target_gap_ev,
+        screening_eps=args.screening_eps, screening_eps_dft=args.screening_eps_dft,
         sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'], species=nscf['atom_names'],
         orbital_positions=nscf['orbital_positions'],
     )
@@ -2717,6 +2749,7 @@ def report(out, args):
               % (out['electrons_save'], out['coupling_save']))
     if out['scissor_mode'] == 'relative':
         print('  carrier statistics: Varshni shift relative to the Hamiltonian gap')
+    print(screening_report(out))
     serta, mrta = rta_transport(out, 'serta'), rta_transport(out, 'mrta')
     print('    T (K)  mu_F (eV)   n_e (cm^-3)   n_h (cm^-3)   mobility e / h (cm^2/Vs): '
           'SERTA             MRTA')
@@ -2746,6 +2779,10 @@ def main():
     parser.add_argument('--varshni', type=float, nargs=2, default=VARSHNI, metavar=('ALPHA', 'BETA'),
                         help='temperature-dependent gap E0 - alpha T^2/(T + beta): around the target, '
                              'or relative to the Hamiltonian gap without one (Si: 4.73e-4 636)')
+    parser.add_argument('--screening-eps', type=float, default=SCREENING_EPS,
+                        help='target dielectric constant of the Ponce screening correction of g (Si: 11.94)')
+    parser.add_argument('--screening-eps-dft', type=float, default=SCREENING_EPS_DFT,
+                        help='DFT dielectric constant of the coupling (default: the .epb tensor)')
     args = parser.parse_args()
     if args.nk % args.nq:
         sys.exit('--nk (%d) must be a multiple of --nq (%d).' % (args.nk, args.nq))
@@ -2778,7 +2815,7 @@ def build_elphon_mobility_script(cfg: dict[str, Any]) -> str:
         Configuration of :func:`_collect_elphon_epw` with
         ``elphon_property = 'mobility'`` (keys ``temps_k``, ``doping_cm3``,
         ``window_ev``, ``smearing_ev``, ``target_gap_ev``, ``varshni``,
-        ``electrons_save`` besides the common EPW ones).
+        ``electrons_save``, ``screening_eps`` besides the common EPW ones).
 
     Returns
     -------
@@ -2810,6 +2847,9 @@ def build_elphon_mobility_script(cfg: dict[str, Any]) -> str:
         '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
         '__PROJECTOR__': repr('projwfc' if _uses_projwfc(cfg) else 'internal'),
         '__ELECTRONS_SAVE__': repr(cfg.get('electrons_save') or None),
+        '__SCREENING_EPS__': repr(
+            float(cfg['screening_eps']) if cfg.get('screening_eps') is not None else None
+        ),
     }
     content = ELPHON_EPW_MOBILITY_TEMPLATE
     for token, value in subs.items():
@@ -5565,8 +5605,8 @@ def _collect_elphon_absorption(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
         ``cfg`` with ``elphon_property = 'absorption'`` and the dense grids,
         photon energies, temperatures, smearing, window, refractive index, the
         non-local velocity flag, the electrons save (``electrons_save``), the
-        scissor (``target_gap_ev``, ``gap_reference_save``, ``varshni``) and the
-        thermal-emissivity settings
+        scissor (``target_gap_ev``, ``gap_reference_save``, ``varshni``), the
+        coupling screening (``screening_eps``) and the thermal-emissivity settings
         (``emissivity``, ``thickness_um``, ``emis_angles``,
         ``direct_dielectric_dir``).
     """
@@ -5603,6 +5643,12 @@ def _collect_elphon_absorption(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
     )
     parsed_v = [float(x) for x in varshni.replace(',', ' ').split() if x.strip()]
     cfg['varshni'] = parsed_v if len(parsed_v) == 2 else None
+    eps = ask(
+        'Screening correction of the coupling (Ponce 2018): target static dielectric constant, '
+        'e.g. the measured one (Si 11.94; blank = DFPT screening)',
+        '',
+    )
+    cfg['screening_eps'] = float(eps) if eps.strip() else None
     cfg['emissivity'] = ask_yes_no(
         'Also compute the thermal emissivity of a slab vs temperature (Kirchhoff, '
         'free carriers included)?',
@@ -5671,8 +5717,8 @@ def _collect_elphon_mobility(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
     dict
         ``cfg`` with ``elphon_property = 'mobility'``, equal dense k- and
         q-grids, temperatures, doping, window, smearing, the electrons save
-        (``electrons_save``) and the statistics scissor (``target_gap_ev``,
-        ``varshni``).
+        (``electrons_save``), the statistics scissor (``target_gap_ev``,
+        ``varshni``) and the coupling screening (``screening_eps``).
     """
     cfg['elphon_property'] = 'mobility'
     cfg['dense_q'] = True
@@ -5708,6 +5754,12 @@ def _collect_elphon_mobility(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
         )
     parsed_v = [float(x) for x in varshni.replace(',', ' ').split() if x.strip()]
     cfg['varshni'] = parsed_v if len(parsed_v) == 2 else None
+    eps = ask(
+        'Screening correction of the coupling (Ponce 2018): target static dielectric constant, '
+        'e.g. the measured one (Si 11.94; blank = DFPT screening)',
+        '',
+    )
+    cfg['screening_eps'] = float(eps) if eps.strip() else None
     cfg['pthr'] = ask_float('Projectability threshold (pthr)', 0.95)
     if cfg['nbnd'] <= 0 or not cfg['masses_amu'] or cfg['nelec'] <= 0:
         print(

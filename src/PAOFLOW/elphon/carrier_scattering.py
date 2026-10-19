@@ -29,6 +29,7 @@ from collections.abc import Callable, Sequence
 import numpy as np
 from numpy.typing import NDArray
 
+from .coupling_screening import resolve_coupling_screening, screening_report
 from .do_pao_eph_dense_q import (
     _crystal_point_group,
     _phonon_modes_at_q,
@@ -325,6 +326,8 @@ def carrier_scattering_dense_q(
     scissor_ev: float | Callable[[float], float] | None = None,
     target_gap_ev: float | Callable[[float], float] | None = None,
     eps_acoustic_cm: float = 5.0,
+    screening_eps: float | None = None,
+    screening_eps_dft: float | None = None,
     spin_degeneracy: float = 2.0,
     sym_rots: NDArray[np.int_] | None = None,
     tau_cryst: NDArray[np.float64] | None = None,
@@ -368,6 +371,13 @@ def carrier_scattering_dense_q(
         the rates involve intraband energy differences only and are unchanged.
     eps_acoustic_cm : float, optional
         Phonons below this energy (cm^-1) are skipped.
+    screening_eps, screening_eps_dft : float, optional
+        Poncé-Resta screening correction of the coupling, as in
+        :func:`~PAOFLOW.elphon.phonon_assisted_absorption.phonon_assisted_absorption_dense_q`
+        (:mod:`~PAOFLOW.elphon.coupling_screening`): the target dielectric
+        constant (e.g. 11.94 for Si, which lowers the Si mobilities by about
+        9-12 % according to Poncé *et al.* 2018) and that of the DFPT coupling
+        (default: the ``.epb`` tensor).  ``None`` keeps the DFPT screening.
     spin_degeneracy : float, optional
         2 without spin-orbit coupling, 1 with it.  The band velocities are the
         group velocities of the PAO Hamiltonian, which contains the non-local
@@ -391,7 +401,8 @@ def carrier_scattering_dense_q(
         zero outside the window), ``fermi_levels_ev``, ``scissor_ev``,
         ``n_e_cm3``, ``n_h_cm3`` ``(ntemp,)``, ``temps_k``, ``doping_cm3``,
         ``bands``, ``vbm_ev``, ``cbm_ev``, ``metal``, ``cell_volume_bohr3``,
-        ``spin_degeneracy``, ``nk_dense``, ``nq_dense``.
+        ``spin_degeneracy``, ``nk_dense``, ``nq_dense``, ``coupling_screening``
+        (``'none'`` or ``'ponce-resta'`` with the ``screening_*`` constants).
 
     Notes
     -----
@@ -427,6 +438,8 @@ def carrier_scattering_dense_q(
     temps_ev = temps_k * KELVIN_TO_EV
     nocc = int(round(nelec / spin_degeneracy))
     check_orbital_dimensions(A, HRs, orbital_positions)
+    if screening_eps is None and screening_eps_dft is not None:
+        raise ValueError('screening_eps_dft needs screening_eps (the target dielectric constant).')
 
     vertex = prepare_dense_vertex(
         A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, None,
@@ -436,6 +449,14 @@ def carrier_scattering_dense_q(
     )  # fmt: skip
     g_ReRp, phonon_at_q = vertex['g_ReRp'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']
+    screening = resolve_coupling_screening(
+        screening_eps, screening_eps_dft, vertex['epsi'], nelec, cell_volume
+    )
+    screening_info = {'coupling_screening': 'none'}
+    if screening is not None:
+        screening_info = screening.summary(bg, alat)
+        if rank == 0:
+            print(screening_report(screening_info), flush=True)
 
     def keep(energies_ry):
         e = energies_ry * RY_TO_EV
@@ -555,6 +576,8 @@ def carrier_scattering_dense_q(
         kk, kq = kk[reachable], kq[reachable]
         if gn_flat is None:
             zmass = z / np.sqrt(mass_flat_ry)[None, :]
+            if screening is not None:  # g is linear in zmass
+                zmass = zmass * screening.factor(q_cryst, bg, alat)
             safe = np.where(omega_ry > 1.0e-8, omega_ry, 1.0)
             gn_flat = vertex_ws_coefficients(
                 g_Re_at_q(g_ReRp, q_cryst, Nint_p, W_p, Midx_p), electrons
@@ -614,6 +637,7 @@ def carrier_scattering_dense_q(
         'spin_degeneracy': float(spin_degeneracy),
         'nk_dense': nk_dense,
         'nq_dense': nq_dense,
+        **screening_info,
     }
 
 

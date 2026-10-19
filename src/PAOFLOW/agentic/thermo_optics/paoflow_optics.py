@@ -76,6 +76,13 @@ class OpticsModel:
         if np.ndim(out.get('refractive_index', 0.0)) > 0:  # n(omega) of the direct dielectric run
             n = np.asarray(out['refractive_index'], dtype=float)
             out['refractive_index'] = 'n(omega) %.3g-%.3g' % (n.min(), n.max())
+        if 'coupling_screening' in a:  # Ponce-Resta rescaling of g (coupling_screening.py)
+            out['coupling_screening'] = str(a['coupling_screening'])
+            if out['coupling_screening'] != 'none':
+                out['coupling_screening'] += ' (eps %.2f -> %.2f)' % (
+                    float(a['screening_eps_dft']),
+                    float(a['screening_eps_target']),
+                )
         for key in ('indirect_gap_ev_t', 'direct_gap_ev_t', 'scissor_ev', 'fermi_levels_ev'):
             if key in a:
                 out[key] = dict(zip(self.temperatures.tolist(), np.asarray(a[key]).tolist()))
@@ -202,7 +209,8 @@ class OpticsModel:
         lines.append('| photon grid (eV) | %.3f-%.3f, step %.3f |' % m['omega_grid_ev'])
         for key in ('nk_dense', 'nq_dense', 'indirect_gap_dft_ev', 'direct_gap_dft_ev', 'refractive_index',
                     'scissor_velocity', 'eta_ev', 'emissivity_thickness_m', 'direct_source',
-                    'electrons_dft', 'electrons_hubbard', 'electrons_save'):  # fmt: skip
+                    'electrons_dft', 'electrons_hubbard', 'electrons_save',
+                    'coupling_screening'):  # fmt: skip
             if key in m:
                 value = m[key]
                 lines.append(
