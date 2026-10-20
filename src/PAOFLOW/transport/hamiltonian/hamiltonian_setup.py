@@ -73,9 +73,6 @@ def hamiltonian_setup(
             else:
                 aux -= sgm_corr
 
-        if '00' in name:
-            block.aux[..., ik] = aux.conj()
-        else:
-            block.aux[..., ik] = aux
+        block.aux[..., ik] = aux
 
         block.update(ie=ie_g, ik=ik, ie_buff=ie_bl)

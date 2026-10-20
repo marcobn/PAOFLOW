@@ -90,7 +90,6 @@ def compute_surface_transfer_matrices(
     A = h_eff + 1j * delta * s_eff
     try:
         t11 = np.linalg.solve(A, np.eye(ndim))
-        t11 = t11.T
 
     except np.linalg.LinAlgError:
         if verbose:
