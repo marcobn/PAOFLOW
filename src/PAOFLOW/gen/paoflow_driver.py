@@ -12,8 +12,8 @@ Two workflows are supported:
 2. **Full property run** from the QE output, where the user picks the
    properties to compute from a menu.  Standard properties use the *standard*
    basis; optical properties (dielectric tensor) need the *extended* basis and
-   the non-local velocity correction, so they are emitted as a **separate**
-   PAOFLOW run in the same script.
+   the position dipoles in the velocity operator, so they are emitted as a
+   **separate** PAOFLOW run in the same script.
 
 Two further workflows generate multi-phase driver scripts:
 
@@ -579,9 +579,13 @@ def build_run_script(cfg):
     if has_optical:
         lines.append('')
         lines.append('def run_optical():')
-        lines.append('    """Optical properties: extended basis + non-local velocity.')
+        lines.append(
+            '    """Optical properties: extended basis + position dipoles in the velocity.'
+        )
         lines.append('')
-        lines.append('    The dielectric tensor requires the non-local velocity correction,')
+        lines.append(
+            '    The dielectric tensor needs the complete velocity operator (position dipoles),'
+        )
         lines.append('    so it runs as a separate PAOFLOW instance on the extended basis.')
         if has_emissivity:
             lines.append('')
@@ -608,8 +612,11 @@ def build_run_script(cfg):
         )
         lines.append('    p.pao_eigh()')
         lines.append('')
-        lines.append('    # Non-local velocity is essential for the optical matrix elements.')
-        lines.append('    p.gradient_and_momenta(nonlocal_velocity=True)')
+        lines.append('    # Position dipoles of the PAO orbitals complete the velocity operator')
+        lines.append(
+            '    # (the non-local term would double count: PAOFLOW docs, position-dipoles.md).'
+        )
+        lines.append('    p.gradient_and_momenta(position_dipoles=True)')
         lines.append('    p.adaptive_smearing()')
         if has_emissivity:
             lines.append("    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1,")

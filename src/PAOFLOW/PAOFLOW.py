@@ -1809,12 +1809,23 @@ class PAOFLOW:
         nonlocal_velocity=None,
         nonlocal_velocity_inject=None,
         nonlocal_velocity_sign=None,
+        position_dipoles=None,
+        position_dipole_level='full',
     ):
         """
         Calculate the gradient of the k-space Hamiltonian and momentum operator.
 
         Arguments:
           band_curvature (bool): also compute the band curvature.
+          position_dipoles (bool or None): add the position dipoles of the PAO
+          orbitals to the velocity operator, ``dHksp -= i[H, d(k)]``
+          (:meth:`position_dipole_correction`), the term that completes the
+          commutator ``i[H, r]`` when the position operator is no longer reduced
+          to the orbital centres.  ``None`` falls back to
+          ``attr['position_dipoles']`` (False if unset).  Not to be combined with
+          ``nonlocal_velocity`` (double counting).
+          position_dipole_level (str): ``'full'`` (Löwdin-orthogonalised basis)
+          or ``'intra-atomic'`` (on-site blocks only).
           nonlocal_velocity (bool or None): enable the non-local
           pseudopotential velocity correction.  When ``None`` (default)
           the value falls back to ``attr['nonlocal_velocity']`` (False if
@@ -1948,6 +1959,19 @@ class PAOFLOW:
                 inject=nlv_inject,
                 sign=nlv_sign,
             )
+
+        if position_dipoles is None:
+            dipoles_enabled = bool(attr.get('position_dipoles', False))
+        else:
+            dipoles_enabled = bool(position_dipoles)
+        if dipoles_enabled:
+            if 'velkp_bare' not in arrays:
+                # the bare group velocities for the adaptive smearing (see above)
+                do_momentum(self.data_controller)
+                nb = arrays['pksp'].shape[2]
+                bdiag = np.arange(nb)
+                arrays['velkp_bare'] = np.ascontiguousarray(arrays['pksp'][:, :, bdiag, bdiag, :])
+            self.position_dipole_correction(level=position_dipole_level)
 
         ### DEV: Proposed to remove this and calculate pksp or velkp when required
         # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
@@ -2201,6 +2225,102 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('NL velocity correction')
+
+    def position_dipole_correction(
+        self,
+        *,
+        level: str = 'full',
+        q_max: float = 20.0,
+        n_q: int = 600,
+        pao_tol: float = 1.0e-3,
+        inject: bool = True,
+    ):
+        r"""Position dipoles of the PAO orbitals in the velocity operator.
+
+        Builds :math:`\mathbf d(\mathbf k)` of the Löwdin-orthonormal PAO basis
+        (:mod:`PAOFLOW.hamiltonian.position_dipoles`) on the FFT k-grid and adds
+        :math:`-\,i[H(\mathbf k), \mathbf d(\mathbf k)]` to ``arrays['dHksp']``
+        (which is minus the velocity), so that the momenta of
+        :meth:`gradient_and_momenta` and everything built on them
+        (:meth:`dielectric_tensor`, :meth:`anomalous_Hall`, :meth:`spin_Hall`, ...)
+        carry the full commutator :math:`i[H, \mathbf r]` instead of the
+        orbital-centre approximation.  Scalar-relativistic, ad-hoc spin-orbit and
+        fully relativistic ``(j, m_j)`` bases are handled
+        (:func:`~PAOFLOW.hamiltonian.position_dipoles.position_dipoles_on_grid`).
+
+        Parameters
+        ----------
+        level : {'full', 'intra-atomic'}, optional
+            Löwdin-orthogonalised basis (default) or on-site blocks only.
+        q_max, n_q, pao_tol : optional
+            Radial-table parameters.
+        inject : bool, optional
+            ``False`` only builds the tables (``'_PD_tables'``) without touching ``dHksp``.
+
+        Returns
+        -------
+        None
+            Modifies ``arrays['dHksp']`` in place; caches the tables under
+            ``'_PD_tables'`` / ``'_PD_on_site'`` and the PAO catalog under
+            ``'_NL_pao_catalog'``.
+
+        Notes
+        -----
+        Not to be combined with :meth:`nonlocal_velocity_correction`: the PAO
+        Hamiltonian already contains the non-local pseudopotential, and with the
+        dipoles the commutator is complete (Si: 0.99--1.01 of the exact plane-wave
+        :math:`\varepsilon`, 0.87 with both terms).
+        """
+        import numpy as np
+
+        from .hamiltonian.position_dipoles import (
+            inject_dipole_velocity_into_dHksp,
+            position_dipoles_on_grid,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+        try:
+            if 'E_k' not in arry or 'v_k' not in arry:
+                raise RuntimeError('position_dipole_correction needs pao_eigh before it.')
+
+            def _build(kgrid_slice):
+                return position_dipoles_on_grid(
+                    self.data_controller,
+                    kgrid_slice,
+                    level=level,
+                    q_max=q_max,
+                    n_q=n_q,
+                    pao_tol=pao_tol,
+                )
+
+            from .utils.communication import gather_array, load_balancing, scatter_full
+
+            if attr.get('mpisize', 1) > 1:
+                kgrid = np.asarray(arry['kgrid'])
+                nktot = kgrid.shape[1]
+                ks, ke = load_balancing(self.size, self.rank, nktot)
+                part = np.ascontiguousarray(_build(kgrid[:, ks:ke]))
+                full = (
+                    np.zeros((nktot,) + part.shape[1:], dtype=part.dtype)
+                    if self.rank == 0
+                    else None
+                )
+                gather_array(full, part)
+                if self.rank == 0:
+                    local = scatter_full(np.ascontiguousarray(full), attr['npool'])
+                else:
+                    local = scatter_full(None, attr['npool'])
+            else:
+                local = _build(arry['kgrid'])
+
+            if inject:
+                inject_dipole_velocity_into_dHksp(arry['dHksp'], arry['E_k'], arry['v_k'], local)
+        except Exception as e:
+            self.report_exception('position_dipole_correction')
+            if attr.get('abort_on_exception', True):
+                raise e
+
+        self.report_module_time('Position dipoles')
 
     def adaptive_smearing(self, smearing='gauss', afac=None):
         """

@@ -677,3 +677,133 @@ def position_dipole_operator(
         return dipole * sign_matrix
 
     return dipoles
+
+
+def position_dipoles_on_grid(
+    data_controller,
+    kgrid_2pi_alat: NDArray[np.float64],
+    *,
+    level: str = 'full',
+    q_max: float = 20.0,
+    n_q: int = 600,
+    pao_tol: float = 1.0e-3,
+) -> NDArray[np.complex128]:
+    r"""Position dipoles :math:`\mathbf d(\mathbf k)` on PAOFLOW's k-grid, in the basis of ``dHksp``.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        PAOFLOW data after ``projections`` (PAO basis, species, UPF files, ``a_vectors``,
+        ``alat``, ``dftSO``, ``adhoc_SO``).  The tables are cached under
+        ``'_PD_tables'`` / ``'_PD_on_site'`` so repeated calls (MPI slices) are cheap.
+    kgrid_2pi_alat : ndarray, shape ``(3, nk)`` or ``(nk, 3)``
+        Cartesian k-points in units of :math:`2\pi/a` (PAOFLOW's ``arrays['kgrid']``).
+    level : {'full', 'intra-atomic'}, optional
+        See :func:`lowdin_dipole_kspace`.
+    q_max, n_q, pao_tol : optional
+        Table parameters (:func:`build_position_tables`, :func:`enumerate_pao_pairs`).
+
+    Returns
+    -------
+    ndarray, shape ``(nk, 3, n, n)``, complex
+        :math:`\mathbf d(\mathbf k)` in bohr with PAOFLOW's orbital signs, Hermitian; ``n`` is
+        ``nawf`` for scalar runs, ``2 nawf`` for fully relativistic ones (the scalar matrix
+        rotated to the ``(j, m_j)`` basis of ``dHksp`` with
+        :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.scalar_to_jm_matrix`) and for the
+        ad-hoc spin-orbit path (block-diagonal in spin).
+
+    Notes
+    -----
+    The input of :func:`inject_dipole_velocity_into_dHksp`; the k-grid layout is the caller's
+    (global, or the rank's slice under MPI, as in
+    :meth:`PAOFLOW.PAOFLOW.nonlocal_velocity_correction`).
+    """
+    from .nonlocal_velocity import _kgrid_to_cart, _pao_jm_channel_info, scalar_to_jm_matrix
+
+    arrays, attributes = data_controller.data_dicts()
+    if level not in DIPOLE_LEVELS:
+        raise ValueError(f'level must be one of {DIPOLE_LEVELS}, got {level!r}')
+    alat = float(attributes['alat'])
+    if '_PD_tables' not in arrays:
+        pao_catalog = arrays.get('_NL_pao_catalog') or load_pao_orbitals(data_controller)
+        arrays['_NL_pao_catalog'] = pao_catalog
+        a_cart = np.asarray(arrays['a_vectors'], dtype=float) * alat
+        pairs = enumerate_pao_pairs(pao_catalog, a_cart, pao_tol=pao_tol)
+        arrays['_PD_tables'] = build_position_tables(pao_catalog, pairs, q_max=q_max, n_q=n_q)
+        arrays['_PD_on_site'] = on_site_dipoles(arrays['_PD_tables'])
+    pao_catalog, tables, on_site = (
+        arrays['_NL_pao_catalog'],
+        arrays['_PD_tables'],
+        arrays['_PD_on_site'],
+    )
+    k_cart = _kgrid_to_cart(kgrid_2pi_alat, alat)
+    overlap_k, overlap_gradient_k, dipole_k = assemble_position_kspace(tables, k_cart)
+    dipole = lowdin_dipole_kspace(
+        overlap_k, overlap_gradient_k, dipole_k, tables.tau_orbitals, level=level, on_site=on_site
+    )
+    dipole = 0.5 * (dipole + np.conj(np.transpose(dipole, (0, 1, 3, 2))))
+    fully_rel = bool(attributes.get('dftSO', False)) and not bool(attributes.get('adhoc_SO', False))
+    if fully_rel:
+        # odd-|m| sign inside the shell transform; (-1)^l per channel on both indices
+        n_rel = 2 * pao_catalog.total_nlm
+        parity = np.ones(n_rel)
+        for site in pao_catalog.sites:
+            for l_p, _col0, n_m, rel_col0 in _pao_jm_channel_info(site):
+                parity[rel_col0 : rel_col0 + 2 * n_m] = (-1.0) ** l_p
+        rotated = np.stack(
+            [scalar_to_jm_matrix(dipole[:, alpha], pao_catalog) for alpha in range(3)], axis=1
+        )
+        return rotated * parity[None, None, :, None] * parity[None, None, None, :]
+    signs = pao_orbital_signs(pao_catalog)
+    dipole = dipole * signs[None, None, :, None] * signs[None, None, None, :]
+    if bool(attributes.get('dftSO', False)):  # ad-hoc spin-orbit: [up; down] blocks
+        n = pao_catalog.total_nlm
+        doubled = np.zeros(dipole.shape[:2] + (2 * n, 2 * n), dtype=complex)
+        doubled[:, :, :n, :n] = dipole
+        doubled[:, :, n:, n:] = dipole
+        return doubled
+    return dipole
+
+
+def inject_dipole_velocity_into_dHksp(
+    dHksp: NDArray[np.complex128],
+    energies_k: NDArray[np.float64],
+    eigenvectors_k: NDArray[np.complex128],
+    dipole_k: NDArray[np.complex128],
+) -> None:
+    r"""Add the position-dipole velocity term to ``dHksp`` in place.
+
+    Parameters
+    ----------
+    dHksp : ndarray, shape ``(nk, 3, n, n, nspin)``, complex
+        PAOFLOW's gradient (eV bohr), which is minus the velocity operator
+        (``pksp = -<n|p|m>``); modified in place.
+    energies_k, eigenvectors_k : ndarray, shapes ``(nk, n, nspin)`` (eV) and ``(nk, n, n, nspin)``
+        ``arrays['E_k']`` and ``arrays['v_k']`` of ``pao_eigh`` at the same k-points, from which
+        :math:`H(\mathbf k) = V E V^\dagger` is rebuilt (``do_gradient`` has overwritten ``Hksp``).
+    dipole_k : ndarray, shape ``(nk, 3, n, n)``, complex
+        :func:`position_dipoles_on_grid` (bohr).
+
+    Returns
+    -------
+    None
+        ``dHksp`` gains :math:`-\,i[H(\mathbf k), \mathbf d(\mathbf k)]` (eV bohr), i.e. the
+        velocity gains :math:`+i[H, \mathbf d]` as in
+        :func:`~PAOFLOW.elphon.elph_bloch.band_velocities`.
+
+    Raises
+    ------
+    ValueError
+        On shape mismatches.
+    """
+    nk, three, n, _, nspin = dHksp.shape
+    if dipole_k.shape != (nk, 3, n, n):
+        raise ValueError(f'dipole_k must have shape {(nk, 3, n, n)}; got {dipole_k.shape}')
+    if energies_k.shape[:2] != (nk, n) or eigenvectors_k.shape[:3] != (nk, n, n):
+        raise ValueError('E_k / v_k do not match dHksp')
+    for ispin in range(nspin):
+        vectors = eigenvectors_k[:, :, :, ispin]
+        hamiltonian = (vectors * energies_k[:, None, :, ispin]) @ np.conj(
+            np.transpose(vectors, (0, 2, 1))
+        )
+        dHksp[:, :, :, :, ispin] -= dipole_velocity_term(hamiltonian, dipole_k)

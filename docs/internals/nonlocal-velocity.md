@@ -15,6 +15,8 @@ pf.gradient_and_momenta(nonlocal_velocity=True)
 ```
 
 Or equivalently, set `attr['nonlocal_velocity'] = True` before calling `gradient_and_momenta`.
+(Since October 2026 this is a diagnostic option; production runs use
+`gradient_and_momenta(position_dipoles=True)`, see the last section.)
 
 ## How It Was Built
 
@@ -79,7 +81,10 @@ Its only approximation is the position operator: with r reduced to the orbital c
 (12³ grid, 21 bands, extended basis): plain 1.02–1.04, fixed non-local term 0.90–0.93,
 dipoles 0.99–1.01, dipoles + non-local term 0.87 (double counting); against EPW's direct term
 with the standard basis: 1.06, 0.97, 0.98, 0.88. The term as it was (1.09 / old pipeline
-+7 % over the plain velocity) moved ε₂ the wrong way. Recommendations: electron–phonon drivers
-`POSITION_DIPOLES = True`, `NONLOCAL_VELOCITY = False`; `dielectric_tensor` (no dipoles on that
-route yet) with or without the term brackets the exact result at the ±5–10 % level. The Cu
-and Pt `epsilon.x` comparisons above predate the fix and were obtained with the defective term.
++7 % over the plain velocity) moved ε₂ the wrong way. Recommendation: do not add the term to the commutator
+velocity at all — `POSITION_DIPOLES = True` / `gradient_and_momenta(position_dipoles=True)`
+everywhere, `nonlocal_velocity` kept for diagnostics only. On Fe and Pt (`dipole_hall/`) the
+repaired term still shifts the AHC/SHC at E_F by +10 % / −7 % and doubles the Fe AHC peak at
+−1.35 eV, where the 1/Δε² weight of the Kubo formula amplifies the double counting at the
+d-band near-degeneracies, while the dipoles change them by −1 % / +3.5 %. The Cu and Pt
+`epsilon.x` comparisons above predate the fix and were obtained with the defective term.

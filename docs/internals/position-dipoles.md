@@ -78,10 +78,25 @@ Direct ε₂ of Si at 12³ k against EPW (`vme='wannier'`, which contains the Be
 minimum is symmetry-forbidden on the valley axis in both the PAO and the plane-wave velocity;
 off-axis it has the plane-wave magnitude already without d.
 
-## Open points
+## The `dHksp` route (`gradient_and_momenta(position_dipoles=True)`)
 
-- `PAOFLOW.position_dipole_correction()` for `dHksp` / `dielectric_tensor` (plan step 5).
-- Spin-orbit (j, m_j) bases, through the `_jm_shell_transform` of the non-local path.
+`PAOFLOW.position_dipole_correction()` builds d(k) on the FFT k-grid
+(`position_dipoles_on_grid`: scalar, ad-hoc spin-orbit and fully relativistic (j, m_j) bases,
+the latter through `scalar_to_jm_matrix` with the per-channel (−1)^l) and adds
+−i[H(k), d(k)] to `dHksp` (`inject_dipole_velocity_into_dHksp`; H(k) = V E V† from `pao_eigh`,
+since `do_gradient` overwrites `Hksp`). Every property built on `pksp` then carries the full
+commutator: `dielectric_tensor`, EELS, optical conductivity, anomalous and spin Hall, the ac
+Hall conductivities, Rashba–Edelstein. Checks: on Si the pipeline reproduces the
+electron–phonon implementation (∫ε₂ ×0.957 / ×0.993 over 2.5–5 / 2.5–10 eV against ×0.953 /
+×0.995) and ε₁(0) 13.54 against the exact 13.62; Fe AHC and Pt SHC (12³ scf, 32³ interpolation,
+`Workspace/PAOFLOW/dipole_hall/`): σ_xy(E_F) 494 → 490 S/cm and σ^z_xy(E_F) 2045 → 2117
+(ħ/e) S/cm, i.e. −1 % and +3.5 %, with the curves unchanged in shape — the few-per-cent effect
+expected from the Kubo structure (the dipole cross term carries one power of 1/Δε, the main
+term two). The repaired non-local term on the same runs moves them by +10 % / −7 % at E_F
+and doubles the Fe peak at −1.35 eV (1700 → 2920 S/cm), the signature of the double counting
+amplified by 1/Δε² at the d-band near-degeneracies.
+
+## Open points
 - The non-local correction Δp of `nonlocal_velocity.py` was fixed on Oct 21 2026 with the
   overlap tables and the signs of this module (`nonlocal-velocity.md`). It is not to be combined
   with the dipoles: v = i[H, τ + d] is already the full commutator of a Hamiltonian that

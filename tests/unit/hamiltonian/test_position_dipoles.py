@@ -300,3 +300,55 @@ def test_si_position_dipole_operator(si_data_controller):
     assert (
         signs.tolist() == [1.0, -1.0, 1.0, 1.0] * 2
     )  # s, p_z, p_x, p_y per site: (-1)^l (-1)^(odd m)
+
+
+def test_inject_dipole_velocity_into_dHksp_is_minus_commutator():
+    from PAOFLOW.hamiltonian.position_dipoles import inject_dipole_velocity_into_dHksp
+
+    rng = np.random.default_rng(7)
+    nk, n = 3, 5
+    h = rng.normal(size=(nk, n, n)) + 1j * rng.normal(size=(nk, n, n))
+    h = h + np.conj(np.transpose(h, (0, 2, 1)))
+    energies, vectors = np.linalg.eigh(h)
+    d = rng.normal(size=(nk, 3, n, n)) + 1j * rng.normal(size=(nk, 3, n, n))
+    d = d + np.conj(np.transpose(d, (0, 1, 3, 2)))
+    dHksp = np.zeros((nk, 3, n, n, 1), dtype=complex)
+    inject_dipole_velocity_into_dHksp(dHksp, energies[:, :, None], vectors[:, :, :, None], d)
+    expected = -1j * (h[:, None] @ d - d @ h[:, None])
+    np.testing.assert_allclose(dHksp[..., 0], expected, atol=1e-10)
+    np.testing.assert_allclose(dHksp, np.conj(np.transpose(dHksp, (0, 1, 3, 2, 4))), atol=1e-10)
+    with pytest.raises(ValueError, match='dipole_k must have shape'):
+        inject_dipole_velocity_into_dHksp(
+            dHksp, energies[:, :, None], vectors[:, :, :, None], d[:1]
+        )
+
+
+def test_position_dipoles_on_grid_scalar_and_relativistic(si_data_controller):
+    from PAOFLOW.hamiltonian.position_dipoles import position_dipoles_on_grid
+
+    dc, alat, a_vectors = si_data_controller
+    arrays, attributes = dc.data_dicts()
+    arrays.pop('_PD_tables', None)
+    kgrid = np.array(
+        [[0.0, 0.0, 0.0], [0.25, 0.0, 0.25], [0.1, 0.2, 0.3]]
+    ).T  # (3, nk), 2 pi / alat
+    dipole = position_dipoles_on_grid(dc, kgrid, pao_tol=1e-2, n_q=300)
+    assert dipole.shape == (3, 3, 8, 8)
+    assert np.abs(dipole - np.conj(np.transpose(dipole, (0, 1, 3, 2)))).max() < 1e-12
+    assert np.abs(dipole).max() > 0.5  # on-site s-p dipoles of Si are of order 1 bohr
+    # fully relativistic: the same operator in the (j, m_j) basis, twice the size, Hermitian,
+    # with the eigenvalues of each Cartesian component doubled
+    attributes['dftSO'] = True
+    try:
+        rel = position_dipoles_on_grid(dc, kgrid, pao_tol=1e-2, n_q=300)
+    finally:
+        attributes['dftSO'] = False
+    assert rel.shape == (3, 3, 16, 16)
+    assert np.abs(rel - np.conj(np.transpose(rel, (0, 1, 3, 2)))).max() < 1e-12
+    for k in range(3):
+        for alpha in range(3):
+            np.testing.assert_allclose(
+                np.sort(np.linalg.eigvalsh(rel[k, alpha])),
+                np.sort(np.repeat(np.linalg.eigvalsh(dipole[k, alpha]), 2)),
+                atol=1e-9,
+            )

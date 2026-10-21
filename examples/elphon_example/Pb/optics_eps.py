@@ -28,7 +28,7 @@ def main():
     pf.pao_hamiltonian()
     pf.interpolated_hamiltonian(nfft1=36, nfft2=36, nfft3=36)
     pf.pao_eigh()
-    pf.gradient_and_momenta(nonlocal_velocity=True)
+    pf.gradient_and_momenta(position_dipoles=True)
     pf.dielectric_tensor(emin=0.002, emax=6.0, ne=3000, d_tensor='diag', delta=0.1, intraband=False)
     pf.finish_execution()
 

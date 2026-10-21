@@ -30,7 +30,7 @@ mid-gap Fermi level.
 | `epw/kmesh.py` | sets the coarse k-mesh: `python kmesh.py NK1 NK2 NK3` rewrites the `K_POINTS crystal` list of `nscf.in`, `nk1-3` of `epw.in`, `write_ukk.py` and `COARSE_GRID` of `main.py`/`mobility.py` (the q-grid must divide it) |
 | `main.py` | PAOFLOW analysis: PAO electronic structure, then phonon-assisted + direct absorption |
 | `optics/nscf.in` | `pw.x` nscf with 60 bands (8³ k) for the extended-basis direct dielectric function |
-| `optics_eps.py` | PAOFLOW `dielectric_tensor` on the extended basis with the non-local velocity → `optics/output/epsr_*/epsi_*.dat` |
+| `optics_eps.py` | PAOFLOW `dielectric_tensor` on the extended basis with the position dipoles in the velocity → `optics/output/epsr_*/epsi_*.dat` |
 | `emissivity_from_absorption.py` | recomputes the thermal emissivity of a finished run from `absorption.npz` with another direct dielectric function or `--direct-scissor` (writes to a new directory) |
 | `make_hubbard_nscf.py` | from the converged `HUBBARD` card of an eACBN0 run: the nscf inputs for eACBN0 electrons (`acbn0/epw_nscf/`, the EPW k list) and for the eACBN0 optics run (`acbn0/optics/`) |
 | `plot.py` | plots Im ε(ω) and α(ω), overlaying EPW's `epsilon2_indabs_<T>K.dat` when present; after `--emissivity` it also plots the thermal emissivity |
@@ -101,7 +101,9 @@ Output goes to `output/`, one set of files per temperature in EPW's layout:
 
 The direct dielectric function is best taken from PAOFLOW's established
 optical route: `dielectric_tensor` on the **extended** basis with the
-non-local velocity, as in paoflow-gen's optical workflow. The extended basis
+position dipoles in the velocity (`gradient_and_momenta(position_dipoles=True)`;
+until October 2026 these runs used the non-local term instead, see the
+velocity-operator note below), as in paoflow-gen's optical workflow. The extended basis
 has 44 orbitals for Si (3s4s5s, 3p4p5p, 3d4d), so it needs a separate nscf with
 more bands. EPW is not rerun.
 
@@ -109,7 +111,7 @@ more bands. EPW is not rerun.
 mkdir -p optics/Si2.save && cp phonon/Si2.save/{charge-density.dat,data-file-schema.xml} optics/Si2.save/
 # optics/nscf.in: nscf with nbnd = 60 on an 8x8x8 grid
 (cd optics && mpirun -np 8 pw.x -nk 8 -in nscf.in > nscf.out)
-python optics_eps.py   # extended basis, nonlocal velocity, interpolated 24^3, dielectric_tensor
+python optics_eps.py   # extended basis, position dipoles, interpolated 24^3, dielectric_tensor
 mpirun -np 8 python main.py --emissivity --direct-dielectric optics/output \
     --nk 24 --nq 12 --omega-min 0.01 --omega-step 0.01 --degauss-ev 0.01 \
     --temps 300 400 500 600 700 900 1100 1300 1500       # 2 min on 8 cores
@@ -119,7 +121,7 @@ python plot.py                                           # -> output/emissivity.
 `optics_eps.py` runs:
 - `projections(configuration='extended')`, `projectability`, `pao_hamiltonian`
 - `interpolated_hamiltonian(24, 24, 24)`, `pao_eigh`
-- `gradient_and_momenta(nonlocal_velocity=True)`
+- `gradient_and_momenta(position_dipoles=True)`
 - `dielectric_tensor(emin=0.01, emax=10, ne=1000, d_tensor='diag', delta=0.1)`
 
 Without `--direct-dielectric`, the direct term is computed from this run's
@@ -194,7 +196,7 @@ approximate:
 Without the scissor (PBE gap), the totals below come out at too low a
 temperature.
 
-Total hemispherical emissivity of a 500 µm wafer (PBE gap, non-local velocity, k 24³ / q 12³):
+Total hemispherical emissivity of a 500 µm wafer (PBE gap, non-local velocity as it was before the October 2026 fix, k 24³ / q 12³):
 
 | T (K) | 300 | 400 | 500 | 600 | 700 | 900 | 1100 | 1500 |
 |---|---|---|---|---|---|---|---|---|
