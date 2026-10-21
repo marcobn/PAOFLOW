@@ -66,6 +66,7 @@ release
 internal-basis
 acbn0
 nonlocal-velocity
+position-dipoles
 scattering-channels
 thermo-optics
 sk-edtb

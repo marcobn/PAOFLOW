@@ -743,6 +743,7 @@ def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
             '3.5',
             'n',
             '',
+            '',
         ]
     )
     monkeypatch.setattr(d, '_input', lambda prompt: next(answers))
@@ -753,6 +754,7 @@ def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
     assert cfg['temps_k'] == [10.0, 300.0]
     assert (cfg['degauss_ev'], cfg['fsthick_ev'], cfg['refractive_index']) == (0.04, 3.0, 3.5)
     assert cfg['nonlocal_velocity'] is False
+    assert cfg['position_dipoles'] is True
     assert cfg['pthr'] == 0.95
     assert cfg['emissivity'] is False
     assert cfg['target_gap_ev'] is None and cfg['varshni'] is None

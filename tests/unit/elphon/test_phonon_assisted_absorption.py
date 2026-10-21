@@ -208,6 +208,35 @@ def test_band_velocities_finite_difference_and_correction():
         np.testing.assert_allclose(corrected[b], np.conj(np.transpose(corrected[b], (0, 2, 1))))
 
 
+def test_band_velocities_position_dipoles():
+    """The dipole term is i(e_n - e_m) d_nm in the band basis: diagonal untouched, Hermitian."""
+    hops, _ = _model_terms(seed=5)
+    single_site = [(i, j, R, h) for i, j, R, h in hops if i < 2 and j < 2]
+    HRs = _paoflow_HRs(single_site, 4)[:2, :2]
+    electrons = precompute_dense_electrons(
+        HRs, np.eye(3), 6, [0.01], None, (4, 4, 4), velocities=True, alat=1.0
+    )
+    sel = np.array([0, 5, 43, 100])
+    v = band_velocities(electrons, sel)
+    dipole = np.zeros((3, 2, 2), dtype=complex)
+    dipole[0] = [[0.0, 0.4 - 0.1j], [0.4 + 0.1j, 0.0]]
+    dipole[2] = [[0.05, 0.2j], [-0.2j, -0.05]]
+    with_dipoles = band_velocities(
+        electrons, sel, position_dipoles=lambda K: np.repeat(dipole[None], len(K), 0)
+    )
+    for b, ik in enumerate(sel):
+        Vk = electrons['V'][ik]
+        energies = electrons['E'][ik]  # Ry
+        d_band = np.einsum('im,aij,jn->amn', Vk.conj(), dipole, Vk)
+        expected = 1j * (energies[:, None] - energies[None, :])[None] * d_band
+        np.testing.assert_allclose(with_dipoles[b] - v[b], expected, atol=1e-12)
+        for a in range(3):
+            np.testing.assert_allclose(np.diag(with_dipoles[b, a]), np.diag(v[b, a]), atol=1e-12)
+        np.testing.assert_allclose(
+            with_dipoles[b], np.conj(np.transpose(with_dipoles[b], (0, 2, 1))), atol=1e-12
+        )
+
+
 # --------------------------------------------------------------------------- #
 # Literal transliteration of EPW indabs.f90 / dirabs (reference loops)
 # --------------------------------------------------------------------------- #

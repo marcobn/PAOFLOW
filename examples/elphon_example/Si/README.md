@@ -377,10 +377,22 @@ Hamiltonian (see section 4); the rates keep the PBE coupling. The energies of
 - **Velocity operator.** The velocity is the PAO analogue of EPW's
   `vme = 'wannier'`: ∂H/∂k plus the intersite position term
   i H_ij (τ_j − τ_i).
-  - With `NONLOCAL_VELOCITY = True` (the default; norm-conserving
-    pseudopotentials only) it also includes the non-local pseudopotential
-    term, as in PAOFLOW's `dielectric_tensor`.
-  - For Si this raises Im ε by about 3.5% (indirect) and 6% (direct).
+  - With `POSITION_DIPOLES = True` (the default) it also includes the
+    position dipoles of the PAO orbitals, i[H, d(k)] with the
+    Löwdin-orthogonalised two-centre dipoles (`hamiltonian/position_dipoles.py`),
+    the analogue of EPW's Berry-connection term. Checked against the exact
+    plane-wave velocities of the Kohn–Sham states at the coarse k-points: the
+    plain ∂H/∂k overestimates the valence–conduction |v|² by 1.4–2.3, with the
+    dipoles it is within 10%; for Si this lowers Im ε by 6% (indirect) and
+    7.5% (direct, 2.5–5 eV), and the direct term lands at 0.98 of EPW's.
+    `POSITION_DIPOLE_LEVEL = 'intra-atomic'` keeps the on-site blocks only
+    (the textbook approximation; not enough for the diffuse standard basis).
+  - With `NONLOCAL_VELOCITY = True` (norm-conserving pseudopotentials only)
+    it also includes the non-local pseudopotential term, as in PAOFLOW's
+    `dielectric_tensor`. For Si this raises Im ε by about 3.5% (indirect) and
+    6% (direct). The same plane-wave check does not reproduce this term
+    (`docs/internals/position-dipoles.md`), so the recommended setting is
+    position dipoles on, non-local term off.
 - **Fermi level and gap.** The Fermi level sits mid-gap; set `FERMI_ENERGY_EV`
   to override it.
   - The band energies are the PBE ones, so the absorption edge sits at the PBE
@@ -418,11 +430,17 @@ velocity term:
 - **Direct term cross-check.** The direct term agrees with PAOFLOW's
   `dielectric_tensor` on the same PAO Hamiltonian: peak heights to 5–9% and
   ∫ω Im ε dω to 5%, with the remainder from the different broadening forms.
-- **Comparison with EPW.** A quantitative comparison with EPW's `lindabs`
-  on the same data has not been done yet. It needs a Wannierized EPW
-  calculation, because the `wannierize = .false.` run does not give a
-  localized `epmatwp`. `plot.py` overlays EPW's `epsilon2_indabs_<T>K.dat`
-  once it exists.
+- **Comparison with EPW.** Done on the inputs of EPW tutorial 06 (Si, same
+  nscf, same `.epb` coupling, 12³/6³ dense grids, 300 K; the Wannierised
+  `epw1` must be rerun with `dis_win_max` above the top nscf band, since the
+  reader refuses window-compacted `.epb` files). Both codes implement the same
+  CHBB formula; the phonon-assisted Im ε is 0.79 (3³ q) / 0.91 (6³ q coarse
+  grids) of EPW's between 0.8 and 2.5 eV and the direct term 0.98 (with the
+  position dipoles), the coupling elements agree to ±10%, and the residual is
+  the band interpolation: EPW's 8 sp3 Wannier functions on a 6³ grid put the
+  conduction minimum 84 meV too high with twice the longitudinal mass (QE and
+  PAO agree), which also doubles EPW's electron scattering rates; a 12³ coarse
+  grid cures it. `plot.py` overlays EPW's `epsilon2_indabs_<T>K.dat`.
 
 ---
 

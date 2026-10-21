@@ -51,6 +51,10 @@ the electron-phonon coupling stays that of the DFT (DFPT) run, since ph.x
 supports Hubbard U only with atomic projectors.  NONLOCAL_VELOCITY adds the
 non-local pseudopotential term of the velocity operator (norm-conserving
 pseudopotentials only); it changes the magnitude of Im eps, not the edge.
+POSITION_DIPOLES adds the position dipoles of the PAO orbitals (the on-site
+s-p, p-d matrix elements that dH/dk lacks, Löwdin-orthogonalised over the
+basis): they give the direct transitions between conduction bands of doped Si
+and complete the velocity commutator of the Hubbard term of eACBN0 electrons.
 
 ELECTRONS_SAVE (--electrons-save) replaces the scissor at 0 K: the band energies
 and eigenvectors come from the PAO Hamiltonian of an eACBN0 (DFT+U+V,
@@ -147,6 +151,8 @@ FSTHICK_EV = 4.0  # states within FSTHICK_EV of the Fermi level (EPW fsthick)
 FERMI_ENERGY_EV = None  # Fermi level on the PAO energy scale; None = mid-gap
 REFRACTIVE_INDEX = None  # n_r of alpha = omega Im eps / (n_r c); None = n(omega) of DIRECT_DIELECTRIC_DIR, else 3.4
 NONLOCAL_VELOCITY = True  # non-local PP velocity term (norm-conserving PPs)
+POSITION_DIPOLES = True  # position dipoles of the PAO orbitals in the velocity (i[H, d])
+POSITION_DIPOLE_LEVEL = 'full'  # 'full' (Löwdin-orthogonalised basis) or 'intra-atomic' (on-site only)
 # Scissor: rigid conduction-band shift to a target indirect gap (the e-ph coupling stays DFT).
 TARGET_GAP_EV = None  # e.g. 1.17 (Si, 0 K) or an eACBN0 gap; None = DFT gap
 GAP_REFERENCE_SAVE = None  # QE save of an eACBN0 (DFT+U+V) run: target = its PAO gap
@@ -268,6 +274,8 @@ def optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev
         scissor_velocity=args.scissor_velocity,
         screening_eps=args.screening_eps, screening_eps_dft=args.screening_eps_dft,
         nonlocal_velocity=data_controller if args.nonlocal_velocity else None,
+        position_dipoles=data_controller if args.position_dipoles else None,
+        position_dipole_level=args.position_dipole_level,
         sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'], species=nscf['atom_names'],
         orbital_positions=nscf['orbital_positions'],
     )
@@ -275,8 +283,9 @@ def optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev
 
 def report(out, args, direct=None):
     """Print the gaps and write the spectra to OUTPUTDIR."""
-    print('PAOFLOW phonon-assisted absorption (k %d^3, q %d^3, degauss %.3f eV%s):'
-          % (args.nk, args.nq, args.degauss_ev, ', non-local velocity' if args.nonlocal_velocity else ''))
+    print('PAOFLOW phonon-assisted absorption (k %d^3, q %d^3, degauss %.3f eV%s%s):'
+          % (args.nk, args.nq, args.degauss_ev, ', non-local velocity' if args.nonlocal_velocity else '',
+             ', position dipoles (%s)' % args.position_dipole_level if args.position_dipoles else ''))
     n = out['refractive_index']
     print('  alpha = omega Im eps / (n c) with n %s' % ('= %.3g' % n if np.ndim(n) == 0 else
           'of the direct dielectric run, %.3g-%.3g' % (n.min(), n.max())))
@@ -328,6 +337,10 @@ def main():
     parser.add_argument('--omega-step', type=float, default=OMEGA_EV[2], help='photon-energy step (eV)')
     parser.add_argument('--nonlocal-velocity', action=argparse.BooleanOptionalAction,
                         default=NONLOCAL_VELOCITY, help='non-local PP velocity term')
+    parser.add_argument('--position-dipoles', action=argparse.BooleanOptionalAction,
+                        default=POSITION_DIPOLES, help='position dipoles of the PAO orbitals in the velocity')
+    parser.add_argument('--position-dipole-level', choices=('full', 'intra-atomic'),
+                        default=POSITION_DIPOLE_LEVEL, help='Löwdin-orthogonalised basis or on-site blocks only')
     parser.add_argument('--emissivity', action=argparse.BooleanOptionalAction, default=EMISSIVITY,
                         help='also compute the thermal emissivity of a slab')
     parser.add_argument('--thickness-um', type=float, default=THICKNESS_UM,

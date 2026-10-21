@@ -881,6 +881,7 @@ def _shared_velocities(
     nl_correction: Callable | None,
     comm,
     kblock: int,
+    position_dipoles: Callable | None = None,
 ):
     """Band velocities on the whole dense grid, one copy per node (MPI shared memory)."""
     from mpi4py import MPI
@@ -899,7 +900,9 @@ def _shared_velocities(
     start, stop = load_balancing(node_size, node_rank, nkd)
     for s0 in range(start, stop, kblock):
         block = np.arange(s0, min(s0 + kblock, stop))
-        velocities[block] = band_velocities(electrons, block, bands, nl_correction)
+        velocities[block] = band_velocities(
+            electrons, block, bands, nl_correction, position_dipoles=position_dipoles
+        )
     node_comm.Barrier()
     return velocities, window
 
@@ -929,6 +932,8 @@ def phonon_assisted_absorption_dense_q(
     eps_acoustic_cm: float = 0.1,
     refractive_index: float | NDArray[np.float64] | tuple | None = 3.4,
     nonlocal_velocity=None,
+    position_dipoles=None,
+    position_dipole_level: str = 'full',
     kk_omega_max_ev: float | None = None,
     kk_degauss_ev: float = 0.1,
     scissor_ev: float | Callable[[float], float] | None = None,
@@ -1004,6 +1009,16 @@ def phonon_assisted_absorption_dense_q(
     nonlocal_velocity : DataController, optional
         When given, adds the norm-conserving non-local pseudopotential velocity
         correction (:func:`nonlocal_velocity_operator`) built from it.
+    position_dipoles : DataController, optional
+        When given, adds the position dipoles of the PAO orbitals to the velocity
+        operator, :math:`i[H, \\mathbf d(\\mathbf k)]`
+        (:func:`~PAOFLOW.hamiltonian.position_dipoles.position_dipole_operator`):
+        the intra-atomic :math:`s`-:math:`p`, :math:`p`-:math:`d` dipoles that
+        :math:`\\partial_{\\mathbf k} H` lacks, e.g. the direct transitions between
+        the conduction bands of doped Si.
+    position_dipole_level : {'full', 'intra-atomic'}, optional
+        Löwdin-orthogonalised dipoles of the whole basis (default) or the on-site
+        blocks of the atomic orbitals only.
     kk_omega_max_ev : float, optional
         Also compute the direct ``Im eps`` over **all** PAO bands on
         ``[0, kk_omega_max_ev]`` (same step), the input of the Kramers-Kronig
@@ -1227,7 +1242,16 @@ def phonon_assisted_absorption_dense_q(
     nl_correction = None
     if nonlocal_velocity is not None:
         nl_correction = nonlocal_velocity_operator(nonlocal_velocity, bg, alat)
-    velocities, velocity_window = _shared_velocities(electrons, bands, nl_correction, comm, kblock)
+    dipole_operator = None
+    if position_dipoles is not None:
+        from ..hamiltonian.position_dipoles import position_dipole_operator
+
+        dipole_operator = position_dipole_operator(
+            position_dipoles, bg, alat, level=position_dipole_level
+        )
+    velocities, velocity_window = _shared_velocities(
+        electrons, bands, nl_correction, comm, kblock, position_dipoles=dipole_operator
+    )
 
     if sym_rots is not None:
         rots = sym_rots
@@ -1312,7 +1336,9 @@ def phonon_assisted_absorption_dense_q(
         omega_kk_ev = ostep * np.arange(int(np.floor(kk_omega_max_ev / ostep + 1.0e-6)) + 1)
         wide = np.zeros((ntemp, 3, omega_kk_ev.size))
         for kk in kblocks[dstart:dstop]:
-            v_all = band_velocities(electrons, kk, slice(None), nl_correction)
+            v_all = band_velocities(
+                electrons, kk, slice(None), nl_correction, position_dipoles=dipole_operator
+            )
             for delta, tidx in groups:
                 v_g = scissor_velocities(
                     v_all, energies[kk], delta, conduction_all, scissor_velocity
@@ -1357,6 +1383,8 @@ def phonon_assisted_absorption_dense_q(
         'scissor_ev': scissor_t * RY_TO_EV,
         'scissor_0k_ev': scissor_0k_ev,
         'scissor_velocity': scissor_velocity,
+        'nonlocal_velocity': nonlocal_velocity is not None,
+        'position_dipoles': position_dipole_level if position_dipoles is not None else 'none',
         **screening_info,
         'etas_ev': np.asarray(etas_ev, dtype=float),
         'temps_k': temps_k,

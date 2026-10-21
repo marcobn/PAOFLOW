@@ -949,6 +949,7 @@ def band_velocities(
     bands: NDArray[np.int_] | slice = slice(None),
     nl_correction: Callable[[NDArray[np.float64]], NDArray[np.complex128]] | None = None,
     degeneracy_tol: float = 1.0e-6,
+    position_dipoles: Callable[[NDArray[np.float64]], NDArray[np.complex128]] | None = None,
 ) -> NDArray[np.complex128]:
     """Band-basis velocity matrix elements ``<m k|v_alpha|n k>`` on the dense grid.
 
@@ -973,6 +974,12 @@ def band_velocities(
     degeneracy_tol : float, optional
         Energy tolerance (Ry) below which two bands count as degenerate (no
         correction between them).
+    position_dipoles : callable, optional
+        ``K_cryst (nb, 3) -> (nb, 3, nawf, nawf)``: the position dipoles
+        :math:`\\mathbf d(\\mathbf k)` of the PAO basis in bohr
+        (:func:`~PAOFLOW.hamiltonian.position_dipoles.position_dipole_operator`);
+        adds the commutator :math:`i[H(\\mathbf k), \\mathbf d(\\mathbf k)]` in the
+        orbital basis before the band rotation (see Notes).
 
     Returns
     -------
@@ -993,6 +1000,12 @@ def band_velocities(
     the PAO analogue of EPW's ``vme = 'wannier'`` (and minus PAOFLOW's
     ``dHksp`` of :func:`~PAOFLOW.hamiltonian.do_gradient.do_gradient`).  The band
     matrix is :math:`V_k^\\dagger \\mathbf{v}(\\mathbf{k}) V_k`.
+
+    With ``position_dipoles`` the off-diagonal position matrix of the orbitals is
+    included as well, :math:`\\mathbf{v} \\mathrel{+}= i[H, \\mathbf d(\\mathbf k)]`,
+    whose band-basis form :math:`i(\\varepsilon_n - \\varepsilon_m) d_{nm}` is the
+    analogue of EPW's Berry-connection term; it vanishes on the diagonal and inside
+    degenerate blocks by construction.
 
     Its diagonal is exactly the group velocity :math:`\\partial_{\\mathbf k}\\varepsilon_{n\\mathbf k}`
     (Hellmann-Feynman), with the non-local pseudopotential already inside the PAO
@@ -1015,6 +1028,10 @@ def band_velocities(
         dHk = (phk @ terms['dHn_flat'][a]).reshape(-1, nawf, nawf)
         dHk = 0.5 * (dHk + np.conjugate(np.transpose(dHk, (0, 2, 1))))
         velocity[:, a] = dHk + 1j * Hk * terms['separation'][a][None]
+    if position_dipoles is not None:
+        from ..hamiltonian.position_dipoles import dipole_velocity_term
+
+        velocity += dipole_velocity_term(Hk, position_dipoles(K))  # eV bohr
     velocity /= RY_TO_EV  # eV bohr -> Ry bohr
     Vb = electrons['V'][k_indices][:, :, bands]
     out = np.einsum('kim,kaij,kjn->kamn', Vb.conj(), velocity, Vb, optimize=True)

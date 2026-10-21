@@ -837,9 +837,10 @@ of the same crystal can replace the PBE one altogether
   values of the save, `hubbard_info_from_save`) to `absorption.npz` /
   `carrier_scattering.npz`; `OpticsModel.describe()` of the thermo-optics
   workflow shows them.
-- **Later stages (not implemented).** The Hubbard velocity commutator (the
-  on-site intra-atomic dipoles with the two-centre tables of
-  `nonlocal_velocity.py`); the Hubbard contribution to $g$ by finite
+- **Hubbard velocity commutator.** Covered by the position dipoles of the PAO
+  basis (`position_dipoles=`, see `position-dipoles.md`): $V_U$ sits inside
+  $H(R)$, so $i[H, \tau + d]$ contains its commutator.
+- **Later stages (not implemented).** The Hubbard contribution to $g$ by finite
   differences of the eACBN0 PAO Hamiltonian on displaced supercells. The
   screening of the coupling can be corrected with the
   [Poncé rescaling](#screening-correction-of-the-coupling-poncé-2018); its
