@@ -53,8 +53,10 @@ non-local pseudopotential term of the velocity operator (norm-conserving
 pseudopotentials only); it changes the magnitude of Im eps, not the edge.
 POSITION_DIPOLES adds the position dipoles of the PAO orbitals (the on-site
 s-p, p-d matrix elements that dH/dk lacks, Löwdin-orthogonalised over the
-basis): they give the direct transitions between conduction bands of doped Si
-and complete the velocity commutator of the Hubbard term of eACBN0 electrons.
+basis): with them the velocity is the full commutator i[H, r] of the PAO
+Hamiltonian, which already contains the non-local pseudopotential, so
+NONLOCAL_VELOCITY must stay off (checked against exact plane-wave velocities:
+dipoles 0.99-1.01 of the exact Im eps, dipoles + non-local term 0.87).
 
 ELECTRONS_SAVE (--electrons-save) replaces the scissor at 0 K: the band energies
 and eigenvectors come from the PAO Hamiltonian of an eACBN0 (DFT+U+V,
@@ -150,7 +152,7 @@ DEGAUSS_EV = 0.05  # energy-conserving delta smearing (EPW degaussw)
 FSTHICK_EV = 4.0  # states within FSTHICK_EV of the Fermi level (EPW fsthick)
 FERMI_ENERGY_EV = None  # Fermi level on the PAO energy scale; None = mid-gap
 REFRACTIVE_INDEX = None  # n_r of alpha = omega Im eps / (n_r c); None = n(omega) of DIRECT_DIELECTRIC_DIR, else 3.4
-NONLOCAL_VELOCITY = True  # non-local PP velocity term (norm-conserving PPs)
+NONLOCAL_VELOCITY = False  # non-local PP velocity term; double counts once POSITION_DIPOLES is on (see README)
 POSITION_DIPOLES = True  # position dipoles of the PAO orbitals in the velocity (i[H, d])
 POSITION_DIPOLE_LEVEL = 'full'  # 'full' (Löwdin-orthogonalised basis) or 'intra-atomic' (on-site only)
 # Scissor: rigid conduction-band shift to a target indirect gap (the e-ph coupling stays DFT).

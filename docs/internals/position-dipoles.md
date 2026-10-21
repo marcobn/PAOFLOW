@@ -82,9 +82,10 @@ off-axis it has the plane-wave magnitude already without d.
 
 - `PAOFLOW.position_dipole_correction()` for `dHksp` / `dielectric_tensor` (plan step 5).
 - Spin-orbit (j, m_j) bases, through the `_jm_shell_transform` of the non-local path.
-- The non-local correction Δp of `nonlocal_velocity.py` does not correlate with the exact
-  plane-wave i[V_NL, r] between the same states on this test (cosine −0.3…0.2 with or without the
-  (−1)^l sign), while the exact term moves the plane-wave group velocities onto the PAO ones.
-  Until that is understood, use `position_dipoles` with `nonlocal_velocity=False`.
+- The non-local correction Δp of `nonlocal_velocity.py` was fixed on Oct 21 2026 with the
+  overlap tables and the signs of this module (`nonlocal-velocity.md`). It is not to be combined
+  with the dipoles: v = i[H, τ + d] is already the full commutator of a Hamiltonian that
+  contains V_NL, and adding Δp double counts (exact plane-wave ε₂ of Si: dipoles 0.99–1.01,
+  dipoles + Δp 0.87). Keep `nonlocal_velocity=False` with `position_dipoles` on.
 - The Hubbard term of eACBN0 electrons is inside H(R), so i[H, τ + d] contains its velocity
   commutator; nothing else is needed.

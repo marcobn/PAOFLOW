@@ -387,12 +387,16 @@ Hamiltonian (see section 4); the rates keep the PBE coupling. The energies of
     7.5% (direct, 2.5–5 eV), and the direct term lands at 0.98 of EPW's.
     `POSITION_DIPOLE_LEVEL = 'intra-atomic'` keeps the on-site blocks only
     (the textbook approximation; not enough for the diffuse standard basis).
-  - With `NONLOCAL_VELOCITY = True` (norm-conserving pseudopotentials only)
-    it also includes the non-local pseudopotential term, as in PAOFLOW's
-    `dielectric_tensor`. For Si this raises Im ε by about 3.5% (indirect) and
-    6% (direct). The same plane-wave check does not reproduce this term
-    (`docs/internals/position-dipoles.md`), so the recommended setting is
-    position dipoles on, non-local term off.
+  - `NONLOCAL_VELOCITY` (default `False`; norm-conserving pseudopotentials
+    only) adds the non-local pseudopotential term i[V_NL, r], as in PAOFLOW's
+    `dielectric_tensor`. The term was repaired in October 2026 (Löwdin
+    transformation and orbital signs, `docs/internals/nonlocal-velocity.md`)
+    and now matches the exact plane-wave commutator to 2–3 %, but it is not to
+    be combined with the position dipoles: the velocity i[H, r] of the PAO
+    Hamiltonian already contains V_NL, so with the dipoles it is complete
+    (0.99–1.01 of the exact Im ε of Si) and the term on top double counts
+    (0.87). Without the dipoles, plain (1.02–1.06) and term (0.90–0.97)
+    bracket the exact result.
 - **Fermi level and gap.** The Fermi level sits mid-gap; set `FERMI_ENERGY_EV`
   to override it.
   - The band energies are the PBE ones, so the absorption edge sits at the PBE

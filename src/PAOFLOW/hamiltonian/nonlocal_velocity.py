@@ -1262,6 +1262,85 @@ def assemble_beta_projections_k(
     return P_list, Palpha_list
 
 
+def pao_orbital_signs(pao_catalog: PAOCatalog) -> np.ndarray:
+    r"""Sign of every PAOFLOW orbital with respect to the real-space orbitals of the tables.
+
+    PAOFLOW's atomic Bloch orbitals (``calc_atwfc_k``) are built in reciprocal space with the
+    phase :math:`i^l` and the ``calc_ylmg`` harmonics, which carry an extra ``-1`` on odd
+    ``|m|``; transformed back to real space they are :math:`(-1)^l (-1)^{|m| \bmod 2}` times
+    :math:`R(r) Y_{lm}(\hat r)` with the tesseral harmonics of
+    :mod:`PAOFLOW.hamiltonian._two_center`.  A matrix with two PAO indices built from the
+    tables therefore transforms with the product of the two signs.  Measured on the Si basis
+    (3S 3P 3D 4S 4P) against the plane-wave overlaps and Berry connection of the PAOFLOW
+    orbitals (agreement to :math:`10^{-3}` and 2 %); the odd-``|m|`` factor alone flips every
+    :math:`s`--:math:`p` and :math:`p`--:math:`d` element.
+
+    Parameters
+    ----------
+    pao_catalog : PAOCatalog
+
+    Returns
+    -------
+    np.ndarray, shape ``(nawf,)``
+        ``+1`` or ``-1`` per orbital in PAOFLOW basis order.
+    """
+    return np.array(
+        [
+            (-1.0) ** orbital.l * (-1.0 if abs(orbital.m) % 2 == 1 else 1.0)
+            for orbital in pao_catalog.basis
+        ],
+        dtype=float,
+    )
+
+
+def lowdin_transform(matrix_k: np.ndarray, overlap_k: np.ndarray) -> np.ndarray:
+    r"""Transform an operator matrix from the atomic to the Löwdin-orthonormal PAO basis.
+
+    PAOFLOW's Hamiltonian, ``dHksp`` and band velocities are expressed in the symmetrically
+    orthogonalised orbitals :math:`\omega = \varphi S^{-1/2}`; a matrix computed between the
+    raw atomic orbitals :math:`\varphi` (such as the two-centre :math:`\Delta p`) must be
+    transformed as
+
+    .. math::
+
+        M^{\omega}(\mathbf k) = S^{-1/2}(\mathbf k)\, M^{\varphi}(\mathbf k)\, S^{-1/2}(\mathbf k)
+
+    before it is added to them.  For a diffuse basis this is not a small correction: on the
+    standard Si set (Bloch-overlap eigenvalues :math:`5\cdot10^{-4}` to 20) the untransformed
+    :math:`\Delta p` has its largest elements 4--5 times too small.
+
+    Parameters
+    ----------
+    matrix_k : np.ndarray, shape ``(nk, 3, n, n)`` or ``(nk, n, n)``, complex
+        Operator in the atomic-orbital Bloch basis.
+    overlap_k : np.ndarray, shape ``(nk, n, n)``, complex
+        Hermitian positive-definite Bloch overlap :math:`S(\mathbf k)` of the same orbitals,
+        in the same phase convention.
+
+    Returns
+    -------
+    np.ndarray
+        The transformed operator, same shape as ``matrix_k``.
+
+    Raises
+    ------
+    ValueError
+        If :math:`S(\mathbf k)` is not positive definite (linearly dependent orbitals).
+    """
+    eigenvalues, eigenvectors = np.linalg.eigh(overlap_k)
+    if eigenvalues.min() <= 0.0:
+        raise ValueError(
+            f'the PAO overlap S(k) is not positive definite (smallest eigenvalue '
+            f'{eigenvalues.min():.3e}): linearly dependent orbitals'
+        )
+    inverse_sqrt = (eigenvectors / np.sqrt(eigenvalues)[:, None, :]) @ np.conj(
+        np.transpose(eigenvectors, (0, 2, 1))
+    )
+    if matrix_k.ndim == 4:
+        return inverse_sqrt[:, None] @ matrix_k @ inverse_sqrt[:, None]
+    return inverse_sqrt @ matrix_k @ inverse_sqrt
+
+
 def build_nonlocal_velocity_kspace(
     beta_catalog: BetaCatalog,
     pao_catalog: PAOCatalog,
@@ -1269,6 +1348,7 @@ def build_nonlocal_velocity_kspace(
     k_points_cart: np.ndarray,
     *,
     units: str = 'hartree',
+    overlap_k: np.ndarray | None = None,
 ) -> np.ndarray:
     r"""Assemble :math:`\Delta p_\alpha(\mathbf{k})` in the PAO basis.
 
@@ -1297,10 +1377,27 @@ def build_nonlocal_velocity_kspace(
         :math:`m/(i\hbar) = -i`.  Selecting ``'rydberg'`` returns the
         same operator scaled by 2 to match the Rydberg-based convention
         used internally by ``do_gradient`` / ``do_momentum``.
+    overlap_k : np.ndarray, shape ``(nk, nawf, nawf)``, optional
+        Bloch overlap :math:`S(\mathbf k)` of the atomic orbitals at the same k-points
+        (:func:`~PAOFLOW.hamiltonian.position_dipoles.assemble_overlap_kspace`).  When
+        given, the operator is transformed to the Löwdin-orthonormal basis of ``Hksp``
+        with :func:`lowdin_transform`; without it the raw atomic-orbital matrix is returned
+        (diagnostics only -- it is not the operator of the basis PAOFLOW works in).
 
     Returns
     -------
     dP : np.ndarray, shape ``(nk, 3, nawf, nawf)``, complex
+
+    Notes
+    -----
+    The assembled matrix is :math:`\langle\varphi_a|\,m/(i\hbar)\,[V_{\rm NL},
+    \mathbf r]\,|\varphi_b\rangle` between the raw atomic Bloch orbitals, verified
+    against the plane-wave commutator between the same orbitals to :math:`10^{-3}` on Si.
+    Two further steps bring it into PAOFLOW's basis: the Löwdin transformation with
+    :math:`S(\mathbf k)` (``overlap_k``) and PAOFLOW's orbital signs
+    (:func:`pao_orbital_signs`).  Before October 2026 both were missing (the odd-``|m|``
+    sign alone was applied), which left the largest elements 4--5 times too small and every
+    :math:`s`--:math:`p` / :math:`p`--:math:`d` element sign-flipped.
     """
     if units not in ('hartree', 'rydberg'):
         raise ValueError(f"units must be 'hartree' or 'rydberg', got {units!r}")
@@ -1336,19 +1433,18 @@ def build_nonlocal_velocity_kspace(
     if units == 'rydberg':
         dP *= 2.0
 
-    # PAOFLOW's projection (``calc_ylmg`` in ``do_atwfc_proj``) builds the
-    # real-Y_lm angular factors with an extra ``(-1)`` for every orbital
-    # with odd ``|m|`` (px, py, d_xz, d_yz, f_*).  ``real_spherical_harmonic``
-    # in ``_two_center.py`` uses the standard tesseral convention (no such
-    # sign).  The two extra signs cancel in ``<beta|phi>`` (squared) but not
-    # in ``<beta|r_alpha|phi>``, where they survive once per PAO.  Restore
-    # the PAOFLOW convention on the PAO indices of dP so it matches the
-    # basis in which ``dHksp`` is expressed.
-    pao_sign = np.array(
-        [-1.0 if (abs(orb.m) % 2 == 1) else 1.0 for orb in pao_catalog.basis],
-        dtype=float,
-    )
-    dP *= pao_sign[None, None, :, None] * pao_sign[None, None, None, :]
+    # Raw atomic orbitals -> Löwdin-orthonormal basis of Hksp / dHksp.
+    if overlap_k is not None:
+        overlap_k = np.asarray(overlap_k)
+        if overlap_k.shape != (nk, nawf, nawf):
+            raise ValueError(f'overlap_k must have shape {(nk, nawf, nawf)}; got {overlap_k.shape}')
+        dP = lowdin_transform(dP, overlap_k)
+
+    # Tables' tesseral orbitals -> PAOFLOW's orbitals: (-1)^l (-1)^(odd |m|) on both PAO
+    # indices (pao_orbital_signs).  The overlap transforms the same way, so the order of the
+    # two steps does not matter.
+    signs = pao_orbital_signs(pao_catalog)
+    dP *= signs[None, None, :, None] * signs[None, None, None, :]
 
     return dP
 
@@ -1579,6 +1675,44 @@ def assemble_beta_projections_jm(
     return P_list, Palpha_list
 
 
+def scalar_to_jm_matrix(matrix_k: np.ndarray, pao_catalog: PAOCatalog) -> np.ndarray:
+    r"""Spin-double a scalar PAO matrix and rotate it to the relativistic ``(j, m_j)`` basis.
+
+    Uses the same per-shell unitaries (:func:`_jm_shell_transform`) and channel layout as the
+    PAO index of :func:`assemble_beta_projections_jm`, so that e.g. the Bloch overlap
+    :math:`S(\mathbf k)` of the scalar orbitals becomes the overlap of the ``(j, m_j)`` basis
+    in which the relativistic ``dHksp`` is expressed.
+
+    Parameters
+    ----------
+    matrix_k : np.ndarray, shape ``(nk, nawf, nawf)``, complex
+        Spin-independent matrix in the scalar (tesseral) PAO basis.
+    pao_catalog : PAOCatalog
+
+    Returns
+    -------
+    np.ndarray, shape ``(nk, 2 nawf, 2 nawf)``, complex
+    """
+    matrix_k = np.asarray(matrix_k)
+    nk = matrix_k.shape[0]
+    n_rel = 2 * pao_catalog.total_nlm
+    out = np.zeros((nk, n_rel, n_rel), dtype=complex)
+    channels = []
+    for site in pao_catalog.sites:
+        for l_p, col0_local, n_m, rel_col0 in _pao_jm_channel_info(site):
+            channels.append((l_p, site.basis_offset + col0_local, n_m, rel_col0))
+    for l_a, col_a, n_a, rel_a in channels:
+        T_a = _jm_shell_transform(l_a)
+        for l_b, col_b, n_b, rel_b in channels:
+            T_b_h = _jm_shell_transform(l_b).conj().T
+            block = matrix_k[:, col_a : col_a + n_a, col_b : col_b + n_b]
+            doubled = np.zeros((nk, 2 * n_a, 2 * n_b), dtype=complex)
+            doubled[:, :n_a, :n_b] = block
+            doubled[:, n_a:, n_b:] = block
+            out[:, rel_a : rel_a + 2 * n_a, rel_b : rel_b + 2 * n_b] = T_a @ doubled @ T_b_h
+    return out
+
+
 def build_nonlocal_velocity_jm_kspace(
     beta_catalog: BetaCatalog,
     pao_catalog: PAOCatalog,
@@ -1586,6 +1720,7 @@ def build_nonlocal_velocity_jm_kspace(
     k_points_cart: np.ndarray,
     *,
     units: str = 'hartree',
+    overlap_k: np.ndarray | None = None,
 ) -> np.ndarray:
     r"""Assemble :math:`\Delta p_\alpha(\mathbf{k})` in the relativistic
     :math:`(j, m_j)` PAO basis (Option A).
@@ -1603,9 +1738,21 @@ def build_nonlocal_velocity_jm_kspace(
     ``dftSO=True``.  No scalar :math:`\Delta p` is formed and no spin trace
     is taken, so the j-dependence of the NL operator is preserved.
 
+    overlap_k : np.ndarray, shape ``(nk, nawf, nawf)``, optional
+        Bloch overlap of the scalar atomic orbitals; when given it is rotated to the
+        ``(j, m_j)`` basis (:func:`scalar_to_jm_matrix`) and the operator is Löwdin
+        transformed (:func:`lowdin_transform`), as in the scalar path.
+
     Returns
     -------
     dP : np.ndarray, shape ``(nk, 3, n_rel, n_rel)``, complex
+
+    Notes
+    -----
+    The ``(-1)^l`` orbital sign of :func:`pao_orbital_signs` is applied per channel on both
+    PAO indices (the odd-``|m|`` factor is inside the shell transform).  Both this and the
+    Löwdin transformation were absent before October 2026; the Pt ``epsilon.x`` and SHC
+    checks of this path predate them and have not been repeated.
     """
     if units not in ('hartree', 'rydberg'):
         raise ValueError(f"units must be 'hartree' or 'rydberg', got {units!r}")
@@ -1637,10 +1784,15 @@ def build_nonlocal_velocity_jm_kspace(
     dP *= -1j  # m/(iℏ) in Hartree units
     if units == 'rydberg':
         dP *= 2.0
-    # The RSH->PAOFLOW-tesseral odd-|m| sign is already folded into the
-    # per-shell transform (Sgn_l in _jm_shell_transform), so -- unlike the
-    # scalar build_nonlocal_velocity_kspace -- no pao_sign post-multiply is
-    # applied here.
+    if overlap_k is not None:
+        dP = lowdin_transform(dP, scalar_to_jm_matrix(overlap_k, pao_catalog))
+    # The odd-|m| sign is inside the per-shell transform (Sgn_l in _jm_shell_transform);
+    # the (-1)^l factor of pao_orbital_signs is applied per channel here.
+    parity = np.ones(n_rel)
+    for site in pao_catalog.sites:
+        for l_p, _col0, n_m, rel_col0 in _pao_jm_channel_info(site):
+            parity[rel_col0 : rel_col0 + 2 * n_m] = (-1.0) ** l_p
+    dP *= parity[None, None, :, None] * parity[None, None, None, :]
     return dP
 
 
@@ -1652,13 +1804,25 @@ def compute_nonlocal_velocity_jm_on_grid(
     alat: float,
     *,
     units: str = 'rydberg',
+    overlap_tables=None,
 ) -> np.ndarray:
     r"""Driver-facing wrapper around :func:`build_nonlocal_velocity_jm_kspace`.
 
     Mirrors :func:`compute_nonlocal_velocity_on_grid` but returns the
     correction in the relativistic ``(j, m_j)`` basis (shape
     ``(nktot, 3, n_rel, n_rel)`` with ``n_rel = 2 × total_nlm``).
+    ``overlap_tables`` are the scalar PAO overlap tables
+    (:func:`~PAOFLOW.hamiltonian.position_dipoles.build_position_tables`).
     """
+    k_cart = _kgrid_to_cart(kgrid_2pi_alat, alat)
+    overlap_k = _overlap_at(overlap_tables, k_cart)
+    return build_nonlocal_velocity_jm_kspace(
+        beta_catalog, pao_catalog, tables, k_cart, units=units, overlap_k=overlap_k
+    )
+
+
+def _kgrid_to_cart(kgrid_2pi_alat: np.ndarray, alat: float) -> np.ndarray:
+    """PAOFLOW's ``(3, nk)`` or ``(nk, 3)`` k-grid in units of 2 pi/alat -> ``(nk, 3)`` 1/bohr."""
     k_arr = np.asarray(kgrid_2pi_alat, dtype=float)
     if k_arr.ndim != 2:
         raise ValueError('kgrid_2pi_alat must be 2-D')
@@ -1666,9 +1830,16 @@ def compute_nonlocal_velocity_jm_on_grid(
         k_arr = k_arr.T  # (3, nk) → (nk, 3)
     elif k_arr.shape[1] != 3:
         raise ValueError('kgrid_2pi_alat must have a length-3 axis')
+    return k_arr * (2.0 * np.pi / float(alat))
 
-    k_cart = k_arr * (2.0 * np.pi / float(alat))
-    return build_nonlocal_velocity_jm_kspace(beta_catalog, pao_catalog, tables, k_cart, units=units)
+
+def _overlap_at(overlap_tables, k_cart: np.ndarray):
+    """Bloch overlap S(k) of the atomic orbitals from the position tables, or ``None``."""
+    if overlap_tables is None:
+        return None
+    from .position_dipoles import assemble_overlap_kspace
+
+    return assemble_overlap_kspace(overlap_tables, k_cart)
 
 
 def compute_nonlocal_velocity_on_grid(
@@ -1679,6 +1850,7 @@ def compute_nonlocal_velocity_on_grid(
     alat: float,
     *,
     units: str = 'rydberg',
+    overlap_tables=None,
 ) -> np.ndarray:
     r"""Driver-facing wrapper around :func:`build_nonlocal_velocity_kspace`.
 
@@ -1701,21 +1873,22 @@ def compute_nonlocal_velocity_on_grid(
         Lattice parameter in Bohr.
     units : {'hartree', 'rydberg'}
         Forwarded to :func:`build_nonlocal_velocity_kspace`.
+    overlap_tables : PositionTables, optional
+        Overlap tables of the PAO orbitals
+        (:func:`~PAOFLOW.hamiltonian.position_dipoles.build_position_tables`, overlap blocks
+        only are needed); their Bloch sum at every k-point is the ``overlap_k`` of
+        :func:`build_nonlocal_velocity_kspace`.  Always pass them in production: without them
+        the operator stays in the raw atomic-orbital basis.
 
     Returns
     -------
     dP : np.ndarray, complex, shape ``(nktot, 3, nawf, nawf)``
     """
-    k_arr = np.asarray(kgrid_2pi_alat, dtype=float)
-    if k_arr.ndim != 2:
-        raise ValueError('kgrid_2pi_alat must be 2-D')
-    if k_arr.shape[0] == 3 and k_arr.shape[1] != 3:
-        k_arr = k_arr.T  # (3, nk) → (nk, 3)
-    elif k_arr.shape[1] != 3:
-        raise ValueError('kgrid_2pi_alat must have a length-3 axis')
-
-    k_cart = k_arr * (2.0 * np.pi / float(alat))
-    return build_nonlocal_velocity_kspace(beta_catalog, pao_catalog, tables, k_cart, units=units)
+    k_cart = _kgrid_to_cart(kgrid_2pi_alat, alat)
+    overlap_k = _overlap_at(overlap_tables, k_cart)
+    return build_nonlocal_velocity_kspace(
+        beta_catalog, pao_catalog, tables, k_cart, units=units, overlap_k=overlap_k
+    )
 
 
 # QE/CODATA Rydberg in eV (matches read_QE_xml.Hart2eV/2 = 13.60569193).
@@ -1731,12 +1904,12 @@ def inject_into_dHksp(
 ) -> None:
     r"""Add the non-local velocity correction into ``dHksp`` in place.
 
-    Sign + prefactor calibrated against ``epsilon.x`` for Cu (see
-    ``example17_Cu_epsilon``); after the Y_lm convention fix on the PAO
-    indices of :math:`\Delta p` (see :func:`build_nonlocal_velocity_kspace`),
-    cubic isotropy of :math:`\varepsilon_{\alpha\alpha}` is restored
-    with ``sign=+1`` and the d→p peak position/height of the QE
-    reference is recovered.  Convention:
+    ``sign=+1`` follows from the conventions: :math:`\Delta p` of
+    :func:`build_nonlocal_velocity_kspace` is :math:`m/(i\hbar)[V_{\rm NL}, \mathbf r]
+    = -\,i[V_{\rm NL}, \mathbf r]`, i.e. minus the velocity correction, and PAOFLOW's
+    ``dHksp`` / ``pksp`` are minus the velocity / momentum (the Hellmann--Feynman test of
+    ``tests/unit/hamiltonian/test_velocity_hellmann_feynman.py``, ``write4bt2`` exporting
+    ``-pksp``).  Convention:
 
     .. math::
        \mathrm{dHksp}[k,\alpha,n,m,\sigma]

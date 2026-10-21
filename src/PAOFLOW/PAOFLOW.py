@@ -1992,8 +1992,7 @@ class PAOFLOW:
             ``'rydberg'`` (default) returns :math:`\\Delta p_\\alpha` in
             Ry/Bohr; ``'hartree'`` returns Ha/Bohr.
         inject : bool, optional
-            **Experimental — sign provisional, awaiting integration
-            calibration.**  When ``True`` the correction is additively
+            When ``True`` the correction is additively
             applied to ``arry['dHksp']`` (which is in eV·Bohr) using
 
             .. math::
@@ -2005,9 +2004,13 @@ class PAOFLOW:
             reflects PAOFLOW's internal convention
             ``pksp = -\\langle n|p|m\\rangle`` (confirmed by
             ``writers/write4bt2.py`` which exports ``mommat = -np.real(pksp)``
-            and by the cubium Hellmann-Feynman test).  Pin in Phase 4
-            will compare against ``epsilon.x`` on Si/Cu and may flip the
-            sign; the conversion factor itself is exact.
+            and by the Hellmann-Feynman test of ``test_velocity_hellmann_feynman.py``).
+            Since October 2026 the operator is Löwdin transformed with the Bloch
+            overlap of the PAO orbitals (cached as ``'_NL_overlap_tables'``) and carries
+            PAOFLOW's orbital signs
+            (:func:`~PAOFLOW.hamiltonian.nonlocal_velocity.pao_orbital_signs`); earlier
+            results with ``nonlocal_velocity=True`` (including the Cu/Pt ``epsilon.x``
+            comparisons quoted below) were obtained without both.
         sign : int or None, optional
             ``+1``, ``-1``, or ``None`` (default).  When ``None`` the
             calibrated default for the active path is used: ``+1`` for the
@@ -2090,6 +2093,23 @@ class PAOFLOW:
                     beta_cat, pao_cat, pairs, q_max=q_max, n_q=n_q
                 )
             tables = arry['_NL_tables']
+            if '_NL_overlap_tables' not in arry:
+                # Bloch overlap of the PAO orbitals: the Löwdin transformation that brings
+                # the raw atomic-orbital Delta_p into the orthonormal basis of Hksp.
+                from .hamiltonian.position_dipoles import (
+                    build_position_tables,
+                    enumerate_pao_pairs,
+                )
+
+                a_cart = np.asarray(arry['a_vectors']) * float(attr['alat'])
+                arry['_NL_overlap_tables'] = build_position_tables(
+                    pao_cat,
+                    enumerate_pao_pairs(pao_cat, a_cart, pao_tol=pao_tol),
+                    q_max=q_max,
+                    n_q=n_q,
+                    include_dipole=False,
+                )
+            overlap_tables = arry['_NL_overlap_tables']
 
             def _build_dP(kgrid_slice):
                 if jm_kspace:
@@ -2102,6 +2122,7 @@ class PAOFLOW:
                         kgrid_slice,
                         float(attr['alat']),
                         units=units,
+                        overlap_tables=overlap_tables,
                     )
                 return compute_nonlocal_velocity_on_grid(
                     beta_cat,
@@ -2110,6 +2131,7 @@ class PAOFLOW:
                     kgrid_slice,
                     float(attr['alat']),
                     units=units,
+                    overlap_tables=overlap_tables,
                 )
 
             # Under MPI, ``dHksp`` is k-scattered along axis 0 (see

@@ -833,7 +833,10 @@ def nonlocal_velocity_operator(
     -----
     PAOFLOW's ``dHksp`` is minus the velocity operator and the correction enters
     it as ``dHksp += sign * Delta p``, so the velocity gains ``-sign * Delta p``.
-    k-points are folded to ``[-0.5, 0.5)`` as on PAOFLOW's FFT grid.
+    k-points are folded to ``[-0.5, 0.5)`` as on PAOFLOW's FFT grid.  The operator is
+    transformed to the Löwdin-orthonormal PAO basis with the Bloch overlap of the
+    orbitals at every k (:func:`~PAOFLOW.hamiltonian.nonlocal_velocity.lowdin_transform`),
+    as the Hamiltonian and the velocities of :func:`~PAOFLOW.elphon.elph_bloch.band_velocities`.
     """
     from ..hamiltonian.nonlocal_velocity import (
         build_nl_real_space_tables,
@@ -841,6 +844,11 @@ def nonlocal_velocity_operator(
         enumerate_nl_pairs,
         load_beta_projectors,
         load_pao_orbitals,
+    )
+    from ..hamiltonian.position_dipoles import (
+        assemble_overlap_kspace,
+        build_position_tables,
+        enumerate_pao_pairs,
     )
 
     arrays, attributes = data_controller.data_dicts()
@@ -855,13 +863,21 @@ def nonlocal_velocity_operator(
     a_cart = np.asarray(arrays['a_vectors']) * float(alat)
     pairs = enumerate_nl_pairs(beta_catalog, pao_catalog, a_cart, pao_tol=pao_tol)
     tables = build_nl_real_space_tables(beta_catalog, pao_catalog, pairs, q_max=q_max, n_q=n_q)
+    overlap_tables = build_position_tables(
+        pao_catalog, enumerate_pao_pairs(pao_catalog, a_cart, pao_tol=pao_tol), include_dipole=False
+    )
     bg = np.asarray(bg, dtype=float)
 
     def correction(k_cryst: NDArray[np.float64]) -> NDArray[np.complex128]:
         folded = k_cryst - np.floor(k_cryst + 0.5)
         k_cart = (folded @ bg) * (2.0 * np.pi / float(alat))
         delta_p = build_nonlocal_velocity_kspace(
-            beta_catalog, pao_catalog, tables, k_cart, units='rydberg'
+            beta_catalog,
+            pao_catalog,
+            tables,
+            k_cart,
+            units='rydberg',
+            overlap_k=assemble_overlap_kspace(overlap_tables, k_cart),
         )
         return -sign * delta_p
 

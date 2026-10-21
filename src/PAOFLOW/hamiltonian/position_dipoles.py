@@ -68,6 +68,7 @@ from .nonlocal_velocity import (
     PAOCatalog,
     _lattice_search_bounds,
     load_pao_orbitals,
+    pao_orbital_signs,
     site_pao_cutoff,
 )
 
@@ -214,6 +215,7 @@ def build_position_tables(
     *,
     q_max: float = 20.0,
     n_q: int = 600,
+    include_dipole: bool = True,
 ) -> PositionTables:
     r"""Two-centre overlap and intrinsic-dipole blocks for every pair.
 
@@ -226,6 +228,9 @@ def build_position_tables(
     q_max, n_q : float, int, optional
         Reciprocal-space Simpson grid of the radial Bessel transforms
         (:func:`~PAOFLOW.hamiltonian._two_center.radial_bessel_transform`).
+    include_dipole : bool, optional
+        ``False`` computes the overlap blocks only (the dipole blocks are zero): the input of
+        the Löwdin transformation of the non-local velocity correction, at a third of the cost.
 
     Returns
     -------
@@ -256,7 +261,7 @@ def build_position_tables(
                 species.r, channel.R_radial, channel.l, q_grid
             )
             modified_bra = species.r * channel.R_radial
-            for lp in _dipole_bra_channels(channel.l):
+            for lp in _dipole_bra_channels(channel.l) if include_dipole else ():
                 bessel_bra[(label, channel_index, lp)] = radial_bessel_transform(
                     species.r, modified_bra, lp, q_grid
                 )
@@ -275,7 +280,7 @@ def build_position_tables(
             bessel_a = bessel_phi[(bra_site.label, bra.channel_index)]
             bessel_g = {
                 lp: bessel_bra[(bra_site.label, bra.channel_index, lp)]
-                for lp in _dipole_bra_channels(bra.l)
+                for lp in (_dipole_bra_channels(bra.l) if include_dipole else ())
             }
             key_a = ('phi', bra_site.label, bra.channel_index)
             key_g = ('g', bra_site.label, bra.channel_index)
@@ -295,7 +300,7 @@ def build_position_tables(
                     keyA=key_a,
                     keyB=key_b,
                 )
-                for alpha in range(3):
+                for alpha in range(3) if include_dipole else ():
                     dipole_block[alpha, a, b] = two_center_dipole_overlap_precomputed(
                         bessel_g,
                         bessel_b,
@@ -387,6 +392,44 @@ def assemble_position_kspace(
     gradient_phases = phases[:, :, None] * (1j * translations)[None, :, :]  # (nk, npairs, 3)
     overlap_gradient_k = np.tensordot(gradient_phases, overlap, axes=(1, 0))  # (nk, 3, nawf, nawf)
     return overlap_k, overlap_gradient_k, dipole_k
+
+
+def assemble_overlap_kspace(
+    tables: PositionTables, k_points_cart: NDArray[np.float64]
+) -> NDArray[np.complex128]:
+    r"""Bloch overlap :math:`S(\mathbf k) = \sum_{\Delta\mathbf R} e^{i\mathbf k\cdot\Delta\mathbf R} S(\Delta\mathbf R)` alone.
+
+    Parameters
+    ----------
+    tables : PositionTables
+        Output of :func:`build_position_tables` (``include_dipole=False`` is enough).
+    k_points_cart : ndarray, shape ``(nk, 3)``
+        k-points in Cartesian inverse bohr.
+
+    Returns
+    -------
+    ndarray, shape ``(nk, nawf, nawf)``, complex
+        The input of :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.lowdin_transform`.
+    """
+    k_points_cart = np.asarray(k_points_cart, dtype=float)
+    if k_points_cart.ndim != 2 or k_points_cart.shape[1] != 3:
+        raise ValueError('k_points_cart must have shape (nk, 3).')
+    npairs, nawf = len(tables.pairs), tables.nawf
+    overlap = np.zeros((npairs, nawf, nawf))
+    translations = np.zeros((npairs, 3))
+    for p, pair in enumerate(tables.pairs):
+        rows = slice(
+            tables.basis_offsets[pair.bra_site],
+            tables.basis_offsets[pair.bra_site] + tables.orbitals_per_site[pair.bra_site],
+        )
+        cols = slice(
+            tables.basis_offsets[pair.ket_site],
+            tables.basis_offsets[pair.ket_site] + tables.orbitals_per_site[pair.ket_site],
+        )
+        overlap[p, rows, cols] = tables.overlap[p]
+        translations[p] = pair.deltaR_cart
+    phases = np.exp(1j * (k_points_cart @ translations.T))
+    return np.tensordot(phases, overlap, axes=(1, 0))
 
 
 def on_site_dipoles(tables: PositionTables) -> NDArray[np.float64]:
@@ -550,24 +593,12 @@ def dipole_velocity_term(
 
 
 def tesseral_signs(pao_catalog: PAOCatalog) -> NDArray[np.float64]:
-    r"""Sign of every PAOFLOW orbital with respect to the real-space orbitals of the tables.
+    """Sign of every PAOFLOW orbital with respect to the orbitals of the tables.
 
-    PAOFLOW's atomic Bloch orbitals (``calc_atwfc_k``) are built in reciprocal space with the
-    phase :math:`i^l` and the ``calc_ylmg`` harmonics, which carry an extra ``-1`` on odd
-    ``|m|``; transformed back to real space they are :math:`(-1)^l (-1)^{|m| \bmod 2}` times
-    :math:`R(r) Y_{lm}(\hat r)` with the tesseral harmonics of
-    :mod:`PAOFLOW.hamiltonian._two_center`.  Any matrix with two PAO indices transforms with the
-    product of the two signs.  Verified against the plane-wave overlap and Berry connection of
-    the PAO basis of Si (3S 3P 3D 4S 4P): the overlaps agree to :math:`10^{-3}` and the dipoles
-    to 2 % once these signs are applied.
+    Alias of :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.pao_orbital_signs`, where the
+    convention :math:`(-1)^l (-1)^{|m| \\bmod 2}` is documented.
     """
-    return np.array(
-        [
-            (-1.0) ** orbital.l * (-1.0 if abs(orbital.m) % 2 == 1 else 1.0)
-            for orbital in pao_catalog.basis
-        ],
-        dtype=float,
-    )
+    return pao_orbital_signs(pao_catalog)
 
 
 def position_dipole_operator(

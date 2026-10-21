@@ -2149,8 +2149,10 @@ non-local pseudopotential term of the velocity operator (norm-conserving
 pseudopotentials only); it changes the magnitude of Im eps, not the edge.
 POSITION_DIPOLES adds the position dipoles of the PAO orbitals (the on-site
 s-p, p-d matrix elements that dH/dk lacks, Löwdin-orthogonalised over the
-basis): they give the direct transitions between conduction bands of doped Si
-and complete the velocity commutator of the Hubbard term of eACBN0 electrons.
+basis): with them the velocity is the full commutator i[H, r] of the PAO
+Hamiltonian, which already contains the non-local pseudopotential, so
+NONLOCAL_VELOCITY must stay off (checked against exact plane-wave velocities:
+dipoles 0.99-1.01 of the exact Im eps, dipoles + non-local term 0.87).
 
 ELECTRONS_SAVE (--electrons-save) replaces the scissor at 0 K: the band energies
 and eigenvectors come from the PAO Hamiltonian of an eACBN0 (DFT+U+V,
@@ -2528,7 +2530,7 @@ def build_elphon_absorption_script(cfg: dict[str, Any]) -> str:
         '__REFRACTIVE_INDEX__': repr(
             float(cfg['refractive_index']) if cfg.get('refractive_index') is not None else None
         ),
-        '__NONLOCAL_VELOCITY__': str(bool(cfg.get('nonlocal_velocity', True))),
+        '__NONLOCAL_VELOCITY__': str(bool(cfg.get('nonlocal_velocity', False))),
         '__POSITION_DIPOLES__': str(bool(cfg.get('position_dipoles', True))),
         '__EMISSIVITY__': str(bool(cfg.get('emissivity', False))),
         '__THICKNESS_UM__': repr(float(cfg.get('thickness_um', 500.0))),
@@ -5705,7 +5707,9 @@ def _collect_elphon_absorption(cfg: dict[str, Any], kg: int) -> dict[str, Any]:
     )
     cfg['refractive_index'] = float(n_r) if n_r.strip() else None
     cfg['nonlocal_velocity'] = ask_yes_no(
-        'Non-local pseudopotential velocity correction (norm-conserving PPs only)?', True
+        'Non-local pseudopotential velocity correction (norm-conserving PPs only; '
+        'not with the position dipoles)?',
+        False,
     )
     cfg['position_dipoles'] = ask_yes_no(
         'Position dipoles of the PAO orbitals in the velocity operator?', True

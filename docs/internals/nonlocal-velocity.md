@@ -52,3 +52,34 @@ The correction was implemented incrementally across several phases:
 
 - **Cu FCC:** ε₂ peak ≈ 32 eV near 1.7 eV with the correction — matches QE.
 - **Pt (fully-relativistic):** cubic isotropy ε_xx = ε_yy = ε_zz to machine precision; SHC and EELS match QE references.
+
+## October 2026: Löwdin transformation, orbital signs, and what the term is
+
+An orbital-basis comparison with the exact plane-wave commutator ⟨φ̃ᵢ|i[V_NL, r]|φ̃ⱼ⟩ between
+PAOFLOW's own Löwdin orbitals (Si, `EPW_opt_audit/compare/nl_orbital_check.py`,
+`nl_fixed_check.py`) found the assembled matrix exact between the *raw* atomic orbitals
+(1e-3) but missing two steps into the basis PAOFLOW works in:
+
+1. the Löwdin transformation S^{-1/2}(k) Δp S^{-1/2}(k) with the Bloch overlap of the orbitals
+   (`lowdin_transform`; not a small correction for a diffuse basis: the largest elements were
+   4–5× too small, cosine 0.37 → 0.999 with it);
+2. the orbital signs (−1)^l (−1)^{odd |m|} (`pao_orbital_signs`; the odd-|m| factor alone
+   flipped every s–p and p–d element).
+
+Both are now applied in `build_nonlocal_velocity_kspace` (and, with the scalar→(j, m_j)
+rotation of the overlap, in the jm path), fed from the overlap tables of
+`position_dipoles.py` by `PAOFLOW.nonlocal_velocity_correction` and by the electron–phonon
+wrapper. The operator agrees with the exact commutator to 2–3 % at every tested k.
+
+**What the term is, and when to use it.** PAOFLOW's velocity is the commutator
+v = i[H, r] with H the PAO Hamiltonian, which already contains the non-local pseudopotential.
+Its only approximation is the position operator: with r reduced to the orbital centres
+(`dHksp`), the missing part is i[H, d] with the position dipoles of the basis
+(`position-dipoles.md`), not i[V_NL, r]. Measured against the exact plane-wave ε₂ of Si
+(12³ grid, 21 bands, extended basis): plain 1.02–1.04, fixed non-local term 0.90–0.93,
+dipoles 0.99–1.01, dipoles + non-local term 0.87 (double counting); against EPW's direct term
+with the standard basis: 1.06, 0.97, 0.98, 0.88. The term as it was (1.09 / old pipeline
++7 % over the plain velocity) moved ε₂ the wrong way. Recommendations: electron–phonon drivers
+`POSITION_DIPOLES = True`, `NONLOCAL_VELOCITY = False`; `dielectric_tensor` (no dipoles on that
+route yet) with or without the term brackets the exact result at the ±5–10 % level. The Cu
+and Pt `epsilon.x` comparisons above predate the fix and were obtained with the defective term.
