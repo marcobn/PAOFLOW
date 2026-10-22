@@ -15,10 +15,19 @@ per-k dense scratch, bounded by the solve: ``(nawf, m)`` for ``V``,
 consumer that needs interband sums asks for the full spectrum
 (``needs = {'full_spectrum'}``), which makes ``m = nawf`` and is only
 admitted while ``nawf <= DENSE_N_MAX``.
+
+When the mesh pass decides that ``dH/dk`` is full enough to be cheaper
+dense (``mesh.dense_operators``), :attr:`KPoint.dhk` and :attr:`KPoint.d2hk`
+are :class:`DenseOnDemand` sequences: each derivative is densified on first
+use, so every kernel multiplies through BLAS instead of scipy's
+single-threaded sparse product.  That adds up to three cached
+``(nawf, nawf)`` arrays for ``dhk`` plus one transient for a ``d2hk``
+component, all freed with the k-point.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import cached_property
 from typing import TYPE_CHECKING, Any
 
@@ -28,6 +37,48 @@ if TYPE_CHECKING:
     from scipy.sparse import csr_matrix
 
     from .hamiltonian import SparseHamiltonian
+
+
+class DenseOnDemand(Sequence):
+    """A list of sparse ``(n, n)`` operators handed out as dense arrays.
+
+    Parameters
+    ----------
+    operators : sequence of scipy.sparse matrix
+        The operators, e.g. the three ``dH/dk_l``.
+    cache : bool, optional
+        Keep each dense array after its first use.  Without it every
+        access densifies again, which suits operators read once (the
+        six ``d2H/dk_i dk_j`` of the band curvature) and keeps at most one
+        of them alive.
+
+    Notes
+    -----
+    The per-k kernels shared with the dense pipeline (``perturb_split``,
+    ``momentum_k``, ``band_curvature_k_ij``, ...) accept dense and sparse
+    operators alike, and only the dense ones reach a threaded BLAS.  On a
+    near-dense PAO ``dH/dk`` that is the difference between minutes and
+    hours per k-point (see :func:`PAOFLOW.sparse.mesh._times_block`).
+    """
+
+    def __init__(self, operators: Sequence[Any], cache: bool = True) -> None:
+        self._operators = list(operators)
+        self._cache = cache
+        self._dense: dict[int, np.ndarray] = {}
+
+    def __len__(self) -> int:
+        return len(self._operators)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [self[i] for i in range(*index.indices(len(self)))]
+        index = range(len(self))[index]
+        dense = self._dense.get(index)
+        if dense is None:
+            dense = self._operators[index].toarray()
+            if self._cache:
+                self._dense[index] = dense
+        return dense
 
 
 class KPoint:
@@ -51,7 +102,7 @@ class KPoint:
         Matching orthonormal eigenvectors (columns).
     hk : scipy.sparse.csr_matrix, shape (nawf, nawf)
         ``H(k)``.
-    dhk : list of scipy.sparse.csr_matrix
+    dhk : list of scipy.sparse.csr_matrix, or DenseOnDemand
         ``[dH/dk_x, dH/dk_y, dH/dk_z]``.
     vel : np.ndarray, shape (3, bnd)
         Band-diagonal velocities of the window bands.
@@ -71,6 +122,8 @@ class KPoint:
     with_dnm : bool, optional
         Whether ``dhk`` and :attr:`d2hk` carry the intra-cell ``Dnm`` terms
         (see ``SparseHamiltonian.assemble_derivatives``).
+    dense_operators : bool, optional
+        Hand out ``dhk`` and :attr:`d2hk` as :class:`DenseOnDemand`.
 
     Notes
     -----
@@ -104,6 +157,7 @@ class KPoint:
         cart: bool = False,
         kglobal: int | None = None,
         with_dnm: bool = True,
+        dense_operators: bool = False,
     ) -> None:
         self._sparse_h = sparse_h
         self.ik = ik
@@ -112,7 +166,10 @@ class KPoint:
         self.E = E
         self.V = V
         self.hk = hk
+        if dense_operators and not isinstance(dhk, DenseOnDemand):
+            dhk = DenseOnDemand(dhk)
         self.dhk = dhk
+        self.dense_operators = dense_operators
         self.vel = vel
         self.delta = delta
         self.bnd = bnd
@@ -144,9 +201,9 @@ class KPoint:
         return momentum_k(self.dhk, self.V, self.degen)
 
     @cached_property
-    def d2hk(self) -> list[csr_matrix]:
+    def d2hk(self) -> list[csr_matrix] | DenseOnDemand:
         """The six ``d2H/dk_i dk_j`` (``xx, yy, zz, xy, xz, yz``), assembled on first use."""
-        return self._sparse_h.assemble_derivatives(
+        d2hk = self._sparse_h.assemble_derivatives(
             self.kvec,
             ispin=self.ispin,
             sign=self.sign,
@@ -154,6 +211,7 @@ class KPoint:
             order=2,
             with_dnm=self.with_dnm,
         )[2]
+        return DenseOnDemand(d2hk, cache=False) if self.dense_operators else d2hk
 
     @cached_property
     def delta_all(self) -> np.ndarray:

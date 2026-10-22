@@ -30,8 +30,8 @@ with the dense arrays.
 smearing width used to pad an interior-window solve to a rectangular block;
 :func:`run_mesh` explains why they take these values.
 
-``VELOCITY_DENSE_FILL`` is the fill of ``dH/dk`` above which the velocity
-products ``(dH/dk) V`` densify the operator; see :func:`_times_block`.
+``OPERATOR_DENSE_FILL`` is the fill of ``dH/dk`` above which the per-k
+products with ``dH/dk`` densify the operator; see :func:`dense_operators`.
 
 ``COMMUTE_TOL`` is the relative commutator below which the three velocity
 blocks of a degenerate group count as commuting, and ``JOINT_WEIGHTS`` the
@@ -66,11 +66,39 @@ rank = comm.Get_rank()
 
 PAD_ENERGY_OFFSET = 1.0e3
 PAD_DELTA = 1.0
-VELOCITY_DENSE_FILL = 0.1
+OPERATOR_DENSE_FILL = 0.1
 COMMUTE_TOL = 1.0e-3
 # rationally independent, so c.v = c.v' only if v = v', even for the
 # permuted and sign-flipped velocities that symmetry makes degenerate
 JOINT_WEIGHTS = np.array([1.0, np.sqrt(2.0), np.sqrt(3.0)])
+
+
+def dense_operators(n: int, nnz: int, dense_n_max: int = DENSE_N_MAX) -> bool:
+    """Whether a k-point's ``dH/dk`` should be multiplied as dense arrays.
+
+    Parameters
+    ----------
+    n : int
+        Matrix size, ``nawf``.
+    nnz : int
+        Nonzeros of one ``dH/dk_l`` (all share the pattern of ``H(k)``).
+    dense_n_max : int, optional
+        Largest ``n`` for which an ``(n, n)`` scratch is affordable.
+
+    Returns
+    -------
+    bool
+        ``True`` when the fill is at least ``OPERATOR_DENSE_FILL`` and the
+        scratch is admitted.
+
+    Notes
+    -----
+    Every per-k product with ``dH/dk`` multiplies it into a block of
+    eigenvectors.  scipy runs that on one thread, so above about 10% fill
+    the dense product through BLAS is faster, by 15x on the full ``H(k)``
+    of Si at ``bond_order=36`` (see :func:`_times_block`).
+    """
+    return n <= dense_n_max and nnz >= OPERATOR_DENSE_FILL * n * n
 
 
 def _blas_threads() -> int:
@@ -105,10 +133,9 @@ def _times_block(A: Any, V: np.ndarray, dense: bool) -> np.ndarray:
     scipy's sparse-times-dense product runs on one thread, and on the
     near-dense ``dH/dk`` of a PAO Hamiltonian it was 80% of the mesh pass:
     88 s of 107 s per k-point on doubled Si at n = 4608, where the same
-    product through ``zgemm`` takes 7 s.  Above ``VELOCITY_DENSE_FILL``
-    the dense product wins; the caller decides, since densifying needs an
-    ``(n, n)`` scratch, which is allowed only up to ``dense_n_max``.  Below
-    it, the sparse product is still the cheaper one.  scipy releases the
+    product through ``zgemm`` takes 7 s.  :func:`dense_operators` decides
+    which to use; below its fill threshold the sparse product is still the
+    cheaper one.  scipy releases the
     GIL inside it, so column slices on a thread pool scale (2-3x on four
     threads).
     """
@@ -199,7 +226,8 @@ def _band_diagonal_velocities(
     reused inside the degeneracy loop, since restricting to a group is just
     a column selection of the same product.  They dominate the cost, and
     :func:`_times_block` computes them threaded, densifying ``dH/dk_l`` one
-    direction at a time when its fill is above ``VELOCITY_DENSE_FILL``.
+    direction at a time when :func:`dense_operators` says so.  ``dhk`` may
+    also arrive already dense (a :class:`~PAOFLOW.sparse.kpoint.DenseOnDemand`).
     The routine is shared by the from-the-bottom and interior solves; they
     differ only in how many states arrive, which is read from ``E``.
     """
@@ -210,9 +238,8 @@ def _band_diagonal_velocities(
     if m == 0:
         return vel
 
-    n = V.shape[0]
     if issparse(dhk[0]):
-        dense = n <= dense_n_max and dhk[0].nnz >= VELOCITY_DENSE_FILL * n * n
+        dense = dense_operators(V.shape[0], dhk[0].nnz, dense_n_max)
         W = [_times_block(dhk[l], V, dense) for l in range(3)]
     else:
         W = [dhk[l] @ V for l in range(3)]
@@ -388,7 +415,7 @@ def run_mesh(
     from ..spectrum.do_band_curvature import band_curvature_k_ij
     from ..utils.communication import scatter_full
     from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
-    from .kpoint import KPoint
+    from .kpoint import DenseOnDemand, KPoint
     from .log import get_sparse_log
     from .solver import describe_hk_solver, solve_interior, solve_lowest
 
@@ -467,6 +494,18 @@ def run_mesh(
         acc = {}
     deficit = 0
     step = max(1, min(100, nk_local // 10))
+    # consumers and the curvature reuse dH/dk many times per k-point, so they
+    # get it dense for the whole k-point; the velocities alone densify one
+    # direction at a time (_times_block)
+    dense_ops = bool(consumers or curvature) and dense_operators(
+        nawf, len(sparse_h.plan['indices']), dense_n_max
+    )
+    if dense_ops:
+        log.write(
+            '  dH/dk handed to the per-k kernels as dense arrays (fill >= %g): up to 3 + 1 '
+            '(%d, %d) scratch = %.1f GB per k-point'
+            % (OPERATOR_DENSE_FILL, nawf, nawf, 4 * 16.0 * nawf * nawf / 1024**3)
+        )
 
     for ispin in range(nspin):
         v0 = None
@@ -476,6 +515,8 @@ def run_mesh(
                 kloc[ik], ispin=ispin, sign=-1, order=2 if curvature else 1
             )
             hk, dhk = assembled[0], assembled[1]
+            if dense_ops:
+                dhk = DenseOnDemand(dhk)
             if interior is None:
                 E, V = solve_lowest(hk, nsolve, v0=v0, hk_solver=solver, **limits)
                 v0 = np.ascontiguousarray(V[:, 0])
@@ -510,9 +551,13 @@ def run_mesh(
                 dk,
                 sign=-1,
                 kglobal=int(kglobal[ik]),
+                dense_operators=dense_ops,
             )
             if curvature:
-                d2hk = kp.__dict__['d2hk'] = assembled[2]
+                d2hk = assembled[2]
+                if dense_ops:
+                    d2hk = DenseOnDemand(d2hk, cache=False)
+                kp.__dict__['d2hk'] = d2hk
                 for ij, (i, j) in enumerate(IJ_PAIRS):
                     d2Ed2k[ij, ik, :, ispin] = band_curvature_k_ij(
                         E, dhk[i], dhk[j], d2hk[ij], V, kp.degen, bnd

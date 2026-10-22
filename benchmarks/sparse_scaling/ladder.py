@@ -23,6 +23,21 @@ def _merged(defaults, override):
     return out
 
 
+def pipeline_properties(config, pipe):
+    """``[[method, kwargs], ...]`` of a pipeline, in the order of
+    ``config['properties']``, with its ``property_args`` applied."""
+    wanted = set(pipe['properties'])
+    unknown = wanted - set(config['properties'])
+    if unknown:
+        raise ValueError('properties not in CONFIG["properties"]: %s' % sorted(unknown))
+    overrides = pipe.get('property_args', {})
+    return [
+        [name, _merged(kwargs, overrides.get(name))]
+        for name, kwargs in config['properties'].items()
+        if name in wanted
+    ]
+
+
 def build_cases(config):
     """Every case of ``config``, in submission order.
 
@@ -56,8 +71,8 @@ def build_cases(config):
                     'doublings': doublings,
                     'nfft': target_nfft(config['base_nfft'], doublings, config['min_nfft']),
                     'system': system,
-                    'dos': _merged(config['dos'], pipe.get('dos')),
-                    'transport': _merged(config['transport'], pipe.get('transport')),
+                    'properties': pipeline_properties(config, pipe),
+                    'band_curvature': bool(pipe.get('band_curvature', False)),
                     'disorder_meV': float(config['disorder_meV']) if pipe['sparse'] else 0.0,
                     'disorder_seed': int(config['disorder_seed']),
                     'npool': int(pipe['slurm']['npool']),
