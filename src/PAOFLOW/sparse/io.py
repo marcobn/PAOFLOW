@@ -13,11 +13,11 @@ vector, length and neighbour shell it connects (:func:`bond_table`), so
 the archive doubles as a labelled dataset of PAO hopping integrals for
 fitting or machine learning.
 
-Only the **base** (pre-doubling) cell can be written.  Doubling zeroes the
-per-bond ``dnm`` on cross-replica bonds and replicates the orbitals, after
-which neither the bond geometry nor the orbital map of the archive would
-be correct; a doubled run is reproduced instead by loading the base cell
-and calling ``doubling_Hamiltonian`` again, which is deterministic.
+Only the **base** (pre-doubling) cell can be written.  Doubling replicates
+the orbitals, after which the orbital map of the archive (atoms, species,
+labels) would no longer describe the bond list; a doubled run is
+reproduced instead by loading the base cell and calling
+``doubling_Hamiltonian`` again, which is deterministic.
 
 Metadata is stored as JSON text rather than pickled objects, so loading
 never needs ``allow_pickle`` and cannot execute code from an untrusted

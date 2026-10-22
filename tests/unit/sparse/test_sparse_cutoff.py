@@ -124,8 +124,8 @@ def test_rcut_commutes_with_doubling():
     """cutoff-then-double == double-of-cutoff, bond for bond.
 
     Doubling is a pure rearrangement of bond content, so applying the
-    cutoff at the base cell and then doubling must reproduce exactly what
-    the dense doubling kernel produces from the already-cut H(R).  This
+    cutoff at the base cell and then doubling must reproduce exactly the
+    bonds the dense doubling kernel produces from the already-cut H(R).  This
     is the property that lets rcut live at the single sanctioned
     dense->sparse boundary.
     """
@@ -163,7 +163,13 @@ def test_rcut_commutes_with_doubling():
             continue  # explicit zero the sparse path never stored
         assert key in idx, key
         assert np.allclose(early.vals[idx[key]], late.vals[b], atol=1e-14)
-        assert np.allclose(early.dnm[idx[key]], late.dnm[b], atol=1e-14)
+
+    # dnm: double_axis keeps x_i - x_j of the doubled cell, where the dense
+    # kernel zeroes the cross-replica pairs, so it is checked against the
+    # orbital positions instead of the dense output
+    x = dc.data_dicts()[0]['Dnm'][:, 0, :]
+    x = np.concatenate((x, x + ALAT * A_VECTORS[0]))
+    assert np.allclose(early.dnm, x[early.rows] - x[early.cols], atol=1e-13)
 
 
 def test_rcut_eig_bound_is_a_bound():

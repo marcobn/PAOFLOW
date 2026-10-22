@@ -39,6 +39,7 @@ class Dos(MeshProperty):
         engine: SparseEngine,
         do_dos: bool = True,
         do_pdos: bool = True,
+        delta: float = 0.01,
         emin: float = -10.0,
         emax: float = 2.0,
         ne: int = 1000,
