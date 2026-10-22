@@ -30,6 +30,9 @@ with the dense arrays.
 smearing width used to pad an interior-window solve to a rectangular block;
 :func:`run_mesh` explains why they take these values.
 
+``VELOCITY_DENSE_FILL`` is the fill of ``dH/dk`` above which the velocity
+products ``(dH/dk) V`` densify the operator; see :func:`_times_block`.
+
 ``COMMUTE_TOL`` is the relative commutator below which the three velocity
 blocks of a degenerate group count as commuting, and ``JOINT_WEIGHTS`` the
 combination diagonalized to find their common eigenbasis; see
@@ -40,11 +43,14 @@ cell at 0.4-1.5.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from mpi4py import MPI
+from scipy.sparse import issparse
 
 from .solver import DENSE_N_MAX, DENSE_RATIO
 
@@ -60,13 +66,72 @@ rank = comm.Get_rank()
 
 PAD_ENERGY_OFFSET = 1.0e3
 PAD_DELTA = 1.0
+VELOCITY_DENSE_FILL = 0.1
 COMMUTE_TOL = 1.0e-3
 # rationally independent, so c.v = c.v' only if v = v', even for the
 # permuted and sign-flipped velocities that symmetry makes degenerate
 JOINT_WEIGHTS = np.array([1.0, np.sqrt(2.0), np.sqrt(3.0)])
 
 
-def _band_diagonal_velocities(E: np.ndarray, V: np.ndarray, dhk: Sequence[Any]) -> np.ndarray:
+def _blas_threads() -> int:
+    """Threads this rank was given for BLAS, read from the usual
+    environment variables; 1 when none is set."""
+    for name in ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS'):
+        try:
+            return max(1, int(os.environ[name]))
+        except (KeyError, ValueError):
+            continue
+    return 1
+
+
+def _times_block(A: Any, V: np.ndarray, dense: bool) -> np.ndarray:
+    """The product ``A @ V`` of a sparse ``(n, n)`` operator and a dense
+    ``(n, m)`` block, computed on all the threads this rank has.
+
+    Parameters
+    ----------
+    A : scipy.sparse matrix, shape (n, n)
+    V : np.ndarray, shape (n, m)
+    dense : bool
+        Densify ``A`` and use one BLAS ``zgemm``.  Otherwise the sparse
+        product runs on column slices of ``V`` in a thread pool.
+
+    Returns
+    -------
+    np.ndarray, shape (n, m)
+
+    Notes
+    -----
+    scipy's sparse-times-dense product runs on one thread, and on the
+    near-dense ``dH/dk`` of a PAO Hamiltonian it was 80% of the mesh pass:
+    88 s of 107 s per k-point on doubled Si at n = 4608, where the same
+    product through ``zgemm`` takes 7 s.  Above ``VELOCITY_DENSE_FILL``
+    the dense product wins; the caller decides, since densifying needs an
+    ``(n, n)`` scratch, which is allowed only up to ``dense_n_max``.  Below
+    it, the sparse product is still the cheaper one.  scipy releases the
+    GIL inside it, so column slices on a thread pool scale (2-3x on four
+    threads).
+    """
+    if dense:
+        return A.toarray() @ V
+    m = V.shape[1]
+    threads = min(_blas_threads(), m)
+    if threads <= 1:
+        return A @ V
+    out = np.empty((A.shape[0], m), dtype=np.result_type(A.dtype, V.dtype))
+    bounds = np.linspace(0, m, threads + 1).astype(int)
+
+    def work(i):
+        out[:, bounds[i] : bounds[i + 1]] = A @ V[:, bounds[i] : bounds[i + 1]]
+
+    with ThreadPoolExecutor(threads) as pool:
+        list(pool.map(work, range(threads)))
+    return out
+
+
+def _band_diagonal_velocities(
+    E: np.ndarray, V: np.ndarray, dhk: Sequence[Any], dense_n_max: int = DENSE_N_MAX
+) -> np.ndarray:
     """Band velocities ``v_ln = <n| dH/dk_l |n>``, degeneracies resolved.
 
     Parameters
@@ -77,6 +142,9 @@ def _band_diagonal_velocities(E: np.ndarray, V: np.ndarray, dhk: Sequence[Any]) 
         Matching eigenvector block, orthonormal.
     dhk : sequence of scipy.sparse matrix
         The three Cartesian derivatives ``dH/dk_l`` at this k-point.
+    dense_n_max : int, optional
+        Largest ``n`` for which an ``(n, n)`` scratch is affordable; above
+        it the products ``(dH/dk_l) V`` stay sparse whatever the fill.
 
     Returns
     -------
@@ -129,9 +197,11 @@ def _band_diagonal_velocities(E: np.ndarray, V: np.ndarray, dhk: Sequence[Any]) 
 
     The products ``(dH/dk_l) V`` are computed once for the whole block and
     reused inside the degeneracy loop, since restricting to a group is just
-    a column selection of the same product.  The routine is shared by the
-    from-the-bottom and interior solves; they differ only in how many states
-    arrive, which is read from ``E``.
+    a column selection of the same product.  They dominate the cost, and
+    :func:`_times_block` computes them threaded, densifying ``dH/dk_l`` one
+    direction at a time when its fill is above ``VELOCITY_DENSE_FILL``.
+    The routine is shared by the from-the-bottom and interior solves; they
+    differ only in how many states arrive, which is read from ``E``.
     """
     from ..spectrum.do_eigh import get_degeneracies
 
@@ -140,7 +210,12 @@ def _band_diagonal_velocities(E: np.ndarray, V: np.ndarray, dhk: Sequence[Any]) 
     if m == 0:
         return vel
 
-    W = [dhk[l] @ V for l in range(3)]
+    n = V.shape[0]
+    if issparse(dhk[0]):
+        dense = n <= dense_n_max and dhk[0].nnz >= VELOCITY_DENSE_FILL * n * n
+        W = [_times_block(dhk[l], V, dense) for l in range(3)]
+    else:
+        W = [dhk[l] @ V for l in range(3)]
     for l in range(3):
         vel[l] = np.einsum('an,an->n', np.conj(V), W[l]).real
 
@@ -417,7 +492,7 @@ def run_mesh(
                 k0 = max(8, 2 * len(E))
                 bnd = len(E)
 
-            vel = _band_diagonal_velocities(E[:bnd], V[:, :bnd], dhk)
+            vel = _band_diagonal_velocities(E[:bnd], V[:, :bnd], dhk, dense_n_max=dense_n_max)
             delta = adaptive_widths(vel, afac, dk)
             kp = KPoint(
                 sparse_h,
