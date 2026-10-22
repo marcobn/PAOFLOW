@@ -61,10 +61,10 @@ and cannot be compared per cell.
 |---|---|---|
 | `reference` | dense, primitive cell, no doubling, every property below | d = 0 only |
 | `sparse` | sparse, from the bottom of the spectrum (`energy_window`), with `dense_n_max` lifted: `doping`, `conductivity`, `dielectric_tensor`, `transport`, `dos` | per-k LAPACK scratch, O(nawf²) per k, or time |
-| `sparse_curvature` | the same window, but the full spectrum at every k-point for the band curvature: `transport(do_hall=True)`, `effective_mass` | a full (nawf, nawf) eigh and a few nawf³ products per k; d = 9 needs about 45 h on 2 × 24 threads |
+| `sparse_curvature` | the same window, but the full spectrum at every k-point for the band curvature: `transport(do_hall=True)`, `effective_mass` | a full (nawf, nawf) eigh and a few nawf³ products per k; on 4 × 4 threads d = 8 needs roughly 30 h and d = 9 several days (estimates from one d = 7 k-point) |
 | `sparse_interior` | sparse, `interior_window` around E_F, `bond_order=36`; `doping` and `dielectric_tensor` are skipped (they need the states below the window) | ARPACK shift-invert cost and fill-in |
 | `sparse_interior_bo8` | the same with `bond_order=8` | the truly sparse regime (see below) |
-| `solver_sweep` | LAPACK against ARPACK on single H(k), for nev/n from 1% to 50% | calibrates `dense_ratio` and the per-k memory |
+| `solver_sweep` | LAPACK against ARPACK on single H(k), for nev/n from 1% to 50%, timed on rank 0 with the threads of one rank (the other ranks wait) | calibrates `dense_ratio` and the per-k memory |
 
 Si PAO hoppings decay slowly. With `bond_order=36` (rcut 32 Bohr), one row of H(k) holds about
 8500 nonzeros, so H(k) is effectively dense until `nawf` is around 10⁴. With `bond_order=8` it

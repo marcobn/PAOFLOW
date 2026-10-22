@@ -119,7 +119,7 @@ CONFIG = {
             'properties': WINDOW_PROPERTIES + ['effective_mass'],
             'property_args': {'transport': {'do_hall': True}},
             'max_doublings': 0,
-            'slurm': {'ntasks': 8, 'cpus_per_task': 6, 'npool': 8, 'mem': '0', 'time': '12:00:00'},
+            'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '12:00:00'},
         },
         'sparse': {
             'enabled': True,
@@ -133,12 +133,12 @@ CONFIG = {
             },
             'properties': WINDOW_PROPERTIES,
             'max_doublings': 9,
-            'slurm': {'ntasks': 4, 'cpus_per_task': 12, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
+            'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
         },
         # the full-spectrum pass: every state at every k-point, for the band
         # curvature (effective masses, Hall coefficient).  It costs a full
-        # (nawf, nawf) eigh and a few nawf^3 products per k-point, so fewer
-        # ranks with more threads; expect the largest sizes to hit the walltime
+        # (nawf, nawf) eigh and a few nawf^3 products per k-point; expect the
+        # largest sizes to hit the walltime
         'sparse_curvature': {
             'enabled': True,
             'sparse': True,
@@ -151,7 +151,7 @@ CONFIG = {
             'properties': CURVATURE_PROPERTIES,
             'property_args': {'transport': {'do_hall': True}},
             'max_doublings': 9,
-            'slurm': {'ntasks': 2, 'cpus_per_task': 24, 'npool': 2, 'mem': '0', 'time': '24:00:00'},
+            'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
         },
         'sparse_interior': {
             'enabled': True,
@@ -171,7 +171,7 @@ CONFIG = {
                 'conductivity': {'emin': -1.2, 'emax': 1.7},
             },
             'max_doublings': 9,
-            'slurm': {'ntasks': 4, 'cpus_per_task': 12, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
+            'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
         },
         # Si PAO hoppings decay slowly: on example01 one row of H(k) holds
         # ~8500 nonzeros at bond_order=36 (rcut 32 Bohr) but ~890 at
@@ -192,7 +192,7 @@ CONFIG = {
                 'conductivity': {'emin': -1.2, 'emax': 1.7},
             },
             'max_doublings': 9,
-            'slurm': {'ntasks': 4, 'cpus_per_task': 12, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
+            'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
         },
     },
     # ------------------------------------------------------------------
@@ -207,7 +207,7 @@ CONFIG = {
         # stop raising nev for ARPACK once it is this many times slower than LAPACK
         'stop_ratio': 20.0,
         'bond_order': 36,
-        'slurm': {'ntasks': 1, 'cpus_per_task': 48, 'npool': 1, 'mem': '0', 'time': '12:00:00'},
+        'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '12:00:00'},
     },
     # ------------------------------------------------------------------
     # Slurm settings shared by every job
