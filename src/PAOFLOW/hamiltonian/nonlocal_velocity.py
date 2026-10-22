@@ -10,8 +10,10 @@ missing part of the orbital-centre velocity is the position-dipole term of
 dipoles use: the PAO radial channels and per-site orbital mapping (:class:`PAOCatalog`,
 :func:`load_pao_orbitals`), the orbital cutoffs and lattice search, PAOFLOW's orbital signs
 (:func:`pao_orbital_signs`), the Löwdin transformation (:func:`lowdin_transform`) and the
-scalar-to-``(j, m_j)`` rotation (:func:`scalar_to_jm_matrix`).  Norm-conserving
-pseudopotentials only (:func:`_require_nc`).
+scalar-to-``(j, m_j)`` rotation (:func:`scalar_to_jm_matrix`).  The catalog needs only the
+atomic orbitals (the basis tables of the projection, or the UPF ``PP_PSWFC`` block), so any
+pseudopotential type is accepted: the norm-conserving restriction of the removed term (its
+Kleinman-Bylander projectors) went with it.
 """
 
 from __future__ import annotations
@@ -23,27 +25,6 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..inputs.read_upf import UPF
-
-
-def _require_nc(upf: UPF, label: str, pseudo_file: str) -> None:
-    """Raise ``RuntimeError`` unless ``upf`` is norm-conserving.
-
-    Phase 3 of the non-local velocity correction supports NC pseudos only;
-    USPP / PAW need the additional :math:`Q_{ij}` augmentation term
-    (deferred to Phase 6).
-    """
-    # UPF v2 sets ``type`` (alias for header.pseudo_type).  UPF v1 sets
-    # ``ptype`` based on the textual flag in PP_HEADER.
-    kind = getattr(upf, 'type', None) or getattr(upf, 'ptype', None)
-    if kind is None:
-        return  # be lenient if the UPF lacks the tag entirely.
-    kind = str(kind).upper()
-    if kind != 'NC':
-        raise RuntimeError(
-            f'Non-local velocity correction (Phase 3) supports norm-conserving '
-            f"pseudopotentials only; species '{label}' uses '{pseudo_file}' "
-            f"of type '{kind}'. USPP/PAW augmentation will be added in Phase 6."
-        )
 
 
 def qe_m_index_to_std(qe_m: int, l: int) -> int:
@@ -244,12 +225,14 @@ class PAOCatalog:
 def load_pao_orbitals(data_controller) -> PAOCatalog:
     """Load PAO atomic radial functions and the per-site basis mapping.
 
-    Phase 3b/3c loader for the non-local velocity correction.
+    The orbital catalog of the position dipoles
+    (:mod:`PAOFLOW.hamiltonian.position_dipoles`); any pseudopotential type
+    (norm-conserving, ultrasoft, PAW), since only the atomic orbitals are read.
 
     When ``data_arrays['atomic_basis']`` is present (PAOFLOW stashes it
     inside :meth:`PAOFLOW.projections` after the projector basis has
     been built), the catalog is reconstructed from those records so
-    that ``Δp`` operates on **exactly the orbitals that produced**
+    that the dipoles are those of **exactly the orbitals that produced**
     ``dHksp``.  This is required when the production run uses an
     AE / extended basis (``BASIS/<elem>/*.dat``) whose orbital count
     and radial mesh do not match the UPF pswfc set.
@@ -281,9 +264,9 @@ def load_pao_orbitals(data_controller) -> PAOCatalog:
     Raises
     ------
     RuntimeError
-        On non-NC pseudos, missing species, a tau/atoms shape mismatch,
-        or when ``atomic_basis`` records for the same species disagree
-        on the radial mesh.
+        On missing species, a tau/atoms shape mismatch, or when
+        ``atomic_basis`` records for the same species disagree on the
+        radial mesh.
     """
     arry, attr = data_controller.data_dicts()
     fpath = attr['fpath']
@@ -296,7 +279,6 @@ def load_pao_orbitals(data_controller) -> PAOCatalog:
             continue
         upf_path = os.path.join(fpath, pseudo_file)
         upf = UPF(upf_path)
-        _require_nc(upf, label, pseudo_file)
 
         if atomic_basis:
             channels, r_basis = _channels_from_atomic_basis(label, atomic_basis)
