@@ -33,7 +33,7 @@ S^{±1/2}, and from the bra-site origin of X; d(k) is Hermitian.
 | function | role |
 |---|---|
 | `enumerate_pao_pairs` | (bra site, ket site, ΔR) within the orbital cutoffs |
-| `build_position_tables` | S and X blocks per pair (cached radial Bessel transforms) |
+| `build_position_tables` | S and X blocks per pair, one vectorised evaluation per pair (`two_center_blocks.two_center_pair_blocks`: all channels, L and m at once; Si 44 orbitals, 550 pairs: 3 s instead of 41 s) |
 | `assemble_position_kspace` | S(k), ∂_k S(k), X(k) by Bloch sums e^{ik·ΔR} |
 | `lowdin_dipole_kspace` | the formula above; `level='intra-atomic'` keeps the on-site blocks with S ≡ 1 |
 | `dipole_velocity_term` | i[H(k), d(k)] in the orbital basis |

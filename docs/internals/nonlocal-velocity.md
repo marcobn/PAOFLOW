@@ -68,7 +68,7 @@ PAOFLOW's own Löwdin orbitals (Si, `EPW_opt_audit/compare/nl_orbital_check.py`,
 2. the orbital signs (−1)^l (−1)^{odd |m|} (`pao_orbital_signs`; the odd-|m| factor alone
    flipped every s–p and p–d element).
 
-Both are now applied in `build_nonlocal_velocity_kspace` (and, with the scalar→(j, m_j)
+The real-space tables are now built by `two_center_blocks.two_center_pair_blocks` (vectorised over the channels, L and magnetic indices of a pair; 0.8 s instead of 14 s for Si; the element-wise builder is kept as `_build_nl_real_space_tables_elementwise` for its parity test). Both are now applied in `build_nonlocal_velocity_kspace` (and, with the scalar→(j, m_j)
 rotation of the overlap, in the jm path), fed from the overlap tables of
 `position_dipoles.py` by `PAOFLOW.nonlocal_velocity_correction` and by the electron–phonon
 wrapper. The operator agrees with the exact commutator to 2–3 % at every tested k.

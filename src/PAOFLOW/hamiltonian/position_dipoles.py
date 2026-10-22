@@ -59,11 +59,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from ._two_center import (
-    radial_bessel_transform,
-    two_center_dipole_overlap_precomputed,
-    two_center_overlap_precomputed,
-)
+from ._two_center import radial_bessel_transform
 from .nonlocal_velocity import (
     PAOCatalog,
     _lattice_search_bounds,
@@ -71,6 +67,7 @@ from .nonlocal_velocity import (
     pao_orbital_signs,
     site_pao_cutoff,
 )
+from .two_center_blocks import two_center_pair_blocks
 
 DIPOLE_LEVELS = ('full', 'intra-atomic')
 
@@ -248,9 +245,11 @@ def build_position_tables(
         X^\alpha_{ij} = \int \varphi_i(\mathbf r)\, r_\alpha\, \varphi_j(\mathbf r - \mathbf d)\,d^3r,
 
     with the origin on the bra orbital.  The radial Bessel transforms of every channel (and of
-    the modified bra :math:`g(r) = r R(r)` at :math:`l \pm 1`) are computed once; the angular
-    and radial pieces of every pair are memoised across magnetic indices as in
-    :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.build_nl_real_space_tables`.
+    the modified bra :math:`g(r) = r R(r)` at :math:`l \pm 1`) are computed once; every pair is
+    then one vectorised evaluation of
+    :func:`~PAOFLOW.hamiltonian.two_center_blocks.two_center_pair_blocks` (all channels, all
+    :math:`L` and all magnetic indices at once), which is what makes the tables of a 44-orbital
+    basis a matter of seconds.
     """
     q_grid = np.linspace(0.0, q_max, n_q)
     bessel_phi: dict = {}
@@ -269,52 +268,30 @@ def build_position_tables(
     sites = pao_catalog.sites
     overlap_blocks: list[np.ndarray] = []
     dipole_blocks: list[np.ndarray] = []
+    channels_of_site = {}
+    for index, site in enumerate(sites):
+        bra = [
+            (
+                channel.l,
+                bessel_phi[(site.label, channel_index)],
+                {
+                    lp: bessel_bra[(site.label, channel_index, lp)]
+                    for lp in _dipole_bra_channels(channel.l)
+                }
+                if include_dipole
+                else None,
+            )
+            for channel_index, channel in enumerate(site.species.channels)
+        ]
+        channels_of_site[index] = (bra, [(l, j) for l, j, _ in bra])
     for pair in pairs:
-        bra_site = sites[pair.bra_site]
-        ket_site = sites[pair.ket_site]
-        n_bra, n_ket = len(bra_site.orbitals), len(ket_site.orbitals)
-        overlap_block = np.zeros((n_bra, n_ket))
-        dipole_block = np.zeros((3, n_bra, n_ket))
-        pair_cache: dict = {}
-        for a, bra in enumerate(bra_site.orbitals):
-            bessel_a = bessel_phi[(bra_site.label, bra.channel_index)]
-            bessel_g = {
-                lp: bessel_bra[(bra_site.label, bra.channel_index, lp)]
-                for lp in (_dipole_bra_channels(bra.l) if include_dipole else ())
-            }
-            key_a = ('phi', bra_site.label, bra.channel_index)
-            key_g = ('g', bra_site.label, bra.channel_index)
-            for b, ket in enumerate(ket_site.orbitals):
-                bessel_b = bessel_phi[(ket_site.label, ket.channel_index)]
-                key_b = ('phi', ket_site.label, ket.channel_index)
-                overlap_block[a, b] = two_center_overlap_precomputed(
-                    bessel_a,
-                    bessel_b,
-                    bra.l,
-                    bra.m,
-                    ket.l,
-                    ket.m,
-                    pair.displacement,
-                    q_grid,
-                    cache=pair_cache,
-                    keyA=key_a,
-                    keyB=key_b,
-                )
-                for alpha in range(3) if include_dipole else ():
-                    dipole_block[alpha, a, b] = two_center_dipole_overlap_precomputed(
-                        bessel_g,
-                        bessel_b,
-                        bra.l,
-                        bra.m,
-                        ket.l,
-                        ket.m,
-                        pair.displacement,
-                        alpha,
-                        q_grid,
-                        cache=pair_cache,
-                        keyA=key_g,
-                        keyB=key_b,
-                    )
+        overlap_block, dipole_block = two_center_pair_blocks(
+            channels_of_site[pair.bra_site][0],
+            channels_of_site[pair.ket_site][1],
+            pair.displacement,
+            q_grid,
+            include_dipole=include_dipole,
+        )
         overlap_blocks.append(overlap_block)
         dipole_blocks.append(dipole_block)
 
@@ -737,10 +714,21 @@ def position_dipoles_on_grid(
         arrays['_PD_on_site'],
     )
     k_cart = _kgrid_to_cart(kgrid_2pi_alat, alat)
-    overlap_k, overlap_gradient_k, dipole_k = assemble_position_kspace(tables, k_cart)
-    dipole = lowdin_dipole_kspace(
-        overlap_k, overlap_gradient_k, dipole_k, tables.tau_orbitals, level=level, on_site=on_site
-    )
+    # blocks of k keep the Bloch sums (nk, 3, nawf, nawf) within a few hundred MB
+    kblock = max(1, int(2.0e8 // (3 * 16 * tables.nawf**2)))
+    dipole = np.empty((k_cart.shape[0], 3, tables.nawf, tables.nawf), dtype=complex)
+    for start in range(0, k_cart.shape[0], kblock):
+        overlap_k, overlap_gradient_k, dipole_k = assemble_position_kspace(
+            tables, k_cart[start : start + kblock]
+        )
+        dipole[start : start + kblock] = lowdin_dipole_kspace(
+            overlap_k,
+            overlap_gradient_k,
+            dipole_k,
+            tables.tau_orbitals,
+            level=level,
+            on_site=on_site,
+        )
     dipole = 0.5 * (dipole + np.conj(np.transpose(dipole, (0, 1, 3, 2))))
     fully_rel = bool(attributes.get('dftSO', False)) and not bool(attributes.get('adhoc_SO', False))
     if fully_rel:
@@ -796,7 +784,7 @@ def inject_dipole_velocity_into_dHksp(
     ValueError
         On shape mismatches.
     """
-    nk, three, n, _, nspin = dHksp.shape
+    nk, _three, n, _, nspin = dHksp.shape
     if dipole_k.shape != (nk, 3, n, n):
         raise ValueError(f'dipole_k must have shape {(nk, 3, n, n)}; got {dipole_k.shape}')
     if energies_k.shape[:2] != (nk, n) or eigenvectors_k.shape[:3] != (nk, n, n):

@@ -968,7 +968,7 @@ class NLRealSpaceTables:
     pao_per_site: list
 
 
-def build_nl_real_space_tables(
+def _build_nl_real_space_tables_elementwise(
     beta_catalog: BetaCatalog,
     pao_catalog: PAOCatalog,
     pairs: list[NLPair],
@@ -977,7 +977,9 @@ def build_nl_real_space_tables(
     n_q: int = 600,
     include_dipole: bool = True,
 ) -> NLRealSpaceTables:
-    r"""Build per-pair ⟨β|φ⟩ and ⟨β|r_α|φ⟩ blocks.
+    r"""Element-wise reference of :func:`build_nl_real_space_tables` (kept for its parity test).
+
+    Build per-pair ⟨β|φ⟩ and ⟨β|r_α|φ⟩ blocks.
 
     Loops over the (β-site, PAO-site, ΔR) triples in ``pairs`` and, for
     each LM-decomposed β projector and each PAO orbital on the
@@ -1137,6 +1139,94 @@ def build_nl_real_space_tables(
         S_rbp=S_rbp_list,
         beta_lm_per_site=beta_lm_per_site,
         pao_per_site=pao_per_site,
+    )
+
+
+def build_nl_real_space_tables(
+    beta_catalog: BetaCatalog,
+    pao_catalog: PAOCatalog,
+    pairs: list[NLPair],
+    *,
+    q_max: float = 20.0,
+    n_q: int = 600,
+    include_dipole: bool = True,
+) -> NLRealSpaceTables:
+    r"""Build per-pair ⟨β|φ⟩ and ⟨β|r_α|φ⟩ blocks (vectorised over the orbitals of a pair).
+
+    Same inputs, outputs and conventions as the element-wise
+    :func:`_build_nl_real_space_tables_elementwise` (rows: the β projectors of the host site in
+    :func:`iter_beta_lm` order; columns: the PAO orbitals of the partner site; the dipole block
+    carries the geometry term :math:`\tau_I S`), evaluated with
+    :func:`~PAOFLOW.hamiltonian.two_center_blocks.two_center_pair_blocks`: one Simpson
+    quadrature per pair for all channel pairs and :math:`L`, Gaunt tensors instead of loops over
+    the magnetic indices.  Agrees with the element-wise builder to rounding and is one to two
+    orders of magnitude faster on a many-shell basis.
+
+    Parameters
+    ----------
+    beta_catalog : BetaCatalog
+        Loaded by :func:`load_beta_projectors`.
+    pao_catalog : PAOCatalog
+        Loaded by :func:`load_pao_orbitals`.
+    pairs : list[NLPair]
+        Output of :func:`enumerate_nl_pairs`.
+    q_max, n_q : float, int
+        Radial Bessel transform quadrature grid.
+    include_dipole : bool, optional
+        If ``False``, :attr:`NLRealSpaceTables.S_rbp` is a list of empty arrays.
+
+    Returns
+    -------
+    NLRealSpaceTables
+    """
+    from .two_center_blocks import two_center_pair_blocks
+
+    q_grid = np.linspace(0.0, q_max, n_q)
+    beta_channels: dict[str, list] = {}
+    for sp_label, sp in beta_catalog.species.items():
+        channels = []
+        for b in sp.upf.beta:
+            l = int(b['l'])
+            r_beta = _upf_wfc_to_radial(sp.r, np.asarray(b['wfc'], dtype=float), l)
+            modified = None
+            if include_dipole:
+                g = sp.r * r_beta
+                modified = {
+                    lp: radial_bessel_transform(sp.r, g, lp, q_grid)
+                    for lp in sorted({abs(l - 1), l + 1})
+                }
+            channels.append((l, radial_bessel_transform(sp.r, r_beta, l, q_grid), modified))
+        beta_channels[sp_label] = channels
+    pao_channels: dict[str, list] = {}
+    for sp_label, sp in pao_catalog.species.items():
+        pao_channels[sp_label] = [
+            (ch.l, radial_bessel_transform(sp.r, ch.R_radial, ch.l, q_grid)) for ch in sp.channels
+        ]
+
+    beta_sites, pao_sites = beta_catalog.sites, pao_catalog.sites
+    S_bp_list: list[np.ndarray] = []
+    S_rbp_list: list[np.ndarray] = []
+    for pair in pairs:
+        tau_I = beta_sites[pair.beta_site].tau
+        S_block, X_block = two_center_pair_blocks(
+            beta_channels[beta_sites[pair.beta_site].label],
+            pao_channels[pao_sites[pair.pao_site].label],
+            pair.displacement,
+            q_grid,
+            include_dipole=include_dipole,
+        )
+        S_bp_list.append(S_block)
+        if include_dipole:
+            S_rbp_list.append(X_block + tau_I[:, None, None] * S_block[None, :, :])
+        else:
+            S_rbp_list.append(np.zeros((3, 0, 0), dtype=float))
+
+    return NLRealSpaceTables(
+        pairs=pairs,
+        S_bp=S_bp_list,
+        S_rbp=S_rbp_list,
+        beta_lm_per_site=[n_beta_lm(s) for s in beta_sites],
+        pao_per_site=[len(s.orbitals) for s in pao_sites],
     )
 
 
