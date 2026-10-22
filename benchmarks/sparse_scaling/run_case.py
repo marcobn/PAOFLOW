@@ -312,8 +312,6 @@ def _run_sweep(case, outdir, rec):
     from PAOFLOW.sparse.solver import solve_lowest
 
     comm = rec.comm
-    if comm.Get_size() != 1:
-        raise RuntimeError('the solver sweep is serial: run it with one MPI rank')
     pao = _build_cell(case, outdir, rec)
     H = pao.sparse.H
     n = H.nawf
@@ -324,8 +322,12 @@ def _run_sweep(case, outdir, rec):
 
     results = []
     arpack_stopped = None
+    # the solves are timed on rank 0 alone, with the threads of one rank, as
+    # one pool of a pipeline runs them; the other ranks only wait
+    fractions = case['nev_fractions'] if comm.Get_rank() == 0 else []
+    rec.set('sweep', timed_ranks=1, idle_ranks=comm.Get_size() - 1)
     with rec.stage('solver_sweep'):
-        for frac in case['nev_fractions']:
+        for frac in fractions:
             nev = max(1, int(round(frac * n)))
             row = {'nev_fraction': frac, 'nev': nev, 'n': n}
             for kernel in ('dense', 'sparse'):
