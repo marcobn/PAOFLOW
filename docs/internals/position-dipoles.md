@@ -107,3 +107,36 @@ not a validation of a velocity operator.
   Δp double counted (exact plane-wave ε₂ of Si: dipoles 0.99–1.01, dipoles + Δp 0.87).
 - The Hubbard term of eACBN0 electrons is inside H(R), so i[H, τ + d] contains its velocity
   commutator; nothing else is needed.
+
+## References
+
+Here are the references, mapped to each statement of the paragraph.
+
+**Velocity in a localised basis: ∂H/∂k plus the intersite term, position operator diagonal on the orbital centres**
+- M. Graf and P. Vogl, "Electromagnetic fields and dielectric response in empirical tight-binding theory", Phys. Rev. B 51, 4940 (1995). The standard derivation of the tight-binding velocity from the k-derivative of H(k) with the Peierls coupling, with the position operator diagonal on the atomic sites; discusses what that approximation drops.
+- L. C. Lew Yan Voon and L. R. Ram-Mohan, "Tight-binding representation of the optical matrix elements: theory and applications", Phys. Rev. B 47, 15500 (1993). Momentum matrix elements in an orthogonal tight-binding basis, including the intra-atomic contributions.
+- B. A. Foreman, "Consequences of local gauge symmetry in empirical tight-binding theory", Phys. Rev. B 66, 165212 (2002). The gauge-consistent form of the coupling and why the site-diagonal position operator is an approximation.
+
+**The third term, the intra-atomic (on-site Δl = ±1) dipoles ⟨s|r|p⟩, ⟨p|r|d⟩**
+- T. G. Pedersen, K. Pedersen and T. B. Kriestensen, "Optical matrix elements in tight-binding calculations", Phys. Rev. B 63, 201101(R) (2001). Shows that the intra-atomic dipole matrix elements are the largest correction to the site-diagonal position operator and quantifies them for semiconductors.
+- T. B. Boykin and P. Vogl, "Dielectric response of molecules in empirical tight-binding theory", Phys. Rev. B 65, 035202 (2001). Intra-atomic dipoles in the dielectric response.
+- T. Sandu, "Optical matrix elements in tight-binding models with overlap", Phys. Rev. B 72, 125105 (2005). The same construction for a non-orthogonal basis, which is the Löwdin-orthogonalised case of the PAO basis (S^{-1/2} terms).
+- C. D. Pemmaraju et al., "Velocity-gauge real-time TDDFT within a numerical atomic-orbital basis set", Comput. Phys. Commun. 226, 30 (2018). The complete velocity operator in an atomic-orbital DFT basis, with the position-dependent (intra-atomic) terms.
+- P.-O. Löwdin, J. Chem. Phys. 18, 365 (1950), for the symmetric orthogonalisation ω = φ S^{-1/2} itself.
+
+**Band-basis form i(ε_n − ε_m) d_nm and its identity with the Berry-connection term of the Wannier velocity (EPW vme = 'wannier')**
+- E. I. Blount, "Formalisms of band theory", Solid State Physics 13, 305 (1962). The position operator in the Bloch representation, r = i∂_k + A, and the interband relation between position and velocity matrix elements.
+- X. Wang, J. R. Yates, I. Souza and D. Vanderbilt, "Ab initio calculation of the anomalous Hall conductivity by Wannier interpolation", Phys. Rev. B 74, 195118 (2006), and J. R. Yates, X. Wang, D. Vanderbilt and I. Souza, "Spectral and Fermi surface properties from Wannier interpolation", Phys. Rev. B 75, 195121 (2007). The Wannier-gauge velocity ∂H^W/∂k − i(ε_n − ε_m)A_nm with A the Wannier Berry connection; the diagonal (group velocity) is untouched by the A term.
+- N. Marzari and D. Vanderbilt, Phys. Rev. B 56, 12847 (1997), for the position matrix elements ⟨0n|r|Rm⟩ between localised functions that define A.
+- J. Ibañez-Azpiroz, S. S. Tsirkin and I. Souza, "Ab initio calculation of the shift photocurrent by Wannier interpolation", Phys. Rev. B 97, 245143 (2018), for the explicit use of r_nm = v_nm/(iω_nm) with the Wannier position matrix elements.
+- EPW implementation: S. Poncé, E. R. Margine, C. Verdi and F. Giustino, Comput. Phys. Commun. 209, 116 (2016); H. Lee et al., "Electron-phonon physics from first principles using the EPW code", npj Comput. Mater. 9, 156 (2023), which documents the vme = 'wannier' and 'dipole' options (the routine is vmewan2bloch in wannier2bloch.f90, following Yates et al.).
+
+**Diagonal elements are the group velocities and the dipole term vanishes inside degenerate blocks**
+- Hellmann–Feynman for bands: Blount (1962) above; also Yates et al. (2007), where the band velocity is the diagonal of the Bloch-gauge ∂H/∂k and the Berry term drops out of it. The vanishing within degenerate blocks follows from the prefactor (ε_n − ε_m) and is stated in the same references.
+
+**Length-velocity relation, non-local potentials and the scissor (the context in which the term was identified)**
+- A. F. Starace, Phys. Rev. A 3, 1242 (1971): length and velocity forms are equivalent only if the commutator [V, r] of non-local potentials is included.
+- A. J. Read and R. J. Needs, Phys. Rev. B 44, 13071 (1991): optical matrix elements with non-local pseudopotentials (the i[V_NL, r] term in the plane-wave velocity, which is contained in the PAO Hamiltonian and must not be added again).
+- R. Del Sole and R. Girlanda, Phys. Rev. B 48, 11789 (1993), and Z. H. Levine and D. C. Allan, Phys. Rev. Lett. 63, 1719 (1989): velocity renormalisation under a scissor (the Levine–Allan factor used in the study).
+
+For the manuscript, the minimal citation set for that paragraph is Graf–Vogl 1995 (site-diagonal position operator), Pedersen 2001 (intra-atomic dipoles), Sandu 2005 (non-orthogonal basis), Wang 2006 and Yates 2007 (Berry-connection form of the Wannier velocity), and Lee 2023 (EPW's vme = 'wannier').
