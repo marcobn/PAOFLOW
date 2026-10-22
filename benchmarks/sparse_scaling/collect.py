@@ -9,12 +9,13 @@
 ``sweep.csv``
     One row per (size, nev/n, kernel) of the solver sweep.
 
-Accuracy: the DoS of a cell doubled ``d`` times is per supercell, so it is
-divided by ``N = 2**d`` to give the per-primitive-cell DoS; conductivity is
-already intensive.  Each case is compared, on the energy range it shares
-with the reference, with (a) the ``dense`` d = 0 run, the exact reference,
-and (b) its own pipeline at d = 0, which isolates what doubling changes
-from what the bond cutoff changes.
+Accuracy: every per-primitive-cell curve of :mod:`observables` (DoS, PDOS,
+transport, conductivity, doping, dielectric, effective masses) is compared,
+as a relative L2 deviation on the range it shares with the other curve, with
+(a) the ``reference`` case, the dense pipeline on the primitive cell without
+doubling, in columns ``dev_<name>_vs_ref``, and (b) the same pipeline one
+size down, in ``dev_<name>_vs_prev``, which separates a one-off jump from a
+drift with size.
 """
 
 import json
@@ -22,6 +23,11 @@ import os
 
 import numpy as np
 import pandas as pd
+
+import observables
+
+# the dense pipeline on the primitive cell, without doubling
+REFERENCE_ID = 'reference_d00'
 
 STAGE_ORDER = [
     'projections',
@@ -34,8 +40,12 @@ STAGE_ORDER = [
     'pao_eigh',
     'gradient_and_momenta',
     'adaptive_smearing',
-    'dos',
+    'doping',
+    'conductivity',
+    'dielectric_tensor',
     'transport',
+    'effective_mass',
+    'dos',
     'mesh_and_properties',
     'solver_sweep',
     'finish',
@@ -49,8 +59,12 @@ KSPACE = {
     'pao_eigh',
     'gradient_and_momenta',
     'adaptive_smearing',
-    'dos',
+    'doping',
+    'conductivity',
+    'dielectric_tensor',
     'transport',
+    'effective_mass',
+    'dos',
     'mesh_and_properties',
 }
 SETUP = {'projections', 'projectability', 'pao_hamiltonian', 'doubling', 'disorder'}
@@ -79,37 +93,6 @@ def _failure(rec):
     running = [s['name'] for s in rec.get('stages', []) if s.get('status') != 'ok']
     where = (' in ' + running[-1]) if running else ''
     return '%s%s' % (status, where)
-
-
-def _load_xy(path, ycol):
-    data = np.loadtxt(path, ndmin=2)
-    return data[:, 0], data[:, ycol]
-
-
-def _deviation(e, y, e_ref, y_ref):
-    """Relative L2 deviation of ``y(e)`` from ``y_ref`` on the shared range."""
-    lo, hi = max(e.min(), e_ref.min()), min(e.max(), e_ref.max())
-    mask = (e_ref >= lo) & (e_ref <= hi)
-    if mask.sum() < 4:
-        return np.nan
-    yi = np.interp(e_ref[mask], e, y)
-    norm = np.sqrt(np.mean(y_ref[mask] ** 2))
-    return float(np.sqrt(np.mean((yi - y_ref[mask]) ** 2)) / norm) if norm > 0 else np.nan
-
-
-def _observables(rec):
-    """Per-cell DoS and sigma_xx of an ok case, or ``None`` each."""
-    out = {}
-    N = 2 ** int(rec['case']['d'])
-    outputs = rec.get('outputs', {})
-    if 'dosdk_0.dat' in outputs:
-        e, g = _load_xy(os.path.join(rec['_dir'], outputs['dosdk_0.dat']), 1)
-        out['dos'] = (e, g / N)
-    if 'sigmagauss_0.dat' in outputs:
-        # columns: T, mu, then the six tensor components (xx first)
-        data = np.loadtxt(os.path.join(rec['_dir'], outputs['sigmagauss_0.dat']), ndmin=2)
-        out['sigma'] = (data[:, 1], data[:, 2])
-    return out
 
 
 def pipeline_rows(records):
@@ -182,26 +165,22 @@ def pipeline_rows(records):
             row['t_per_k'] = t_solve * row['npool'] / row['nkpnts']
         rows.append(row)
         if rec.get('status') == 'ok':
-            obs[case['id']] = _observables(rec)
+            obs[case['id']] = observables.load(rec['_dir'])
     df = pd.DataFrame(rows).sort_values(['pipeline', 'd']).reset_index(drop=True)
 
-    ref = obs.get('dense_d00', {})
-    for key in ('dos', 'sigma'):
-        for ref_name in ('dense0', 'self0'):
-            df['dev_%s_vs_%s' % (key, ref_name)] = np.nan
-    for i, row in df.iterrows():
-        mine = obs.get(row['id'])
-        if not mine:
-            continue
-        own0 = obs.get('%s_d00' % row['pipeline'], {})
-        for key in ('dos', 'sigma'):
-            if key not in mine:
-                continue
-            if key in ref:
-                df.loc[i, 'dev_%s_vs_dense0' % key] = _deviation(*mine[key], *ref[key])
-            if key in own0:
-                df.loc[i, 'dev_%s_vs_self0' % key] = _deviation(*mine[key], *own0[key])
-    return df
+    ref = obs.get(REFERENCE_ID, {})
+    devs = []
+    for _, row in df.iterrows():
+        mine = obs.get(row['id'], {})
+        prev = obs.get('%s_d%02d' % (row['pipeline'], row['d'] - 1), {})
+        dev = {}
+        for name, curve in mine.items():
+            if name in ref and row['id'] != REFERENCE_ID:
+                dev['dev_%s_vs_ref' % name] = observables.deviation(curve, ref[name])
+            if name in prev:
+                dev['dev_%s_vs_prev' % name] = observables.deviation(curve, prev[name])
+        devs.append(dev)
+    return pd.concat([df, pd.DataFrame(devs, index=df.index)], axis=1)
 
 
 def sweep_rows(records):

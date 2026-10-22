@@ -5,8 +5,9 @@ Two kinds of case come out of :func:`ladder.build_cases`:
 ``'pipeline'``
     The example01 workflow on a doubled cell: QE projections ->
     ``pao_hamiltonian`` -> ``doubling_Hamiltonian`` -> property mesh ->
-    ``dos`` + Boltzmann ``transport``, on the dense pipeline or the sparse
-    one (from-the-bottom ``energy_window`` or ``interior_window``).
+    the case's properties (``case['properties']``), on the dense pipeline or
+    the sparse one (from-the-bottom ``energy_window`` or ``interior_window``).
+    The sparse pipeline runs them in one fused mesh pass.
 ``'solver_sweep'``
     The doubled sparse H(k) at a few k-points, solved with LAPACK and with
     ARPACK for a range of ``nev/n``, to measure where the two cross
@@ -128,6 +129,8 @@ def _build_cell(case, outdir, rec):
         pao.projectability(pthr=system['pthr'])
     with rec.stage('pao_hamiltonian', arrays):
         pao.pao_hamiltonian()
+    from PAOFLOW.spectrum.do_pdos import _build_orbital_prefixes
+
     rec.set(
         'hamiltonian',
         base={
@@ -135,6 +138,9 @@ def _build_cell(case, outdir, rec):
             'bnd': int(attr['bnd']),
             'nk_R': [int(attr['nk1']), int(attr['nk2']), int(attr['nk3'])],
             'nspin': int(attr['nspin']),
+            # the PDOS file prefixes of the base cell; a doubled cell writes
+            # orb_<m> instead, where orbital m is base orbital m % nawf
+            'orbital_labels': _build_orbital_prefixes(arrays, int(attr['nawf'])),
         },
     )
 
@@ -200,6 +206,8 @@ def _solver_info(pao, case):
         kernel, reason = 'refused', str(exc)[:500]
     return {
         'mode': 'energy_window' if eng._window is not None else 'bnd',
+        'ehi': None if eng._window is None else float(eng._window.ehi),
+        'full_spectrum': bool(case['band_curvature']),
         'nev': nev,
         'nev_fraction': nev / float(n),
         'kernel': kernel,
@@ -209,9 +217,12 @@ def _solver_info(pao, case):
 
 
 def _outputs(outdir):
+    """The output files, without the one-per-orbital PDOS files (there are
+    nawf of them), which are only counted."""
     out = os.path.join(outdir, 'output')
-    names = ['dosdk_0.dat', 'sigmagauss_0.dat', 'Seebeckgauss_0.dat', 'kappagauss_0.dat']
-    return {n: os.path.join('output', n) for n in names if os.path.exists(os.path.join(out, n))}
+    names = sorted(os.listdir(out)) if os.path.isdir(out) else []
+    pdos = [n for n in names if '_pdosdk_' in n]
+    return {'files': [n for n in names if '_pdosdk_' not in n], 'pdos_files': len(pdos)}
 
 
 # ----------------------------------------------------------------------
@@ -224,8 +235,7 @@ def _run_pipeline(case, outdir, rec):
     arrays, attr = pao.data_controller.data_dicts()
 
     nfft, clamped = _mesh(case, attr)
-    dos = dict(case['dos'])
-    transport = dict(case['transport'])
+    properties = [(name, dict(kwargs)) for name, kwargs in case['properties']]
 
     with rec.stage('interpolated_hamiltonian', arrays):
         pao.interpolated_hamiltonian(nfft1=nfft[0], nfft2=nfft[1], nfft3=nfft[2])
@@ -242,10 +252,15 @@ def _run_pipeline(case, outdir, rec):
         with rec.stage('window', arrays):
             pao.sparse._ensure_window()
         rec.set('solver', **_solver_info(pao, case))
+        # the same calls as the dense branch; on the sparse engine these
+        # three only record what the fused pass has to produce
+        pao.pao_eigh()
+        pao.gradient_and_momenta(band_curvature=case['band_curvature'])
+        pao.adaptive_smearing()
         with rec.stage('mesh_and_properties', arrays):
             with pao.sparse.fused():
-                pao.dos(**dos)
-                pao.transport(**transport)
+                for name, kwargs in properties:
+                    getattr(pao, name)(**kwargs)
         if pao.sparse._interior is not None:
             rec.set('solver', bands_max=int(attr['bnd']))
         rec.set('solver', skipped=[list(s) for s in pao.sparse._skipped])
@@ -260,13 +275,12 @@ def _run_pipeline(case, outdir, rec):
         with rec.stage('pao_eigh', arrays):
             pao.pao_eigh()
         with rec.stage('gradient_and_momenta', arrays):
-            pao.gradient_and_momenta()
+            pao.gradient_and_momenta(band_curvature=case['band_curvature'])
         with rec.stage('adaptive_smearing', arrays):
             pao.adaptive_smearing()
-        with rec.stage('dos', arrays):
-            pao.dos(**dos)
-        with rec.stage('transport', arrays):
-            pao.transport(**transport)
+        for name, kwargs in properties:
+            with rec.stage(name, arrays):
+                getattr(pao, name)(**kwargs)
 
     with rec.stage('finish', arrays):
         pao.finish_execution()
