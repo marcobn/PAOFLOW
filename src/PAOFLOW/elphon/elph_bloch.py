@@ -833,9 +833,8 @@ def _diagonal_velocities(
     Notes
     -----
     By the Hellmann-Feynman theorem these are the group velocities
-    :math:`\\partial_{\\mathbf k}\\varepsilon_{n\\mathbf k}` of the PAO Hamiltonian,
-    which already contains the non-local pseudopotential: no non-local correction
-    applies to them.
+    :math:`\\partial_{\\mathbf k}\\varepsilon_{n\\mathbf k}` of the PAO Hamiltonian
+    (the position-dipole term of :func:`band_velocities` is off-diagonal).
     """
     bands = electrons.get('bands', np.arange(electrons['E'].shape[1]))
     energies = electrons['E'][:, bands]
@@ -947,8 +946,6 @@ def band_velocities(
     electrons: dict,
     k_indices: NDArray[np.int_],
     bands: NDArray[np.int_] | slice = slice(None),
-    nl_correction: Callable[[NDArray[np.float64]], NDArray[np.complex128]] | None = None,
-    degeneracy_tol: float = 1.0e-6,
     position_dipoles: Callable[[NDArray[np.float64]], NDArray[np.complex128]] | None = None,
 ) -> NDArray[np.complex128]:
     """Band-basis velocity matrix elements ``<m k|v_alpha|n k>`` on the dense grid.
@@ -966,14 +963,6 @@ def band_velocities(
         Flat indices into the dense grid ``electrons['K']``.
     bands : ndarray of int or slice, optional
         Bands kept in the rotation (default all ``nawf``).
-    nl_correction : callable, optional
-        ``K_cryst (nb, 3) -> (nb, 3, nawf, nawf)``: an additional PAO-basis
-        velocity term in Ry bohr (e.g. the non-local pseudopotential correction
-        of :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.build_nonlocal_velocity_kspace`),
-        added to the **interband** elements only (see Notes).
-    degeneracy_tol : float, optional
-        Energy tolerance (Ry) below which two bands count as degenerate (no
-        correction between them).
     position_dipoles : callable, optional
         ``K_cryst (nb, 3) -> (nb, 3, nawf, nawf)``: the position dipoles
         :math:`\\mathbf d(\\mathbf k)` of the PAO basis in bohr
@@ -1009,10 +998,8 @@ def band_velocities(
 
     Its diagonal is exactly the group velocity :math:`\\partial_{\\mathbf k}\\varepsilon_{n\\mathbf k}`
     (Hellmann-Feynman), with the non-local pseudopotential already inside the PAO
-    Hamiltonian.  The non-local correction compensates for the incompleteness of
-    the basis in the interband dipoles :math:`m \\ne n` (optical transitions); it
-    is therefore not applied within degenerate blocks or on the diagonal, which
-    stay the band velocities used in transport.
+    Hamiltonian; no separate :math:`[V_{\\rm NL}, \\mathbf r]` term is needed (one was
+    carried until October 2026 and double counted it).
     """
     terms = electrons.get('velocity')
     if terms is None:
@@ -1034,17 +1021,7 @@ def band_velocities(
         velocity += dipole_velocity_term(Hk, position_dipoles(K))  # eV bohr
     velocity /= RY_TO_EV  # eV bohr -> Ry bohr
     Vb = electrons['V'][k_indices][:, :, bands]
-    out = np.einsum('kim,kaij,kjn->kamn', Vb.conj(), velocity, Vb, optimize=True)
-    if nl_correction is not None:
-        # Interband elements only: the diagonal (and degenerate-block) elements of
-        # dH/dk are already the group velocities dE/dk (Hellmann-Feynman), the PAO
-        # Hamiltonian containing the non-local pseudopotential.
-        kept = electrons.get('bands', np.arange(nawf))
-        energies = electrons['E'][k_indices][:, kept][:, bands]
-        interband = np.abs(energies[:, :, None] - energies[:, None, :]) > degeneracy_tol
-        delta = np.einsum('kim,kaij,kjn->kamn', Vb.conj(), nl_correction(K), Vb, optimize=True)
-        out += delta * interband[:, None]
-    return out
+    return np.einsum('kim,kaij,kjn->kamn', Vb.conj(), velocity, Vb, optimize=True)
 
 
 def vertex_ws_coefficients(gR: NDArray[np.complex128], electrons: dict) -> NDArray[np.complex128]:

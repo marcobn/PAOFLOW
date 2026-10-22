@@ -687,7 +687,6 @@ def _absorption_cfg(**kw):
         degauss_ev=0.05,
         fsthick_ev=4.0,
         refractive_index=3.4,
-        nonlocal_velocity=True,
     )
     cfg.update(kw)
     return cfg
@@ -702,10 +701,11 @@ def test_build_elphon_absorption_script_compiles_and_wires() -> None:
     assert 'NK_DENSE = 12' in text and 'NQ_DENSE = 6' in text
     assert 'TEMPS_K = [100.0, 300.0]' in text
     assert 'OMEGA_EV = (0.05, 3.0, 0.05)' in text
-    assert 'NONLOCAL_VELOCITY = True' in text
+    assert 'POSITION_DIPOLES = True' in text and 'NONLOCAL_VELOCITY' not in text
+    assert 'nonlocal_velocity' not in text
     assert 'eliashberg' not in text
-    off = d.build_elphon_script(_absorption_cfg(nonlocal_velocity=False))
-    assert 'NONLOCAL_VELOCITY = False' in off
+    off = d.build_elphon_script(_absorption_cfg(position_dipoles=False))
+    assert 'POSITION_DIPOLES = False' in off
     assert 'SCREENING_EPS = None' in text and 'SCREENING_EPS_DFT = None' in text
     assert 'screening_eps=args.screening_eps, screening_eps_dft=args.screening_eps_dft' in text
     assert "'--screening-eps'" in text and 'print(screening_report(out))' in text
@@ -741,7 +741,6 @@ def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
             '0.04',
             '3.0',
             '3.5',
-            'n',
             '',
             '',
         ]
@@ -753,7 +752,7 @@ def test_collect_elphon_absorption_prompts(monkeypatch) -> None:
     assert cfg['omega_ev'] == [0.1, 2.5, 0.02]
     assert cfg['temps_k'] == [10.0, 300.0]
     assert (cfg['degauss_ev'], cfg['fsthick_ev'], cfg['refractive_index']) == (0.04, 3.0, 3.5)
-    assert cfg['nonlocal_velocity'] is False
+    assert 'nonlocal_velocity' not in cfg
     assert cfg['position_dipoles'] is True
     assert cfg['pthr'] == 0.95
     assert cfg['emissivity'] is False

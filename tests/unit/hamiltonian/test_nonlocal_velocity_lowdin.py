@@ -1,9 +1,10 @@
-"""The Löwdin transformation and the orbital signs of the non-local velocity correction.
+"""The Löwdin transformation, the orbital signs and the (j, m_j) rotation of the PAO catalog.
 
-``build_nonlocal_velocity_kspace`` assembles ⟨φ_a|m/(iħ)[V_NL, r]|φ_b⟩ between the raw atomic
-orbitals; PAOFLOW works in the Löwdin basis ω = φ S^{-1/2}, so the drivers pass the Bloch
-overlap S(k) of the orbitals and the operator is transformed as S^{-1/2} Δp S^{-1/2}
-(``lowdin_transform``), then carries PAOFLOW's orbital signs (``pao_orbital_signs``).
+PAOFLOW works in the Löwdin basis ω = φ S^{-1/2} of the atomic orbitals: an operator assembled
+between the raw orbitals is transformed as S^{-1/2} O S^{-1/2} (``lowdin_transform``) and
+carries PAOFLOW's orbital signs (``pao_orbital_signs``); fully relativistic runs rotate the
+scalar matrices to the (j, m_j) basis (``scalar_to_jm_matrix``).  These helpers serve the
+position dipoles of :mod:`PAOFLOW.hamiltonian.position_dipoles`.
 """
 
 from __future__ import annotations
@@ -14,11 +15,6 @@ import numpy as np
 import pytest
 
 from PAOFLOW.hamiltonian.nonlocal_velocity import (
-    build_nl_real_space_tables,
-    build_nonlocal_velocity_kspace,
-    compute_nonlocal_velocity_on_grid,
-    enumerate_nl_pairs,
-    load_beta_projectors,
     load_pao_orbitals,
     lowdin_transform,
     pao_orbital_signs,
@@ -85,12 +81,8 @@ def si_catalogs():
         def data_dicts(self):
             return arrays, attributes
 
-    dc = DC()
-    beta, pao = load_beta_projectors(dc), load_pao_orbitals(dc)
+    pao = load_pao_orbitals(DC())
     a_cart = a_vectors * alat
-    nl_tables = build_nl_real_space_tables(
-        beta, pao, enumerate_nl_pairs(beta, pao, a_cart, pao_tol=1e-2), q_max=15.0, n_q=300
-    )
     overlap_tables = build_position_tables(
         pao,
         enumerate_pao_pairs(pao, a_cart, pao_tol=1e-2),
@@ -98,11 +90,11 @@ def si_catalogs():
         n_q=300,
         include_dipole=False,
     )
-    return beta, pao, nl_tables, overlap_tables, alat
+    return pao, overlap_tables, alat
 
 
 def test_pao_orbital_signs_pattern(si_catalogs):
-    _, pao, _, _, _ = si_catalogs
+    pao, _, _ = si_catalogs
     signs = pao_orbital_signs(pao)
     # per site: s, p_z (m=0), p_x (m=+1), p_y (m=-1): (-1)^l times the odd-|m| sign
     assert signs.tolist() == [1.0, -1.0, 1.0, 1.0] * 2
@@ -110,40 +102,27 @@ def test_pao_orbital_signs_pattern(si_catalogs):
 
 
 def test_overlap_only_tables_have_zero_dipoles(si_catalogs):
-    _, _, _, overlap_tables, _ = si_catalogs
+    _, overlap_tables, _ = si_catalogs
     assert all(np.all(block == 0.0) for block in overlap_tables.dipole)
     assert any(np.abs(block).max() > 0.1 for block in overlap_tables.overlap)
 
 
-def test_transformed_operator_is_lowdin_of_raw_and_hermitian(si_catalogs):
-    beta, pao, nl_tables, overlap_tables, alat = si_catalogs
+def test_lowdin_transform_of_signed_overlap_is_identity(si_catalogs):
+    """S^{-1/2} S S^{-1/2} = 1: the Bloch overlap of the tables, in PAOFLOW's sign convention."""
+    pao, overlap_tables, _ = si_catalogs
     k_cart = np.array([[0.11, -0.07, 0.19], [0.0, 0.0, 0.0]])
-    raw = build_nonlocal_velocity_kspace(beta, pao, nl_tables, k_cart, units='rydberg')
     overlap_k = assemble_overlap_kspace(overlap_tables, k_cart)
-    full = build_nonlocal_velocity_kspace(
-        beta, pao, nl_tables, k_cart, units='rydberg', overlap_k=overlap_k
-    )
-    # ``raw`` already carries PAOFLOW's orbital signs; the overlap of the tables must be
-    # brought to the same convention before the two routes can be compared
     signs = pao_orbital_signs(pao)
     overlap_pf = overlap_k * signs[None, :, None] * signs[None, None, :]
-    np.testing.assert_allclose(full, lowdin_transform(raw, overlap_pf), atol=1e-12)
-    np.testing.assert_allclose(full, np.conj(np.swapaxes(full, -1, -2)), atol=1e-12)
-    assert np.abs(full - raw).max() > 1e-3  # the transformation is not a no-op for this basis
-    # the grid wrapper passes the overlap through
-    kgrid = (k_cart * alat / (2.0 * np.pi)).T  # (3, nk) in 2 pi / alat
-    via_grid = compute_nonlocal_velocity_on_grid(
-        beta, pao, nl_tables, kgrid, alat, units='rydberg', overlap_tables=overlap_tables
-    )
-    np.testing.assert_allclose(via_grid, full, atol=1e-12)
-    with pytest.raises(ValueError, match='overlap_k must have shape'):
-        build_nonlocal_velocity_kspace(
-            beta, pao, nl_tables, k_cart, units='rydberg', overlap_k=overlap_k[:1]
-        )
+    out = lowdin_transform(overlap_pf, overlap_pf)
+    np.testing.assert_allclose(out, np.repeat(np.eye(pao.total_nlm)[None], 2, 0), atol=1e-10)
+    assert (
+        np.abs(overlap_pf - np.eye(pao.total_nlm)[None]).max() > 1e-2
+    )  # the basis is not orthonormal
 
 
 def test_scalar_to_jm_overlap_is_hermitian_unitary_rotation(si_catalogs):
-    _, pao, _, overlap_tables, _ = si_catalogs
+    pao, overlap_tables, _ = si_catalogs
     k_cart = np.array([[0.11, -0.07, 0.19]])
     s = assemble_overlap_kspace(overlap_tables, k_cart)
     s_jm = scalar_to_jm_matrix(s, pao)

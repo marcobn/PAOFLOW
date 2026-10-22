@@ -1,9 +1,6 @@
-"""The vectorised two-centre blocks against the element-wise primitives, and the vectorised
-non-local tables against the element-wise builder."""
+"""The vectorised two-centre blocks against the element-wise primitives."""
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -13,19 +10,8 @@ from PAOFLOW.hamiltonian._two_center import (
     two_center_dipole_overlap_precomputed,
     two_center_overlap_precomputed,
 )
-from PAOFLOW.hamiltonian.nonlocal_velocity import (
-    _build_nl_real_space_tables_elementwise,
-    build_nl_real_space_tables,
-    enumerate_nl_pairs,
-    load_beta_projectors,
-    load_pao_orbitals,
-    qe_m_index_to_std,
-)
+from PAOFLOW.hamiltonian.nonlocal_velocity import qe_m_index_to_std
 from PAOFLOW.hamiltonian.two_center_blocks import _dipole_bra_l, two_center_pair_blocks
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-SI_ONCV_DIR = REPO_ROOT / 'examples' / 'qe_examples' / 'example16' / 'Si_ONCV'
-SI_ONCV_UPF = 'Si_ONCV_PBE_sr.UPF'
 
 
 def _gaussian_channel(r, l, alpha):
@@ -74,36 +60,3 @@ def test_pair_blocks_match_elementwise_primitives():
     )
     np.testing.assert_allclose(overlap_only, overlap, atol=1e-15)
     assert np.all(zeros == 0.0)
-
-
-@pytest.fixture(scope='module')
-def si_catalogs():
-    if not (SI_ONCV_DIR / SI_ONCV_UPF).exists():
-        pytest.skip(f'Si ONCV UPF missing under {SI_ONCV_DIR}')
-    alat = 10.2
-    a_cart = 0.5 * alat * np.array([[-1.0, 0.0, 1.0], [0.0, 1.0, 1.0], [-1.0, 1.0, 0.0]])
-    tau = np.array([[0.0, 0.0, 0.0], [0.25 * alat] * 3])
-    arrays = {'species': [('Si', SI_ONCV_UPF)], 'atoms': ['Si', 'Si'], 'tau': tau}
-    attributes = {'fpath': str(SI_ONCV_DIR)}
-
-    class DC:
-        def data_dicts(self):
-            return arrays, attributes
-
-    dc = DC()
-    return load_beta_projectors(dc), load_pao_orbitals(dc), a_cart
-
-
-def test_nl_tables_vectorised_match_elementwise(si_catalogs):
-    beta, pao, a_cart = si_catalogs
-    pairs = sorted(enumerate_nl_pairs(beta, pao, a_cart, pao_tol=1e-2), key=lambda p: p.distance)[
-        :12
-    ]
-    fast = build_nl_real_space_tables(beta, pao, pairs, q_max=15.0, n_q=300)
-    slow = _build_nl_real_space_tables_elementwise(beta, pao, pairs, q_max=15.0, n_q=300)
-    assert fast.beta_lm_per_site == slow.beta_lm_per_site and fast.pao_per_site == slow.pao_per_site
-    for a, b in zip(fast.S_bp, slow.S_bp):
-        np.testing.assert_allclose(a, b, atol=1e-12)
-    for a, b in zip(fast.S_rbp, slow.S_rbp):
-        np.testing.assert_allclose(a, b, atol=1e-12)
-    assert max(np.abs(a).max() for a in fast.S_rbp) > 0.1

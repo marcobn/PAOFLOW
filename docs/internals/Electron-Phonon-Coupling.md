@@ -611,18 +611,19 @@ $$
 + i H_{ij}(\mathbf{k})(\boldsymbol{\tau}_j - \boldsymbol{\tau}_i),
 $$
 
-i.e. minus PAOFLOW's `dHksp`. The optional non-local pseudopotential term
-(`nonlocal_velocity=<DataController>`, norm-conserving only) uses
-`build_nonlocal_velocity_kspace` at the dense k-points, with the calibrated sign
-of `inject_into_dHksp`.
-
-The term is added to the **interband** elements only:
+i.e. minus PAOFLOW's `dHksp`. With `position_dipoles=<DataController>` the
+Löwdin position dipoles of the basis are added, $+\,i[H(\mathbf k), \mathbf d(\mathbf k)]$,
+i.e. $i(\varepsilon_n - \varepsilon_m)\, d_{nm}$ in the band basis
+(`position-dipoles.md`): this completes the commutator $i[H, \mathbf r]$ of the
+PAO Hamiltonian, which already contains the non-local pseudopotential. (The
+term $i[V_{\rm NL}, \mathbf r]$ offered until October 2026 double counted it
+and was removed, `nonlocal-velocity.md`.) The dipole term is purely
+off-diagonal in the band basis:
 - **Diagonal and degenerate blocks.** By Hellmann–Feynman these are the group
   velocities $\partial_{\mathbf k}\varepsilon_{n\mathbf k}$ of the PAO
-  Hamiltonian, which already contains the non-local pseudopotential. The
-  correction would double-count it; on Si it changes them by about 5% rms.
-- **Interband dipoles.** There the correction compensates for the
-  incompleteness of the basis.
+  Hamiltonian and stay untouched.
+- **Interband dipoles.** There the dipoles supply the on-site s–p, p–d matrix
+  elements that $\partial H/\partial k$ lacks.
 
 All transport quantities therefore use the plain group velocities: α²F_tr, the
 plasma frequency and the carrier rates, through `_diagonal_velocities`.
@@ -634,7 +635,7 @@ The validation checks are:
 - **Mutation check.** The test fails if the position term is dropped or
   flipped, or if the vertex is conjugated.
 - **Direct term on Si.** The direct term matches `dielectric_tensor` on the
-  same Hamiltonian, both with and without the non-local term.
+  same Hamiltonian, with and without the position dipoles.
 
 **Driver.** `phonon_assisted_absorption_dense_q(A, HRs, kpts_cryst, bg, at,
 alat, cell_volume, epw_dir, qgrid, kgrid, masses_amu=, nelec=, nk_dense=,
@@ -721,7 +722,7 @@ Why each ingredient matters:
   `kk_degauss_ev = 0.1` eV.
 
 **Extended-basis direct term (recommended).** PAOFLOW's optical route uses the
-extended basis with the non-local velocity. `direct_dielectric=(ω, ε₁, ε₂)`
+extended basis with the position dipoles. `direct_dielectric=(ω, ε₁, ε₂)`
 (`read_direct_dielectric(outdir)` reads the `epsr_*/epsi_*.dat` files of such a
 `dielectric_tensor` run) replaces the wide-range Kramers–Kronig term:
 - ε₁ is the external one, plus the KK shift of the tapered phonon-assisted
@@ -784,7 +785,7 @@ of the same crystal can replace the PBE one altogether
 - **What is mixed.** $g_{mn}(\mathbf k,\mathbf q) = V_U^\dagger(\mathbf k+\mathbf q)\,
   g^{\rm PAO,PBE}\,V_U(\mathbf k)$ with the eACBN0 eigenvectors $V_U$, the eACBN0
   energies in every δ function, denominator, occupation and $\mu(T)$, and the
-  velocities of the eACBN0 $H(R)$ (plus the pseudopotential non-local term).
+  velocities of the eACBN0 $H(R)$ (plus the position dipoles when requested).
   Δ(0) = 0: no scissor at 0 K. The PAO analogue of `eig_read`, with eigenvectors.
 - **What is not.** The Hubbard contribution to the coupling ($dV_{\rm Hub}/du$
   and the response of the occupations; `ph.x` computes it only for DFPT+U with
@@ -930,8 +931,8 @@ $$
   weight is 1 for $|\mathbf v_{n\mathbf k}|^2 \le 10^{-4}$ Ry a.u.
   (≈ 1.1·10⁴ m/s).
 - **Velocities.** The group velocities (diagonal of the PAO velocity
-  operator, averaged over degenerate subspaces; no non-local correction, see
-  above). The work is shared between MPI ranks.
+  operator, averaged over degenerate subspaces; the dipole term is
+  off-diagonal, see above). The work is shared between MPI ranks.
 
 **Symmetry.** The point group (with time reversal) reduces the q-sum to the
 **irreducible** dense q-points with star weights. Each k with window states is
@@ -1413,7 +1414,7 @@ print(res['gap0_imag'], res['gap_pade'], res['gap_acon'], lin['Tc_linear'])
 ```
 
 Phonon-assisted absorption on the same inputs (the data controller is passed
-only for the optional non-local velocity term):
+for the position dipoles of the velocity operator):
 
 ```python
 from PAOFLOW.elphon.elph_bloch import atom_masses, pao_orbital_positions
@@ -1426,7 +1427,7 @@ out = phonon_assisted_absorption_dense_q(
     'epw', (3, 3, 3), (6, 6, 6),
     masses_amu=atom_masses([28.085], info['species'], info['atom_names']), nelec=8,
     nk_dense=12, nq_dense=6, temps_k=[300.0],
-    nonlocal_velocity=pf.data_controller,
+    position_dipoles=pf.data_controller,
     sym_rots=info['s_cryst'], tau_cryst=info['tau_cryst'], species=info['atom_names'],
     orbital_positions=pao_orbital_positions(pf.data_controller, info['at']),
 )

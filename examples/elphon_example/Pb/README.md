@@ -157,8 +157,8 @@ velocity change, giving the transport Eliashberg function α²F_tr and λ_tr
   Experiment gives about 21 µΩ cm at 300 K.
 - An earlier Boltzmann run on PAOFLOW's 48³ grid with the same channel, at
   the same chemical potential, gave 19.3 µΩ cm at 300 K. That run used
-  `gradient_and_momenta(nonlocal_velocity=True)`, which also alters the band
-  velocities.
+  the former non-local velocity term (removed in October 2026), which also
+  altered the band velocities.
 - Total hemispherical emissivity of a clean surface: 0.012 (100 K), 0.037
   (300 K), 0.071 (600 K).
 - The interband part changes the totals by less than 2%. Its main feature is

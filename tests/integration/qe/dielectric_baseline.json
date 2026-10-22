@@ -1,5 +1,5 @@
 {
-  "_comment": "Baselines for tests/integration/qe/test_dielectric_vs_qe.py. Each entry: {paoflow: {metrics...}, qe: {metrics...}, paoflow_rel_tol: ..., paoflow_abs_tol: ...}. PAOFLOW metrics are pinned to current (pre-correction) values to detect regressions. The QE block is informational. See TODOs/nonlocal_velocity_correction.md.",
+  "_comment": "Baselines for tests/integration/qe/test_dielectric_vs_qe.py. Each entry: {paoflow: {metrics...}, qe: {metrics...}, paoflow_rel_tol: ..., paoflow_abs_tol: ...}. PAOFLOW metrics are pinned to the plain-velocity values (no position dipoles) to detect regressions. The QE block (epsilon.x, local momentum only) is informational. See docs/internals/position-dipoles.md.",
 
   "example15": {
     "paoflow": {

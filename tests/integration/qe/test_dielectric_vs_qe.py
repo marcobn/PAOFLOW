@@ -3,8 +3,8 @@
 This file is a **placeholder** that wires up the test infrastructure
 (metric extraction, environment-variable discovery, baseline JSON file)
 without yet committing to a specific set of benchmark inputs in the test
-asset tarball.  See ``TODOs/nonlocal_velocity_correction.md`` for the
-broader plan.
+asset tarball.  Its purpose is to pin the dielectric function of the PAO
+velocity operator (``docs/internals/position-dipoles.md``).
 
 How to enable the actual benchmark
 ----------------------------------

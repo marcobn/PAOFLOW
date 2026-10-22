@@ -85,7 +85,7 @@ paoflow-genbasis-ps --pseudo Si.upf --out BASIS_PS
 mpirun -np 8 python main.py                        # 12^3 k, 6^3 q, 300 K (13 s on 8 cores)
 mpirun -np 8 python main.py --temps 10 300 600     # several temperatures in one run
 mpirun -np 8 python main.py --nk 24 --nq 12        # denser grids (35 s on 8 cores)
-mpirun -np 8 python main.py --no-nonlocal-velocity # PAO dH/dk velocity only
+mpirun -np 8 python main.py --no-position-dipoles # PAO dH/dk velocity only
 python plot.py --temp 300                          # figure -> output/absorption.png
 ```
 
@@ -196,7 +196,7 @@ approximate:
 Without the scissor (PBE gap), the totals below come out at too low a
 temperature.
 
-Total hemispherical emissivity of a 500 µm wafer (PBE gap, non-local velocity as it was before the October 2026 fix, k 24³ / q 12³):
+Total hemispherical emissivity of a 500 µm wafer (PBE gap, former non-local velocity term as it was before October 2026, k 24³ / q 12³):
 
 | T (K) | 300 | 400 | 500 | 600 | 700 | 900 | 1100 | 1500 |
 |---|---|---|---|---|---|---|---|---|
@@ -389,16 +389,12 @@ Hamiltonian (see section 4); the rates keep the PBE coupling. The energies of
     7.5% (direct, 2.5–5 eV), and the direct term lands at 0.98 of EPW's.
     `POSITION_DIPOLE_LEVEL = 'intra-atomic'` keeps the on-site blocks only
     (the textbook approximation; not enough for the diffuse standard basis).
-  - `NONLOCAL_VELOCITY` (default `False`; norm-conserving pseudopotentials
-    only) adds the non-local pseudopotential term i[V_NL, r], as in PAOFLOW's
-    `dielectric_tensor`. The term was repaired in October 2026 (Löwdin
-    transformation and orbital signs, `docs/internals/nonlocal-velocity.md`)
-    and now matches the exact plane-wave commutator to 2–3 %, but it is not to
-    be combined with the position dipoles: the velocity i[H, r] of the PAO
-    Hamiltonian already contains V_NL, so with the dipoles it is complete
-    (0.99–1.01 of the exact Im ε of Si) and the term on top double counts
-    (0.87). Without the dipoles, plain (1.02–1.06) and term (0.90–0.97)
-    bracket the exact result.
+  - The non-local pseudopotential term i[V_NL, r] (`NONLOCAL_VELOCITY`, until
+    October 2026) was removed: the velocity i[H, r] of the PAO Hamiltonian
+    already contains V_NL, so with the dipoles it is complete (0.99–1.01 of
+    the exact Im ε of Si) and the term on top double counted (0.87;
+    `docs/internals/nonlocal-velocity.md`). Passing `nonlocal_velocity=` to
+    the drivers now raises.
 - **Fermi level and gap.** The Fermi level sits mid-gap; set `FERMI_ENERGY_EV`
   to override it.
   - The band energies are the PBE ones, so the absorption edge sits at the PBE
@@ -416,8 +412,8 @@ Hamiltonian (see section 4); the rates keep the PBE coupling. The energies of
 Gaps of the dense PAO spectrum: indirect 0.608 eV, direct (at Γ) 2.548 eV.
 
 Phonon-assisted Im ε and α (direct + indirect, constant n_r = 3.4 here; with
-`--direct-dielectric` the drivers use n(ω) of that run), without the non-local
-velocity term:
+`--direct-dielectric` the drivers use n(ω) of that run), with the plain velocity
+(no position dipoles):
 
 | ω (eV) | Im ε 12³/6³ | 16³/8³ | 24³/12³ | α (cm⁻¹) 24³/12³ |
 |---|---|---|---|---|

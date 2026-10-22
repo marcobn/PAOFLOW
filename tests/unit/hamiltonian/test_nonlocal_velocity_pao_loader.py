@@ -1,8 +1,7 @@
 """Unit tests for the Phase 3b PAO atomic-orbital catalog loader.
 
 Exercises :func:`PAOFLOW.hamiltonian.nonlocal_velocity.load_pao_orbitals`
-on the same real norm-conserving UPFs used by the β-projector loader
-tests.  Covers:
+on real norm-conserving UPFs.  Covers:
 
 * Per-species PSWFC channel inventory (l, label, occupation).
 * PAOFLOW basis ordering (channel-major, QE-indexed m sweep) and the
@@ -12,8 +11,7 @@ tests.  Covers:
   including the ``r=0`` extrapolation for ``l=0``.
 * Multi-species (MnO) site → basis mapping with correct
   ``basis_offset`` values.
-* USPP rejection and species/tau mismatch error paths (shared with the
-  β loader).
+* USPP rejection and species/tau mismatch error paths.
 """
 
 from __future__ import annotations

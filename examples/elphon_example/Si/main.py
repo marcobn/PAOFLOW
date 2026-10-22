@@ -48,15 +48,13 @@ target), optionally temperature dependent with VARSHNI (--varshni ALPHA BETA).
 Only the band energies change (rigid conduction shift) and, with
 SCISSOR_VELOCITY = 'renormalized', the interband velocities (Levine-Allan);
 the electron-phonon coupling stays that of the DFT (DFPT) run, since ph.x
-supports Hubbard U only with atomic projectors.  NONLOCAL_VELOCITY adds the
-non-local pseudopotential term of the velocity operator (norm-conserving
-pseudopotentials only); it changes the magnitude of Im eps, not the edge.
-POSITION_DIPOLES adds the position dipoles of the PAO orbitals (the on-site
-s-p, p-d matrix elements that dH/dk lacks, Löwdin-orthogonalised over the
-basis): with them the velocity is the full commutator i[H, r] of the PAO
-Hamiltonian, which already contains the non-local pseudopotential, so
-NONLOCAL_VELOCITY must stay off (checked against exact plane-wave velocities:
-dipoles 0.99-1.01 of the exact Im eps, dipoles + non-local term 0.87).
+supports Hubbard U only with atomic projectors.  POSITION_DIPOLES adds the
+position dipoles of the PAO orbitals (the on-site s-p, p-d matrix elements
+that dH/dk lacks, Löwdin-orthogonalised over the basis): with them the
+velocity is the full commutator i[H, r] of the PAO Hamiltonian, which already
+contains the non-local pseudopotential (checked against exact plane-wave
+velocities: dipoles 0.99-1.01 of the exact Im eps; the former non-local
+pseudopotential term, removed in October 2026, double counted it: 0.87).
 
 ELECTRONS_SAVE (--electrons-save) replaces the scissor at 0 K: the band energies
 and eigenvectors come from the PAO Hamiltonian of an eACBN0 (DFT+U+V,
@@ -88,7 +86,7 @@ over all bands up to KK_OMEGA_MAX_EV, phonon-assisted term below the direct
 gap), the Fresnel slab absorptance, its hemispherical average and the
 Planck-weighted total at the same temperature.  For the direct part, point
 DIRECT_DIELECTRIC_DIR (--direct-dielectric) to the output of a separate
-dielectric_tensor run on the extended basis with the non-local velocity, as in
+dielectric_tensor run on the extended basis with the position dipoles, as in
 paoflow-gen's optical workflow: its eps1 is used throughout and its eps2 above
 the direct gap.  The Fermi level is then the
 charge-neutral one of each temperature, so the thermally excited carriers and
@@ -152,7 +150,6 @@ DEGAUSS_EV = 0.05  # energy-conserving delta smearing (EPW degaussw)
 FSTHICK_EV = 4.0  # states within FSTHICK_EV of the Fermi level (EPW fsthick)
 FERMI_ENERGY_EV = None  # Fermi level on the PAO energy scale; None = mid-gap
 REFRACTIVE_INDEX = None  # n_r of alpha = omega Im eps / (n_r c); None = n(omega) of DIRECT_DIELECTRIC_DIR, else 3.4
-NONLOCAL_VELOCITY = False  # non-local PP velocity term; double counts once POSITION_DIPOLES is on (see README)
 POSITION_DIPOLES = True  # position dipoles of the PAO orbitals in the velocity (i[H, d])
 POSITION_DIPOLE_LEVEL = 'full'  # 'full' (Löwdin-orthogonalised basis) or 'intra-atomic' (on-site only)
 # Scissor: rigid conduction-band shift to a target indirect gap (the e-ph coupling stays DFT).
@@ -173,7 +170,7 @@ THICKNESS_UM = 500.0  # slab thickness (um); float('inf') = opaque half-space
 EMIS_ANGLES = (0.0, 30.0, 60.0)  # emission angles (deg) of the directional spectra
 KK_OMEGA_MAX_EV = 10.0  # Kramers-Kronig range of the direct term (check the f-sum ratio)
 # Output directory of a separate dielectric_tensor run on the EXTENDED basis with the
-# non-local velocity (recommended for the direct eps1 + i eps2; needs an nscf with more
+# position dipoles (recommended for the direct eps1 + i eps2; needs an nscf with more
 # bands than extended-basis orbitals).  None = direct term from this run's PAO basis
 # by Kramers-Kronig.
 DIRECT_DIELECTRIC_DIR = None
@@ -275,7 +272,6 @@ def optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev
         scissor_ev=scissor_ev, target_gap_ev=target_gap_ev,
         scissor_velocity=args.scissor_velocity,
         screening_eps=args.screening_eps, screening_eps_dft=args.screening_eps_dft,
-        nonlocal_velocity=data_controller if args.nonlocal_velocity else None,
         position_dipoles=data_controller if args.position_dipoles else None,
         position_dipole_level=args.position_dipole_level,
         sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'], species=nscf['atom_names'],
@@ -285,8 +281,8 @@ def optical_absorption(projections, HRs, nscf, data_controller, args, scissor_ev
 
 def report(out, args, direct=None):
     """Print the gaps and write the spectra to OUTPUTDIR."""
-    print('PAOFLOW phonon-assisted absorption (k %d^3, q %d^3, degauss %.3f eV%s%s):'
-          % (args.nk, args.nq, args.degauss_ev, ', non-local velocity' if args.nonlocal_velocity else '',
+    print('PAOFLOW phonon-assisted absorption (k %d^3, q %d^3, degauss %.3f eV%s):'
+          % (args.nk, args.nq, args.degauss_ev,
              ', position dipoles (%s)' % args.position_dipole_level if args.position_dipoles else ''))
     n = out['refractive_index']
     print('  alpha = omega Im eps / (n c) with n %s' % ('= %.3g' % n if np.ndim(n) == 0 else
@@ -337,8 +333,6 @@ def main():
     parser.add_argument('--omega-min', type=float, default=OMEGA_EV[0], help='min photon energy (eV)')
     parser.add_argument('--omega-max', type=float, default=OMEGA_EV[1], help='max photon energy (eV)')
     parser.add_argument('--omega-step', type=float, default=OMEGA_EV[2], help='photon-energy step (eV)')
-    parser.add_argument('--nonlocal-velocity', action=argparse.BooleanOptionalAction,
-                        default=NONLOCAL_VELOCITY, help='non-local PP velocity term')
     parser.add_argument('--position-dipoles', action=argparse.BooleanOptionalAction,
                         default=POSITION_DIPOLES, help='position dipoles of the PAO orbitals in the velocity')
     parser.add_argument('--position-dipole-level', choices=('full', 'intra-atomic'),

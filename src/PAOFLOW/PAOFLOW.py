@@ -563,9 +563,9 @@ class PAOFLOW:
         # Expose the per-orbital atomic-basis records (r, wfc, l, m, atom,
         # tau, label) so that downstream modules can reconstruct the
         # actual PAO radial functions used by the projection.  Required
-        # by ``hamiltonian.nonlocal_velocity.load_pao_orbitals`` when the
-        # production run uses an AE / extended basis that does not match
-        # the UPF pswfc set.
+        # by ``hamiltonian.nonlocal_velocity.load_pao_orbitals`` (position
+        # dipoles) when the production run uses an AE / extended basis that
+        # does not match the UPF pswfc set.
         arry['atomic_basis'] = basis
 
         nkpnts = len(arry['kpnts'])
@@ -1822,28 +1822,14 @@ class PAOFLOW:
           (:meth:`position_dipole_correction`), the term that completes the
           commutator ``i[H, r]`` when the position operator is no longer reduced
           to the orbital centres.  ``None`` falls back to
-          ``attr['position_dipoles']`` (False if unset).  Not to be combined with
-          ``nonlocal_velocity`` (double counting).
+          ``attr['position_dipoles']`` (False if unset).
           position_dipole_level (str): ``'full'`` (Löwdin-orthogonalised basis)
           or ``'intra-atomic'`` (on-site blocks only).
-          nonlocal_velocity (bool or None): enable the non-local
-          pseudopotential velocity correction.  When ``None`` (default)
-          the value falls back to ``attr['nonlocal_velocity']`` (False if
-          unset), preserving the legacy DataController-driven behaviour.
-          Pass ``True`` here to enable the correction directly from the
-          call without touching the DataController.
-
-          nonlocal_velocity_inject (bool or None): fold the correction into
-          ``dHksp`` so downstream momenta/optics pick it up.  When ``None``
-          it falls back to ``attr['nonlocal_velocity_inject']`` if set,
-          otherwise defaults to the resolved ``nonlocal_velocity`` value
-          (i.e. enabling the correction injects it by default; building
-          without injecting is diagnostic-only).
-
-          nonlocal_velocity_sign (int or None): injection sign convention.
-          When ``None`` it falls back to ``attr['nonlocal_velocity_sign']``
-          if set, otherwise the calibrated per-path default is used
-          (+1 scalar / ad-hoc-SO, -1 fully-relativistic jm-kspace).
+          nonlocal_velocity, nonlocal_velocity_inject, nonlocal_velocity_sign:
+          the non-local pseudopotential velocity correction was removed in
+          October 2026 (it double counted ``V_NL``, already inside the PAO
+          Hamiltonian).  Any value other than ``None``/``False`` raises
+          ``ValueError`` pointing to ``position_dipoles``.
 
         Returns:
           None
@@ -1906,60 +1892,18 @@ class PAOFLOW:
 
         self.report_module_time('Gradient')
 
-        # ---- Optional non-local pseudopotential velocity correction ----
-        # Enable via the ``nonlocal_velocity`` kwarg (preferred) or
-        # ``attr['nonlocal_velocity'] = True`` (legacy).  Default off, so
-        # this is a no-op for legacy runs.  See
-        # ``TODOs/nonlocal_velocity_correction.md`` and
-        # :mod:`PAOFLOW.hamiltonian.nonlocal_velocity` for the physics.
-        # Explicit kwargs take precedence over the corresponding ``attr``
-        # entries; the injection sign, when unset, resolves to the
-        # calibrated per-path default (+1 scalar / ad-hoc-SO, -1
-        # fully-relativistic jm-kspace) inside
-        # :meth:`nonlocal_velocity_correction`.
-        if nonlocal_velocity is None:
-            nlv_enabled = bool(attr.get('nonlocal_velocity', False))
-        else:
-            nlv_enabled = bool(nonlocal_velocity)
-
-        if nonlocal_velocity_inject is not None:
-            nlv_inject = bool(nonlocal_velocity_inject)
-        elif 'nonlocal_velocity_inject' in attr:
-            nlv_inject = bool(attr['nonlocal_velocity_inject'])
-        else:
-            # Enabling the correction injects it by default; building Delta_p
-            # without injecting is a diagnostic-only mode.
-            nlv_inject = nlv_enabled
-
-        if nonlocal_velocity_sign is not None:
-            nlv_sign = int(nonlocal_velocity_sign)
-        elif attr.get('nonlocal_velocity_sign', None) is not None:
-            nlv_sign = int(attr['nonlocal_velocity_sign'])
-        else:
-            nlv_sign = None
-
-        if nlv_enabled:
-            # --- Preserve the BARE band group velocity for adaptive smearing ---
-            # The Yates adaptive width uses |grad_k(E_n - E_m)|, taken from the
-            # diagonal of the eigenbasis velocity matrix (the band group
-            # velocity). By Hellmann-Feynman nabla_k E_n = <n|dH/dk|n> equals
-            # that diagonal ONLY for the bare gradient dHksp. The non-local
-            # velocity correction is an interband position-commutator term;
-            # once it is folded into dHksp below, the diagonal of pksp is no
-            # longer the bare group velocity, which inflates deltakp/deltakp2
-            # and produces a spurious epsilon spike near omega -> 0. Build pksp
-            # from the bare dHksp first and stash its diagonal so
-            # do_adaptive_smearing can use the uncontaminated group velocity.
-            do_momentum(self.data_controller)
-            nb = arrays['pksp'].shape[2]
-            bdiag = np.arange(nb)
-            arrays['velkp_bare'] = np.ascontiguousarray(arrays['pksp'][:, :, bdiag, bdiag, :])
-
-            self.nonlocal_velocity_correction(
-                inject=nlv_inject,
-                sign=nlv_sign,
+        if (
+            nonlocal_velocity
+            or nonlocal_velocity_inject
+            or nonlocal_velocity_sign is not None
+            or attr.get('nonlocal_velocity')
+        ):
+            raise ValueError(
+                'The non-local pseudopotential velocity correction was removed in October 2026: '
+                'the PAO velocity i[H, r] already contains V_NL and the term double counted it. '
+                'Use gradient_and_momenta(position_dipoles=True) instead '
+                '(docs/internals/position-dipoles.md).'
             )
-
         if position_dipoles is None:
             dipoles_enabled = bool(attr.get('position_dipoles', False))
         else:
@@ -1977,254 +1921,6 @@ class PAOFLOW:
         # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
         do_momentum(self.data_controller)
         self.report_module_time('Momenta')
-
-    def nonlocal_velocity_correction(
-        self,
-        *,
-        q_max: float = 15.0,
-        n_q: int = 300,
-        pao_tol: float = 1.0e-3,
-        units: str = 'rydberg',
-        inject: bool = False,
-        sign: int = None,
-    ):
-        """Assemble the non-local pseudopotential velocity correction.
-
-        Computes the operator
-
-        .. math::
-           \\Delta p_\\alpha(\\mathbf{k})
-             = \\frac{m}{i\\hbar}\\,\\sum_I\\!\\left[
-                  P_I^{\\dagger}\\,D^I\\,P_I^{\\alpha}
-                - (P_I^{\\alpha})^{\\dagger}\\,D^I\\,P_I
-                \\right]
-
-        in the PAO basis on the current FFT k-grid and stores it under
-        ``arry['Delta_pksp']`` with shape ``(nktot, 3, nawf, nawf)``,
-        complex.
-
-        Parameters
-        ----------
-        q_max, n_q : float, int
-            Radial Bessel transform quadrature parameters passed to
-            :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.build_nl_real_space_tables`.
-        pao_tol : float
-            Cutoff tolerance used when enumerating the (β-site, PAO-site,
-            :math:`\\Delta\\mathbf{R}`) pair list.
-        units : {'hartree', 'rydberg'}
-            Units of the raw operator stored in ``arry['Delta_pksp']``.
-            ``'rydberg'`` (default) returns :math:`\\Delta p_\\alpha` in
-            Ry/Bohr; ``'hartree'`` returns Ha/Bohr.
-        inject : bool, optional
-            When ``True`` the correction is additively
-            applied to ``arry['dHksp']`` (which is in eV·Bohr) using
-
-            .. math::
-               \\Delta H_{\\mathrm{ksp}} \\mathrel{+}= -\\,\\lambda\\,
-                  \\Delta p_\\alpha,
-
-            with :math:`\\lambda = 13.605693122994` eV/Ry for ``'rydberg'``
-            or :math:`2\\lambda` eV/Ha for ``'hartree'``.  The minus sign
-            reflects PAOFLOW's internal convention
-            ``pksp = -\\langle n|p|m\\rangle`` (confirmed by
-            ``writers/write4bt2.py`` which exports ``mommat = -np.real(pksp)``
-            and by the Hellmann-Feynman test of ``test_velocity_hellmann_feynman.py``).
-            Since October 2026 the operator is Löwdin transformed with the Bloch
-            overlap of the PAO orbitals (cached as ``'_NL_overlap_tables'``) and carries
-            PAOFLOW's orbital signs
-            (:func:`~PAOFLOW.hamiltonian.nonlocal_velocity.pao_orbital_signs`); earlier
-            results with ``nonlocal_velocity=True`` (including the Cu/Pt ``epsilon.x``
-            comparisons quoted below) were obtained without both.
-        sign : int or None, optional
-            ``+1``, ``-1``, or ``None`` (default).  When ``None`` the
-            calibrated default for the active path is used: ``+1`` for the
-            scalar / ad-hoc-SO path (calibrated against ``epsilon.x`` for
-            Cu) and ``-1`` for the fully-relativistic ``(j, m_j)``-kspace
-            path (the jm builder carries the opposite covariance/phase
-            convention, validated against QE ``epsilon.x`` and SHC for
-            Pt_REL).  Forwarded to
-            :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.inject_into_dHksp`
-            when ``inject=True``.  Also configurable via
-            ``attr['nonlocal_velocity_sign']`` for the
-            ``gradient_and_momenta`` gate; set it explicitly to override
-            the per-path default.
-
-        Notes
-        -----
-        Norm-conserving (KB) pseudopotentials only.  Caches the loaded
-        :class:`~PAOFLOW.hamiltonian.nonlocal_velocity.BetaCatalog`,
-        :class:`~PAOFLOW.hamiltonian.nonlocal_velocity.PAOCatalog`, and
-        :class:`~PAOFLOW.hamiltonian.nonlocal_velocity.NLRealSpaceTables`
-        on the data controller (keys ``'_NL_beta_catalog'``,
-        ``'_NL_pao_catalog'``, ``'_NL_pairs'``, ``'_NL_tables'``) so a
-        repeat call is cheap.
-        """
-        import numpy as np
-
-        from .hamiltonian.nonlocal_velocity import (
-            build_jm_transformation_matrix,
-            build_nl_real_space_tables,
-            compute_nonlocal_velocity_jm_on_grid,
-            compute_nonlocal_velocity_on_grid,
-            enumerate_nl_pairs,
-            inject_into_dHksp,
-            load_beta_projectors,
-            load_pao_orbitals,
-            rotate_dp_to_jm,
-        )
-
-        arry, attr = self.data_controller.data_dicts()
-        import os as _os
-
-        # Path selection for fully-relativistic UPFs (dftSO=True, not the
-        # ad-hoc SOC path).  Default is Option A: build Delta_p directly in
-        # the (j, m_j)-coupled basis used by dHksp, preserving the
-        # j-dependence of the NL operator.  Two legacy paths remain
-        # reachable for comparison:
-        #   * NL_SCALAR_TILE=1  -- inject the scalar Delta_p
-        #     block-diagonally in spin (the previous default; reproduces
-        #     QE epsilon.x for cubic Pt_REL but is only an approximation).
-        #   * NL_JM_ROTATION=1  -- Phase D scalar->jm spin-trace rotation
-        #     (build_jm_transformation_matrix + rotate_dp_to_jm); breaks
-        #     cubic isotropy, retained only for diagnostics.
-        fully_rel = bool(attr.get('dftSO', False)) and not bool(attr.get('adhoc_SO', False))
-        scalar_tile = _os.environ.get('NL_SCALAR_TILE') == '1'
-        jm_rotation = _os.environ.get('NL_JM_ROTATION') == '1'
-        jm_kspace = fully_rel and not scalar_tile and not jm_rotation
-
-        # Resolve the calibrated default injection sign per path when the
-        # caller left ``sign`` unset.  The fully-relativistic jm-kspace
-        # builder carries the opposite covariance/phase convention from the
-        # scalar path (see TODOs/nonlocal_velocity_correction.md), so it
-        # needs ``-1`` to match QE epsilon.x and SHC for Pt_REL; the scalar
-        # / ad-hoc-SO path keeps the Cu-calibrated ``+1``.
-        if sign is None:
-            sign = -1 if jm_kspace else +1
-        sign = int(sign)
-        try:
-            if '_NL_beta_catalog' not in arry:
-                arry['_NL_beta_catalog'] = load_beta_projectors(self.data_controller)
-            if '_NL_pao_catalog' not in arry:
-                arry['_NL_pao_catalog'] = load_pao_orbitals(self.data_controller)
-            beta_cat = arry['_NL_beta_catalog']
-            pao_cat = arry['_NL_pao_catalog']
-
-            if '_NL_tables' not in arry:
-                a_cart = np.asarray(arry['a_vectors']) * float(attr['alat'])
-                pairs = enumerate_nl_pairs(beta_cat, pao_cat, a_cart, pao_tol=pao_tol)
-                arry['_NL_pairs'] = pairs
-                arry['_NL_tables'] = build_nl_real_space_tables(
-                    beta_cat, pao_cat, pairs, q_max=q_max, n_q=n_q
-                )
-            tables = arry['_NL_tables']
-            if '_NL_overlap_tables' not in arry:
-                # Bloch overlap of the PAO orbitals: the Löwdin transformation that brings
-                # the raw atomic-orbital Delta_p into the orthonormal basis of Hksp.
-                from .hamiltonian.position_dipoles import (
-                    build_position_tables,
-                    enumerate_pao_pairs,
-                )
-
-                a_cart = np.asarray(arry['a_vectors']) * float(attr['alat'])
-                arry['_NL_overlap_tables'] = build_position_tables(
-                    pao_cat,
-                    enumerate_pao_pairs(pao_cat, a_cart, pao_tol=pao_tol),
-                    q_max=q_max,
-                    n_q=n_q,
-                    include_dipole=False,
-                )
-            overlap_tables = arry['_NL_overlap_tables']
-
-            def _build_dP(kgrid_slice):
-                if jm_kspace:
-                    # Option A: Delta_p directly in the (j, m_j) basis
-                    # (shape (nk, 3, n_rel, n_rel), n_rel = 2 * nawf_scalar).
-                    return compute_nonlocal_velocity_jm_on_grid(
-                        beta_cat,
-                        pao_cat,
-                        tables,
-                        kgrid_slice,
-                        float(attr['alat']),
-                        units=units,
-                        overlap_tables=overlap_tables,
-                    )
-                return compute_nonlocal_velocity_on_grid(
-                    beta_cat,
-                    pao_cat,
-                    tables,
-                    kgrid_slice,
-                    float(attr['alat']),
-                    units=units,
-                    overlap_tables=overlap_tables,
-                )
-
-            # Under MPI, ``dHksp`` is k-scattered along axis 0 (see
-            # :meth:`gradient_and_momenta`).  ``dP`` must end up partitioned
-            # the same way via :func:`scatter_full`.  Rather than building the
-            # whole grid serially on rank 0, each rank assembles a contiguous
-            # slice of the global k-grid in parallel; the slices are gathered
-            # on rank 0 (in global order, matching the un-scattered dHksp), and
-            # then re-scattered with :func:`scatter_full` so the per-rank
-            # layout matches dHksp exactly.  The k-grid assembly is independent
-            # per k-point, so a sliced build is bit-identical to the full one.
-            from .utils.communication import (
-                gather_array,
-                load_balancing,
-                scatter_full,
-            )
-
-            if attr.get('mpisize', 1) > 1:
-                kgrid = np.asarray(arry['kgrid'])
-                nktot = kgrid.shape[1]
-                ks, ke = load_balancing(self.size, self.rank, nktot)
-                dP_part = np.ascontiguousarray(_build_dP(kgrid[:, ks:ke]))
-                if self.rank == 0:
-                    dP = np.zeros((nktot,) + dP_part.shape[1:], dtype=dP_part.dtype)
-                else:
-                    dP = None
-                gather_array(dP, dP_part)
-                if self.rank == 0:
-                    dP_local = scatter_full(np.ascontiguousarray(dP), attr['npool'])
-                else:
-                    dP_local = scatter_full(None, attr['npool'])
-            else:
-                dP_local = _build_dP(arry['kgrid'])
-
-            # Legacy Phase D: rotate the scalar Delta_p into the (j, m_j)
-            # relativistic basis used by ``dHksp`` via a spin-trace (gated
-            # behind NL_JM_ROTATION=1; the Option A jm-kspace builder above
-            # is the default and does not use this path).
-            if jm_rotation:
-                if '_NL_jm_T' not in arry:
-                    if 'atomic_basis' not in arry:
-                        raise RuntimeError(
-                            'nonlocal_velocity_correction: jm rotation requires '
-                            "arry['atomic_basis'] (the relativistic basis); "
-                            'run projections() before this method.'
-                        )
-                    basis_scalar = [
-                        {
-                            'atom': pao_cat.sites[o.site_index].label,
-                            'label': o.label,
-                            'l': o.l,
-                        }
-                        for o in pao_cat.basis
-                    ]
-                    arry['_NL_jm_T'] = build_jm_transformation_matrix(
-                        arry['atomic_basis'], basis_scalar
-                    )
-                dP_local = rotate_dp_to_jm(dP_local, arry['_NL_jm_T'])
-
-            arry['Delta_pksp'] = dP_local
-
-            if inject:
-                inject_into_dHksp(arry['dHksp'], dP_local, units=units, sign=sign)
-        except Exception as e:
-            self.report_exception('nonlocal_velocity_correction')
-            if attr.get('abort_on_exception', True):
-                raise e
-
-        self.report_module_time('NL velocity correction')
 
     def position_dipole_correction(
         self,
@@ -2266,10 +1962,10 @@ class PAOFLOW:
 
         Notes
         -----
-        Not to be combined with :meth:`nonlocal_velocity_correction`: the PAO
-        Hamiltonian already contains the non-local pseudopotential, and with the
-        dipoles the commutator is complete (Si: 0.99--1.01 of the exact plane-wave
-        :math:`\varepsilon`, 0.87 with both terms).
+        The PAO Hamiltonian already contains the non-local pseudopotential, so
+        with the dipoles the commutator is complete (Si: 0.99--1.01 of the exact
+        plane-wave :math:`\varepsilon`).  The former non-local correction, which
+        double counted it (0.87 with both terms), was removed in October 2026.
         """
         import numpy as np
 
@@ -4416,7 +4112,7 @@ class PAOFLOW:
         basispath,
         configuration='extended',
         pthr=0.95,
-        nonlocal_velocity=True,
+        position_dipoles=True,
         nfft=None,
         e_static=0.05,
         eps_outdir='eps',
@@ -4429,8 +4125,8 @@ class PAOFLOW:
         """Dielectric tensor of one displaced cell via the PAO pipeline.
 
         Mirrors the standard PAOFLOW optical workflow (internal projections ->
-        PAO Hamiltonian -> non-local velocity -> dielectric tensor) on the
-        displaced-cell SCF save.
+        PAO Hamiltonian -> velocity with position dipoles -> dielectric tensor)
+        on the displaced-cell SCF save.
 
         When ``energies`` is ``None`` the static ``(3, 3)`` dielectric tensor
         (``epsilon_1`` at ``omega -> 0``) is returned (non-resonant Raman).
@@ -4461,7 +4157,7 @@ class PAOFLOW:
         if nfft is not None:
             pf.interpolated_hamiltonian(nfft1=nfft[0], nfft2=nfft[1], nfft3=nfft[2])
         pf.pao_eigh()
-        pf.gradient_and_momenta(nonlocal_velocity=nonlocal_velocity)
+        pf.gradient_and_momenta(position_dipoles=position_dipoles)
         pf.adaptive_smearing()
 
         d_tensor = [[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]]
@@ -4497,7 +4193,7 @@ class PAOFLOW:
         basispath=None,
         configuration='extended',
         pthr=0.95,
-        nonlocal_velocity=True,
+        position_dipoles=True,
         nfft=None,
         e_static=0.05,
         method='static',
@@ -4567,8 +4263,9 @@ class PAOFLOW:
                 internal PAO projections in the analyse phase.
             configuration (str): PAO basis configuration (default ``'extended'``).
             pthr (float): Projectability threshold for the analyse phase.
-            nonlocal_velocity (bool): Use the non-local velocity correction in
-                the dielectric tensor (recommended).
+            position_dipoles (bool): Add the PAO position dipoles to the velocity
+                operator of the dielectric tensor (recommended; replaces the former
+                non-local velocity correction).
             nfft (tuple, optional): Double-grid interpolation ``(n1, n2, n3)``.
             e_static (float): Upper energy (eV) of the 2-point grid used to read
                 the static dielectric tensor (``epsilon_1`` at ``omega -> 0``;
@@ -4755,7 +4452,7 @@ class PAOFLOW:
                         basispath,
                         configuration=configuration,
                         pthr=pthr,
-                        nonlocal_velocity=nonlocal_velocity,
+                        position_dipoles=position_dipoles,
                         nfft=nfft,
                         energies=res_energies,
                         lifetime=lifetime,
@@ -4779,7 +4476,7 @@ class PAOFLOW:
                         basispath,
                         configuration=configuration,
                         pthr=pthr,
-                        nonlocal_velocity=nonlocal_velocity,
+                        position_dipoles=position_dipoles,
                         nfft=nfft,
                         e_static=e_static,
                     )

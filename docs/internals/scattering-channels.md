@@ -194,7 +194,7 @@ property, "transport Eliashberg function") chains these steps for a metal.
 Before the non-local term was removed from the band velocities, the values were
 ħω_p = 8.12 eV and ρ(300 K) = 17.1 µΩ cm. A Boltzmann run through PAOFLOW's
 `pf.transport` gave 19.3 µΩ cm at the same μ, but it also used
-`gradient_and_momenta(nonlocal_velocity=True)`, which adds the correction to
+the former non-local velocity term (removed in October 2026), which altered
 the band diagonal.
 
 - **k-grid.** The Fermi-surface quantities of Pb need at least 48³ k at

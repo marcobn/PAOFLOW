@@ -21,7 +21,7 @@ adaptive smearing, Drude) are untouched.
 PAOFLOW's basis functions are the atomic orbitals φ symmetrically (Löwdin) orthogonalised,
 ω = φ S^{-1/2}. With the two-centre tables of the atomic orbitals — the overlap S(R) and the
 intrinsic dipole X(R) with the origin on the bra site (`_two_center`, the PAO radial function as
-bra with g = rR at l ± 1, as the projector bra of the non-local velocity) — the Bloch-space dipole
+bra with g = rR at l ± 1, vectorised per site pair in `two_center_blocks.py`) — the Bloch-space dipole
 of the orthonormal basis is
 
     d(k) = S^{-1/2} X S^{-1/2} + S^{-1/2} τ S^{1/2} − τ + i S^{-1/2} ∂_k S^{1/2}
@@ -54,8 +54,8 @@ space they are (−1)^l (−1)^{|m| mod 2} times R(r) Y_lm(r̂) with the tessera
 (3S 3P 3D 4S 4P, 26 orbitals): the two-centre S(k) reproduces the plane-wave overlap of the
 PAOFLOW orbitals to 1e-3 (raw values up to 8.9 at Γ for the diffuse 4S/4P/3D Bloch sums), and
 the Löwdin dipoles agree with the exact Berry connection i⟨u_i|∂_k u_j⟩ of the Löwdin
-plane-wave orbitals to 2 % (max |d| 3.9 bohr). The odd-m rule alone (the `pao_sign` of
-`nonlocal_velocity.py`) flips every s–p / p–d element.
+plane-wave orbitals to 2 % (max |d| 3.9 bohr). The odd-m rule alone (the convention of the
+former non-local term) flips every s–p / p–d element.
 
 The on-site blocks alone (`'intra-atomic'`) differ from the exact d by up to 2.7 bohr for this
 basis: with diffuse shells the Löwdin terms are the bulk of d, not a correction.
@@ -92,7 +92,7 @@ electron–phonon implementation (∫ε₂ ×0.957 / ×0.993 over 2.5–5 / 2.5�
 `Workspace/PAOFLOW/dipole_hall/`): σ_xy(E_F) 494 → 490 S/cm and σ^z_xy(E_F) 2045 → 2117
 (ħ/e) S/cm, i.e. −1 % and +3.5 %, with the curves unchanged in shape — the few-per-cent effect
 expected from the Kubo structure (the dipole cross term carries one power of 1/Δε, the main
-term two). The repaired non-local term on the same runs moves them by +10 % / −7 % at E_F
+term two). The former non-local term (repaired, before its removal) on the same runs moved them by +10 % / −7 % at E_F
 and doubles the Fe peak at −1.35 eV (1700 → 2920 S/cm), the signature of the double counting
 amplified by 1/Δε² at the d-band near-degeneracies.
 
@@ -102,10 +102,8 @@ reference and lies 15–19 % above the exact spectrum, which is why agreement wi
 not a validation of a velocity operator.
 
 ## Open points
-- The non-local correction Δp of `nonlocal_velocity.py` was fixed on Oct 21 2026 with the
-  overlap tables and the signs of this module (`nonlocal-velocity.md`). It is not to be combined
-  with the dipoles: v = i[H, τ + d] is already the full commutator of a Hamiltonian that
-  contains V_NL, and adding Δp double counts (exact plane-wave ε₂ of Si: dipoles 0.99–1.01,
-  dipoles + Δp 0.87). Keep `nonlocal_velocity=False` with `position_dipoles` on.
+- The former non-local correction Δp was removed in October 2026 (`nonlocal-velocity.md`):
+  v = i[H, τ + d] is already the full commutator of a Hamiltonian that contains V_NL, and adding
+  Δp double counted (exact plane-wave ε₂ of Si: dipoles 0.99–1.01, dipoles + Δp 0.87).
 - The Hubbard term of eACBN0 electrons is inside H(R), so i[H, τ + d] contains its velocity
   commutator; nothing else is needed.

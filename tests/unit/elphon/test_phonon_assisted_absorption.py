@@ -172,7 +172,7 @@ def test_velocity_and_vertex_phase_consistency_against_exact_model():
     np.testing.assert_allclose(ours[1], exact[1], rtol=1e-7, atol=1e-12 * np.max(exact[1]))
 
 
-def test_band_velocities_finite_difference_and_correction():
+def test_band_velocities_finite_difference():
     """Without orbital separation, v is dH/dk; a PAO-basis correction enters interband elements only."""
     hops, _ = _model_terms(seed=5)
     single_site = [(i, j, R, h) for i, j, R, h in hops if i < 2 and j < 2]
@@ -193,19 +193,6 @@ def test_band_velocities_finite_difference_and_correction():
             H_minus = _bloch([(i, j, R, h) for i, j, R, h in single_site], k - dk)[:2, :2]
             fd = Vk.conj().T @ ((H_plus - H_minus) / (2.0 * step)) @ Vk / RY_TO_EV
             np.testing.assert_allclose(v[b, a], fd, atol=1e-8)
-    extra = np.zeros((3, 2, 2), dtype=complex)
-    extra[0] = [[0.2, 0.1j], [-0.1j, -0.3]]
-    corrected = band_velocities(
-        electrons, sel, nl_correction=lambda K: np.repeat(extra[None], len(K), 0)
-    )
-    for b, ik in enumerate(sel):
-        Vk = electrons['V'][ik]
-        rotated = Vk.conj().T @ extra[0] @ Vk
-        # the diagonal stays the group velocity dE/dk (Hellmann-Feynman)
-        np.testing.assert_allclose(np.diag(corrected[b, 0]), np.diag(v[b, 0]), atol=1e-12)
-        off = ~np.eye(2, dtype=bool)
-        np.testing.assert_allclose((corrected[b, 0] - v[b, 0])[off], rotated[off], atol=1e-12)
-        np.testing.assert_allclose(corrected[b], np.conj(np.transpose(corrected[b], (0, 2, 1))))
 
 
 def test_band_velocities_position_dipoles():

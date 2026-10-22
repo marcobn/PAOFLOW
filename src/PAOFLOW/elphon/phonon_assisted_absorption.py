@@ -791,99 +791,6 @@ def absorption_coefficient(
     return np.asarray(photon_energy_ev) * eps2 / (HBAR_C_EV_CM * np.asarray(refractive_index))
 
 
-def nonlocal_velocity_operator(
-    data_controller,
-    bg: NDArray[np.float64],
-    alat: float,
-    sign: int = +1,
-    q_max: float = 15.0,
-    n_q: int = 300,
-    pao_tol: float = 1.0e-3,
-) -> Callable[[NDArray[np.float64]], NDArray[np.complex128]]:
-    """Non-local pseudopotential velocity correction at arbitrary k (PAO basis).
-
-    Parameters
-    ----------
-    data_controller : DataController
-        PAOFLOW data after ``projections`` (PAO basis, species and UPF files).
-    bg : ndarray, shape ``(3, 3)``
-        Reciprocal lattice vectors (rows, 2 pi/alat).
-    alat : float
-        Lattice parameter (bohr).
-    sign : {1, -1}, optional
-        Injection sign of :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.inject_into_dHksp`
-        (``+1``, the scalar-relativistic calibration against ``epsilon.x``).
-    q_max, n_q, pao_tol : float, int, float, optional
-        Radial-table parameters of :meth:`PAOFLOW.PAOFLOW.nonlocal_velocity_correction`.
-
-    Returns
-    -------
-    callable
-        ``K_cryst (nk, 3) -> (nk, 3, nawf, nawf)``: the correction to the velocity
-        operator of :func:`~PAOFLOW.elphon.elph_bloch.band_velocities` (Ry bohr).
-
-    Raises
-    ------
-    NotImplementedError
-        For fully-relativistic runs (the scalar operator only).
-    ValueError
-        From the loaders, for ultrasoft or PAW pseudopotentials (norm-conserving only).
-
-    Notes
-    -----
-    PAOFLOW's ``dHksp`` is minus the velocity operator and the correction enters
-    it as ``dHksp += sign * Delta p``, so the velocity gains ``-sign * Delta p``.
-    k-points are folded to ``[-0.5, 0.5)`` as on PAOFLOW's FFT grid.  The operator is
-    transformed to the Löwdin-orthonormal PAO basis with the Bloch overlap of the
-    orbitals at every k (:func:`~PAOFLOW.hamiltonian.nonlocal_velocity.lowdin_transform`),
-    as the Hamiltonian and the velocities of :func:`~PAOFLOW.elphon.elph_bloch.band_velocities`.
-    """
-    from ..hamiltonian.nonlocal_velocity import (
-        build_nl_real_space_tables,
-        build_nonlocal_velocity_kspace,
-        enumerate_nl_pairs,
-        load_beta_projectors,
-        load_pao_orbitals,
-    )
-    from ..hamiltonian.position_dipoles import (
-        assemble_overlap_kspace,
-        build_position_tables,
-        enumerate_pao_pairs,
-    )
-
-    arrays, attributes = data_controller.data_dicts()
-    if bool(attributes.get('dftSO', False)):
-        raise NotImplementedError(
-            'nonlocal_velocity_operator supports scalar-relativistic runs only.'
-        )
-    if sign not in (-1, 1):
-        raise ValueError(f'sign must be -1 or +1, got {sign!r}')
-    beta_catalog = load_beta_projectors(data_controller)
-    pao_catalog = load_pao_orbitals(data_controller)
-    a_cart = np.asarray(arrays['a_vectors']) * float(alat)
-    pairs = enumerate_nl_pairs(beta_catalog, pao_catalog, a_cart, pao_tol=pao_tol)
-    tables = build_nl_real_space_tables(beta_catalog, pao_catalog, pairs, q_max=q_max, n_q=n_q)
-    overlap_tables = build_position_tables(
-        pao_catalog, enumerate_pao_pairs(pao_catalog, a_cart, pao_tol=pao_tol), include_dipole=False
-    )
-    bg = np.asarray(bg, dtype=float)
-
-    def correction(k_cryst: NDArray[np.float64]) -> NDArray[np.complex128]:
-        folded = k_cryst - np.floor(k_cryst + 0.5)
-        k_cart = (folded @ bg) * (2.0 * np.pi / float(alat))
-        delta_p = build_nonlocal_velocity_kspace(
-            beta_catalog,
-            pao_catalog,
-            tables,
-            k_cart,
-            units='rydberg',
-            overlap_k=assemble_overlap_kspace(overlap_tables, k_cart),
-        )
-        return -sign * delta_p
-
-    return correction
-
-
 def _kq_flat_index(nk_dense: int, shift: NDArray[np.int_]) -> NDArray[np.int_]:
     """Flat dense-grid index of ``k + q`` for every k (``q = shift / nk_dense``)."""
     grid = np.stack(np.meshgrid(*[np.arange(nk_dense)] * 3, indexing='ij'), axis=-1).reshape(-1, 3)
@@ -894,7 +801,6 @@ def _kq_flat_index(nk_dense: int, shift: NDArray[np.int_]) -> NDArray[np.int_]:
 def _shared_velocities(
     electrons: dict,
     bands: NDArray[np.int_],
-    nl_correction: Callable | None,
     comm,
     kblock: int,
     position_dipoles: Callable | None = None,
@@ -917,7 +823,7 @@ def _shared_velocities(
     for s0 in range(start, stop, kblock):
         block = np.arange(s0, min(s0 + kblock, stop))
         velocities[block] = band_velocities(
-            electrons, block, bands, nl_correction, position_dipoles=position_dipoles
+            electrons, block, bands, position_dipoles=position_dipoles
         )
     node_comm.Barrier()
     return velocities, window
@@ -1022,9 +928,10 @@ def phonon_assisted_absorption_dense_q(
         :func:`external_refractive_index` of the ``dielectric_tensor`` run that
         provides ``direct_dielectric``.  The emissivity does not use it (it works
         with the full dielectric function).
-    nonlocal_velocity : DataController, optional
-        When given, adds the norm-conserving non-local pseudopotential velocity
-        correction (:func:`nonlocal_velocity_operator`) built from it.
+    nonlocal_velocity : None
+        Removed (October 2026): the non-local pseudopotential term double counts
+        :math:`V_{\\rm NL}`, which the PAO Hamiltonian already contains; any value
+        other than ``None`` raises.
     position_dipoles : DataController, optional
         When given, adds the position dipoles of the PAO orbitals to the velocity
         operator, :math:`i[H, \\mathbf d(\\mathbf k)]`
@@ -1255,9 +1162,10 @@ def phonon_assisted_absorption_dense_q(
             )
         group_energy.append(shifted_all[:, bands])
 
-    nl_correction = None
     if nonlocal_velocity is not None:
-        nl_correction = nonlocal_velocity_operator(nonlocal_velocity, bg, alat)
+        raise ValueError(
+            'nonlocal_velocity was removed (October 2026): use position_dipoles=data_controller.'
+        )
     dipole_operator = None
     if position_dipoles is not None:
         from ..hamiltonian.position_dipoles import position_dipole_operator
@@ -1266,7 +1174,7 @@ def phonon_assisted_absorption_dense_q(
             position_dipoles, bg, alat, level=position_dipole_level
         )
     velocities, velocity_window = _shared_velocities(
-        electrons, bands, nl_correction, comm, kblock, position_dipoles=dipole_operator
+        electrons, bands, comm, kblock, position_dipoles=dipole_operator
     )
 
     if sym_rots is not None:
@@ -1352,9 +1260,7 @@ def phonon_assisted_absorption_dense_q(
         omega_kk_ev = ostep * np.arange(int(np.floor(kk_omega_max_ev / ostep + 1.0e-6)) + 1)
         wide = np.zeros((ntemp, 3, omega_kk_ev.size))
         for kk in kblocks[dstart:dstop]:
-            v_all = band_velocities(
-                electrons, kk, slice(None), nl_correction, position_dipoles=dipole_operator
-            )
+            v_all = band_velocities(electrons, kk, slice(None), position_dipoles=dipole_operator)
             for delta, tidx in groups:
                 v_g = scissor_velocities(
                     v_all, energies[kk], delta, conduction_all, scissor_velocity
@@ -1399,7 +1305,6 @@ def phonon_assisted_absorption_dense_q(
         'scissor_ev': scissor_t * RY_TO_EV,
         'scissor_0k_ev': scissor_0k_ev,
         'scissor_velocity': scissor_velocity,
-        'nonlocal_velocity': nonlocal_velocity is not None,
         'position_dipoles': position_dipole_level if position_dipoles is not None else 'none',
         **screening_info,
         'etas_ev': np.asarray(etas_ev, dtype=float),
@@ -1826,7 +1731,7 @@ def read_direct_dielectric(
         Output directory of the ``dielectric_tensor`` run (files
         ``epsr_<c>.dat`` and ``epsi_<c>.dat``, photon energy in eV in the first
         column).  Typically a separate run on the extended basis with
-        ``gradient_and_momenta(nonlocal_velocity=True)``.
+        ``gradient_and_momenta(position_dipoles=True)``.
     components : sequence of str, optional
         Diagonal components to read (default ``xx``, ``yy``, ``zz``).
 
