@@ -87,4 +87,8 @@ everywhere, `nonlocal_velocity` kept for diagnostics only. On Fe and Pt (`dipole
 repaired term still shifts the AHC/SHC at E_F by +10 % / −7 % and doubles the Fe AHC peak at
 −1.35 eV, where the 1/Δε² weight of the Kubo formula amplifies the double counting at the
 d-band near-degeneracies, while the dipoles change them by −1 % / +3.5 %. The Cu and Pt
-`epsilon.x` comparisons above predate the fix and were obtained with the defective term.
+`epsilon.x` comparisons above predate the fix and were obtained with the defective term; note
+also that `epsilon.x` itself uses the local momentum only (no i[V_NL, r]): on Si it reproduces
+the plane-wave local-only kernel to 2 % and lies 15–19 % above the exact spectrum
+(`EPW_opt_audit/pao_dielectric/epsilon_x`), so it cannot serve as the reference for the
+velocity operator.

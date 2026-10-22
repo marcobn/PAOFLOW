@@ -96,6 +96,11 @@ term two). The repaired non-local term on the same runs moves them by +10 % / �
 and doubles the Fe peak at −1.35 eV (1700 → 2920 S/cm), the signature of the double counting
 amplified by 1/Δε² at the d-band near-degeneracies.
 
+QE `epsilon.x` on the same system (full 12³ grid, `nosym`/`noinv`) reproduces the plane-wave
+local-only kernel to 2 % (∫ε₂ 2.5–10 eV: 91.1 vs 92.9; exact 78.4): it is the local-momentum
+reference and lies 15–19 % above the exact spectrum, which is why agreement with `epsilon.x` is
+not a validation of a velocity operator.
+
 ## Open points
 - The non-local correction Δp of `nonlocal_velocity.py` was fixed on Oct 21 2026 with the
   overlap tables and the signs of this module (`nonlocal-velocity.md`). It is not to be combined
