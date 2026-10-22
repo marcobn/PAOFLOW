@@ -486,11 +486,11 @@ class SparseHamiltonian:
         Hermiticity there; a bond is therefore kept when either partner is
         inside the cutoff.
 
-        ``rcut`` **must** be applied here, at the base cell:
-        ``doubling.double_axis`` zeroes ``dnm`` on cross-replica blocks
-        (replicating the dense ``block_diag(Dnm, Dnm)`` semantics), after
-        which the true bond vector is no longer recoverable from the
-        container.  The default is ``None``.
+        ``rcut`` is applied here, at the base cell, where the neighbour
+        shells are defined.  ``doubling.double_axis`` only replicates bonds
+        and keeps ``dnm`` the supercell's position differences, so every
+        bond keeps its length and the cutoff carries over to the doubled
+        cell unchanged.  The default is ``None``.
 
         A cutoff must stay where every bond is measured at its shortest
         periodic image, or it keeps part of a neighbour shell.  Past the

@@ -18,8 +18,12 @@ and the inverse map per bond with folded axis index ``m`` is:
 - ``m`` even: contributes the (0,0) and (1,1) blocks at ``M = m/2``
   (``dnm`` kept — same replica);
 - ``m`` odd: contributes the (0,1) block at ``M = (m+1)/2`` and the (1,0)
-  block at ``M = (m-1)/2`` (``dnm = 0`` — the dense ``doubling_attr_arry``
-  doubles ``Dnm`` block-diagonally, zeroing cross-replica pairs).
+  block at ``M = (m-1)/2`` (``dnm`` shifted by ``-/+ alat * a_axis``, the
+  offset between the two replicas).
+
+The cross-replica ``dnm`` is where this kernel deliberately departs from
+the dense ``doubling_attr_arry``, which doubles ``Dnm`` block-diagonally
+and so leaves those pairs at zero; see :func:`double_axis`.
 
 Each doubling therefore exactly doubles ``nnz``: memory grows linearly in
 the number of orbitals, not quadratically as in the dense kernel.  The
@@ -93,10 +97,20 @@ def double_axis(sph: SparseHamiltonian, axis: int) -> SparseHamiltonian:
     four times the memory per doubling.
 
     The intra-cell orbital position differences ``dnm``, which enter the
-    velocity operator, are kept on the diagonal blocks and zeroed on the
-    off-diagonal ones.  This follows the dense convention exactly: the
-    dense driver rebuilds ``Dnm`` for the doubled cell as a block-diagonal
-    repeat, which leaves cross-replica pairs at zero.
+    velocity operator, stay those of the doubled cell: ``x_i - x_j`` for the
+    orbital positions ``x`` of the supercell, whose second replica sits at
+    ``x + alat * a_axis``.  Like-numbered replicas keep the base value, and
+    a bond from replica 0 to replica 1 (the (0,1) block) gets
+    ``dnm - alat * a_axis``, its mirror ``dnm + alat * a_axis``.
+
+    This matters for band velocities.  The ``dnm`` term adds
+    ``i [x, H(k)]`` to ``dH/dk``, whose band-diagonal elements vanish, so it
+    is harmless only while ``dnm`` keeps that commutator form.  The dense
+    ``doubling_attr_arry`` doubles ``Dnm`` block-diagonally and leaves the
+    cross-replica pairs at zero, which breaks the form: on Si (example01)
+    the velocities are then off by ~35% and sigma by ~50% on every doubled
+    cell.  So this kernel differs from the dense doubling in the
+    cross-replica ``dnm`` and in nothing else; the bond values are identical.
     """
     sph._require_bonds('double_axis')
     triples = sph.R_int[sph.ridx].astype(np.int64)
@@ -140,8 +154,8 @@ def double_axis(sph: SparseHamiltonian, axis: int) -> SparseHamiltonian:
     )
     new_triples = np.concatenate((t_diag, t_diag, t_ur, t_ll))
     vals = np.concatenate((sph.vals[even], sph.vals[even], sph.vals[odd], sph.vals[odd]))
-    zeros = np.zeros((int(odd.sum()), 3))
-    dnm = np.concatenate((sph.dnm[even], sph.dnm[even], zeros, zeros))
+    shift = sph.alat * sph.a_vectors[axis]
+    dnm = np.concatenate((sph.dnm[even], sph.dnm[even], sph.dnm[odd] - shift, sph.dnm[odd] + shift))
 
     a_vectors = sph.a_vectors.copy()
     a_vectors[axis, :] *= 2.0

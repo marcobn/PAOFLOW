@@ -10,7 +10,10 @@ mistake, an index-wise comparison cannot.
 
 k-points where the band at the ``bnd`` truncation boundary is degenerate
 with the next one are excluded from the velocity comparison (the diagonal
-there is gauge-dependent in both codes).
+there is gauge-dependent in both codes).  At the other degenerate k-points
+the two codes may pair the velocity components differently (see
+``_band_diagonal_velocities``), so they are compared through quantities
+that do not depend on the pairing.
 
 Requires the example01 QE data; skipped when absent.
 """
@@ -116,12 +119,26 @@ def _nondegenerate(d_arrays, bnd, gap=1e-6):
     return (np.diff(E[:, : bnd + 1], axis=1) > gap).all(axis=1)
 
 
+def _groupwise(values, E, combine):
+    """``values`` (..., nbnd) with each degenerate group of ``E`` (nbnd,)
+    replaced by ``combine`` of the group along the band axis."""
+    from PAOFLOW.spectrum.do_eigh import get_degeneracies
+
+    out = values.copy()
+    for D in get_degeneracies(E[None, :, None], len(E))[0][0]:
+        out[..., D] = combine(values[..., D])
+    return out
+
+
 def test_velocities_index_wise(dense_and_sparse):
-    """Bulk of the mesh must agree to solver precision.  At k-points with
-    near-exact internal degeneracies (gaps ~1e-10) the perturb_split
-    rotation is floating-point gauge-sensitive in BOTH codes; those
-    measure-zero points (about 10 of 1728 here) are only required to stay
-    bounded — BZ integration absorbs them."""
+    """Bulk of the mesh must agree to solver precision.
+
+    At k-points with near-exact internal degeneracies (about 10 of 1728
+    here) the two codes may pair the components differently.  The dense
+    ``perturb_split`` sorts the eigenvalues of each direction's group block
+    separately, while the sparse pass keeps each state's components
+    together wherever the blocks commute.  The eigenvalues of each block
+    agree, so those points compare each group per direction, sorted."""
     d_arrays, d_attr, s_arrays, _ = dense_and_sparse
     bnd = d_attr['bnd']
     strict = _nondegenerate(d_arrays, bnd)
@@ -135,12 +152,21 @@ def test_velocities_index_wise(dense_and_sparse):
     assert err_k[strict].max() < 1e-7 * scale, (
         'strict velocity parity failed: %.3e (scale %.3e)' % (err_k[strict].max(), scale)
     )
-    assert err_k[bounded].max() < 1e-3, (
-        'gauge-sensitive degenerate points exceeded bound: %.3e' % err_k[bounded].max()
+    E = d_arrays['E_k'][:, :bnd, 0]
+    err = max(
+        np.abs(
+            _groupwise(dv[k], E[k], lambda v: np.sort(v, axis=-1))
+            - _groupwise(sv[k], E[k], lambda v: np.sort(v, axis=-1))
+        ).max()
+        for k in np.flatnonzero(bounded)
     )
+    assert err < 1e-3, 'degenerate points exceeded bound: %.3e' % err
 
 
 def test_adaptive_widths_index_wise(dense_and_sparse):
+    """As the velocities.  A width is ``afac * dk * |v|``, so at the
+    degenerate points each group is compared through its quadrature sum,
+    the sum of ``v_l^2`` over the group, which no pairing changes."""
     d_arrays, d_attr, s_arrays, _ = dense_and_sparse
     bnd = d_attr['bnd']
     strict = _nondegenerate(d_arrays, bnd)
@@ -149,7 +175,16 @@ def test_adaptive_widths_index_wise(dense_and_sparse):
     sd = s_arrays['deltakp'][:, :bnd, 0]
     err_k = np.abs(dd - sd).max(axis=1)
     assert err_k[strict].max() < 1e-7 * max(dd.max(), 1.0)
-    assert err_k[bounded].max() < 1e-3
+    E = d_arrays['E_k'][:, :bnd, 0]
+
+    def quadrature(d):
+        return np.sqrt((d**2).sum(axis=-1, keepdims=True))
+
+    err = max(
+        np.abs(_groupwise(dd[k], E[k], quadrature) - _groupwise(sd[k], E[k], quadrature)).max()
+        for k in np.flatnonzero(bounded)
+    )
+    assert err < 1e-3
 
 
 def test_no_dense_tensors_in_sparse_run(dense_and_sparse):
@@ -287,12 +322,24 @@ def test_curvature_pass_keeps_the_window(curvature_runs):
 )
 def test_band_diagonal_files(curvature_runs, name):
     """Conductivity, doping (and the DOS it writes) are BZ sums of
-    band-diagonal quantities over the same window bands in both codes."""
+    band-diagonal quantities over the same window bands in both codes.
+
+    ``cond_xy`` vanishes by cubic symmetry, so it is measured on the scale of
+    the whole tensor (``cond_xx``).  It sums ``v_x v_y``, which depends on how
+    the components of degenerate states are paired; the two codes pair them
+    differently at a few k-points (see ``test_velocities_index_wise``), which
+    moves it by ~2e-8 of ``cond_xx`` (the dense value itself is ~2e-3)."""
     d, s = curvature_runs
-    a = _read(os.path.join(d.data_controller.data_attributes['opath'], name))
+    opath = d.data_controller.data_attributes['opath']
+    a = _read(os.path.join(opath, name))
     b = _read(os.path.join(s.data_controller.data_attributes['opath'], name))
     assert a.shape == b.shape
-    assert np.abs(a - b).max() < 1e-9 * np.abs(a).max(), name
+    if name == 'cond_xy_0.dat':
+        np.testing.assert_array_equal(a[:, 0], b[:, 0])
+        scale = np.abs(_read(os.path.join(opath, 'cond_xx_0.dat'))[:, 1]).max()
+        assert np.abs(a[:, 1] - b[:, 1]).max() < 1e-7 * scale, name
+    else:
+        assert np.abs(a - b).max() < 1e-9 * np.abs(a).max(), name
 
 
 def test_fermi_surface_bands(curvature_runs):

@@ -5,9 +5,10 @@ band-diagonal property kernels need, without ever storing eigenvectors:
 
 - ``E_k``       (nk_local, nev, nspin)  — lowest ``nev`` eigenvalues,
 - ``velkp``     (nk_local, 3, nev, nspin) — Hellmann-Feynman band-diagonal
-  velocities  v_ln = <n| dH/dk_l |n>, with degenerate groups resolved as
-  the ascending eigenvalues of the group block (replicating
-  ``utils.perturb_split`` as used by ``do_momentum``),
+  velocities  v_ln = <n| dH/dk_l |n>, with degenerate groups resolved in
+  one basis for all three directions where the group blocks commute, and
+  per direction (as ``utils.perturb_split`` does for ``do_momentum``)
+  where they do not; see :func:`_band_diagonal_velocities`,
 - ``deltakp``   (nk_local, nev, nspin)  — Yates adaptive smearing widths
   ``afac * dk * |v_n|`` (``do_adaptive_smearing.adaptive_widths``),
 - ``d2Ed2k``    (6, nk_local, nev, nspin) — band curvature, only when the
@@ -28,6 +29,13 @@ with the dense arrays.
 ``PAD_ENERGY_OFFSET`` and ``PAD_DELTA`` are the sentinel energy offset and
 smearing width used to pad an interior-window solve to a rectangular block;
 :func:`run_mesh` explains why they take these values.
+
+``COMMUTE_TOL`` is the relative commutator below which the three velocity
+blocks of a degenerate group count as commuting, and ``JOINT_WEIGHTS`` the
+combination diagonalized to find their common eigenbasis; see
+:func:`_band_diagonal_velocities`.  On example01 the commuting groups (folded
+copies) were measured at up to 5e-5 and the symmetry multiplets of the base
+cell at 0.4-1.5.
 """
 
 from __future__ import annotations
@@ -52,6 +60,10 @@ rank = comm.Get_rank()
 
 PAD_ENERGY_OFFSET = 1.0e3
 PAD_DELTA = 1.0
+COMMUTE_TOL = 1.0e-3
+# rationally independent, so c.v = c.v' only if v = v', even for the
+# permuted and sign-flipped velocities that symmetry makes degenerate
+JOINT_WEIGHTS = np.array([1.0, np.sqrt(2.0), np.sqrt(3.0)])
 
 
 def _band_diagonal_velocities(E: np.ndarray, V: np.ndarray, dhk: Sequence[Any]) -> np.ndarray:
@@ -82,14 +94,38 @@ def _band_diagonal_velocities(E: np.ndarray, V: np.ndarray, dhk: Sequence[Any]) 
     That formula is ambiguous when states are degenerate, because any
     rotation within a degenerate subspace is an equally valid eigenbasis and
     the diagonal elements change under it.  The physically meaningful
-    velocities are the eigenvalues of the velocity operator *restricted to
-    the degenerate subspace*, so for each degenerate group the small block
-    :math:`V_D^\\dagger (\\partial H/\\partial k_l) V_D` is formed,
-    Hermitized against round-off, and diagonalized; its ascending
-    eigenvalues replace the diagonal entries.  This is the same convention
-    the dense pipeline applies through ``utils.perturb_split``, and it
-    matters at exactly the folded supercells this backend targets, where
-    multiplets are the rule.
+    velocities come from the velocity operator *restricted to the
+    degenerate subspace*: for each degenerate group the three small blocks
+    :math:`B_l = V_D^\\dagger (\\partial H/\\partial k_l) V_D` are formed
+    and Hermitized against round-off.  What to do with them depends on
+    whether they commute.
+
+    - **They commute** (relative commutator below ``COMMUTE_TOL``).  This
+      is the normal case on a folded supercell, where a group collects
+      copies of states from different primitive k-points, each with its own
+      well-defined velocity vector.  The blocks then share an eigenbasis,
+      found by diagonalizing the generic combination ``JOINT_WEIGHTS . B``,
+      and each state's three components are read in that one basis.  The
+      group is then ordered by ``v_x``, as the per-direction rule would order
+      it.
+    - **They do not commute.**  This happens at the symmetry multiplets of
+      the base cell itself.  No single velocity vector exists
+      per state there, and the eigenvalues of each :math:`B_l` on its own
+      are the one-sided derivatives :math:`dE/dk_l`.  They replace the
+      diagonal entries, sorted ascending, as the dense pipeline does
+      through ``utils.perturb_split``.
+
+    Applying the per-direction rule to a commuting group is not harmless.
+    It sorts ``v_x``, ``v_y`` and ``v_z`` separately, which pairs, for
+    example, the smallest ``v_x`` of the group with its smallest ``v_y``,
+    whichever states they belong to.  Sums of :math:`v_l^2` survive this,
+    but each state's :math:`|v|` (its adaptive smearing width) and the
+    off-diagonal sums :math:`v_x v_y` do not.  On doubled Si the per-state
+    error against the folded primitive cell reached 0.09.  On the base cell
+    the two rules give the same :math:`\\sum v_l^2` and :math:`\\sum |v|`
+    to 1e-12, so the integrated results still match the dense pipeline;
+    only :math:`\\sigma_{xy}` moves, by ~2e-8 of :math:`\\sigma_{xx}` on
+    example01.
 
     The products ``(dH/dk_l) V`` are computed once for the whole block and
     reused inside the degeneracy loop, since restricting to a group is just
@@ -110,10 +146,21 @@ def _band_diagonal_velocities(E: np.ndarray, V: np.ndarray, dhk: Sequence[Any]) 
 
     for D in get_degeneracies(E[None, :, None], m)[0][0]:
         VD = V[:, D]
+        B = []
         for l in range(3):
             block = VD.conj().T @ W[l][:, D]
-            block = 0.5 * (block + block.conj().T)
-            vel[l][D] = np.linalg.eigvalsh(block)
+            B.append(0.5 * (block + block.conj().T))
+        scale = max(np.abs(b).max() for b in B) ** 2
+        commutator = max(
+            np.abs(B[i] @ B[j] - B[j] @ B[i]).max() for i, j in ((0, 1), (0, 2), (1, 2))
+        )
+        if commutator <= COMMUTE_TOL * scale:
+            _, U = np.linalg.eigh(np.tensordot(JOINT_WEIGHTS, B, axes=1))
+            v = np.array([np.einsum('in,ij,jn->n', U.conj(), b, U).real for b in B])
+            vel[:, D] = v[:, np.lexsort(v[::-1])]
+        else:
+            for l in range(3):
+                vel[l][D] = np.linalg.eigvalsh(B[l])
     return vel
 
 
