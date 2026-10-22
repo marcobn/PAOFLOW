@@ -683,13 +683,25 @@ class SparseEngine:
                     stride = max(1, len(kgrid) // extra)
                     kprobe = np.vstack((kprobe, kgrid[::stride][:extra]))
 
-                probed = 0
-                for ispin in range(self.H.nspin):
-                    for kf in kprobe:
-                        hk = self.H.assemble_hk(kf, ispin=ispin, sign=-1)
-                        probed = max(
-                            probed, count_below(hk, ehi, dense_n_max=self.config.dense_n_max)
-                        )
+                # each rank probes its share of the k-points (a probe is a
+                # dense eigvalsh, ~150 s each at nawf = 9216).  A failure on
+                # one rank is raised on all, so none waits in the reduction.
+                probed, error = 0, None
+                nranks = self.comm.Get_size()
+                try:
+                    for ispin in range(self.H.nspin):
+                        for kf in kprobe[self.rank :: nranks]:
+                            hk = self.H.assemble_hk(kf, ispin=ispin, sign=-1)
+                            probed = max(
+                                probed, count_below(hk, ehi, dense_n_max=self.config.dense_n_max)
+                            )
+                except Exception as exc:
+                    error = exc
+                if self.comm.allreduce(error is not None, op=MPI.LOR):
+                    raise error or RuntimeError(
+                        'sparse energy_window: the probe failed on another rank; see its error.'
+                    )
+                probed = self.comm.allreduce(probed, op=MPI.MAX)
                 chosen = min(nawf, probed + max(8, int(np.ceil(0.02 * probed))))
 
             old = attr.get('bnd', nawf)
