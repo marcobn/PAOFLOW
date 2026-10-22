@@ -102,6 +102,10 @@ reference and lies 15–19 % above the exact spectrum, which is why agreement wi
 not a validation of a velocity operator.
 
 ## Open points
+- Any pseudopotential type: the catalog of `load_pao_orbitals` reads only the atomic orbitals (the
+  basis tables of the projection, else the UPF `PP_PSWFC` block), so ultrasoft and PAW saves run the
+  dipole route like norm-conserving ones (the norm-conserving guard of the removed term went with it on
+  2026-10-22; checked on ultrasoft Si and PAW GaAs).
 - The former non-local correction Δp was removed in October 2026 (`nonlocal-velocity.md`):
   v = i[H, τ + d] is already the full commutator of a Hamiltonian that contains V_NL, and adding
   Δp double counted (exact plane-wave ε₂ of Si: dipoles 0.99–1.01, dipoles + Δp 0.87).
