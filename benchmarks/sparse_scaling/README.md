@@ -48,6 +48,7 @@ The properties live in `CONFIG['properties']` with their arguments, in the order
 | `conductivity` | `cond_xx`, `cond_xy` (zero by symmetry, measured on the `cond_xx` scale) | / N |
 | `doping` | `doping_mu`, μ against T at a p-type 10¹⁸ cm⁻³ | none |
 | `dielectric_tensor` | `epsi_xx/yy/zz` (ε″ only, cut 0.5 eV below the window top) | none |
+| `dielectric_tensor`, plots only | `epsr`, `eels`, `refl`, `nref`, `kref`, `alpha`, `sigmar`, `sigmai` (`optics=True`) | none |
 | `effective_mass` | `inv_mass_dos`: Σ g(E − E_nk) / m_dos,nk over all states, per k-point | / (N nk) |
 
 Left out on purpose: the Hall family (anomalous, spin and orbital Hall), `linear_response`,
@@ -93,9 +94,9 @@ algorithm.
 3. When the jobs finish, the finalize job runs `finalize.py`, which adds the sacct state and
    MaxRSS to every record and marks jobs killed for OOM or timeout. It then runs `collect.py`,
    which writes `runs/results.csv` and `runs/sweep.csv`. You can also run both by hand.
-4. Open [observables.ipynb](observables.ipynb) for the per-cell comparison of one pipeline (set
-   `PIPELINE` in its second cell), and [analysis.ipynb](analysis.ipynb) for time, memory and the
-   limits. `observables.ipynb` reads the output files directly, so it also works while the ladder
+4. Open [observables.ipynb](observables.ipynb) for plots of every property of every sparse
+   pipeline against the reference, and [analysis.ipynb](analysis.ipynb) for time, memory, the
+   limits and the deviation statistics. `observables.ipynb` reads the output files directly, so it also works while the ladder
    is still running.
 
 ### Resources
@@ -122,7 +123,7 @@ algorithm.
 | `finalize.py` | adds the sacct state and MaxRSS to each record |
 | `observables.py` | reads a case's output files into curves per primitive cell, and the deviation between two curves |
 | `collect.py` | builds `results.csv` and `sweep.csv`, including every curve's deviation from the reference and from the previous size |
-| `observables.ipynb` | every curve of one pipeline against size and against the reference |
+| `observables.ipynb` | plots of each property (no PDOS), every size of every sparse pipeline against the reference |
 | `analysis.ipynb` | time, memory, sparsity, solver crossover and limits |
 
 Each case directory holds `record.json`, the PAOFLOW `output/` (every property's files, and
