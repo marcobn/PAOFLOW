@@ -38,7 +38,9 @@ blocks of a degenerate group count as commuting, and ``JOINT_WEIGHTS`` the
 combination diagonalized to find their common eigenbasis; see
 :func:`_band_diagonal_velocities`.  On example01 the commuting groups (folded
 copies) were measured at up to 5e-5 and the symmetry multiplets of the base
-cell at 0.4-1.5.
+cell at 0.4-1.5.  ``SECTOR_TOL`` separates the matrices that commute with
+all three blocks from the rest when a non-commuting group is split into
+its invariant subspaces (:func:`_invariant_subspaces`).
 """
 
 from __future__ import annotations
@@ -68,6 +70,9 @@ PAD_ENERGY_OFFSET = 1.0e3
 PAD_DELTA = 1.0
 OPERATOR_DENSE_FILL = 0.1
 COMMUTE_TOL = 1.0e-3
+# relative singular value below which a matrix counts as commuting with all
+# three velocity blocks (the exact zeros between folded copies are ~1e-15)
+SECTOR_TOL = 1.0e-8
 # rationally independent, so c.v = c.v' only if v = v', even for the
 # permuted and sign-flipped velocities that symmetry makes degenerate
 JOINT_WEIGHTS = np.array([1.0, np.sqrt(2.0), np.sqrt(3.0)])
@@ -175,9 +180,16 @@ def _band_diagonal_velocities(
 
     Returns
     -------
-    np.ndarray, shape (3, m)
+    vel : np.ndarray, shape (3, m)
         Band-diagonal velocity of each state along each Cartesian
         direction.
+    resolved : list of (np.ndarray, np.ndarray, list of np.ndarray)
+        ``(D, R, parts)`` for every degenerate group ``D`` not left whole to
+        the per-direction rule.  ``V[:, D] @ R`` are the states whose
+        velocities ``vel[:, D]`` are, and ``parts`` the index ranges within
+        ``D`` that still take the per-direction rule.  The caller rotates
+        ``V`` with ``R`` so that every later quantity uses the same states
+        (see :func:`run_mesh`).
 
     Notes
     -----
@@ -210,6 +222,17 @@ def _band_diagonal_velocities(
       diagonal entries, sorted ascending, as the dense pipeline does
       through ``utils.perturb_split``.
 
+      On a folded cell such a multiplet can share its energy with copies
+      from other primitive k-points: at time-reversed ``k`` and ``-k``, or
+      when a near-degenerate pair has an exact copy.  The blocks then do
+      not commute as a whole, but they are block-diagonal between the
+      copies, which the per-direction rule would mix: it sorts each
+      direction across all of them.  Such a group is first split into the
+      subspaces that all three blocks leave invariant
+      (:func:`_invariant_subspaces`), one per copy, and each subspace then
+      takes the rule above that fits it.  A multiplet that does not split
+      is left exactly as before.
+
     Applying the per-direction rule to a commuting group is not harmless.
     It sorts ``v_x``, ``v_y`` and ``v_z`` separately, which pairs, for
     example, the smallest ``v_x`` of the group with its smallest ``v_y``,
@@ -231,12 +254,13 @@ def _band_diagonal_velocities(
     The routine is shared by the from-the-bottom and interior solves; they
     differ only in how many states arrive, which is read from ``E``.
     """
-    from ..spectrum.do_eigh import get_degeneracies
+    from .kpoint import degenerate_groups
 
     m = len(E)
     vel = np.empty((3, m), dtype=float)
+    resolved = []
     if m == 0:
-        return vel
+        return vel, resolved
 
     if issparse(dhk[0]):
         dense = dense_operators(V.shape[0], dhk[0].nnz, dense_n_max)
@@ -246,24 +270,92 @@ def _band_diagonal_velocities(
     for l in range(3):
         vel[l] = np.einsum('an,an->n', np.conj(V), W[l]).real
 
-    for D in get_degeneracies(E[None, :, None], m)[0][0]:
+    for D in degenerate_groups(E, m):
         VD = V[:, D]
         B = []
         for l in range(3):
             block = VD.conj().T @ W[l][:, D]
             B.append(0.5 * (block + block.conj().T))
-        scale = max(np.abs(b).max() for b in B) ** 2
-        commutator = max(
-            np.abs(B[i] @ B[j] - B[j] @ B[i]).max() for i, j in ((0, 1), (0, 2), (1, 2))
-        )
-        if commutator <= COMMUTE_TOL * scale:
-            _, U = np.linalg.eigh(np.tensordot(JOINT_WEIGHTS, B, axes=1))
-            v = np.array([np.einsum('in,ij,jn->n', U.conj(), b, U).real for b in B])
-            vel[:, D] = v[:, np.lexsort(v[::-1])]
-        else:
+        B = np.array(B)
+        if _commute(B):
+            U, vel[:, D] = _joint_basis(B)
+            resolved.append((D, U, []))
+            continue
+        Q, sectors = _invariant_subspaces(B)
+        if len(sectors) == 1:
             for l in range(3):
                 vel[l][D] = np.linalg.eigvalsh(B[l])
-    return vel
+            continue
+        R = np.empty_like(Q)
+        parts = []
+        start = 0
+        for sector in sectors:
+            cols = slice(start, start + len(sector))
+            Qs = Q[:, sector]
+            Bs = np.einsum('ia,lij,jb->lab', Qs.conj(), B, Qs)
+            if _commute(Bs):
+                U, vel[:, D[cols]] = _joint_basis(Bs)
+                R[:, cols] = Qs @ U
+            else:
+                R[:, cols] = Qs
+                for l in range(3):
+                    vel[l][D[cols]] = np.linalg.eigvalsh(Bs[l])
+                parts.append(D[cols])
+            start += len(sector)
+        resolved.append((D, R, parts))
+    return vel, resolved
+
+
+def _commute(B: np.ndarray) -> bool:
+    """Whether the three Hermitian blocks ``B`` (3, g, g) commute to ``COMMUTE_TOL``."""
+    scale = np.abs(B).max() ** 2
+    commutator = max(np.abs(B[i] @ B[j] - B[j] @ B[i]).max() for i, j in ((0, 1), (0, 2), (1, 2)))
+    return commutator <= COMMUTE_TOL * scale
+
+
+def _joint_basis(B: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Common eigenbasis ``U`` of commuting blocks ``B`` (3, g, g), ordered by
+    ``v_x`` (then ``v_y``, ``v_z``), and the velocities ``v`` (3, g) in it."""
+    _, U = np.linalg.eigh(np.tensordot(JOINT_WEIGHTS, B, axes=1))
+    v = np.einsum('in,lij,jn->ln', U.conj(), B, U).real
+    order = np.lexsort(v[::-1])
+    return U[:, order], v[:, order]
+
+
+def _invariant_subspaces(B: np.ndarray) -> tuple[np.ndarray, list[np.ndarray]]:
+    """The finest subspaces that all three Hermitian blocks ``B`` (3, g, g) leave invariant.
+
+    Returns
+    -------
+    Q : np.ndarray, shape (g, g)
+        Unitary; its columns span the subspaces.
+    sectors : list of np.ndarray
+        Column indices of ``Q``, one array per subspace.
+
+    Notes
+    -----
+    A matrix ``X`` that commutes with every ``B_l`` maps each eigenspace of
+    every ``B_l`` into itself, so the ``B_l`` leave each eigenspace of ``X``
+    invariant.  The matrices that commute with all of them (the null space
+    of ``X -> [B_l, X]``, found by an SVD of size ``(3 g^2, g^2)``) form an
+    algebra closed under the adjoint.  A generic Hermitian element of it is
+    a different multiple of the identity on each irreducible subspace, so
+    its eigenspaces are the finest decomposition.  When there is none, the
+    identity is the only such matrix and one sector comes back.
+    """
+    g = B.shape[1]
+    eye = np.eye(g)
+    # column-stacked vec: vec(B X - X B) = (I (x) B - B^T (x) I) vec(X)
+    L = np.concatenate([np.kron(eye, b) - np.kron(b.T, eye) for b in B])
+    _, s, vh = np.linalg.svd(L)
+    null = vh[s <= SECTOR_TOL * s[0]].conj()
+    if len(null) <= 1:
+        return eye.astype(complex), [np.arange(g)]
+    weights = np.random.default_rng(0).standard_normal(len(null))
+    X = np.tensordot(weights, null.reshape(-1, g, g).transpose(0, 2, 1), axes=1)
+    w, Q = np.linalg.eigh(X + X.conj().T)
+    cuts = np.flatnonzero(np.diff(w) > SECTOR_TOL**0.5 * np.abs(w).max()) + 1
+    return Q, np.split(np.arange(g), cuts)
 
 
 def run_mesh(
@@ -532,7 +624,15 @@ def run_mesh(
                 k0 = max(8, 2 * len(E))
                 bnd = len(E)
 
-            vel = _band_diagonal_velocities(E[:bnd], V[:, :bnd], dhk, dense_n_max=dense_n_max)
+            vel, resolved = _band_diagonal_velocities(
+                E[:bnd], V[:, :bnd], dhk, dense_n_max=dense_n_max
+            )
+            # the interband kernels (perturb_split) would split these groups
+            # again one direction at a time and pair matrix elements and
+            # widths of different states; KPoint.degen hands them only the
+            # parts that still take that rule
+            for D, R, _ in resolved:
+                V[:, D] = V[:, D] @ R
             delta = adaptive_widths(vel, afac, dk)
             kp = KPoint(
                 sparse_h,
@@ -551,6 +651,7 @@ def run_mesh(
                 sign=-1,
                 kglobal=int(kglobal[ik]),
                 dense_operators=dense_ops,
+                resolved=[(D, parts) for D, _, parts in resolved],
             )
             if curvature:
                 d2hk = assembled[2]

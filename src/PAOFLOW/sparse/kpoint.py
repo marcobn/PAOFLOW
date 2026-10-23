@@ -39,6 +39,44 @@ if TYPE_CHECKING:
     from .hamiltonian import SparseHamiltonian
 
 
+def degenerate_groups(E: np.ndarray, bnd: int) -> list[np.ndarray]:
+    """Degenerate groups among the first ``bnd`` states, each state in one group.
+
+    Parameters
+    ----------
+    E : np.ndarray, shape (m,)
+        Eigenvalues at one k-point (eV), ascending.
+    bnd : int
+        Only groups entirely below ``bnd`` are returned.
+
+    Returns
+    -------
+    list of np.ndarray
+        Contiguous index ranges, disjoint and ascending.
+
+    Notes
+    -----
+    :func:`~PAOFLOW.spectrum.do_eigh.get_degeneracies` collects, for every
+    rounded energy that starts a close pair, all states within tolerance of
+    it.  When two rounded energies of one cluster both start a pair, it lists
+    the same group twice, or two overlapping groups; ``perturb_split`` then
+    rotates those states twice, and the basis no longer diagonalizes
+    ``dH/dk`` in the group.  A folded cell hits this whenever a pair split
+    by less than the tolerance has an exact copy (on doubled example01, the
+    worst k-point of the d=1 dielectric).  The groups are merged here into
+    one range per cluster.
+    """
+    from ..spectrum.do_eigh import get_degeneracies
+
+    merged: list[list[int]] = []
+    for g in sorted(get_degeneracies(E[None, :, None], bnd)[0][0], key=lambda g: g[0]):
+        if merged and g[0] <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], int(g[-1]))
+        else:
+            merged.append([int(g[0]), int(g[-1])])
+    return [np.arange(lo, hi + 1) for lo, hi in merged]
+
+
 class DenseOnDemand(Sequence):
     """A list of sparse ``(n, n)`` operators handed out as dense arrays.
 
@@ -124,6 +162,12 @@ class KPoint:
         (see ``SparseHamiltonian.assemble_derivatives``).
     dense_operators : bool, optional
         Hand out ``dhk`` and :attr:`d2hk` as :class:`DenseOnDemand`.
+    resolved : sequence of (np.ndarray, list of np.ndarray), optional
+        ``(D, parts)`` for the degenerate groups whose columns of ``V`` the
+        mesh pass already rotated (see ``mesh._band_diagonal_velocities``):
+        into one eigenbasis of all three ``dH/dk_l``, except on the index
+        ranges ``parts``, which still take the per-direction rule.
+        :attr:`degen` lists ``parts`` in place of ``D``.
 
     Notes
     -----
@@ -132,7 +176,8 @@ class KPoint:
     k-point at a time.  The conventions are the dense ones, so a consumer
     can call the extracted per-k body of a dense kernel on these members
     unchanged: ``degen`` is :func:`~PAOFLOW.spectrum.do_eigh.get_degeneracies`
-    restricted to ``bnd``, ``pksp`` is
+    restricted to ``bnd`` (merged by :func:`degenerate_groups`, with the
+    ``resolved`` groups reduced to their parts), ``pksp`` is
     :func:`~PAOFLOW.hamiltonian.do_momentum.momentum_k`, ``delta2`` is
     :func:`~PAOFLOW.spectrum.do_adaptive_smearing.adaptive_widths` on the
     diagonal of ``pksp``.
@@ -158,6 +203,7 @@ class KPoint:
         kglobal: int | None = None,
         with_dnm: bool = True,
         dense_operators: bool = False,
+        resolved: Sequence[tuple[np.ndarray, list[np.ndarray]]] = (),
     ) -> None:
         self._sparse_h = sparse_h
         self.ik = ik
@@ -179,6 +225,7 @@ class KPoint:
         self.cart = cart
         self.kglobal = kglobal
         self.with_dnm = with_dnm
+        self.resolved = resolved
         self._projected: dict[int, tuple[Any, np.ndarray]] = {}
 
     @property
@@ -188,10 +235,19 @@ class KPoint:
 
     @cached_property
     def degen(self) -> list[np.ndarray]:
-        """Degenerate groups among the window bands (dense ``degen[ispin][ik]``)."""
-        from ..spectrum.do_eigh import get_degeneracies
+        """Degenerate groups among the window bands (dense ``degen[ispin][ik]``).
 
-        return get_degeneracies(self.E[None, :, None], self.bnd)[0][0]
+        A group in :attr:`resolved` is replaced by its parts.  Elsewhere
+        ``V`` already holds one common eigenbasis of the three ``dH/dk_l``
+        there, and the kernels that take ``degen`` (``perturb_split``) would
+        rotate each direction on its own again, which on a folded cell pairs
+        the matrix elements of one state with the velocities of another.
+        """
+        groups = degenerate_groups(self.E, self.bnd)
+        if not self.resolved:
+            return groups
+        parts = {tuple(D): p for D, p in self.resolved}
+        return [part for g in groups for part in parts.get(tuple(g), [g])]
 
     @cached_property
     def pksp(self) -> np.ndarray:
