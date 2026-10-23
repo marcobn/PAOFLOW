@@ -1073,9 +1073,8 @@ class PAOFLOW:
         """
 
         # IMPLEMENT HERE< AUTOMATIC SHELLS AND SOC strenght CALLING {"M":[0,0,0,1,0,0]}
-        import scipy.linalg as la
-        from .SocFitter import build_automatic_adhoc_soc
         from .hamiltonian.do_spin_orbit import do_spin_orbit_H
+        from .SocFitter import build_automatic_adhoc_soc
         from .utils.soc_header import soc_header
 
         arry, attr = self.data_controller.data_dicts()
