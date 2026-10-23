@@ -93,6 +93,11 @@ class Doping(DenseBody):
             fname=fname,
         )
 
+    def prepare(self) -> bool:
+        kw = self.kwargs
+        kw['emin'], kw['emax'] = self.engine._clamp_to_projectable('doping', kw['emin'], kw['emax'])
+        return True
+
     def finalize(self, data_controller: DataController) -> None:
         self.engine._check_window_covers('doping', self.kwargs['emax'])
         super().finalize(data_controller)
@@ -107,6 +112,13 @@ class FermiSurface(DenseBody):
 
     def __init__(self, engine: SparseEngine, fermi_up: float = 1.0, fermi_dw: float = -1.0) -> None:
         super().__init__(engine, fermi_up=fermi_up, fermi_dw=fermi_dw)
+
+    def prepare(self) -> bool:
+        kw = self.kwargs
+        _, kw['fermi_up'] = self.engine._clamp_to_projectable(
+            'fermi_surface', kw['fermi_dw'], kw['fermi_up']
+        )
+        return True
 
     def finalize(self, data_controller: DataController) -> None:
         self.engine._check_window_covers('fermi_surface', self.kwargs['fermi_up'])
@@ -164,6 +176,7 @@ class Conductivity(MeshProperty):
             if clamped is None:
                 return False
             self.emin, self.emax = clamped
+        self.emin, self.emax = engine._clamp_to_projectable('conductivity', self.emin, self.emax)
         return True
 
     def on_k(self, kp: KPoint) -> None:

@@ -99,6 +99,9 @@ class RashbaEdelstein(MeshProperty):
                 if clamped is None:
                     return False
                 self.emin, self.emax = clamped
+            self.emin, self.emax = engine._clamp_to_projectable(
+                'rashba_edelstein', self.emin, self.emax
+            )
             if self.ree_tensor is not None:
                 arrays['ree_tensor'] = np.array(self.ree_tensor)
             self.components = [(int(r[0]), int(r[1])) for r in arrays['ree_tensor']]

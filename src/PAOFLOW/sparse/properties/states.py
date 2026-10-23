@@ -58,7 +58,8 @@ class Ipr(MeshProperty):
         nk_local, nbands, nspin = arrays['E_k'].shape
         values = np.zeros((nk_local, nbands, nspin), dtype=float)
         for (ispin, ik), value in self._values.items():
-            values[ik, :, ispin] = value
+            # states above the well-projected bands are padding in E_k
+            values[ik, : len(value), ispin] = value
         values = gather_full(values, attr['npool'])
         energies = gather_full(np.ascontiguousarray(arrays['E_k']), attr['npool'])
         arrays['ipr'] = None

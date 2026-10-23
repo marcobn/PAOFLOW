@@ -131,11 +131,18 @@ def test_dense_restart_ran_the_dense_engine(runs):
 
 
 def test_engines_agree_on_one_archive(runs):
+    """On every well-projected state.  The sparse pass drops the states from
+    ``shift - shift_margin`` up and pads them; the dense one keeps them."""
+    from PAOFLOW.sparse.config import SHIFT_MARGIN
+    from PAOFLOW.sparse.mesh import PAD_ENERGY_OFFSET
+
     bnd = runs['d_attr']['bnd']
     dE = runs['d_arrays']['E_k'][:, :bnd, 0]
     sE = runs['s_arrays']['E_k'][:, :bnd, 0]
     assert dE.shape == sE.shape
-    assert np.abs(dE - sE).max() < 1e-10
+    real = dE < runs['d_attr']['shift'] - SHIFT_MARGIN
+    assert np.abs(dE - sE)[real].max() < 1e-10
+    assert (sE[~real] > 0.5 * PAD_ENERGY_OFFSET).all()
 
 
 def test_to_dense_continues_on_the_dense_pipeline(runs):

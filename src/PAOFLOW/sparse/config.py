@@ -22,6 +22,9 @@ HK_SOLVERS = ('auto', 'sparse', 'dense')
 
 # element threshold (eV) used when neither a threshold nor a real-space cutoff is given
 DEFAULT_THRESHOLD = 1.0e-3
+# default distance (eV) below the PAO shift where the well-projected range
+# ends: twice the spread of the shifted states measured off the DFT grid
+SHIFT_MARGIN = 0.2
 
 
 def resolve_threshold(
@@ -366,6 +369,16 @@ class SparseConfig:
         Fraction of the spectrum (``(nev + guard) / n``) above which
         ``hk_solver='auto'`` stops using ARPACK and takes the dense
         kernel.  Must lie in ``(0, 1]``.
+    shift_margin : float, default :data:`SHIFT_MARGIN`
+        Distance (eV) below the PAO shift ``attr['shift']`` at which the
+        well-projected range ends.  ``pao_hamiltonian`` places the
+        non-projectable part of the PAO space at the shift; on the DFT
+        k-grid those states sit there exactly, but at interpolated
+        k-points they spread around it (on example01 from 0.09 eV below to
+        0.15 eV above).  Every state at or above ``shift - shift_margin`` is
+        therefore dropped at every k-point, and windows and property ranges
+        are kept below it (see ``SparseEngine._projectable_top``).  Real
+        states in that last stretch go too.
     """
 
     hopping_threshold: float | None = None
@@ -376,6 +389,7 @@ class SparseConfig:
     interior_window: InteriorWindow | None = None
     dense_n_max: int = DENSE_N_MAX
     dense_ratio: float = DENSE_RATIO
+    shift_margin: float = SHIFT_MARGIN
 
     def __post_init__(self):
         if self.rcut is not None and self.bond_order is not None:
@@ -389,6 +403,11 @@ class SparseConfig:
             )
         object.__setattr__(self, 'dense_n_max', int(self.dense_n_max))
         object.__setattr__(self, 'dense_ratio', float(self.dense_ratio))
+        object.__setattr__(self, 'shift_margin', float(self.shift_margin))
+        if self.shift_margin < 0.0:
+            raise ValueError(
+                'sparse_config=: shift_margin must be >= 0 eV, got %g.' % self.shift_margin
+            )
         if self.dense_n_max < 1:
             raise ValueError('sparse_config=: dense_n_max must be >= 1, got %d.' % self.dense_n_max)
         if not 0.0 < self.dense_ratio <= 1.0:

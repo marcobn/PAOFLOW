@@ -370,6 +370,7 @@ def run_mesh(
     hk_solver: str = 'auto',
     ehi: float | None = None,
     interior: tuple[float, float] | None = None,
+    ptop: float | None = None,
     dense_ratio: float = DENSE_RATIO,
     dense_n_max: int = DENSE_N_MAX,
 ) -> None:
@@ -416,6 +417,13 @@ def run_mesh(
     interior : (float, float) or None, optional
         Energy window ``(elo, ehi)`` in eV.  Switches to the interior
         solver: every state inside the window, none below it.
+    ptop : float or None, optional
+        Top of the well-projected range (eV, see
+        ``SparseEngine._projectable_top``).  At each k-point only the solved
+        states below it are kept: they are what ``KPoint.bnd`` counts and
+        what the stored arrays hold, padded like an interior window above
+        it.  The states above it remain in ``KPoint.E`` and ``KPoint.V``
+        for the intermediate states of the full-spectrum sums.
     dense_ratio, dense_n_max : optional
         Dispatch limits of the per-k kernel, forwarded to
         :func:`~PAOFLOW.sparse.solver.select_hk_solver`; ``dense_n_max`` also
@@ -576,14 +584,22 @@ def run_mesh(
     log.write(describe_hk_solver(nawf, nsolve, hk_solver=solver, **limits))
 
     if interior is None:
-        E_k = np.zeros((nk_local, nev, nspin), dtype=float)
+        # the states dropped above ptop take the interior padding values
+        pad = (ptop if ptop is not None else 0.0) + PAD_ENERGY_OFFSET
+        E_k = np.full((nk_local, nev, nspin), pad, dtype=float)
         velkp = np.zeros((nk_local, 3, nev, nspin), dtype=float)
-        deltakp = np.zeros((nk_local, nev, nspin), dtype=float)
+        deltakp = np.full((nk_local, nev, nspin), PAD_DELTA, dtype=float)
         if curvature:
             d2Ed2k = np.zeros((6, nk_local, nev, nspin), dtype=float)
+            # a unit diagonal for the dropped states: finite in the Hall sums,
+            # where their occupation weight vanishes, and invertible for the
+            # effective-mass writer, whose rows at the padding energy are not bands
+            d2Ed2k[:3] = 1.0
     else:
         acc = {}
     deficit = 0
+    dropped = 0
+    solved_top = np.inf
     step = max(1, min(100, nk_local // 10))
     # consumers and the curvature reuse dH/dk many times per k-point, so they
     # get it dense for the whole k-point; the velocities alone densify one
@@ -623,6 +639,11 @@ def run_mesh(
                 )
                 k0 = max(8, 2 * len(E))
                 bnd = len(E)
+            nsolved = bnd
+            if ptop is not None:
+                # the placeholders at the PAO shift lie above every real state
+                bnd = int(np.searchsorted(E[:nsolved], ptop))
+                dropped += nsolved - bnd
 
             vel, resolved = _band_diagonal_velocities(
                 E[:bnd], V[:, :bnd], dhk, dense_n_max=dense_n_max
@@ -658,16 +679,17 @@ def run_mesh(
                 if dense_ops:
                     d2hk = DenseOnDemand(d2hk, cache=False)
                 kp.__dict__['d2hk'] = d2hk
-                d2Ed2k[:, ik, :, ispin] = band_curvature_k(E, dhk, d2hk, V, kp.degen, bnd)
+                d2Ed2k[:, ik, :bnd, ispin] = band_curvature_k(E, dhk, d2hk, V, kp.degen, bnd)
 
             if interior is None:
-                if ehi is not None and E[bnd - 1] < ehi:
+                solved_top = min(solved_top, float(E[nsolved - 1]))
+                if ehi is not None and E[nsolved - 1] < ehi:
                     deficit += 1
-                E_k[ik, :, ispin] = E[:bnd]
-                velkp[ik, :, :, ispin] = vel
-                deltakp[ik, :, ispin] = delta
+                E_k[ik, :bnd, ispin] = E[:bnd]
+                velkp[ik, :, :bnd, ispin] = vel
+                deltakp[ik, :bnd, ispin] = delta
             else:
-                acc[(ispin, ik)] = (E, vel, delta)
+                acc[(ispin, ik)] = (E[:bnd], vel, delta)
 
             for c in consumers:
                 c.activate()
@@ -677,6 +699,12 @@ def run_mesh(
             if verbose and (ik + 1) % step == 0:
                 log.write(f'  progress: {ik + 1}/{nk_local} local k-points')
 
+    dropped = comm.allreduce(dropped, op=MPI.SUM)
+    if dropped:
+        log.write(
+            '  %.2f solved states per k-point lay at the PAO shift (above %.3f eV) and were '
+            'dropped' % (dropped / float(comm.allreduce(nk_local * nspin, op=MPI.SUM)), ptop)
+        )
     if interior is not None:
         E_k, velkp, deltakp = _pad_interior(acc, nk_local, nspin, interior[1], log)
         attr['bnd'] = E_k.shape[1]
@@ -688,6 +716,10 @@ def run_mesh(
     arrays['deltakp'] = deltakp
     if curvature:
         arrays['d2Ed2k'] = d2Ed2k
+    if interior is None:
+        # how high every k-point's solve reached, placeholders included: the
+        # last column of E_k is padding wherever states were dropped
+        attr['sparse_solved_top'] = float(comm.allreduce(solved_top, op=MPI.MIN))
 
     if interior is None:
         check_window_coverage(deficit, nev, ehi, 'mesh')

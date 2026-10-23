@@ -132,7 +132,7 @@ CONFIG = {
                 'dense_n_max': 10**9,
             },
             'properties': WINDOW_PROPERTIES,
-            'max_doublings': 9,
+            'max_doublings': 8,
             'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
         },
         # the full-spectrum pass: every state at every k-point, for the band
@@ -150,7 +150,7 @@ CONFIG = {
             },
             'properties': CURVATURE_PROPERTIES,
             'property_args': {'transport': {'do_hall': True}},
-            'max_doublings': 9,
+            'max_doublings': 8,
             'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
         },
         'sparse_interior': {
@@ -170,7 +170,7 @@ CONFIG = {
                 'transport': {'emin': -1.2, 'emax': 1.7},
                 'conductivity': {'emin': -1.2, 'emax': 1.7},
             },
-            'max_doublings': 9,
+            'max_doublings': 8,
             'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
         },
         # Si PAO hoppings decay slowly: on example01 one row of H(k) holds
@@ -191,7 +191,7 @@ CONFIG = {
                 'transport': {'emin': -1.2, 'emax': 1.7},
                 'conductivity': {'emin': -1.2, 'emax': 1.7},
             },
-            'max_doublings': 9,
+            'max_doublings': 8,
             'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
         },
     },
@@ -201,7 +201,7 @@ CONFIG = {
     # ------------------------------------------------------------------
     'solver_sweep': {
         'enabled': True,
-        'doublings': [3, 5, 7, 8, 9],
+        'doublings': [3, 5, 7, 8],
         'nev_fractions': [0.01, 0.02, 0.05, 0.10, 0.125, 0.20, 0.30, 0.50],
         'nk_probe': 3,
         # stop raising nev for ARPACK once it is this many times slower than LAPACK

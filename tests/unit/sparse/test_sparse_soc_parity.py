@@ -114,8 +114,13 @@ def test_one_fused_pass(fe):
 
 
 def test_spin_texture_away_from_degeneracies(fe):
+    """Away from degeneracies, and where the band is well projected: the
+    sparse pass drops the states from ``shift - shift_margin`` up."""
+    from PAOFLOW.sparse.config import SHIFT_MARGIN
+
     d, s = fe
     E = d.data_controller.data_arrays['E_k'][:, :, 0]
+    shift = d.data_controller.data_attributes['shift']
     ind = d.data_controller.data_arrays['ind_plot']
     assert ind == s.data_controller.data_arrays['ind_plot']
     for ib, band in enumerate(ind):
@@ -127,7 +132,7 @@ def test_spin_texture_away_from_degeneracies(fe):
             'spinband'
         ].reshape(-1, 3)
         gap = np.min(np.abs(np.delete(E, band, axis=1) - E[:, band : band + 1]), axis=1)
-        clean = gap > 1e-5
+        clean = (gap > 1e-5) & (E[:, band] < shift - SHIFT_MARGIN)
         assert clean.sum() > 0.9 * len(clean)
         assert np.abs(a - b)[clean].max() < 1e-9, name
 
@@ -316,7 +321,13 @@ def test_path_outputs_away_from_degeneracies(fe_path):
     """Every path file, at the points with no degeneracy among the bands it
     covers: round-off (measured <= 6e-11 of each file's scale).  At the
     degenerate points the per-band curvatures and the 1e-16-regularized
-    effective-mass denominators are gauge noise in both codes."""
+    effective-mass denominators are gauge noise in both codes.
+
+    ``topology`` sums over the first ``bnd`` states, which the sparse pass
+    restricts to the well-projected ones: it is compared where all of them
+    lie below ``shift - shift_margin``."""
+    from PAOFLOW.sparse.config import SHIFT_MARGIN
+
     name, d, s = fe_path
     dpath = d.data_controller.data_attributes['opath']
     spath = s.data_controller.data_attributes['opath']
@@ -324,6 +335,8 @@ def test_path_outputs_away_from_degeneracies(fe_path):
     clean = (np.diff(E, axis=1) > 1e-4).all(axis=1)
     bnd = d.data_controller.data_attributes['bnd']
     window_clean = (np.diff(E[:, : bnd + 1], axis=1) > 1e-4).all(axis=1)
+    shift = d.data_controller.data_attributes['shift']
+    window_clean &= (E[:, :bnd] < shift - SHIFT_MARGIN).all(axis=1)
     names = sorted(
         f
         for f in os.listdir(spath)

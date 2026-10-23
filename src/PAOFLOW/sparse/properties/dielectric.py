@@ -158,8 +158,14 @@ class DielectricTensor(MeshProperty):
         from mpi4py import MPI
 
         engine = self.engine
-        arrays = data_controller.data_arrays
-        top = engine.comm.allreduce(float(np.min(arrays['E_k'][:, -1, :])), op=MPI.MIN)
+        arrays, attr = data_controller.data_dicts()
+        top = attr.get('sparse_solved_top')
+        if top is None:
+            top = engine.comm.allreduce(float(np.min(arrays['E_k'][:, -1, :])), op=MPI.MIN)
+        # no transition reaches a state above the well-projected bands
+        ptop = engine._projectable_top()
+        if ptop is not None:
+            top = min(top, ptop)
         if self.emax > top:
             message = (
                 'WARNING: sparse dielectric_tensor: transitions up to emax=%.3f eV reach past '

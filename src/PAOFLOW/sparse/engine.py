@@ -27,6 +27,17 @@ records their parameters.  A later property that needs something the pass
 did not provide (a streaming consumer, the band curvature) costs another
 pass; ``with pao.sparse.fused():`` collects several properties into one.
 
+Every property sees only well-projected states.  ``pao_hamiltonian`` keeps
+the bands whose projectability passes ``pthr`` with their DFT energies, as
+long as they lie below the shift ``eta`` (``attr['shift']``), and places
+everything else in the PAO space at ``eta`` itself (around it off the DFT
+grid).  The states from ``eta - shift_margin`` up are therefore treated as
+placeholders, not bands.  The engine drops them at
+every k-point (:meth:`SparseEngine._projectable_top`), pulls a window or a
+property range that reaches past ``eta`` back below it with a warning, and
+leaves them only as the intermediate states of the full-spectrum sums,
+which the dense kernels include as well.
+
 Memory contract (see :mod:`PAOFLOW.sparse`): after ``pao_hamiltonian``
 returns, no array of size O(nawf^2 * nk) exists; per-k dense workspace is
 one eigenvector block, ``(nawf, nev)``, or ``(nawf, nawf)`` with the
@@ -110,6 +121,8 @@ class SparseEngine:
         self._mesh_products = set()  # products ('d2Ed2k') stored by those passes
         self._fusing = None  # properties queued inside fused(), else None
         self._window = None  # the EnergyWindow once applied
+        self._ptop = None  # top of the well-projected range, set by _projectable_top
+        self._ptop_known = False
 
         cfg = self.config
         self.log = get_sparse_log(self.data_controller)
@@ -125,6 +138,7 @@ class SparseEngine:
                 ('H(k) solver', cfg.hk_solver),
                 ('dense_n_max', cfg.dense_n_max),
                 ('dense_ratio', cfg.dense_ratio),
+                ('shift_margin (eV)', cfg.shift_margin),
                 ('energy window', _window_label(cfg)),
                 ('smearing', attr['smearing']),
                 ('verbose', attr['verbose']),
@@ -652,12 +666,114 @@ class SparseEngine:
         :class:`~PAOFLOW.sparse.config.EnergyWindow` and
         :class:`~PAOFLOW.sparse.config.InteriorWindow` for the semantics.
         """
+        self._projectable_top()
         if self._window is not None or self._interior is not None:
             return
         if self.config.energy_window is not None:
             self._apply_energy_window(self.config.energy_window)
         elif self.config.interior_window is not None:
             self._apply_interior_window(self.config.interior_window)
+
+    def _projectable_top(self):
+        """Top of the well-projected energy range (eV), or ``None`` without one.
+
+        ``pao_hamiltonian`` builds H(k) from the bands that pass the
+        projectability threshold and lie below the shift ``eta``
+        (``attr['shift']``), and puts the rest of the PAO space at ``eta``
+        (``shift_type`` 0 and 1).  On the DFT k-grid those placeholders sit
+        at ``eta`` exactly; at interpolated k-points they spread around it,
+        so the real states of each k-point are taken to be the ones below
+        ``eta - shift_margin`` (``sparse_config``).  With ``shift_type`` 2 the rest sits at
+        zero instead, inside the spectrum, and cannot be told apart by
+        energy; there, and for a Hamiltonian without a shift (a model, or a
+        restart that did not record one), nothing is dropped.
+        """
+        if self._ptop_known:
+            return self._ptop
+        attr = self.data_controller.data_attributes
+        shift = attr.get('shift')
+        shift_type = attr.get('shift_type', 1)
+        self._ptop_known = True
+        self.log.section('Well-projected range')
+        if shift_type == 2 or not isinstance(shift, (int, float, np.floating)):
+            reason = (
+                'shift_type 2 leaves the non-projectable states at 0 eV, inside the spectrum'
+                if shift_type == 2
+                else 'no PAO shift is known for this Hamiltonian'
+            )
+            message = (
+                'WARNING: sparse: every solved state is used: %s, so states outside the '
+                'well-projected bands cannot be told apart by energy.' % reason
+            )
+            if self.rank == 0:
+                print(message, flush=True)
+            self.log.write(message)
+            return None
+        self._ptop = float(shift) - self.config.shift_margin
+        self.log.field('PAO shift eta (eV)', '%.3f' % float(shift))
+        self.log.field('shift_margin (eV)', '%.3f' % self.config.shift_margin)
+        self.log.field('pthr', attr.get('pthr', 'n/a'))
+        self.log.write(
+            'The non-projectable part of the PAO space sits at eta, and off the DFT grid\n'
+            'around it. States above %.3f eV are dropped at every k-point; windows and\n'
+            'property ranges are kept below it.' % self._ptop
+        )
+        return self._ptop
+
+    def _warn(self, message):
+        if self.rank == 0:
+            print(message, flush=True)
+        self.log.write('\n' + message)
+
+    def _clamp_to_projectable(self, prop, emin, emax, margin=0.0):
+        """Keep the top of a property's energy range in the well-projected range.
+
+        Parameters
+        ----------
+        prop : str
+            Property name, for the message.
+        emin, emax : float
+            The requested range (eV).
+        margin : float, optional
+            How far below the projectable top ``emax`` has to stay: the
+            states the property needs above ``emax`` (the transport
+            occupation derivative, say) must be real too.
+
+        Returns
+        -------
+        (float, float)
+            ``(emin, emax)``, with ``emax`` lowered, and a warning printed,
+            if it reached past ``eta - margin``.
+
+        Raises
+        ------
+        ValueError
+            If nothing of the range is left below the projectable top.
+        """
+        top = self._projectable_top()
+        if top is None or float(emax) <= top - margin:
+            return emin, emax
+        hi = top - margin
+        if hi <= float(emin):
+            raise ValueError(
+                'sparse %s: the requested range [%.3f, %.3f] eV lies above the well-projected '
+                'bands, which end at %.3f eV (the PAO shift; %.3f eV margin). Lower the range, '
+                'or raise the shift with more bands or a lower pthr in projectability().'
+                % (prop, emin, emax, top, margin)
+            )
+        self._warn(
+            'WARNING: sparse %s: emax lowered from %.3f to %.3f eV, the top of the '
+            'well-projected bands (PAO shift %.3f eV%s). Above it the PAO spectrum holds only '
+            'the non-projectable states placed at the shift.'
+            % (
+                prop,
+                emax,
+                hi,
+                top + self.config.shift_margin,
+                '' if margin == 0 else ', %.3f eV margin' % margin,
+            )
+        )
+        return emin, hi
 
     def _apply_energy_window(self, window):
         """Size ``nev`` (``attr['bnd']``) from the bottom of the spectrum up
@@ -666,7 +782,25 @@ class SparseEngine:
 
         from .solver import count_below
 
+        import dataclasses
+
         arrays, attr = self.data_controller.data_dicts()
+        top = self._projectable_top()
+        if top is not None and window.ehi > top:
+            # solving past the top only adds placeholder states
+            emax = min(window.emax, top)
+            if window.emax > top:
+                self._warn(
+                    'WARNING: sparse energy_window: emax lowered from %.3f to %.3f eV, the top '
+                    'of the well-projected bands (PAO shift %.3f eV); the window top is now '
+                    'there too.' % (window.emax, emax, top + self.config.shift_margin)
+                )
+            else:
+                self.log.write(
+                    'energy_window: the margin above emax = %.3f eV is cut at the top of the '
+                    'well-projected bands, %.3f eV.' % (window.emax, top)
+                )
+            window = dataclasses.replace(window, emax=emax, margin=top - emax)
         ehi = window.ehi
         nawf = self.H.nawf
 
@@ -732,7 +866,23 @@ class SparseEngine:
     def _apply_interior_window(self, window):
         """Solve inside ``[window.elo, window.ehi]`` from here on; properties
         that need states below the window are skipped with a warning."""
-        self._interior = (window.elo, window.ehi)
+        elo, ehi = window.elo, window.ehi
+        top = self._projectable_top()
+        if top is not None and ehi > top:
+            if elo >= top:
+                raise ValueError(
+                    'sparse interior_window: [%.3f, %.3f] eV lies above the well-projected '
+                    'bands, which end at %.3f eV (the PAO shift). Move the window down, or raise '
+                    'the shift with more bands or a lower pthr in projectability().'
+                    % (elo, ehi, top)
+                )
+            self._warn(
+                'WARNING: sparse interior_window: ehi lowered from %.3f to %.3f eV, the top of '
+                'the well-projected bands (PAO shift %.3f eV).'
+                % (ehi, top, top + self.config.shift_margin)
+            )
+            ehi = top
+        self._interior = (elo, ehi)
         self._kT_margin = window.kT_margin_eV
         self._smear_margin = window.smear_margin_eV
         self.log.section('Interior energy window')
@@ -796,7 +946,9 @@ class SparseEngine:
         if self._window is None or self._interior is not None:
             return
         arrays, attr = self.data_controller.data_dicts()
-        top = self.comm.allreduce(float(np.min(arrays['E_k'][:, -1, :])), op=MPI.MIN)
+        top = attr.get('sparse_solved_top')
+        if top is None:
+            top = self.comm.allreduce(float(np.min(arrays['E_k'][:, -1, :])), op=MPI.MIN)
         if float(emax) > top:
             raise RuntimeError(
                 'sparse %s: requested emax=%.3f eV exceeds the lowest computed top band '
@@ -880,6 +1032,7 @@ class SparseEngine:
                 hk_solver=self.config.hk_solver,
                 ehi=None if self._window is None else self._window.ehi,
                 interior=self._interior,
+                ptop=self._projectable_top(),
                 **self.config.limits,
             )
             E_kp = gather_full(arrays['E_k'], attr['npool'])
@@ -1101,6 +1254,7 @@ class SparseEngine:
                 with_dnm=with_dnm,
                 hk_solver=self.config.hk_solver,
                 verbose=attr['verbose'],
+                ptop=self._projectable_top(),
                 **self.config.limits,
             )
 
@@ -1162,6 +1316,7 @@ class SparseEngine:
                 hk_solver=self.config.hk_solver,
                 ehi=None if self._window is None else self._window.ehi,
                 interior=self._interior,
+                ptop=self._projectable_top(),
                 **self.config.limits,
             )
 

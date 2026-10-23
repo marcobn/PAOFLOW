@@ -95,12 +95,31 @@ def dense_and_sparse(request, tmp_path_factory):
 
 
 def test_eigenvalues_index_wise(dense_and_sparse):
+    """Every well-projected state agrees.  Where a band among the first
+    ``bnd`` rises above the PAO shift, pao_hamiltonian puts a placeholder
+    state at the shift in its place; the dense pipeline keeps it as a band,
+    the sparse pass drops it and pads, together with the real states within
+    ``shift_margin`` below the shift (``SparseEngine._projectable_top``)."""
+    from PAOFLOW.sparse.mesh import PAD_ENERGY_OFFSET
+
     d_arrays, d_attr, s_arrays, _ = dense_and_sparse
     bnd = d_attr['bnd']
     dE = d_arrays['E_k'][:, :bnd, 0]
     sE = s_arrays['E_k'][:, :bnd, 0]
     assert dE.shape == sE.shape
-    assert np.abs(dE - sE).max() < 1e-8
+    real = _well_projected(d_arrays, d_attr, bnd)
+    assert np.abs(dE - sE)[real].max() < 1e-8
+    assert (sE[~real] > d_attr['shift'] + 0.5 * PAD_ENERGY_OFFSET).all()
+
+
+def _well_projected(d_arrays, d_attr, bnd):
+    """``(nk, bnd)`` mask of the states the sparse pass keeps: those below
+    ``shift - shift_margin``.  Above it the dense pipeline keeps the
+    placeholder states at the PAO shift, and the real ones close to it, as
+    bands; the sparse pass drops them and pads."""
+    from PAOFLOW.sparse.config import SHIFT_MARGIN
+
+    return d_arrays['E_k'][:, :bnd, 0] < d_attr['shift'] - SHIFT_MARGIN
 
 
 def _boundary_ok(d_arrays, bnd, gap=1e-4):
@@ -141,13 +160,14 @@ def test_velocities_index_wise(dense_and_sparse):
     agree, so those points compare each group per direction, sorted."""
     d_arrays, d_attr, s_arrays, _ = dense_and_sparse
     bnd = d_attr['bnd']
+    real = _well_projected(d_arrays, d_attr, bnd)
     strict = _nondegenerate(d_arrays, bnd)
-    bounded = _boundary_ok(d_arrays, bnd) & ~strict
+    bounded = _boundary_ok(d_arrays, bnd) & ~strict & real.all(axis=1)
     assert strict.sum() > 100, 'test needs a meaningful strict set'
     # dense band-diagonal velocity: Re pksp[k, l, n, n]
     dv = np.real(np.einsum('klnn->kln', d_arrays['pksp'][:, :, :bnd, :bnd, 0]))
     sv = s_arrays['velkp'][:, :, :bnd, 0]
-    err_k = np.abs(dv - sv).max(axis=(1, 2))
+    err_k = np.where(real[:, None], np.abs(dv - sv), 0.0).max(axis=(1, 2))
     scale = max(np.abs(dv).max(), 1.0)
     assert err_k[strict].max() < 1e-7 * scale, (
         'strict velocity parity failed: %.3e (scale %.3e)' % (err_k[strict].max(), scale)
@@ -169,11 +189,12 @@ def test_adaptive_widths_index_wise(dense_and_sparse):
     the sum of ``v_l^2`` over the group, which no pairing changes."""
     d_arrays, d_attr, s_arrays, _ = dense_and_sparse
     bnd = d_attr['bnd']
+    real = _well_projected(d_arrays, d_attr, bnd)
     strict = _nondegenerate(d_arrays, bnd)
-    bounded = _boundary_ok(d_arrays, bnd) & ~strict
+    bounded = _boundary_ok(d_arrays, bnd) & ~strict & real.all(axis=1)
     dd = d_arrays['deltakp'][:, :bnd, 0]
     sd = s_arrays['deltakp'][:, :bnd, 0]
-    err_k = np.abs(dd - sd).max(axis=1)
+    err_k = np.where(real, np.abs(dd - sd), 0.0).max(axis=1)
     assert err_k[strict].max() < 1e-7 * max(dd.max(), 1.0)
     E = d_arrays['E_k'][:, :bnd, 0]
 
@@ -264,7 +285,13 @@ def test_curvature_index_wise(curvature_runs):
     with velocity zero by symmetry are treated as one velocity-degenerate
     block.  Their curvature then moves by O(10%) between any two LAPACK
     gauges, in the dense code as much as here, so those points are only
-    required to be finite."""
+    required to be finite.
+
+    Only the well-projected states are compared: the sparse pass drops the
+    states from ``shift - shift_margin`` up and stores a unit diagonal for
+    them."""
+    from PAOFLOW.sparse.config import SHIFT_MARGIN
+
     d, s = curvature_runs
     d_arrays, d_attr = d.data_controller.data_dicts()
     s_arrays, _ = s.data_controller.data_dicts()
@@ -272,13 +299,16 @@ def test_curvature_index_wise(curvature_runs):
     dc = d_arrays['d2Ed2k'][:, :, :bnd, 0]
     sc = s_arrays['d2Ed2k'][:, :, :bnd, 0]
     assert dc.shape == sc.shape
+    real = d_arrays['E_k'][:, :bnd, 0] < d_attr['shift'] - SHIFT_MARGIN
     strict = _nondegenerate(d_arrays, bnd)
     assert strict.sum() > 0.9 * len(strict), 'test needs a meaningful strict set'
     scale = np.abs(dc).max()
-    err_k = np.abs(dc - sc).max(axis=(0, 2))
+    err_k = np.where(real[None], np.abs(dc - sc), 0.0).max(axis=(0, 2))
     assert err_k[strict].max() < 1e-9 * scale, (
         'strict curvature parity failed: %.3e (scale %.3e)' % (err_k[strict].max(), scale)
     )
+    np.testing.assert_array_equal(sc[:3][:, ~real], 1.0)
+    np.testing.assert_array_equal(sc[3:][:, ~real], 0.0)
     assert np.isfinite(sc).all()
 
 
@@ -362,7 +392,10 @@ def test_fermi_surface_bands(curvature_runs):
 def test_effective_masses_away_from_degeneracies(curvature_runs):
     """Masses invert the curvature, so only the strict k-points of
     ``test_curvature_index_wise`` are compared, to the file's 4 decimals
-    scaled by the mass (a nearly flat band amplifies round-off)."""
+    scaled by the mass (a nearly flat band amplifies round-off), and only
+    the well-projected states."""
+    from PAOFLOW.sparse.config import SHIFT_MARGIN
+
     d, s = curvature_runs
     d_arrays, d_attr = d.data_controller.data_dicts()
     bnd = d_attr['bnd']
@@ -372,6 +405,8 @@ def test_effective_masses_away_from_degeneracies(curvature_runs):
     assert a.shape == b.shape
     np.testing.assert_array_equal(a[:, :3], b[:, :3])
     strict = np.repeat(_nondegenerate(d_arrays, bnd), bnd)
+    # rows k-major; the states the sparse pass drops below the shift are padding there
+    strict &= (d_arrays['E_k'][:, :bnd, 0] < d_attr['shift'] - SHIFT_MARGIN).ravel()
     rel = np.abs(a[strict, 4:] - b[strict, 4:]) / np.maximum(1.0, np.abs(a[strict, 4:]))
     assert rel.max() < 1e-2
     assert np.median(rel) < 1e-4

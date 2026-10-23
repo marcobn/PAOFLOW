@@ -213,11 +213,16 @@ def test_interband_properties_are_skipped_under_an_interior_window(in_example):
 
 def test_dos_above_the_energy_window_raises(in_example):
     """A DoS past the top computed band would silently undercount states,
-    so it raises like transport does instead of writing a truncated curve."""
-    p = _driver(str(in_example / 'ewin'), energy_window={'emax': 0.0})
+    so it raises like transport does instead of writing a truncated curve.
+    Five states (the valence bands and one more) keep the solve below the
+    well-projected top; a request above that top would be lowered to it
+    instead."""
+    p = _driver(str(in_example / 'ewin'), energy_window={'emax': 0.0, 'margin': 0.0, 'nev': 5})
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.dos(emin=-12.0, emax=0.0, ne=50, do_pdos=False)  # inside: fine
 
-    top = float(np.min(p.data_controller.data_arrays['E_k'][:, -1, :]))
+    # how high the solve reached at every k-point; the last column of E_k is
+    # padding wherever states above the well-projected bands were dropped
+    top = p.data_controller.data_attributes['sparse_solved_top']
     with pytest.raises(RuntimeError, match='sparse dos: requested emax'):
         p.dos(emin=-12.0, emax=top + 1.0, ne=50, do_pdos=False)
