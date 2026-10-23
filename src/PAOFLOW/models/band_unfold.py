@@ -17,8 +17,29 @@ Public API
     unfold_bands(pc_model_dict, sc_model_dict, kpath_frac, \\*,
                  nk_per_seg=80, verbose=True)
 
+    paoflow_to_model_dict(data_controller) — model dict of a DFT (projection)
+                    run, for the ``pc_model_dict`` / ``sc_model_dict`` arguments
     UnfoldResult  — dataclass returned by unfold_bands()
     plot_unfolded — convenience plotting function
+
+Real-space Hamiltonian conventions
+----------------------------------
+The unfolding Fourier-transforms the real-space Hamiltonian with the Bloch
+phase :math:`e^{+2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}`, which presumes that
+``HRs[:, :, R]`` holds the hopping from an orbital in the home cell to an
+orbital at :math:`\\boldsymbol{\\tau}_B + \\mathbf{R}`.  Model Hamiltonians
+built by :mod:`PAOFLOW.models.models` (Slater--Koster, EDTB) follow this
+convention.  The projected DFT Hamiltonian of a PAOFLOW run does not: it is
+obtained as ``HRs = ifftn(Hks)``, so that :math:`H(\\mathbf{k}) = \\sum_R
+H(\\mathbf{R})\\, e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}` and the hopping is
+stored at :math:`-\\mathbf{R}`.  Band energies cannot tell the two apart
+(with time reversal they give :math:`H(\\mathbf{k})` and
+:math:`H(-\\mathbf{k})`), but the spectral weights can: the eigenvectors of
+:math:`H(-\\mathbf{k})` projected on the primitive-cell momentum
+:math:`\\mathbf{k}` select the folded branches of the mirror point.
+:func:`_extract_hamiltonian` therefore brings every Hamiltonian to the
+``+R`` convention before the transform, using the ``fourier_sign`` entry of
+a ``_paoflow`` dict when present and :func:`_detect_fourier_sign` otherwise.
 
 References
 ----------
@@ -379,6 +400,151 @@ def make_kpath(sym_points: dict, path_str: str, a_pc: np.ndarray, nk_per_seg: in
 # ═══════════════════════════════════════════════════════════════════════
 
 
+def _detect_fourier_sign(
+    HRs: np.ndarray, R: np.ndarray, tau: np.ndarray, norbitals: np.ndarray
+) -> int:
+    """Infer whether ``HRs[:, :, R]`` holds the hopping to ``tau_B + R`` or ``tau_B - R``.
+
+    Parameters
+    ----------
+    HRs : np.ndarray, shape ``(nawf, nawf, nR, nspin)``
+        Real-space Hamiltonian.
+    R : np.ndarray, shape ``(nR, 3)``
+        Lattice vectors of the grid (Cartesian, any length unit).
+    tau : np.ndarray, shape ``(natoms, 3)``
+        Atomic positions (same unit as ``R``).
+    norbitals : np.ndarray, shape ``(natoms,)``
+        Orbital count per atom, in the orbital order of ``HRs``.
+
+    Returns
+    -------
+    int
+        ``+1`` when :math:`H(\\mathbf{k}) = \\sum_R H(\\mathbf{R})\\,
+        e^{+2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}` (hopping stored at
+        :math:`\\boldsymbol{\\tau}_B + \\mathbf{R}`), ``-1`` for the opposite
+        (``ifftn``) convention of the projected DFT Hamiltonian.
+
+    Notes
+    -----
+    A physical hopping decays with the bond length, so the sign
+    :math:`s` that minimises the magnitude-weighted bond length
+
+    .. math::
+
+        L(s) = \\sum_{\\mathbf{R}}\\sum_{\\mu\\nu}
+            |H_{\\mu\\nu}(\\mathbf{R})|\\;
+            |\\boldsymbol{\\tau}_{B(\\nu)} + s\\mathbf{R}
+             - \\boldsymbol{\\tau}_{A(\\mu)}|
+
+    is the one in which the stored matrix elements connect near
+    neighbours.  This is the test of
+    :func:`PAOFLOW.hamiltonian.sparse_hamiltonian.detect_bond_sign`,
+    evaluated on the grid of this module.
+    """
+    norbitals = np.asarray(norbitals, dtype=int)
+    natoms = norbitals.size
+    nawf = HRs.shape[0]
+    orbital_atom = np.repeat(np.arange(natoms), norbitals)
+    one_hot = np.zeros((natoms, nawf))
+    one_hot[orbital_atom, np.arange(nawf)] = 1.0
+    magnitude = np.abs(np.asarray(HRs)[:, :, :, 0])  # (nawf, nawf, nR)
+    block = np.einsum('ai,ijr,bj->abr', one_hot, magnitude, one_hot)  # (natoms, natoms, nR)
+    length = {1: 0.0, -1: 0.0}
+    for ir in range(R.shape[0]):
+        for sign in (1, -1):
+            d = tau[None, :, :] + sign * R[ir] - tau[:, None, :]
+            length[sign] += float((block[:, :, ir] * np.linalg.norm(d, axis=2)).sum())
+    return 1 if length[1] <= length[-1] else -1
+
+
+def paoflow_to_model_dict(data_controller, label: str = 'PAOFLOW') -> dict:
+    r"""Model dict of a DFT (projection) PAOFLOW run for :func:`unfold_bands`.
+
+    Parameters
+    ----------
+    data_controller : PAOFLOW.DataController.DataController
+        Data controller of a run that has built the PAO Hamiltonian
+        (after ``projections`` / ``projectability`` / ``pao_hamiltonian``,
+        or ``read_atomic_proj_QE`` + ``pao_hamiltonian``).
+    label : str
+        Label stored in the dict.
+
+    Returns
+    -------
+    dict
+        ``{'label', 'alat', 'model': {'a_vectors', 'atoms'}, '_paoflow': {...}}``
+        with the real-space Hamiltonian ``HRs`` (shape ``(nawf, nawf, nR,
+        nspin)``), its lattice grid ``R`` (Cartesian, units of ``alat``),
+        ``nawf``, ``nspin``, the orbital count per atom ``norbitals`` and
+        ``fourier_sign = -1``.
+
+    Notes
+    -----
+    PAOFLOW stores ``a_vectors`` in units of ``alat`` and ``tau`` in Bohr;
+    the positions are returned in units of ``alat``,
+
+    .. math::
+
+        \boldsymbol{\tau}_{\mathrm{alat}} =
+        \boldsymbol{\tau}_{\mathrm{Bohr}} / a_{\mathrm{lat}} .
+
+    The lattice grid ``R`` is the FFT grid of ``HRs`` (built with
+    :func:`PAOFLOW.utils.get_R_grid_fft.get_R_grid_fft` if the run has not
+    built it yet).  The projected Hamiltonian is ``HRs = ifftn(Hks)``, i.e.
+
+    .. math::
+
+        H(\mathbf{k}) = \sum_{\mathbf{R}} H(\mathbf{R})\,
+            e^{-2\pi i \mathbf{k}\cdot\mathbf{R}},
+
+    which :func:`_extract_hamiltonian` converts to the ``+R`` convention of
+    the unfolding (``fourier_sign = -1``).  The orbital counts per atom are
+    taken from ``naw`` when the run provides them and are otherwise assumed
+    uniform (``nawf / natoms``).
+    """
+    from PAOFLOW.utils.get_R_grid_fft import get_R_grid_fft
+
+    arry, attr = data_controller.data_dicts()
+    alat = float(attr['alat'])
+    a_vectors = np.array(arry['a_vectors'], dtype=float)
+    tau = np.array(arry['tau'], dtype=float) / alat
+    natoms = int(tau.shape[0])
+    species = list(arry['atoms']) if 'atoms' in arry else ['X'] * natoms
+    atoms = {str(i): {'name': str(species[i]), 'tau': tau[i].tolist()} for i in range(natoms)}
+
+    HRs = np.asarray(arry['HRs'])
+    nawf, nspin = int(HRs.shape[0]), int(HRs.shape[-1])
+    nk1, nk2, nk3 = (int(n) for n in HRs.shape[2:5])
+    if 'R' not in arry or np.asarray(arry['R']).shape[0] != nk1 * nk2 * nk3:
+        get_R_grid_fft(data_controller, nk1, nk2, nk3)
+    R = np.array(arry['R'], dtype=float)
+
+    naw = arry.get('naw', None)
+    if naw is not None and int(np.sum(naw)) == nawf and len(naw) == natoms:
+        norbitals = np.asarray(naw, dtype=int)
+    else:
+        if nawf % natoms != 0:
+            raise ValueError(
+                f'{nawf} orbitals on {natoms} atoms: the per-atom orbital counts are not '
+                f'uniform and the run does not provide them (naw).'
+            )
+        norbitals = np.full(natoms, nawf // natoms, dtype=int)
+
+    return {
+        'label': label,
+        'alat': alat,
+        'model': {'a_vectors': a_vectors, 'atoms': atoms},
+        '_paoflow': {
+            'HRs': HRs.reshape(nawf, nawf, -1, nspin).copy(),
+            'R': R.copy(),
+            'nawf': nawf,
+            'nspin': nspin,
+            'norbitals': norbitals,
+            'fourier_sign': -1,
+        },
+    }
+
+
 def _extract_hamiltonian(model_dict: dict, verbose: bool = False):
     """Build a PAOFLOW model and extract HRs + R-grid.
 
@@ -408,7 +574,12 @@ def _extract_hamiltonian(model_dict: dict, verbose: bool = False):
 
     ``R`` is the corresponding real-space lattice-vector grid, later used
     to Fourier-transform back to an arbitrary k-point along the unfolding
-    path (see :func:`unfold_bands`).
+    path (see :func:`unfold_bands`).  The returned grid is oriented so that
+    :math:`H(\\mathbf{k}) = \\sum_R H(\\mathbf{R})\\, e^{+2\\pi i
+    \\mathbf{k}\\cdot\\mathbf{R}}` for every source: for a ``_paoflow``
+    dict the sign of ``R`` is flipped according to its ``fourier_sign``
+    (``-1`` for the ``ifftn`` convention of a projected DFT Hamiltonian,
+    detected with :func:`_detect_fourier_sign` when the entry is absent).
     """
     # Fast path: a raw-PAOFLOW model dict carries its already-built HRs and
     # R-grid under the private "_paoflow" key. Reuse them directly instead of
@@ -420,8 +591,33 @@ def _extract_hamiltonian(model_dict: dict, verbose: bool = False):
         HRs = np.asarray(pao['HRs'])
         if HRs.ndim == 6:
             HRs = HRs.reshape(nawf, nawf, -1, nspin)
-        R = np.asarray(pao['R'], dtype=float)
-        return HRs.copy(), R.copy(), nawf, nspin, pao.get('norbitals')
+        R = np.array(pao['R'], dtype=float)
+        norbitals = pao.get('norbitals')
+        atoms = model_dict['model']['atoms']
+        natoms = len(atoms)
+        if norbitals is None:
+            if nawf % natoms != 0:
+                raise ValueError(
+                    f"'_paoflow' dict without 'norbitals' and {nawf} orbitals on {natoms} "
+                    f'atoms: give the per-atom orbital counts.'
+                )
+            norbitals = np.full(natoms, nawf // natoms, dtype=int)
+        norbitals = np.asarray(norbitals, dtype=int)
+        # Bring HRs to the convention of the transform below, H(k) = sum_R HRs(R) e^{+2 pi i k.R}
+        # (hopping stored at tau_B + R).  A projected DFT Hamiltonian (HRs = ifftn(Hks)) stores
+        # it at tau_B - R: flipping R is the same as reading HRs(-R).
+        sign = pao.get('fourier_sign')
+        if sign is None:
+            tau = np.array([atoms[str(i)]['tau'] for i in range(natoms)], dtype=float)
+            sign = _detect_fourier_sign(HRs, R, tau, norbitals)
+            if verbose:
+                print(
+                    f'  real-space convention detected: hopping stored at tau_B {"+" if sign > 0 else "-"} R'
+                )
+        sign = int(sign)
+        if sign not in (1, -1):
+            raise ValueError(f"'fourier_sign' must be +1 or -1, got {sign}.")
+        return HRs.copy(), sign * R, nawf, nspin, norbitals
 
     from ._paoflow_runner import build_model_hamiltonian
 
@@ -510,7 +706,11 @@ def unfold_bands(
     -----
     Both model dicts must use the **same** alat.  The PC and SC lattice
     vectors (``a_vectors``) must be given in Cartesian units of alat (the
-    PAOFLOW / EDTB convention).
+    PAOFLOW / EDTB convention).  A model dict may come from
+    ``EDTBModel.to_model_dict()`` (tight-binding route) or from
+    :func:`paoflow_to_model_dict` (projected DFT route); the two store the
+    real-space Hamiltonian in opposite Fourier conventions, which
+    :func:`_extract_hamiltonian` reconciles (see the module docstring).
 
     At every k-point along the path, the PC and SC Bloch Hamiltonians are
     built from the real-space Hamiltonians by Fourier transform,
