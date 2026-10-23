@@ -12,7 +12,7 @@ band-diagonal property kernels need, without ever storing eigenvectors:
 - ``deltakp``   (nk_local, nev, nspin)  — Yates adaptive smearing widths
   ``afac * dk * |v_n|`` (``do_adaptive_smearing.adaptive_widths``),
 - ``d2Ed2k``    (6, nk_local, nev, nspin) — band curvature, only when the
-  ``'d2Ed2k'`` product is requested (``do_band_curvature.band_curvature_k_ij``),
+  ``'d2Ed2k'`` product is requested (``do_band_curvature.band_curvature_k``),
 
 stored k-scattered in the dense conventions so ``do_dos_adaptive``, the
 Boltzmann transport stack and ``do_effective_mass`` consume them unchanged.
@@ -410,9 +410,8 @@ def run_mesh(
     coarse supercell mesh (216 k-points over four ranks is 54 each), which
     is exactly the run slow enough to want progress from.
     """
-    from ..hamiltonian.do_d2Hd2k import IJ_PAIRS
     from ..spectrum.do_adaptive_smearing import adaptive_widths
-    from ..spectrum.do_band_curvature import band_curvature_k_ij
+    from ..spectrum.do_band_curvature import band_curvature_k
     from ..utils.communication import scatter_full
     from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
     from .kpoint import DenseOnDemand, KPoint
@@ -558,10 +557,7 @@ def run_mesh(
                 if dense_ops:
                     d2hk = DenseOnDemand(d2hk, cache=False)
                 kp.__dict__['d2hk'] = d2hk
-                for ij, (i, j) in enumerate(IJ_PAIRS):
-                    d2Ed2k[ij, ik, :, ispin] = band_curvature_k_ij(
-                        E, dhk[i], dhk[j], d2hk[ij], V, kp.degen, bnd
-                    )
+                d2Ed2k[:, ik, :, ispin] = band_curvature_k(E, dhk, d2hk, V, kp.degen, bnd)
 
             if interior is None:
                 if ehi is not None and E[bnd - 1] < ehi:

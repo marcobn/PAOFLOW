@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -101,6 +101,117 @@ def band_curvature_k_ij(
     return curvature
 
 
+def band_curvature_k(
+    E: np.ndarray,
+    dH: Sequence[Any],
+    d2H: Sequence[Any],
+    v_k: np.ndarray,
+    degen: list[np.ndarray],
+    bnd: int,
+) -> np.ndarray:
+    """All six components :math:`d^2E_n/dk_i dk_j` of the band curvature at one k-point.
+
+    The same result as :func:`band_curvature_k_ij` for every ``(i, j)`` of
+    ``IJ_PAIRS``, up to rounding, with the work shared between the components.
+
+    Parameters
+    ----------
+    E : np.ndarray, shape ``(nawf,)``
+        Every eigenvalue at this k-point (eV), ascending.
+    dH : sequence of 3 arrays or scipy.sparse matrices, shape ``(nawf, nawf)``
+        ``dH/dk_x``, ``dH/dk_y``, ``dH/dk_z`` in the PAO basis.
+    d2H : sequence of 6 arrays or scipy.sparse matrices, shape ``(nawf, nawf)``
+        :math:`d^2H/dk_i dk_j` in the order of ``IJ_PAIRS``; each is read once.
+    v_k : np.ndarray, shape ``(nawf, nawf)``
+        Eigenvectors matching ``E`` (columns).
+    degen : list of np.ndarray
+        Degenerate band groups at this k-point, all below ``bnd``.
+    bnd : int
+        Number of bands whose curvature is returned.
+
+    Returns
+    -------
+    np.ndarray, shape ``(6, bnd)``
+
+    Notes
+    -----
+    Called once per ``(i, j)``, :func:`band_curvature_k_ij` rotates
+    ``dH/dk_i`` into the eigenbasis four times and ``dH/dk_j`` and
+    ``d2H/dk_i dk_j`` twice each: 60 ``(nawf, nawf, nawf)`` products per
+    k-point.  Every quantity it uses, though, needs only the first ``bnd``
+    columns of the rotated operators (the curvature rows are ``< bnd``, the
+    operators are Hermitian, and the degenerate groups lie below ``bnd``),
+    plus the full diagonal of the rotated ``dH/dk_i``, from which
+    ``get_degeneracies`` drops every velocity group that reaches ``bnd``.
+
+    So each ``dH/dk_l V`` is formed once, kept as its diagonal and its first
+    ``bnd`` columns, and rotated for each direction ``i`` block by block
+    within the degenerate groups.  Each ``d2H/dk_i dk_j`` is applied to the
+    rotated ``bnd`` window bands only.  That is 3 full products and
+    9 ``(nawf, nawf, bnd)`` ones per k-point.
+    """
+    from numpy.linalg import eigh
+
+    from ..hamiltonian.do_d2Hd2k import IJ_PAIRS
+    from ..spectrum.do_eigh import get_degeneracies
+
+    n = len(E)
+    vb = v_k[:, :bnd]
+    diag, cols = [], []
+    for op in dH:
+        av = np.asarray(op @ v_k)
+        diag.append(np.einsum('nm,nm->m', np.conj(v_k), av))
+        cols.append(np.conj(v_k.T) @ av[:, :bnd])  # (V^+ dH V)[:, :bnd]
+        av = None
+
+    def rotate(a, blocks):
+        """``W^+ a W`` restricted to the first ``bnd`` columns."""
+        a = a.copy()
+        for ll, ul, w in blocks:
+            a[:, ll:ul] = a[:, ll:ul] @ w
+            a[ll:ul, :] = np.conj(w.T) @ a[ll:ul, :]
+        return a
+
+    # rows m, columns n < bnd: E_n - E_m, with the near-degenerate pairs dropped
+    E_temp = E[None, :bnd] - E[:, None]
+    E_temp[np.abs(E_temp) < 1.0e-3] = np.inf
+
+    # per direction i: the rotation that diagonalizes dH/dk_i in each
+    # degenerate group, and the groups in which its diagonal stays degenerate
+    rot = []
+    for i in range(3):
+        blocks = [
+            (g[0], g[-1] + 1, eigh(cols[i][g[0] : g[-1] + 1, g[0] : g[-1] + 1])[1]) for g in degen
+        ]
+        p_i = rotate(cols[i], blocks)
+        vel = np.concatenate([np.diagonal(p_i)[:bnd], diag[i][bnd:]])
+        vel_degen = get_degeneracies(vel.reshape((1, n, 1)), bnd)[0][0]
+        rot.append((blocks, p_i, vel_degen))
+
+    curvature = np.zeros((len(IJ_PAIRS), bnd), dtype=float)
+    for ij, (i, j) in enumerate(IJ_PAIRS):
+        blocks, p_i, vel_degen = rot[i]
+        p_j = p_i if j == i else rotate(cols[j], blocks)
+        vt = vb.copy()
+        for ll, ul, w in blocks:
+            vt[:, ll:ul] = vt[:, ll:ul] @ w
+        t = np.asarray(d2H[ij] @ vt)
+
+        c = np.einsum('na,na->a', np.conj(vt), t).real
+        c += np.sum((2.0 * np.conj(p_i) * p_j).real / E_temp, axis=0)
+
+        # second order perturbation for degeneracies of E and dE/dk_i
+        for group in vel_degen:
+            ll = group[0]
+            ul = group[-1] + 1
+            e_gg = E_temp[ll:ul, ll:ul].T
+            m = p_i[ll:ul, ll:ul] @ (p_j[ll:ul, ll:ul] / e_gg)
+            block = np.conj(vt[:, ll:ul].T) @ t[:, ll:ul] + m + np.conj(m.T)
+            c[ll:ul], _ = eigh(block)
+        curvature[ij] = c
+    return curvature
+
+
 def do_band_curvature(data_controller):
     """Compute the full band curvature (inverse effective mass) tensor :math:`d^2E/dk_i dk_j`.
 
@@ -158,7 +269,9 @@ def do_band_curvature(data_controller):
 
     The loop is ``(i, j)`` outer and k inner, so only one
     :math:`d^2H/dk_i dk_j` is held at a time; the per-k work is
-    :func:`band_curvature_k_ij`, which the sparse backend calls directly.
+    :func:`band_curvature_k_ij`.  The sparse backend holds all six at one
+    k-point and calls :func:`band_curvature_k`, which shares the work
+    between them.
     """
 
     from ..hamiltonian.do_d2Hd2k import IJ_PAIRS, do_d2Hd2k_ij
