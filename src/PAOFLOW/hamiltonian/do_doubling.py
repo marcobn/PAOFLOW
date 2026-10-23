@@ -282,6 +282,9 @@ def doubling_attr_arry(data_controller):
     """
     arry, attr = data_controller.data_dicts()
 
+    # recalculating reciprocal vectors (units of 2pi/alat, a_i . b_j = delta_ij)
+    if 'b_vectors' in arry:
+        arry['b_vectors'] = np.linalg.inv(arry['a_vectors']).T
     # recalculating volume
     attr['omega'] = attr['alat'] ** 3 * arry['a_vectors'][0, :].dot(
         np.cross(arry['a_vectors'][1, :], arry['a_vectors'][2, :])

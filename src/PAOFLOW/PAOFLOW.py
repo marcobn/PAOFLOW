@@ -1711,6 +1711,7 @@ class PAOFLOW:
                 'naw',
                 'Dnm',
                 'a_vectors',
+                'b_vectors',
                 'tau',
                 'atoms',
                 'sh',
