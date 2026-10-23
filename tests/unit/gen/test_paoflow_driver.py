@@ -71,6 +71,22 @@ def test_run_script_3d_uses_default_path():
     assert "p.bands(ibrav=IBRAV, nk=NK, fname='bands')" in text
 
 
+def test_run_script_orbital_hall_main_and_plot():
+    """orbital_Hall is a selectable property: the run script calls it with the energy window and the
+    sigma^{L_z}_{xy} element, the plot script gets a menu entry reading the ohcEf files."""
+    cfg = _run_cfg(ibrav=2, is_2d=False, properties=['bands', 'spin_Hall', 'orbital_Hall'])
+    main = d.build_run_script(cfg)
+    compile(main, 'main.py', 'exec')
+    assert 'p.orbital_Hall(emin=EMIN, emax=EMAX, o_tensor=[[0, 1, 2]])' in main
+    assert 'EMIN, EMAX, NE = ' in main
+    plot = d.build_plot_script(cfg)
+    compile(plot, 'plot.py', 'exec')
+    assert 'def plot_orbital_hall' in plot and "_many('*.ohcEf*.dat')" in plot
+    assert 'pplt.plot_ohc(' in plot and 'Orbital Hall conductivity' in plot
+    assert ('orbital_Hall', 'Orbital Hall conductivity') in d.PROPERTY_MENU
+    assert 'orbital_Hall' in d.ENERGY_WINDOW_PROPERTIES
+
+
 def test_run_script_2d_unknown_ibrav_todo():
     text = d.build_run_script(_run_cfg(ibrav=3, is_2d=True))
     assert 'No built-in 2D path for ibrav=3' in text

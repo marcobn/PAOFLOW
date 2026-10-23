@@ -357,6 +357,7 @@ PROPERTY_MENU = [
     ('fermi_surface', 'Fermi surface'),
     ('spin_texture', 'Spin texture'),
     ('spin_Hall', 'Spin Hall conductivity'),
+    ('orbital_Hall', 'Orbital Hall conductivity'),
     ('anomalous_Hall', 'Anomalous Hall / Berry curvature'),
     ('topology', 'Band topology (Berry, effective mass)'),
     ('optical', 'Optical / dielectric tensor (separate extended-basis run)'),
@@ -364,7 +365,7 @@ PROPERTY_MENU = [
 ]
 SPIN_PROPERTIES = {'spin_texture', 'spin_Hall'}
 # Properties that read an explicit (emin, emax) energy window.
-ENERGY_WINDOW_PROPERTIES = {'dos', 'transport', 'spin_Hall', 'anomalous_Hall'}
+ENERGY_WINDOW_PROPERTIES = {'dos', 'transport', 'spin_Hall', 'orbital_Hall', 'anomalous_Hall'}
 
 
 def select_properties():
@@ -698,6 +699,10 @@ def _emit_standard_properties(props, needs_spin, cfg):
         # Do not pre-build the spin operator here: spin_Hall builds it
         # internally with the correct do_spin_orbit flag from the DFT data.
         body.append('    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]])')
+    if 'orbital_Hall' in selected:
+        # The orbital (L) operator is built inside orbital_Hall from the PAO shells;
+        # [[0, 1, 2]] is sigma^{L_z}_{xy}, the counterpart of the spin Hall element.
+        body.append('    p.orbital_Hall(emin=EMIN, emax=EMAX, o_tensor=[[0, 1, 2]])')
     if 'anomalous_Hall' in selected:
         body.append('    p.anomalous_Hall(do_ac=True, emin=EMIN, emax=EMAX, a_tensor=[[0, 1]])')
     if 'transport' in selected:
@@ -4212,6 +4217,19 @@ def build_plot_script(cfg):
             ],
         )
         menu.append(('Spin Hall conductivity', 'plot_spin_hall'))
+
+    if 'orbital_Hall' in props:
+        funcs += _plot_func(
+            'plot_orbital_hall',
+            [
+                "files = _many('*.ohcEf*.dat')",
+                'if not files:',
+                '    _missing(None)',
+                '    return',
+                "pplt.plot_ohc(files if len(files) > 1 else files[0], title='Orbital Hall conductivity', x_lim=_ewin(), y_lim=_ylim())",
+            ],
+        )
+        menu.append(('Orbital Hall conductivity', 'plot_orbital_hall'))
 
     if 'anomalous_Hall' in props:
         funcs += _plot_func(

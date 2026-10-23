@@ -414,6 +414,61 @@ class GPAO:
                 labels.append(tag)
             plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend)
 
+    def plot_ohc(
+        self,
+        fname,
+        title='OHC vs Energy',
+        x_lim=None,
+        y_lim=None,
+        cols=None,
+        legend=True,
+    ):
+        """
+        Plot the orbital Hall conductivity vs energy.
+
+        PAOFLOW writes one ``ohcEf_{spol}_{ipol}{jpol}.dat`` file per requested
+        tensor element (two columns: energy and conductivity), the orbital
+        counterpart of the spin Hall files.  Pass a single file name to plot one
+        component, or a list of file names to overlay several components.
+
+        Arguments:
+          fname (str or list): File name or list of file names (including relative path)
+          title (str): A title for the plot
+          x_lim (tuple): Pair of axis limits (x_min, x_max)
+          y_lim (tuple): Pair of axis limits (y_min, y_max)
+          cols (list): A 3-tuple (R,G,B) or list of them, one for each tensor element.
+          legend (bool): Show the legend when several components are plotted.
+        """
+        import numpy as np
+
+        from .inputs.read_pao_output import read_dos_PAO
+
+        x_label = 'Energy (eV)'
+        y_label = r'$\sigma^{L}$ ($\Omega$cm)$^{-1}$'
+
+        if isinstance(fname, str):
+            from .graphics.plot_functions import plot_dos
+
+            es, ohc = read_dos_PAO(fname)
+            if y_lim is None:
+                y_lim = 1.1 * np.array([np.min(ohc), np.max(ohc)])
+            plot_dos(es, ohc, title, x_lim, y_lim, False, cols, x_label, y_label)
+
+        elif isinstance(fname, list):
+            from .graphics.plot_functions import plot_shc_tensor
+
+            es = None
+            data = []
+            labels = []
+            if not isinstance(cols, list):
+                cols = [cols] * len(fname)
+            for fn in fname:
+                tag = fn.split('.')[-2][-4:]
+                es, ohc = read_dos_PAO(fn)
+                data.append(ohc)
+                labels.append(tag)
+            plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend)
+
     def plot_ahc(
         self,
         fname,
