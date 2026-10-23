@@ -55,7 +55,7 @@ class DenseOnDemand(Sequence):
     Notes
     -----
     The per-k kernels shared with the dense pipeline (``perturb_split``,
-    ``momentum_k``, ``band_curvature_k_ij``, ...) accept dense and sparse
+    ``momentum_k``, ``band_curvature_k``, ...) accept dense and sparse
     operators alike, and only the dense ones reach a threaded BLAS.  On a
     near-dense PAO ``dH/dk`` that is the difference between minutes and
     hours per k-point (see :func:`PAOFLOW.sparse.mesh._times_block`).

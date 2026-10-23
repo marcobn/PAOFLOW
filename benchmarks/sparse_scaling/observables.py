@@ -14,6 +14,8 @@ name                source                                     normalization
 ``cond_xx/xy``      ``cond_xx_0.dat``, ``cond_xy_0.dat``       / N (k-averaged, not per volume)
 ``doping_mu``       ``doping_*.dat``                           none (mu against T)
 ``epsi_xx`` etc.    ``epsi_xx.dat`` ...                        none (per volume)
+``epsr_xx`` etc.    ``epsr/eels/refl/nref/kref/alpha/sigmar/    none (per volume)
+                    sigmai_xx.dat`` ..., only with ``optics``
 ``inv_mass_dos``    ``effective_masses_0.dat``                 / (N nk), see below
 ==================  =========================================  ======================
 
@@ -28,7 +30,8 @@ for every ``d``, whereas the file itself is not comparable line by line.
 scale of ``cond_xx``.  ``epsi_*`` of an energy-window run is cut at the window
 top minus ``EPS_MARGIN``: the sparse Kubo-Greenwood sum runs over the window
 bands only, so transitions into states above it are missing.  For the same
-reason epsilon' is not compared at all.
+reason epsilon' is not compared at all, and the curves derived from it
+(``optics=True``) are only read for plotting; they carry the same cut.
 """
 
 import glob
@@ -42,6 +45,7 @@ MASS_GRID = np.linspace(-2.0, 2.0, 801)
 EPS_MARGIN = 0.5
 TRANSPORT = {'sigma': 'sigma', 'seebeck': 'Seebeck', 'kappa': 'kappa', 'pf': 'PF'}
 TENSOR = ['xx', 'yy', 'zz', 'xy', 'xz', 'yz']
+OPTICS = ['epsr', 'eels', 'refl', 'nref', 'kref', 'alpha', 'sigmar', 'sigmai']
 
 
 def load_record(case_dir):
@@ -85,8 +89,15 @@ def _pdos_by_l(case_dir, rec, N):
     return {key: (E, y) for key, y in curves.items()}
 
 
-def load(case_dir):
+def load(case_dir, pdos=True, optics=False):
     """Every per-cell curve of one finished case.
+
+    Parameters
+    ----------
+    pdos : bool
+        Read the PDOS summed by orbital l (one file per orbital on a doubled cell).
+    optics : bool
+        Also read epsilon' and the optical constants derived from it.
 
     Returns
     -------
@@ -107,8 +118,9 @@ def load(case_dir):
     a = _read(os.path.join(out, 'dosdk_0.dat'))
     if a is not None:
         add('dos', a[:, 0], a[:, 1] / N)
-    for name, (E, y) in _pdos_by_l(case_dir, rec, N).items():
-        add(name, E, y)
+    if pdos:
+        for name, (E, y) in _pdos_by_l(case_dir, rec, N).items():
+            add(name, E, y)
 
     for key, stem in TRANSPORT.items():
         a = _read(os.path.join(out, '%s%s_0.dat' % (stem, smearing)))
@@ -135,10 +147,12 @@ def load(case_dir):
         add('doping_mu', a[:, 0], a[:, 1])
 
     ehi = (rec.get('solver') or {}).get('ehi')
-    for comp in TENSOR[:3]:
-        a = _read(os.path.join(out, 'epsi_%s.dat' % comp))
-        if a is not None:
-            add('epsi_' + comp, a[:, 0], a[:, 1], xmax=None if ehi is None else ehi - EPS_MARGIN)
+    xmax = None if ehi is None else ehi - EPS_MARGIN
+    for stem in ['epsi'] + (OPTICS if optics else []):
+        for comp in TENSOR[:3]:
+            a = _read(os.path.join(out, '%s_%s.dat' % (stem, comp)))
+            if a is not None:
+                add('%s_%s' % (stem, comp), a[:, 0], a[:, 1], xmax=xmax)
 
     path = os.path.join(out, 'effective_masses_0.dat')
     if os.path.exists(path):
