@@ -65,7 +65,7 @@ def _states(H, k):
 
     hk, dhk = H.assemble_derivatives(k, sign=-1)
     E, V = np.linalg.eigh(hk.toarray())
-    return np.c_[E, _band_diagonal_velocities(E, V, [d.toarray() for d in dhk]).T]
+    return np.c_[E, _band_diagonal_velocities(E, V, [d.toarray() for d in dhk])[0].T]
 
 
 @pytest.fixture(scope='module')
@@ -102,3 +102,46 @@ def test_doubled_states_match_folded_primitive_states(cells, K, degenerate):
     if degenerate:
         groups = get_degeneracies(states[None, :, :1], len(states))[0][0]
         assert len(groups) > 0, 'this K must exercise a degenerate group'
+
+
+def _interband_spectrum(H, k):
+    """``sum_{n<m} |p^l_nm|^2 g(w - (E_m - E_n); delta_nm)`` per direction ``l``,
+    from the momenta and pair widths a mesh-pass KPoint hands the dielectric."""
+    from PAOFLOW.sparse.kpoint import KPoint
+    from PAOFLOW.sparse.mesh import _band_diagonal_velocities
+
+    hk, dhk = H.assemble_derivatives(k, sign=-1)
+    dhk = [d.toarray() for d in dhk]
+    E, V = np.linalg.eigh(hk.toarray())
+    vel, resolved = _band_diagonal_velocities(E, V, dhk)
+    for D, R, _ in resolved:
+        V[:, D] = V[:, D] @ R
+    resolved = [(D, parts) for D, _, parts in resolved]
+    kp = KPoint(H, 0, 0, k, E, V, hk, dhk, vel, None, len(E), 0.7, 0.05, resolved=resolved)
+    width = np.maximum(kp.delta2, 0.02)
+    dE = E[None, :] - E[:, None]
+    keep = dE > 1e-3
+    w = np.linspace(0.0, 12.0, 601)[:, None]
+    g = np.exp(-(((w - dE[keep]) / width[keep]) ** 2)) / width[keep]
+    return np.array([g @ (np.abs(kp.pksp[l]) ** 2)[keep] for l in range(3)])
+
+
+@pytest.mark.parametrize(
+    'K',
+    [[0.13, 0.31, 0.27], [0.25, 0.5, 0.125], [0.5, 0.0, 0.0]],
+    ids=['generic', 'degenerate', 'time-reversed copies'],
+)
+def test_doubled_interband_spectrum_matches_folded(cells, K):
+    """The momenta and pair widths feed the dielectric: per direction, the
+    doubled cell's transitions at K must be those of the four folded
+    primitive k-points.  At K = (1/2, 0, 0) the folded k and -k put two
+    copies of a non-commuting pair into one group; sorting each direction
+    across the whole group, as perturb_split does, missed by 7-14% there."""
+    base, doubled = cells
+    K = np.array(K)
+    folded = sum(
+        _interband_spectrum(base, np.array([(K[0] + i) / 2, (K[1] + j) / 2, K[2]]))
+        for i, j in itertools.product((0, 1), repeat=2)
+    )
+    err = np.abs(_interband_spectrum(doubled, K) - folded).max() / np.abs(folded).max()
+    assert err < 1e-4, 'interband spectrum miss %.3e' % err
