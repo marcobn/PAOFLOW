@@ -41,6 +41,7 @@ def do_bands_sparse(
     hk_solver: str = 'auto',
     ehi: float | None = None,
     interior: tuple[float, float] | None = None,
+    ptop: float | None = None,
     dense_ratio: float = DENSE_RATIO,
     dense_n_max: int = DENSE_N_MAX,
 ) -> None:
@@ -70,6 +71,9 @@ def do_bands_sparse(
     interior : (float, float) or None, optional
         Energy window ``(elo, ehi)`` in eV.  Solves *inside* the window
         instead of from the bottom of the spectrum.
+    ptop : float or None, optional
+        Top of the well-projected range (eV).  Solved states above it are
+        the placeholders at the PAO shift and are written as NaN.
     dense_ratio, dense_n_max : optional
         Dispatch limits of the per-k kernel, forwarded to
         :func:`~PAOFLOW.sparse.solver.select_hk_solver`.
@@ -176,6 +180,13 @@ def do_bands_sparse(
         E_k = np.full((nk_local, max(m, 1), nspin), np.nan, dtype=float)
         for (ispin, ik), E in acc.items():
             E_k[ik, : len(E), ispin] = E
+    if ptop is not None:
+        placeholders = E_k >= ptop
+        if comm.allreduce(int(placeholders.sum()), op=MPI.SUM):
+            log.write(
+                '  states at the PAO shift (above %.3f eV) are not bands: written as NaN' % ptop
+            )
+        E_k[placeholders] = np.nan
 
     arrays['E_k'] = E_k
     if interior is None:
@@ -236,6 +247,7 @@ def run_path(
     with_dnm: bool = True,
     hk_solver: str = 'auto',
     verbose: bool = False,
+    ptop: float | None = None,
     dense_ratio: float = DENSE_RATIO,
     dense_n_max: int = DENSE_N_MAX,
 ) -> None:
@@ -258,6 +270,9 @@ def run_path(
         ``SparseHamiltonian.assemble_derivatives``).
     hk_solver : {'auto', 'sparse', 'dense'}, optional
     verbose : bool, optional
+    ptop : float or None, optional
+        Top of the well-projected range (eV): ``KPoint.bnd`` counts only the
+        solved states below it, as in the mesh pass.
     dense_ratio, dense_n_max : optional
         Dispatch limits of the per-k kernel, forwarded to
         :func:`~PAOFLOW.sparse.solver.select_hk_solver`.
@@ -297,6 +312,7 @@ def run_path(
             )
             E, V = solve_lowest(hk, nsolve, v0=v0, hk_solver=solver, **limits)
             v0 = np.ascontiguousarray(V[:, 0])
+            nreal = bnd if ptop is None else min(bnd, int(np.searchsorted(E, ptop)))
             kp = KPoint(
                 sparse_h,
                 ik,
@@ -308,7 +324,7 @@ def run_path(
                 dhk,
                 None,
                 None,
-                bnd,
+                nreal,
                 None,
                 None,
                 sign=+1,

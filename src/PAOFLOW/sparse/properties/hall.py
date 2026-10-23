@@ -84,6 +84,9 @@ class _BerryHall(MeshProperty):
         from ..operators import projection_operator
 
         self.P = None if self.proj is None else projection_operator(self.data_controller, self.proj)
+        attr['eminH'], attr['emaxH'] = self.engine._clamp_to_projectable(
+            self.method, attr['eminH'], attr['emaxH']
+        )
         self.ene = berry_energy_grid(attr)
         self.ene_ac = ac_frequency_grid(attr) if self.do_ac else None
         self._om = {c: {} for c in self.components}

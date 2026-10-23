@@ -23,8 +23,7 @@ if TYPE_CHECKING:
     from ..kpoint import KPoint
 
 _PATH_INTERIOR = (
-    'its interband sums run over states outside the window, and an interior window '
-    'has none of them'
+    'its interband sums run over states outside the window, and an interior window has none of them'
 )
 
 
@@ -301,9 +300,11 @@ class Topology(MeshProperty):
         Om_zk = np.zeros((nk_local, 1)) if self.Berry else None
         Omj_zk = np.zeros((nk_local, 1)) if self.spin_Hall else None
         for (ispin, ik), (velocity, mass, om, omj) in self._acc.items():
-            velk[ik, :, :, ispin] = velocity
+            # a path point with placeholder states below bnd has fewer bands
+            nb = velocity.shape[1]
+            velk[ik, :, :nb, ispin] = velocity
             if mass is not None:
-                mkm1[ik, :, attr['ipol'], attr['jpol'], ispin] = mass
+                mkm1[ik, :nb, attr['ipol'], attr['jpol'], ispin] = mass
             if ispin == 0 and Om_zk is not None:
                 Om_zk[ik] = om
             if ispin == 0 and Omj_zk is not None:
@@ -367,7 +368,10 @@ class SiteProjectedBands(MeshProperty):
     def on_k(self, kp: KPoint) -> None:
         from ...spectrum.do_site_projected_bands import site_weights_k
 
-        self._acc[(kp.ispin, kp.ik)] = (kp.E, site_weights_k(kp.V, self.mask))
+        # the states above the well-projected bands are placeholders at the shift
+        top = self.engine._projectable_top()
+        E = kp.E if top is None else np.where(kp.E < top, kp.E, np.nan)
+        self._acc[(kp.ispin, kp.ik)] = (E, site_weights_k(kp.V, self.mask))
 
     def finalize(self, data_controller: DataController) -> None:
         from ...spectrum.do_site_projected_bands import write_site_projected_bands

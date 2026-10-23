@@ -75,12 +75,16 @@ class Transport(DenseBody):
 
     def prepare(self) -> bool:
         engine = self.engine
-        if engine._interior is None:
-            return True
         kwargs = self.kwargs
         # the occupation derivative needs states within ~10 kT of every mu
-        # on the scan, so the window has to exceed the scan on both sides
-        margin = max(engine._kT_margin, 10.0 * 8.617333e-5 * float(kwargs['tmax']))
+        # on the scan, so the real states have to reach past the scan
+        kT = 10.0 * 8.617333e-5 * float(kwargs['tmax'])
+        kwargs['emin'], kwargs['emax'] = engine._clamp_to_projectable(
+            'transport', kwargs['emin'], kwargs['emax'], margin=kT
+        )
+        if engine._interior is None:
+            return True
+        margin = max(engine._kT_margin, kT)
         clamped = engine._clamp_to_window(
             'transport', kwargs['emin'], kwargs['emax'], margin=margin
         )

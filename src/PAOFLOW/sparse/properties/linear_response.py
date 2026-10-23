@@ -88,8 +88,8 @@ class LinearResponse(MeshProperty):
         attr['response'] = response
         attr['gamma'] = gamma
         attr['twoD'] = twoD
-        attr['eminH'] = eminH
-        attr['emaxH'] = np.amin(np.array([attr['shift'], emaxH]))
+        # the dense method clips emaxH at the shift; here with a warning
+        attr['eminH'], attr['emaxH'] = engine._clamp_to_projectable('linear_response', eminH, emaxH)
         attr['esize'] = esize
         attr['intraband'] = intraband
         attr['interband'] = interband

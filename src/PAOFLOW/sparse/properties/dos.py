@@ -60,6 +60,7 @@ class Dos(MeshProperty):
             if clamped is None:
                 return False
             self.emin, self.emax = clamped
+        self.emin, self.emax = engine._clamp_to_projectable('dos', self.emin, self.emax)
         if self.do_pdos:
             from .pdos import PdosAccumulator
 

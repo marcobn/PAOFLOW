@@ -53,6 +53,10 @@ class _Texture(MeshProperty):
             if self.engine.rank == 0:
                 print('Cannot compute %s texture with nspin=2' % self.kind)
             return False
+        _, self.fermi_up = self.engine._clamp_to_projectable(
+            self.method, attr['fermi_dw'], self.fermi_up
+        )
+        attr['fermi_up'] = self.fermi_up
         host = self.engine.host
         self.operator = self.engine.require_operator(
             self.key, getattr(host, self.builder), self.method
@@ -73,7 +77,9 @@ class _Texture(MeshProperty):
         nk_local, nbands, _ = arrays['E_k'].shape
         txtaux = np.zeros((nk_local, 3, nbands), dtype=complex)
         for ik in range(nk_local):
-            txtaux[ik] = self._values.pop(ik)
+            # states above the well-projected bands are padding in E_k
+            value = self._values.pop(ik)
+            txtaux[ik, :, : value.shape[1]] = value
         E_k_full = gather_full(arrays['E_k'], attr['npool'])
         ind_plot = fermi_window_bands(data_controller, E_k_full)
         txtaux = np.take(txtaux, ind_plot, axis=2)

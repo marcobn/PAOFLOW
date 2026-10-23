@@ -1,6 +1,6 @@
 # Sparse-scaling benchmark
 
-This benchmark grows bulk Si by cell doubling, up to `d = 9` (`nawf = 9216`), and runs every
+This benchmark grows bulk Si by cell doubling, up to `d = 8` (`nawf = 4608`), and runs every
 property that makes sense for Si through each sparse PAOFLOW pipeline. Every run records time,
 memory and sparsity, and two notebooks plot how they scale and whether the results per primitive
 cell stay the same. It tells us:
@@ -62,7 +62,7 @@ and cannot be compared per cell.
 |---|---|---|
 | `reference` | dense, primitive cell, no doubling, every property below | d = 0 only |
 | `sparse` | sparse, from the bottom of the spectrum (`energy_window`), with `dense_n_max` lifted: `doping`, `conductivity`, `dielectric_tensor`, `transport`, `dos` | per-k LAPACK scratch, O(nawf²) per k, or time |
-| `sparse_curvature` | the same window, but the full spectrum at every k-point for the band curvature: `transport(do_hall=True)`, `effective_mass` | a full (nawf, nawf) eigh and a few nawf³ products per k; on 4 × 4 threads d = 8 needs roughly 30 h and d = 9 several days (estimates from one d = 7 k-point) |
+| `sparse_curvature` | the same window, but the full spectrum at every k-point for the band curvature: `transport(do_hall=True)`, `effective_mass` | a full (nawf, nawf) eigh and a few nawf³ products per k; on 4 × 4 threads d = 8 needed roughly 30 h before `band_curvature_k` made the curvature 5–8× cheaper (estimate from one d = 7 k-point) |
 | `sparse_interior` | sparse, `interior_window` around E_F, `bond_order=36`; `doping` and `dielectric_tensor` are skipped (they need the states below the window) | ARPACK shift-invert cost and fill-in |
 | `sparse_interior_bo8` | the same with `bond_order=8` | the truly sparse regime (see below) |
 | `solver_sweep` | LAPACK against ARPACK on single H(k), for nev/n from 1% to 50%, timed on rank 0 with the threads of one rank (the other ranks wait) | calibrates `dense_ratio` and the per-k memory |
@@ -128,7 +128,7 @@ algorithm.
 
 Each case directory holds `record.json`, the PAOFLOW `output/` (every property's files, and
 `sparse.log` for sparse runs), and `error_rank<r>.json` if a rank raised an exception. A doubled
-cell writes one PDOS file per orbital, `orb_<m>_pdosdk_0.dat` (9216 at d = 9), and
+cell writes one PDOS file per orbital, `orb_<m>_pdosdk_0.dat` (4608 at d = 8), and
 `observables.py` caches their sum by orbital type in `pdos_by_l.npz`.
 
 ## Known issue: velocities on doubled cells (dense only)
