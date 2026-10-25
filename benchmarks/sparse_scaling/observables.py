@@ -11,12 +11,19 @@ name                source                                     normalization
 ``pdos_s/p/d``      ``*_pdosdk_0.dat``, summed by orbital l    / N
 ``sigma_xx`` etc.   ``sigma/Seebeck/kappa/PF<smearing>_0.dat``  none (per volume)
 ``hall_trace``      ``hall_trace_<smearing>_0.dat``            none (per volume)
+``hall_xyz`` etc.   ``hall_<smearing>_0.dat``                  none (per volume)
+``hall_zero``       ``hall_<smearing>_0.dat``                  none (per volume)
+``nernst_xyz/yxz``  ``nernst_<smearing>_0.dat``                none (per volume)
+``nernst_zero``     ``nernst_<smearing>_0.dat``                none (per volume)
 ``cond_xx/xy``      ``cond_xx_0.dat``, ``cond_xy_0.dat``       / N (k-averaged, not per volume)
+``lr_cond_xx/xy``   ``Cond_xx.dat``, ``Cond_xy.dat``           none (per volume)
+``ahc_xy``          ``AHC_xy.dat``                             none (per volume)
 ``doping_mu``       ``doping_*.dat``                           none (mu against T)
 ``epsi_xx`` etc.    ``epsi_xx.dat`` ...                        none (per volume)
 ``epsr_xx`` etc.    ``epsr/eels/refl/nref/kref/alpha/sigmar/    none (per volume)
                     sigmai_xx.dat`` ..., only with ``optics``
 ``inv_mass_dos``    ``effective_masses_0.dat``                 / (N nk), see below
+``inv_mass_trace``  ``effective_masses_0.dat``                 / (N nk), see below
 ==================  =========================================  ======================
 
 ``inv_mass_dos`` turns the per-state effective masses into a curve:
@@ -25,6 +32,21 @@ name                source                                     normalization
 k-points per primitive cell.  The states of a doubled cell on its mesh are
 exactly those of the primitive cell on its own mesh, so this curve is the same
 for every ``d``, whereas the file itself is not comparable line by line.
+``inv_mass_trace`` weights each state by the mean of its three inverse
+principal masses instead, :math:`\\tfrac13 \\mathrm{tr}\\, m^{-1}_{nk} =
+\\tfrac13 \\nabla^2 E_{nk} / \\hbar^2`.  The file lists the principal masses
+in no fixed order, so only symmetric functions of them compare across runs;
+this one stays finite where a principal curvature passes through zero, which
+makes ``1/m_dos`` jump.
+
+Components that cubic symmetry zeroes are measured on the scale of their
+symmetry-allowed partner: the off-diagonal transport components
+(``sigma_xy`` etc.) on ``*_xx``, ``cond_xy`` on ``cond_xx``, ``lr_cond_xy``
+and ``ahc_xy`` on ``lr_cond_xx`` (the anomalous Hall conductivity vanishes
+for any crystal with time-reversal symmetry).  ``hall_zero`` and
+``nernst_zero`` are the RMS over the components with a repeated index (6 of
+the 9 written Hall components, 21 of the 27 Nernst ones), on the scale of
+``hall_xyz`` and ``nernst_xyz``.
 
 ``cond_xy`` vanishes by cubic symmetry, so its deviation is measured on the
 scale of ``cond_xx``.  ``epsi_*`` of an energy-window run is cut at the window
@@ -45,6 +67,13 @@ MASS_GRID = np.linspace(-2.0, 2.0, 801)
 EPS_MARGIN = 0.5
 TRANSPORT = {'sigma': 'sigma', 'seebeck': 'Seebeck', 'kappa': 'kappa', 'pf': 'PF'}
 TENSOR = ['xx', 'yy', 'zz', 'xy', 'xz', 'yz']
+# the columns of hall_<smearing>_0.dat after T and mu: R_ijk antisymmetrized
+# in ij; the first three have three different indices, the others vanish in
+# a cubic crystal
+HALL = ['xyz', 'xzy', 'yzx', 'xyx', 'xyy', 'xzx', 'xzz', 'yzy', 'yzz']
+# the first six columns of nernst_<smearing>_0.dat; the other 21 vanish in a
+# cubic crystal
+NERNST = ['xyz', 'yxz', 'xzy', 'zxy', 'yzx', 'zyx']
 OPTICS = ['epsr', 'eels', 'refl', 'nref', 'kref', 'alpha', 'sigmar', 'sigmai']
 
 
@@ -126,12 +155,27 @@ def load(case_dir, pdos=True, optics=False):
         a = _read(os.path.join(out, '%s%s_0.dat' % (stem, smearing)))
         if a is not None:
             a = a[a[:, 0] == a[0, 0]]  # first temperature
-            for j, comp in enumerate(TENSOR[:3]):
-                add('%s_%s' % (key, comp), a[:, 1], a[:, 2 + j])
+            xx = float(np.abs(a[:, 2]).max())
+            for j, comp in enumerate(TENSOR):
+                add('%s_%s' % (key, comp), a[:, 1], a[:, 2 + j], scale=xx if j > 2 else None)
     a = _read(os.path.join(out, 'hall_trace_%s_0.dat' % smearing))
     if a is not None:
         a = a[a[:, 0] == a[0, 0]]
         add('hall_trace', a[:, 1], a[:, 2])
+    a = _read(os.path.join(out, 'hall_%s_0.dat' % smearing))
+    if a is not None:
+        a = a[a[:, 0] == a[0, 0]]
+        for j, comp in enumerate(HALL[:3]):
+            add('hall_' + comp, a[:, 1], a[:, 2 + j])
+        zero = np.sqrt(np.mean(a[:, 5:] ** 2, axis=1))
+        add('hall_zero', a[:, 1], zero, scale=float(np.abs(a[:, 2]).max()))
+    a = _read(os.path.join(out, 'nernst_%s_0.dat' % smearing))
+    if a is not None:
+        a = a[a[:, 0] == a[0, 0]]
+        for j, comp in enumerate(NERNST[:2]):
+            add('nernst_' + comp, a[:, 1], a[:, 2 + j])
+        zero = np.sqrt(np.mean(a[:, 8:] ** 2, axis=1))
+        add('nernst_zero', a[:, 1], zero, scale=float(np.abs(a[:, 2]).max()))
 
     # do_conductivity divides by the number of k-points but not by the cell
     # volume, so the file is per supercell
@@ -141,6 +185,17 @@ def load(case_dir, pdos=True, optics=False):
         xy = _read(os.path.join(out, 'cond_xy_0.dat'))
         if xy is not None:
             add('cond_xy', xy[:, 0], xy[:, 1] / N, scale=float(np.abs(xx[:, 1]).max()) / N)
+
+    # linear_response divides by the k-points and the supercell volume, so
+    # these files are per volume already
+    xx = _read(os.path.join(out, 'Cond_xx.dat'))
+    if xx is not None:
+        scale = float(np.abs(xx[:, 1]).max())
+        add('lr_cond_xx', xx[:, 0], xx[:, 1])
+        for name, stem in (('lr_cond_xy', 'Cond_xy'), ('ahc_xy', 'AHC_xy')):
+            a = _read(os.path.join(out, stem + '.dat'))
+            if a is not None:
+                add(name, a[:, 0], a[:, 1], scale=scale)
 
     for path in sorted(glob.glob(os.path.join(out, 'doping_*.dat'))):
         a = _read(path)
@@ -157,8 +212,11 @@ def load(case_dir, pdos=True, optics=False):
     path = os.path.join(out, 'effective_masses_0.dat')
     if os.path.exists(path):
         a = np.loadtxt(path, skiprows=2, ndmin=2)
+        norm = int(rec['mesh']['nkpnts']) * N
         inv = np.nan_to_num(1.0 / a[:, 7], nan=0.0, posinf=0.0, neginf=0.0)
-        add('inv_mass_dos', MASS_GRID, _smeared(a[:, 3], inv) / (int(rec['mesh']['nkpnts']) * N))
+        add('inv_mass_dos', MASS_GRID, _smeared(a[:, 3], inv) / norm)
+        inv = np.nan_to_num(1.0 / a[:, 4:7], nan=0.0, posinf=0.0, neginf=0.0).mean(axis=1)
+        add('inv_mass_trace', MASS_GRID, _smeared(a[:, 3], inv) / norm)
     return curves
 
 

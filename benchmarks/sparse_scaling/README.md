@@ -44,17 +44,24 @@ The properties live in `CONFIG['properties']` with their arguments, in the order
 | property | curves | per-cell normalization |
 |---|---|---|
 | `dos` (with PDOS) | `dos`, `pdos_s`, `pdos_p`, `pdos_d` | / N |
-| `transport` | `sigma_*`, `seebeck_*`, `kappa_*`, `pf_*` (xx, yy, zz); `hall_trace` with `do_hall` | none |
+| `transport` | `sigma_*`, `seebeck_*`, `kappa_*`, `pf_*` (xx, yy, zz, and xy, xz, yz, which cubic symmetry zeroes, on the xx scale) | none |
+| `transport(do_hall=True)` | `hall_trace`; `hall_xyz`, `hall_xzy`, `hall_yzx`; `nernst_xyz`, `nernst_yxz`; `hall_zero`, `nernst_zero` (RMS of the components cubic symmetry zeroes) | none |
 | `conductivity` | `cond_xx`, `cond_xy` (zero by symmetry, measured on the `cond_xx` scale) | / N |
 | `doping` | `doping_mu`, μ against T at a p-type 10¹⁸ cm⁻³ | none |
 | `dielectric_tensor` | `epsi_xx/yy/zz` (ε″ only, cut 0.5 eV below the window top) | none |
 | `dielectric_tensor`, plots only | `epsr`, `eels`, `refl`, `nref`, `kref`, `alpha`, `sigmar`, `sigmai` (`optics=True`) | none |
-| `effective_mass` | `inv_mass_dos`: Σ g(E − E_nk) / m_dos,nk over all states, per k-point | / (N nk) |
+| `linear_response` (`'cond'`, `'ahc'`) | `lr_cond_xx`, `lr_cond_xy`, `ahc_xy` (both zero, on the `lr_cond_xx` scale) | none |
+| `effective_mass` | `inv_mass_dos`: Σ g(E − E_nk) / m_dos,nk over all states, per k-point; `inv_mass_trace`: the same with tr m⁻¹_nk / 3 | / (N nk) |
 
-Left out on purpose: the Hall family (anomalous, spin and orbital Hall), `linear_response`,
-`spin_texture` and `rashba_edelstein` require spin-orbit coupling, which example01 does not have.
-`bands`, `fermi_surface`, `ipr` and the other per-k or per-path outputs are folded by the doubling
-and cannot be compared per cell.
+A key `'<method>:<tag>'` in `CONFIG['properties']` calls `<method>`, so `linear_response` runs
+twice, once per response.
+
+Left out on purpose: `spin_Hall`, `orbital_Hall`, `anomalous_Hall` and `linear_response` with
+`'shc'` or `'ree'` require spin-orbit coupling, which example01 does not have; `spin_texture` and
+`rashba_edelstein` run without it, but are meaningless. The anomalous Hall conductivity is tested
+through `linear_response(response='ahc')`. `bands`, `fermi_surface`, `ipr` and the other per-k or
+per-path outputs are folded by the doubling and cannot be compared per cell. `jdos` reads the DFT
+eigenvalues, not the PAO Hamiltonian. Section 9 of `observables.ipynb` has the full list.
 
 ## Pipelines
 
@@ -62,7 +69,7 @@ and cannot be compared per cell.
 |---|---|---|
 | `reference` | dense, primitive cell, no doubling, every property below | d = 0 only |
 | `sparse` | sparse, from the bottom of the spectrum (`energy_window`), with `dense_n_max` lifted: `doping`, `conductivity`, `dielectric_tensor`, `transport`, `dos` | per-k LAPACK scratch, O(nawf²) per k, or time |
-| `sparse_curvature` | the same window, but the full spectrum at every k-point for the band curvature: `transport(do_hall=True)`, `effective_mass` | a full (nawf, nawf) eigh and a few nawf³ products per k; on 4 × 4 threads d = 8 needed roughly 30 h before `band_curvature_k` made the curvature 5–8× cheaper (estimate from one d = 7 k-point) |
+| `sparse_curvature` | the same window, but the full spectrum at every k-point for the band curvature and the interband sums: `transport(do_hall=True)`, `effective_mass`, `linear_response` (`'cond'`, `'ahc'`) | a full (nawf, nawf) eigh and a few nawf³ products per k; on 4 × 4 threads d = 8 needed roughly 30 h before `band_curvature_k` made the curvature 5–8× cheaper (estimate from one d = 7 k-point) |
 | `sparse_interior` | sparse, `interior_window` around E_F, `bond_order=36`; `doping` and `dielectric_tensor` are skipped (they need the states below the window) | ARPACK shift-invert cost and fill-in |
 | `sparse_interior_bo8` | the same with `bond_order=8` | the truly sparse regime (see below) |
 | `solver_sweep` | LAPACK against ARPACK on single H(k), for nev/n from 1% to 50%, timed on rank 0 with the threads of one rank (the other ranks wait) | calibrates `dense_ratio` and the per-k memory |

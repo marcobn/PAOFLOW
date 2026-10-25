@@ -182,6 +182,12 @@ def _mesh(case, attr):
     return used, used != target
 
 
+def _method(name):
+    """The PAOFLOW method of a property key: ``'linear_response:cond'`` ->
+    ``'linear_response'``."""
+    return name.split(':')[0]
+
+
 def _solver_info(pao, case):
     """The per-k kernel the sparse mesh pass dispatched to."""
     from PAOFLOW.sparse.solver import INTERIOR_DENSE_N, select_hk_solver
@@ -260,7 +266,7 @@ def _run_pipeline(case, outdir, rec):
         with rec.stage('mesh_and_properties', arrays):
             with pao.sparse.fused():
                 for name, kwargs in properties:
-                    getattr(pao, name)(**kwargs)
+                    getattr(pao, _method(name))(**kwargs)
         if pao.sparse._interior is not None:
             rec.set('solver', bands_max=int(attr['bnd']))
         rec.set('solver', skipped=[list(s) for s in pao.sparse._skipped])
@@ -280,7 +286,7 @@ def _run_pipeline(case, outdir, rec):
             pao.adaptive_smearing()
         for name, kwargs in properties:
             with rec.stage(name, arrays):
-                getattr(pao, name)(**kwargs)
+                getattr(pao, _method(name))(**kwargs)
 
     with rec.stage('finish', arrays):
         pao.finish_execution()
