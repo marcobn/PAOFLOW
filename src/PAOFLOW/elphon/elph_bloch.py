@@ -32,8 +32,17 @@ RY_TO_EV = 13.605693122994
 AMU_RY = 911.4442421
 
 
-def read_nscf(save_dir):
+def read_nscf(save_dir, unfold=False):
     """Read k-points, eigenvalues, Fermi level and lattice from ``data-file-schema.xml``.
+
+    Parameters
+    ----------
+    save_dir : str
+        QE save directory.
+    unfold : bool, optional
+        The nscf holds the irreducible wedge of a Gamma-centred automatic grid: return the
+        k-points and eigenvalues of the full grid in ``K_POINTS automatic`` order
+        (:class:`PAOFLOW.elphon.wavefunction_symmetry.WavefunctionProvider`).
 
     Returns
     -------
@@ -96,6 +105,15 @@ def read_nscf(save_dir):
     # crystal coords: k_cart = sum_i k_cryst_i bg_i  ->  k_cryst = (bg^T)^{-1} k_cart
     kpts_cryst = np.linalg.solve(bg.T, kpts_cart.T).T
     kpts_cryst = kpts_cryst - np.round(kpts_cryst - 0.5 + 1e-9)  # fold into [0,1)
+
+    if unfold:
+        from .wavefunction_symmetry import provider_for
+
+        provider = provider_for(save_dir)
+        kpts_cryst = provider.kpts_cryst
+        kpts_cart = provider.kpts_cart()
+        eigs_ry = provider.expand(eigs_ry, axis=0)
+        nk = provider.nk
 
     return {
         'kpts_cart': kpts_cart,
@@ -272,13 +290,34 @@ def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
     ``V_{k+q}^\\dagger g V_k`` (PAO eigenvectors of ``H = A E A^\\dagger``) maps
     back to ``d``.
     """
-    nk, nbnd, _, ncart = d.shape
-    nawf = A.shape[1]
     # Batched PAO rotation g^{PAO}(k) = A_{k+q}^T d(k) A_k^* over all k at once
     # (BLAS-backed einsum) instead of a Python loop over k-points.
     Ak = np.transpose(A, (2, 0, 1))  # (nk, nbnd, nawf)
     Akq = np.transpose(A[:, :, ikq], (2, 0, 1))  # (nk, nbnd, nawf)
     gk_b = np.einsum('kmi,kmnc,knj->kijc', Akq, d, Ak.conj(), optimize=True)  # (nk,nawf,nawf,ncart)
+    return pao_vertex_to_cells(gk_b, kgrid_idx, ng)
+
+
+def pao_vertex_to_cells(
+    gk_b: NDArray[np.complex128], kgrid_idx: NDArray[np.integer], ng: tuple[int, int, int]
+) -> NDArray[np.complex128]:
+    """Place a PAO-gauge vertex ``g(k)`` on the coarse k-grid and transform it to ``g(R_e)``.
+
+    Parameters
+    ----------
+    gk_b : ndarray ``(nk, nawf, nawf, ncart)``
+        ``g^{PAO}_{ij,c}(k)`` of every coarse k-point.
+    kgrid_idx : ndarray ``(nk, 3)`` int
+        Integer grid labels of the k-points (see :func:`vertex_pao_R`).
+    ng : tuple(int, int, int)
+        Coarse k-grid dimensions.
+
+    Returns
+    -------
+    ndarray ``(nawf, nawf, ncart, n1, n2, n3)`` complex
+        ``g(R_e) = N^-1 sum_k exp(-2 pi i k.R) g(k)`` (the tail of :func:`vertex_pao_R`).
+    """
+    nk, nawf, _, ncart = gk_b.shape
     gk = np.zeros((nawf, nawf, ncart, ng[0], ng[1], ng[2]), dtype=complex)
     i1, i2, i3 = kgrid_idx[:, 0], kgrid_idx[:, 1], kgrid_idx[:, 2]
     # each k maps to a unique coarse-grid cell, so this scatter is unambiguous

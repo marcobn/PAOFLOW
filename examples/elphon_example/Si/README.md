@@ -69,6 +69,19 @@ python3 write_ukk.py
 mpirun -np 32 epw.x -nk 32 -in epw.in > epw.out   # one process per pool
 ```
 
+**Without EPW (default since October 2026).** `main.py` has
+`COUPLING_SOURCE = 'dfpt'`: PAOFLOW computes the coarse coupling itself from the
+`ph.x` outputs (`phonon/_ph0/`, `phonon/Si2.dyn*`, or the `pp.py` `save/`) and the
+nscf wavefunctions of `epw/Si2.save`, so `pp.py`, `write_ukk.py` and `epw.x` are not
+needed; only the scf, `ph.x` (with `fildvscf`) and the nscf steps above remain. The
+native vertex reproduces EPW's `.epb` matrix elements to the rounding level (see
+`docs/internals/dfpt-coupling-port.md`); set `COUPLING_SOURCE = 'epw'` to read the
+`.epb` files instead (required for ultrasoft or PAW pseudopotentials).
+With the native source the nscf may also be run on the irreducible wedge,
+`K_POINTS automatic 6 6 6 0 0 0` (16 irreducible k instead of 216): set `UNFOLD_KPOINTS = True` in the driver and
+PAOFLOW rotates the stored Bloch functions to the full grid by symmetry
+(`docs/internals/dfpt-coupling-port.md`, phase 4B); EPW needs the explicit list.
+
 The reference run used QE 7.5 / EPW 6.0 with 32 pools; EPW took 19 s.
 
 ### 2. PAOFLOW basis

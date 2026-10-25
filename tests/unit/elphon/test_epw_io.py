@@ -278,3 +278,30 @@ def test_read_epw_a2f_smearing_columns(tmp_path: Path) -> None:
     integrand = 2.0 * a2f / omega
     assert lam[0] == 0.0
     np.testing.assert_allclose(lam[-1], np.trapezoid(integrand, omega), rtol=1e-12)
+
+
+def test_write_epw_epb_round_trip(tmp_path):
+    """The EPW writer (dev / parity tool) is read back by the reader, pools included."""
+    from PAOFLOW.elphon.qe_elph_io import write_epw_epb, write_epw_ukk
+
+    rng = np.random.default_rng(1)
+    nbnd, nbndep, nk, nat, nq = 6, 4, 7, 2, 3
+    cplx = lambda *s: rng.standard_normal(s) + 1j * rng.standard_normal(s)  # noqa: E731
+    ep = cplx(nbndep, nbndep, nk, 3 * nat, nq)
+    dyn = cplx(6, 6, nq)
+    xq, et = rng.standard_normal((nq, 3)), rng.standard_normal((nk, nbnd))
+    zstar, epsi = rng.standard_normal((nat, 3, 3)), rng.standard_normal((3, 3))
+    write_epw_epb(str(tmp_path), 'x', xq, et, dyn, ep, zstar, epsi, npool=3)
+    write_epw_ukk(str(tmp_path / 'x.ukk'), nk, nbnd, np.arange(2, 6))
+    out = read_epw_epb(str(tmp_path), 'x', nbnd, nk, nat, nbndep)
+    ukk = read_epw_ukk(str(tmp_path / 'x.ukk'), nk)
+    for key, ref in (
+        ('epmatq', ep),
+        ('xq_cart', xq),
+        ('et_ry', et),
+        ('dynq', dyn),
+        ('zstar', zstar),
+        ('epsi', epsi),
+    ):
+        assert np.array_equal(out[key], ref), key
+    assert np.array_equal(ukk['ibndkept'], np.arange(2, 6)) and ukk['lwin'].all()

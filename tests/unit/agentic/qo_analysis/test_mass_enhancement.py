@@ -129,3 +129,38 @@ def test_read_orbit_outlines_and_enhanced_masses(tmp_path):
     assert table.lambda_orbit.to_numpy() == pytest.approx([0.6, 0.6])
     assert table.mstar_enhanced.to_numpy() == pytest.approx([0.8 * 1.6, 1.2 * 1.6])
     assert list(table.carrier) == ['e', 'e'] and table.matched_fraction.min() == pytest.approx(1.0)
+
+
+@pytest.mark.unit
+def test_lambda_from_pair_coupling_file_layout():
+    """A coupling dict in the write_fs_coupling layout (no lambda_nk) is accepted."""
+    from PAOFLOW.elphon.anisotropic_eliashberg import coupling_strength
+
+    rng = np.random.default_rng(0)
+    n, nfreq = 6, 20
+    freq = np.linspace(0.001, 0.02, nfreq)
+    lam_pair = rng.uniform(0.1, 1.0, (n, n, nfreq))
+    lam_pair = 0.5 * (lam_pair + lam_pair.transpose(1, 0, 2))
+    weight = np.full(n, 1.0 / n)
+    base = {
+        'coupling': lam_pair, 'coulomb': np.zeros((n, n)), 'freq_ev': freq, 'weight': weight,
+        'band': np.zeros(n, int), 'energy_ev': np.zeros(n), 'nk_dense': 4, 'at': np.eye(3), 'fsthick_ev': 0.2,
+        'k_cryst': np.array([[i / 4, 0.0, 0.0] for i in range(4)] + [[0.0, 1 / 4, 0.0], [0.0, 2 / 4, 0.0]]),
+    }  # fmt: skip
+    expected = coupling_strength(base)['lambda_nk']
+    fsl = FermiSurfaceLambda(base, sym_rots=np.eye(3)[None])
+    got = fsl.lookup(base['k_cryst'], band=0)
+    assert np.allclose(got, expected)
+
+
+@pytest.mark.unit
+def test_missing_orbit_outlines_raise(tmp_path):
+    (tmp_path / 'qo_EF_0_freqvsangle_1.out').write_text(
+        'Azimuthal(deg),Polar(deg),Freq(kT),mstar(me),Curv(kTA2),Type(+e-h),NumOrbCopy\n0,0,1.0,0.5,-1.0,1,10\n'
+    )
+    nk, alat = 4, 2.0 * np.pi / BOHR
+    g = np.arange(nk) / nk
+    kx, ky, kz = np.meshgrid(g, g, g, indexing='ij')
+    states = [([x, y, z], 0, 0.6, 0.0) for x, y, z in zip(kx.ravel(), ky.ravel(), kz.ravel())]
+    with pytest.raises(FileNotFoundError, match='write_auxiliary_files'):
+        enhanced_masses(tmp_path, _coupling(nk, np.eye(3), states), alat, sym_rots=np.eye(3)[None])

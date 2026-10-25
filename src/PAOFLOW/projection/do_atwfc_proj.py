@@ -743,6 +743,14 @@ def read_QE_wfc(data_controller, ik, ispin):
         ``'nbnd'``, ``'ispin'``.
     """
     arry, attr = data_controller.data_dicts()
+    if attr.get('unfold_kpoints', False):
+        # nscf on the irreducible wedge: the block at this full-grid k is rotated from its
+        # irreducible representative (same Loewdin step below as for a stored block).
+        from ..elphon.wavefunction_symmetry import provider_for
+
+        gkspace, wfc = provider_for(attr['fpath'], attr['nspin']).gkspace_wfc(ik, ispin)
+        wfc['wfc'] = loewdin_orthonormalize(wfc['wfc'])
+        return gkspace, wfc
     if attr['nspin'] == 1 or attr['nspin'] == 4:
         wfcfile = f'wfc{ik + 1}'
     elif attr['nspin'] == 2 and ispin == 0:
@@ -812,22 +820,39 @@ def read_QE_wfc(data_controller, ik, ispin):
         except:
             raise Exception('no wfc file found')
 
-    # Symmetric (Loewdin) orthonormalisation of the DFT bands.  The overlap is a
-    # single Hermitian GEMM rather than an nbnd**2 Python loop, and the inverse
-    # square root reuses the eigendecomposition instead of calling sqrtm (~13x
-    # faster overall at nbnd=400). See ortho_atwfc_k for the same identity:
-    # solve(sqrtm(ovp).T, wfc) == (ovp^-1/2).conj() @ wfc for Hermitian ovp.
+    # ``scalef`` is deliberately not applied: Loewdin orthonormalisation makes
+    # ``owfc`` independent of any global scale on the input.
+    owfc = loewdin_orthonormalize(wfc)
+    gkspace = {'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': gamma_only}
+    return gkspace, {'wfc': owfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin}
+
+
+def loewdin_orthonormalize(wfc) -> np.ndarray:
+    """Symmetric (Loewdin) orthonormalisation of the DFT bands, ``(S^-1/2)^* wfc``.
+
+    Parameters
+    ----------
+    wfc : array_like, shape ``(nbnd, npw)``
+        Plane-wave coefficients (rows = bands).
+
+    Returns
+    -------
+    np.ndarray, shape ``(nbnd, npw)``, complex
+        Orthonormal rows spanning the same space.
+
+    Notes
+    -----
+    The overlap is a single Hermitian GEMM rather than an ``nbnd**2`` Python loop, and the
+    inverse square root reuses the eigendecomposition instead of calling ``sqrtm`` (~13x
+    faster overall at ``nbnd = 400``).  See :func:`ortho_atwfc_k` for the same identity:
+    ``solve(sqrtm(ovp).T, wfc) == (ovp^-1/2).conj() @ wfc`` for Hermitian ``ovp``.
+    """
     wfc = np.asarray(wfc)
     ovp = wfc.conj() @ wfc.T
     eigs, eigv = np.linalg.eigh(ovp)
     assert np.all(eigs >= -1e-12)
     inv_sqrt = 1.0 / np.sqrt(np.clip(eigs, 1e-30, None))
-    owfc = ((eigv.conj() * inv_sqrt) @ eigv.T) @ wfc
-
-    # ``scalef`` is deliberately not applied: Loewdin orthonormalisation makes
-    # ``owfc`` independent of any global scale on the input.
-    gkspace = {'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': gamma_only}
-    return gkspace, {'wfc': owfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin}
+    return ((eigv.conj() * inv_sqrt) @ eigv.T) @ wfc
 
 
 def calc_ylmg(k_plus_G, q):

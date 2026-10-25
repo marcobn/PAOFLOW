@@ -67,6 +67,19 @@ python3 write_ukk.py                              # mgb2.ukk for wannierize = .f
 mpirun -np 20 epw.x -nk 20 -in epw.in > epw.out  # EPW: one process per pool (-np = -nk)
 ```
 
+**Without EPW (default since October 2026).** `main.py` has
+`COUPLING_SOURCE = 'dfpt'`: PAOFLOW computes the coarse coupling itself from the
+`ph.x` outputs (`phonon/_ph0/`, `phonon/mgb2.dyn*`, or the `pp.py` `save/`) and the
+nscf wavefunctions of `epw/mgb2.save`, so `pp.py`, `write_ukk.py` and `epw.x` are not
+needed; only the scf, `ph.x` (with `fildvscf`) and the nscf steps above remain. The
+native vertex reproduces EPW's `.epb` matrix elements to the rounding level (see
+`docs/internals/dfpt-coupling-port.md`); set `COUPLING_SOURCE = 'epw'` to read the
+`.epb` files instead (required for ultrasoft or PAW pseudopotentials).
+With the native source the nscf may also be run on the irreducible wedge,
+`K_POINTS automatic 6 6 6 0 0 0` (irreducible k only): set `UNFOLD_KPOINTS = True` in the driver and
+PAOFLOW rotates the stored Bloch functions to the full grid by symmetry
+(`docs/internals/dfpt-coupling-port.md`, phase 4B); EPW needs the explicit list.
+
 - **Outputs PAOFLOW reads:** `epw.x` writes `mgb2.epb1 … mgb2.epbN`, one file per
   pool, which together with `mgb2.ukk` is all PAOFLOW needs. The reference run
   used 20 pools; EPW took 5.6 min of wall time (QE/EPW 7.5, EPW 6.0).

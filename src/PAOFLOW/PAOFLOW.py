@@ -232,6 +232,7 @@ class PAOFLOW:
         restart=False,
         dft='QE',
         header_style='color',
+        unfold_kpoints=False,
     ):
         """
         Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
@@ -248,6 +249,11 @@ class PAOFLOW:
             verbose (bool): False supresses debugging output
             restart (bool): True if the run is being restarted from a .json data dump.
             dft (str): 'QE' or 'VASP'
+            unfold_kpoints (bool): The QE nscf was run with ``K_POINTS automatic`` (Gamma-centred) and
+                holds only the irreducible wedge: expand its k-points, eigenvalues and wavefunctions
+                to the full grid by symmetry, so that projections and the PAO Hamiltonian
+                (``expand_wedge=False``) are those of a full-grid nscf. Needed by the
+                electron-phonon vertex, which requires the projections at every k. QE only
         Returns:
             None
         """
@@ -287,6 +293,7 @@ class PAOFLOW:
             verbose,
             restart,
             dft,
+            unfold_kpoints=unfold_kpoints,
         )
 
         self.report_exception = self.data_controller.report_exception

@@ -274,6 +274,33 @@ def load_epw_coupling(
     }
 
 
+def _dfpt_qgrid(dfpt_dir: str, prefix: str | None, bg: NDArray[np.float64]) -> tuple[int, int, int]:
+    """The q-grid of a ``ph.x`` run: ``dyn0`` when present, else the smallest grid holding every star q."""
+    from ..phonon.qe_force_constants import read_dynamical_matrix_file
+    from .dfpt_io import locate_dfpt_files
+
+    files = locate_dfpt_files(dfpt_dir, prefix)
+    if files.dyn0 is not None:
+        with open(files.dyn0) as fh:
+            head = fh.readline().split()
+        if len(head) >= 3:
+            return (int(head[0]), int(head[1]), int(head[2]))
+    qs = np.array(
+        [
+            np.linalg.solve(bg.T, q)
+            for path in files.dyn
+            for q in read_dynamical_matrix_file(path)['q_cart']
+        ]
+    )
+    grid = []
+    for d in range(3):
+        n = 1
+        while n < 64 and np.abs(qs[:, d] * n - np.rint(qs[:, d] * n)).max() > 1e-5:
+            n += 1
+        grid.append(n)
+    return tuple(grid)
+
+
 def check_long_range_terms(
     zstar: NDArray[np.float64],
     epsi: NDArray[np.float64],
@@ -400,6 +427,10 @@ def eliashberg_from_qe_coupling(
     comm=None,
     orbital_positions=None,
     allow_missing_long_range=False,
+    save_dir=None,
+    pseudo_dir=None,
+    prefix=None,
+    basis='auto',
 ):
     """Isotropic Eliashberg properties from QE's coarse ``el_ph_mat`` (PAO route).
 
@@ -436,13 +467,16 @@ def eliashberg_from_qe_coupling(
         q-points and force constants come from the ``.epb`` files.
     elphmat_fmt : str, optional
         Filename template for the patched dumps (``%d`` is the 1-based q index).
-    source : {'elphmat', 'ahc', 'epw'}, optional
+    source : {'elphmat', 'ahc', 'epw', 'dfpt'}, optional
         Coupling input: the patched ``el_ph_mat`` dump (any pseudo), the
-        unpatched QE AHC ``ahc_gkk`` binaries (norm-conserving only), or EPW's
-        coarse Bloch coupling (``epbwrite``; any pseudo).  Only ``'epw'``
-        evaluates ``psi_{k+q}`` from the same nscf save as ``A``; the ph.x
-        sources recompute it with arbitrary band phases, which breaks the
-        k-interpolation for q != 0.
+        unpatched QE AHC ``ahc_gkk`` binaries (norm-conserving only), EPW's
+        coarse Bloch coupling (``epbwrite``; any pseudo), or the native vertex
+        computed from the ``ph.x`` outputs in ``coupling_dir`` and the nscf
+        wavefunctions of ``save_dir`` (``'dfpt'``, norm-conserving;
+        :class:`~PAOFLOW.elphon.dfpt_vertex.CoarseVertexSetup`).  Only ``'epw'``
+        and ``'dfpt'`` evaluate ``psi_{k+q}`` from the same nscf save as ``A``;
+        the other ph.x sources recompute it with arbitrary band phases, which
+        breaks the k-interpolation for q != 0.
     masses_amu : array_like ``(natom,)``, optional
         Atomic masses (amu); required to mass-weight the phonon eigenvectors.
     nk_dense : int, optional
@@ -476,8 +510,11 @@ def eliashberg_from_qe_coupling(
         Wigner-Seitz images, required for symmetric interpolation in cells with
         several atoms; ``None`` keeps the single-site images.
     allow_missing_long_range : bool, optional
-        For ``source='epw'``, run a polar material without the long-range dipole
-        term instead of raising (:func:`check_long_range_terms`).
+        For ``source='epw'`` and ``'dfpt'``, run a polar material without the
+        long-range dipole term instead of raising (:func:`check_long_range_terms`).
+    save_dir, pseudo_dir, prefix, basis
+        ``source='dfpt'`` options (see
+        :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`).
 
     Returns
     -------
@@ -494,6 +531,28 @@ def eliashberg_from_qe_coupling(
     nbnd, nk = int(A.shape[0]), int(A.shape[2])
     nmodes = int(mass_flat_ry.size)
     epw = None
+    dfpt = None
+    if source == 'dfpt':
+        from .dfpt_vertex import CoarseVertexSetup
+        from .do_pao_eph_dense_q import phonon_interp_from_dyn
+
+        if save_dir is None:
+            raise ValueError("source='dfpt' needs save_dir, the nscf save of the projections")
+        dfpt = CoarseVertexSetup(
+            save_dir,
+            coupling_dir,
+            _dfpt_qgrid(coupling_dir, prefix, bg),
+            prefix=prefix,
+            pseudo_dir=pseudo_dir,
+        )
+        eps, zst = dfpt.long_range_tensors()
+        check_long_range_terms(zst, eps, allow_missing_long_range)
+        dfpt_phonons = phonon_interp_from_dyn(list(dfpt.files.dyn), dfpt.qgrid, bg, at, None)
+        kidx = np.round(np.asarray(kpts_cryst, dtype=float) * np.asarray(ng)).astype(
+            int
+        ) % np.asarray(ng)
+        if q_weights is None:
+            q_weights = np.ones(len(dfpt.members))
     if source == 'epw':
         # EPW already unfolded the irreducible q to the full coarse grid.
         epw = load_epw_coupling(coupling_dir, nbnd, nk, masses_amu.size, bg)
@@ -504,6 +563,10 @@ def eliashberg_from_qe_coupling(
     nq = q_weights.size
     if epw is not None and nq != epw['nq']:
         raise ValueError('q_weights has %d entries, EPW provides %d q-points' % (nq, epw['nq']))
+    if dfpt is not None and nq != len(dfpt.members):
+        raise ValueError(
+            'q_weights has %d entries, the ph.x grid has %d q-points' % (nq, len(dfpt.members))
+        )
 
     # Diagonalise the dense electron spectrum ONCE; every q reuses it (E(k+q) /
     # V(k+q) are index shifts), so the per-q cost is only the vertex interpolation.
@@ -529,7 +592,12 @@ def eliashberg_from_qe_coupling(
     om_qv = np.zeros((nq, nmodes), dtype=float)
     dos_ef = np.zeros(nq, dtype=float)
     for iq in range(qstart, qstop):
-        if source == 'epw':
+        if source == 'dfpt':
+            member = dfpt.members[iq]
+            q_cryst = member.q_cryst
+            gR = dfpt.pao_vertex_at_q(member, A, kidx, tuple(ng), basis)
+            freq_thz, z = dfpt_phonons(q_cryst)
+        elif source == 'epw':
             q_cryst = epw['q_cryst'][iq]
             gR = vertex_from_epw(
                 epw['epmatq'][..., iq], A, kpts_cryst, q_cryst, ng, epw['ibndkept']

@@ -27,8 +27,12 @@ from PAOFLOW.elphon.elph_bloch import RY_TO_EV, atom_masses, read_nscf
 # Configuration                                                           #
 # ----------------------------------------------------------------------- #
 HERE = os.path.dirname(os.path.abspath(__file__))
-EPW_DIR = os.path.join(HERE, 'epw')  # EPW outdir: pb.epb*, pb.ukk, pb.save
-SAVEDIR = os.path.join(EPW_DIR, 'pb.save')  # the nscf save EPW read
+COUPLING_SOURCE = 'dfpt'  # 'dfpt': native vertex from ph.x's dvscf + the nscf save; 'epw': EPW's .epb files
+PHONON_DIR = os.path.join(HERE, 'phonon')  # ph.x run directory (_ph0/, pb.dyn*) or its pp.py save/
+EPW_DIR = os.path.join(HERE, 'epw')  # nscf save (pb.save); with COUPLING_SOURCE='epw' also pb.epb*, pb.ukk
+SAVEDIR = os.path.join(EPW_DIR, 'pb.save')  # the nscf save on the coarse k-grid
+UNFOLD_KPOINTS = False  # True if epw/nscf.in used 'K_POINTS automatic' (irreducible wedge) instead of the explicit list
+COUPLING_DIR = PHONON_DIR if COUPLING_SOURCE == 'dfpt' else EPW_DIR
 BASISDIR = os.path.join(HERE, 'BASIS_PS')  # paoflow-genbasis-ps --pseudo Pb.upf --out BASIS_PS
 OUTPUTDIR = os.path.join(HERE, 'output')
 
@@ -47,22 +51,30 @@ KB_EV = 8.617333262e-5
 def pao_electronic_structure():
     """PAO projections and Hamiltonian on the EPW nscf save."""
     pf = PAOFLOW.PAOFLOW(
-        workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=False, verbose=False
+        workpath=HERE,
+        outputdir=OUTPUTDIR,
+        savedir=SAVEDIR,
+        save_overlaps=False,
+        verbose=False,
+        unfold_kpoints=UNFOLD_KPOINTS,
     )
     pf.projections(basispath=BASISDIR, configuration='standard')
     pf.projectability(pthr=PTHR)
     # The projections A_k = <phi|psi_k> rotate EPW's matrix elements to the PAO
     # gauge; pao_hamiltonian deletes them, so keep a copy first.
     projections = pf.data_controller.full_projections()[:, :, :, 0].copy()
-    # The explicit K_POINTS list already spans the whole Brillouin zone.
+    # The explicit K_POINTS list already spans the whole Brillouin zone (an irreducible-wedge
+    # nscf was unfolded to it by symmetry when UNFOLD_KPOINTS is set).
     pf.pao_hamiltonian(expand_wedge=False)
-    return projections, pf.data_controller.data_arrays['HRs'], read_nscf(SAVEDIR), pf.data_controller
+    nscf = read_nscf(SAVEDIR, unfold=UNFOLD_KPOINTS)
+    return projections, pf.data_controller.data_arrays['HRs'], nscf, pf.data_controller
 
 
 def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, transport=False):
-    """Isotropic Eliashberg properties (and the transport Eliashberg function) from EPW's coupling."""
+    """Isotropic Eliashberg properties (and the transport Eliashberg function) from the coarse coupling."""
     common = dict(
-        source='epw',
+        source=COUPLING_SOURCE,
+        save_dir=SAVEDIR,
         # one mass per atom of the cell, from the per-species MASSES_AMU
         masses_amu=atom_masses(MASSES_AMU, nscf['species'], nscf['atom_names']),
         nk_dense=nk_dense,
@@ -72,13 +84,13 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, t
     )
     lattice = (nscf['kpts_cryst'], nscf['bg'], nscf['at'])
     if coarse_q:
-        # q stays on EPW's coarse grid; q-points and phonons come from the .epb files.
+        # q stays on the coarse grid; q-points and phonons come from the coupling files.
         return eliashberg_from_qe_coupling(
-            projections, HRs, *lattice, EPW_DIR, None, COARSE_GRID, None, **common
+            projections, HRs, *lattice, COUPLING_DIR, None, COARSE_GRID, None, **common
         )
     # Both k and q interpolated; the dense q-grid is folded to its irreducible wedge.
     return eliashberg_dense_q(
-        projections, HRs, *lattice, EPW_DIR, COARSE_GRID, None, None, COARSE_GRID, None,
+        projections, HRs, *lattice, COUPLING_DIR, COARSE_GRID, None, None, COARSE_GRID, None,
         nq_dense=nq_dense, sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'],
         species=nscf['atom_names'],
         # transport: alpha^2F_tr, lambda_tr and the plasma frequency (band group velocities)

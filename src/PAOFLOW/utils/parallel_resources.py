@@ -11,7 +11,8 @@ This module assigns every rank a *core budget* — its share of the node — and
 enforces it at two levels:
 
 1. :func:`configure_joblib_for_mpi` (called when :mod:`PAOFLOW` is imported)
-   exports ``LOKY_MAX_CPU_COUNT``.  loky's ``cpu_count()`` honours it, so
+   exports ``LOKY_MAX_CPU_COUNT``; :func:`configure_native_threads` does the same for
+   the Rust kernels through ``PAOFLOW_RS_THREADS``.  loky's ``cpu_count()`` honours it, so
    ``n_jobs=-1`` resolves to the budget for *any* joblib call, including user
    scripts, and loky caps BLAS/OpenMP threads per worker at
    ``budget // n_jobs``.
@@ -203,6 +204,23 @@ def configure_joblib_for_mpi() -> None:
     share = _mpi_core_share()
     if share is not None:
         os.environ.setdefault(_LOKY_CPU_ENV_VAR, str(share))
+
+
+def configure_native_threads() -> None:
+    """Export ``PAOFLOW_RS_THREADS`` (the Rust kernels' pool size) from the core budget.
+
+    Returns
+    -------
+    None
+        Sets ``os.environ['PAOFLOW_RS_THREADS']`` to :func:`core_budget` when the budget
+        is constrained (an MPI launch with several ranks, or ``LOKY_MAX_CPU_COUNT`` set)
+        and the variable is not already defined, so that every rank's rayon pool stays
+        within its share of the node.  Unconstrained serial runs are left to rayon's
+        default (all cores).
+    """
+    constrained = _mpi_core_share() is not None or _positive_env_int(_LOKY_CPU_ENV_VAR) is not None
+    if constrained:
+        os.environ.setdefault('PAOFLOW_RS_THREADS', str(core_budget()))
 
 
 def resolve_n_jobs(

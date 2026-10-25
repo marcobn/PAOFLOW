@@ -84,6 +84,7 @@ def pao_hamiltonian_from_save(
     outputdir: str = 'output',
     save_overlaps: bool = False,
     verbose: bool = False,
+    unfold_kpoints: bool = False,
 ) -> PAOElectrons:
     """Build the PAO projections and Hamiltonian of a QE save.
 
@@ -112,6 +113,12 @@ def pao_hamiltonian_from_save(
         provides the coupling).
     workpath, outputdir, save_overlaps, verbose : optional
         Passed to :class:`PAOFLOW.PAOFLOW`.
+    unfold_kpoints : bool, optional
+        The save holds the irreducible wedge of a Gamma-centred ``K_POINTS automatic`` nscf:
+        unfold k-points, eigenvalues and wavefunctions to the full grid by symmetry
+        (:class:`PAOFLOW.PAOFLOW` ``unfold_kpoints``), so that the projections cover every k
+        and the Hamiltonian is built with ``expand_wedge=False``.  Required for the save that
+        provides the coupling (``source='dfpt'``) when its nscf was not run on the full grid.
 
     Returns
     -------
@@ -145,6 +152,7 @@ def pao_hamiltonian_from_save(
         savedir=savedir,
         save_overlaps=save_overlaps,
         verbose=verbose,
+        unfold_kpoints=unfold_kpoints,
     )
     if projector == 'internal':
         pf.projections(basispath=basispath, configuration=configuration)
@@ -159,7 +167,7 @@ def pao_hamiltonian_from_save(
         full_grid = int(attributes['nk1']) * int(attributes['nk2']) * int(attributes['nk3'])
         expand_wedge = int(attributes['nkpnts']) != full_grid
     pf.pao_hamiltonian(expand_wedge=expand_wedge)
-    nscf = read_nscf(savedir)
+    nscf = read_nscf(savedir, unfold=unfold_kpoints)
     nscf['orbital_positions'] = pao_orbital_positions(pf.data_controller, nscf['at'])
     return PAOElectrons(
         savedir=savedir,

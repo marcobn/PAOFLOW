@@ -7,25 +7,6 @@
 
 use rayon::prelude::*;
 use std::f64::consts::PI;
-use std::sync::OnceLock;
-
-fn pool() -> Option<&'static rayon::ThreadPool> {
-    static POOL: OnceLock<Option<rayon::ThreadPool>> = OnceLock::new();
-    POOL.get_or_init(|| {
-        std::env::var("PAOFLOW_RS_THREADS")
-            .or_else(|_| std::env::var("PAOFLOW_ACBN0_THREADS"))
-            .ok()
-            .and_then(|s| s.trim().parse::<usize>().ok())
-            .filter(|&n| n > 0)
-            .map(|n| {
-                rayon::ThreadPoolBuilder::new()
-                    .num_threads(n)
-                    .build()
-                    .expect("failed to build PAOFLOW_RS_THREADS rayon pool")
-            })
-    })
-    .as_ref()
-}
 
 /// `ek`/`fn_occ` are `(nk, nbnd)` row-major; `kweights` is `(nk,)`. `smeartype`
 /// is 0 for Gaussian, 1 for Lorentzian. Returns `(jdos[ne], count)` partials.
@@ -87,10 +68,7 @@ pub fn jdos_loop(
         )
     };
 
-    match pool() {
-        Some(pool) => pool.install(reduce),
-        None => reduce(),
-    }
+    crate::pool::install(reduce)
 }
 
 #[cfg(test)]

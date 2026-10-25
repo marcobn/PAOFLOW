@@ -53,11 +53,18 @@ Deferred / to validate
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
 
+from ..phonon.qe_force_constants import (
+    PHONON_WS_SIGN,  # noqa: F401  (re-exported for backward compatibility)
+    phonon_interpolator,
+    read_dynamical_matrix_file,
+    real_space_force_constants,
+)
 from .do_pao_eph import (
     check_long_range_terms,
     load_epw_coupling,
@@ -75,12 +82,6 @@ from .elph_bloch import (
     lambda_q_dense_ws_fast,
     precompute_dense_electrons,
     release_dense_electrons,
-)
-from ..phonon.qe_force_constants import (
-    PHONON_WS_SIGN,  # noqa: F401  (re-exported for backward compatibility)
-    phonon_interpolator,
-    read_dynamical_matrix_file,
-    real_space_force_constants,
 )
 from .eph_kq import eliashberg_from_modes
 from .fermi_surface_coupling import FermiSurfacePairCoupling
@@ -573,6 +574,15 @@ def eliashberg_dense_q(
     alat=None,
     cell_volume=None,
     spin_degeneracy=2.0,
+    save_dir=None,
+    pseudo_dir=None,
+    prefix=None,
+    basis='auto',
+    unfold='full',
+    basis_shells=None,
+    unfold_tol=1e-6,
+    cache_dir=None,
+    cache_tag=None,
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
 
@@ -595,11 +605,12 @@ def eliashberg_dense_q(
         ``q_cryst -> (freq_thz, z)``; see :func:`_phonon_modes_at_q`.  For
         ``source='epw'``, ``None`` builds it from EPW's force constants
         (:func:`phonon_interp_from_epw`).
-    source : {'elphmat', 'ahc', 'epw'}, optional
+    source : {'elphmat', 'ahc', 'epw', 'dfpt'}, optional
         Coarse coupling input (see
         :func:`~PAOFLOW.elphon.do_pao_eph.eliashberg_from_qe_coupling`).  Only
-        ``'epw'`` gives vertices whose band phases match ``A`` for every q,
-        which the ``q -> R_p`` interpolation requires.
+        ``'epw'`` and ``'dfpt'`` give vertices whose band phases match ``A`` for
+        every q, which the ``q -> R_p`` interpolation requires; ``'dfpt'`` needs
+        ``save_dir`` (and ``coupling_dir`` = the ``ph.x`` outputs).
     nq_dense : int, optional
         Dense q-grid size (defaults to ``nk_dense`` so k+q stays commensurate).
     min_freq_thz : float, optional
@@ -666,10 +677,12 @@ def eliashberg_dense_q(
         2 without spin-orbit coupling, 1 with it.  The band velocities are the
         group velocities of the PAO Hamiltonian (no non-local correction, which
         belongs to interband dipoles only).
+    save_dir, pseudo_dir, prefix, basis, unfold, basis_shells, unfold_tol, cache_dir, cache_tag
+        ``source='dfpt'`` and cache options of :func:`prepare_dense_vertex`.
 
     Notes
     -----
-    Deferred: symmetry unfolding, q-phase validation and the polar Frohlich term.
+    Deferred: q-phase validation and the polar Frohlich term.
     """
     if masses_amu is None:
         raise ValueError('masses_amu is required to mass-weight the phonon eigenvectors')
@@ -691,6 +704,8 @@ def eliashberg_dense_q(
         source=source, masses_amu=masses_amu, tau_cryst=tau_cryst,
         orbital_positions=orbital_positions, comm=comm,
         allow_missing_long_range=allow_missing_long_range,
+        save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
+        basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
     )  # fmt: skip
     g_ReRp, win, phonon_at_q = vertex['g_ReRp'], vertex['window'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']
@@ -845,6 +860,16 @@ def prepare_dense_vertex(
     orbital_positions: NDArray[np.float64] | None = None,
     comm=None,
     allow_missing_long_range: bool = False,
+    save_dir: str | None = None,
+    pseudo_dir: str | None = None,
+    prefix: str | None = None,
+    basis: str = 'auto',
+    unfold: str = 'full',
+    basis_shells=None,
+    unfold_tol: float = 1e-6,
+    cache_dir: str | None = None,
+    cache_tag: str | None = None,
+    bands=None,
 ) -> dict:
     """Coarse couplings -> shared ``g(R_e, R_p)`` and the phonon interpolator.
 
@@ -864,17 +889,23 @@ def prepare_dense_vertex(
     bg, at : ndarray, shape ``(3, 3)``
         Reciprocal (rows, 2 pi/alat) and direct (rows, alat) lattice vectors.
     coupling_dir : str
-        EPW (``source='epw'``) or QE coupling directory.
+        EPW directory (``source='epw'``), ``ph.x`` outputs (``source='dfpt'``: the
+        ``pp.py`` ``save/`` directory or the run directory holding ``_ph0/``) or QE
+        coupling directory.
     qgrid_coarse : sequence of int
         Coarse q-grid.
     q_cryst_coarse : ndarray, shape ``(nq_coarse, 3)`` or None
-        Full coarse q-grid; ``None`` takes EPW's q-points.
+        Full coarse q-grid; ``None`` takes EPW's q-points, or the star-unfolded grid of
+        the ``ph.x`` run.
     ng : sequence of int
         Coarse k-grid (real-space electron cells of the vertex).
     phonon_at_q : callable or None
-        ``q_cryst -> (freq_thz, z)``; ``None`` builds it from EPW's force constants.
-    source : {'epw', 'ahc', 'elphmat'}, optional
-        Coarse coupling input (see :func:`eliashberg_dense_q`).
+        ``q_cryst -> (freq_thz, z)``; ``None`` builds it from EPW's force constants or
+        from the ``ph.x`` dyn files.
+    source : {'epw', 'dfpt', 'ahc', 'elphmat'}, optional
+        Coarse coupling input (see :func:`eliashberg_dense_q`).  ``'dfpt'`` computes the
+        vertex natively from ``dvscf`` and the nscf wavefunctions
+        (:class:`~PAOFLOW.elphon.dfpt_vertex.CoarseVertexSetup`), without EPW.
     masses_amu : ndarray, shape ``(nat,)``
         Atomic masses (amu), one per atom.
     tau_cryst : ndarray, shape ``(nat, 3)``, optional
@@ -885,6 +916,36 @@ def prepare_dense_vertex(
         ``MPI.COMM_WORLD`` by default.
     allow_missing_long_range : bool, optional
         Run a polar material without the long-range dipole term instead of raising.
+    save_dir : str, optional
+        ``source='dfpt'``: the nscf save directory of the projections ``A`` (wavefunctions).
+    pseudo_dir : str, optional
+        ``source='dfpt'``: directory of the UPF files (default: ``save_dir``).
+    prefix : str, optional
+        ``source='dfpt'``: QE prefix (inferred from the ``dvscf`` file names by default).
+    basis : {'auto', 'pao', 'band'}, optional
+        ``source='dfpt'``: apply the perturbation to the projected PAO functions or to the
+        bands (:meth:`~PAOFLOW.elphon.dfpt_vertex.CoarseVertexSetup.pao_vertex_at_q`).
+    unfold : {'full', 'irreducible'}, optional
+        ``source='dfpt'``: compute the vertex at every coarse q (``'full'``), or only at the
+        irreducible q of ``ph.x`` and rotate it to the stars in the PAO basis
+        (:func:`~PAOFLOW.elphon.dfpt_vertex.unfolded_pao_vertices`, ``|star|`` times cheaper;
+        exact when the nscf band set does not cut a degenerate multiplet, which a self-check
+        verifies on one member).
+    basis_shells : DataController or tuple, optional
+        ``unfold='irreducible'``: the PAO basis (``data_controller`` after ``projections``, or
+        ``(shells_per_atom, atom_labels)`` of :func:`~PAOFLOW.elphon.dfpt_vertex.orbital_shells`).
+    unfold_tol : float, optional
+        Tolerance of the unfolding self-check.
+    cache_dir : str, optional
+        Directory of the ``g(R_e, R_p)`` disk cache (:mod:`PAOFLOW.elphon.coupling_cache`);
+        the array is read from there when an entry with the same key exists, and written
+        after the build otherwise.
+    cache_tag : str, optional
+        Identity of the PAO basis for the cache key (:func:`~PAOFLOW.elphon.coupling_cache.basis_tag`).
+    bands : sequence of int, optional
+        ``source='dfpt'``: restrict the band projector of the vertex to these nscf bands
+        (EPW's ``exclude_bands``; default all bands, the consistent choice for the PAO
+        Hamiltonian).
 
     Returns
     -------
@@ -911,7 +972,31 @@ def prepare_dense_vertex(
     node_rank = node_comm.Get_rank()
 
     epw = None
+    dfpt = None
     small = {'epsi': None, 'zstar': None}
+    if source == 'dfpt':
+        from .dfpt_vertex import CoarseVertexSetup
+
+        if save_dir is None:
+            raise ValueError("source='dfpt' needs save_dir, the nscf save of the projections")
+        # Every rank reads the small inputs (XML, UPF tables, patterns); the vertex of
+        # each coarse q is computed by one node rank and written to its q-cell.
+        dfpt = CoarseVertexSetup(
+            save_dir, coupling_dir, qgrid_coarse, prefix=prefix, pseudo_dir=pseudo_dir
+        )
+        small['epsi'], small['zstar'] = dfpt.long_range_tensors()
+        check_long_range_terms(small['zstar'], small['epsi'], allow_missing_long_range)
+        if q_cryst_coarse is None:
+            q_cryst_coarse = dfpt.coarse_q()
+        if phonon_at_q is None:
+            atom_positions = None
+            if orbital_positions is not None:
+                if tau_cryst is None:
+                    raise ValueError('orbital_positions requires tau_cryst (atom-pair phonon WS).')
+                atom_positions = tau_cryst
+            phonon_at_q = phonon_interp_from_dyn(
+                list(dfpt.files.dyn), qgrid_coarse, bg, at, atom_positions
+            )
     if source == 'epw':
         # EPW provides the full coarse q-grid (unfolded from the irreducible ph.x
         # q) and its force constants; both default from the .epb files.  Only
@@ -949,11 +1034,86 @@ def prepare_dense_vertex(
     buf, _ = win.Shared_query(0)
     g_ReRp = np.ndarray(buffer=buf, dtype=np.complex128, shape=shape)
 
+    # --- cache of the finished g(R_e, R_p) (optional) ----------------------- #
+    cache_key = None
+    cached = False
+    if cache_dir is not None:
+        from .coupling_cache import dense_vertex_cache_key, load_dense_vertex
+
+        cache_key = dense_vertex_cache_key(
+            coupling_dir, source, qgrid_coarse, ng, masses_amu, A.shape, cache_tag
+        )
+        if node_rank == 0:
+            cached = load_dense_vertex(cache_dir, cache_key, g_ReRp)
+        cached = node_comm.bcast(cached, root=0)
+        if cached and comm.Get_rank() == 0:
+            print(
+                '  g(R_e, R_p) read from the cache %s (key %s)' % (cache_dir, cache_key), flush=True
+            )
+    node_comm.Barrier()
+
     # --- (a) coarse half-vertices g_q(R_e) -> g(R_e, R_p), on node rank 0 --- #
     # Each g_q(R_e) goes straight to its q-cell of the shared buffer, which is
     # then Fourier transformed q -> R_p in place one orbital row at a time
     # (the arithmetic of build_g_ReRp without its full-size temporaries).
-    if node_rank == 0:
+    if cached:
+        pass
+    elif source == 'dfpt':
+        # The q-cells are disjoint: the node ranks share the coarse q and then the
+        # orbital rows of the q -> R_p transform (identical to the serial loop).
+        nq_coarse = qg[0] * qg[1] * qg[2]
+        labels = np.round(q_cryst_coarse * np.asarray(qg)).astype(int) % np.asarray(qg)
+        if q_cryst_coarse.shape[0] != nq_coarse or len({tuple(lab) for lab in labels}) != nq_coarse:
+            raise ValueError(
+                'the coarse q-points (%d) must tile the full %s grid'
+                % (q_cryst_coarse.shape[0], 'x'.join(map(str, qg)))
+            )
+        member_of = {
+            tuple(np.round(m.q_cryst * np.asarray(qg)).astype(int) % np.asarray(qg)): m
+            for m in dfpt.members
+        }
+        kidx = np.round(np.asarray(kpts_cryst, dtype=float) * np.asarray(ng)).astype(
+            int
+        ) % np.asarray(ng)
+        node_size = node_comm.Get_size()
+        if node_rank == 0:
+            g_ReRp[...] = 0.0
+        node_comm.Barrier()
+        if unfold == 'irreducible':
+            from .dfpt_vertex import (
+                orbital_shells,
+                pao_vertex_rotation_operators,
+                unfolded_pao_vertices,
+            )
+            from .elph_bloch import pao_vertex_to_cells
+
+            if basis_shells is None:
+                raise ValueError(
+                    "unfold='irreducible' needs basis_shells (the data_controller of the projections)"
+                )
+            shells, atom_labels = (
+                basis_shells if isinstance(basis_shells, tuple) else orbital_shells(basis_shells)
+            )
+            ops = pao_vertex_rotation_operators(dfpt, shells, atom_labels, tuple(ng))
+            mine = list(range(node_rank, len(dfpt.q_irr), node_size))
+            for member, gk in unfolded_pao_vertices(
+                dfpt, A, kpts_cryst, tuple(ng), ops, mine, basis, check_member=True, tol=unfold_tol
+            ):
+                lab = np.round(member.q_cryst * np.asarray(qg)).astype(int) % np.asarray(qg)
+                g_ReRp[..., lab[0], lab[1], lab[2]] = pao_vertex_to_cells(gk, kidx, tuple(ng))
+        elif unfold == 'full':
+            for iq in range(node_rank, nq_coarse, node_size):
+                gR = dfpt.pao_vertex_at_q(
+                    member_of[tuple(labels[iq])], A, kidx, tuple(ng), basis, bands
+                )
+                g_ReRp[..., labels[iq, 0], labels[iq, 1], labels[iq, 2]] = gR
+        else:
+            raise ValueError("unfold must be 'full' or 'irreducible', got %r" % (unfold,))
+        dfpt.clear_cache()
+        node_comm.Barrier()
+        for row in range(node_rank, nawf, node_size):
+            g_ReRp[row] = np.fft.fftn(g_ReRp[row], axes=(-3, -2, -1)) / nq_coarse
+    elif node_rank == 0:
         nq_coarse = qg[0] * qg[1] * qg[2]
         labels = np.round(q_cryst_coarse * np.asarray(qg)).astype(int) % np.asarray(qg)
         if q_cryst_coarse.shape[0] != nq_coarse or len({tuple(lab) for lab in labels}) != nq_coarse:
@@ -980,6 +1140,17 @@ def prepare_dense_vertex(
         for row in range(nawf):
             g_ReRp[row] = np.fft.fftn(g_ReRp[row], axes=(-3, -2, -1)) / nq_coarse
     node_comm.Barrier()  # ensure the shared buffer is filled before any rank reads
+    if cache_dir is not None and not cached:
+        from .coupling_cache import store_dense_vertex
+
+        if node_rank == 0 and comm.Get_rank() == 0:
+            path = store_dense_vertex(
+                cache_dir, cache_key, g_ReRp,
+                {'coupling_dir': os.path.abspath(coupling_dir), 'source': source, 'qgrid': list(qgrid_coarse),
+                 'ng': [int(n) for n in ng], 'masses_amu': [float(m) for m in masses_amu], 'tag': cache_tag},
+            )  # fmt: skip
+            print('  g(R_e, R_p) written to the cache %s' % path, flush=True)
+        comm.Barrier()
 
     if orbital_positions is None:
         Nint_p, W_p, Midx_p = _ws_lattice(qgrid_coarse, at)

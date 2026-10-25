@@ -42,7 +42,10 @@ user-invocable: true
                           current), grid/, hamiltonian/, partition/, parsers/, io/, smearing/, workspace/
       sparse/             Sparse bond-list Hamiltonian, iterative solver, bands, DOS/PDOS, doubling
       phonon/             Phonopy interface, Born charges, IR/Raman, vibrational dielectric, QHA
-      elphon/             Electron–phonon coupling (g(k,q), dvscf, QE elph I/O, folding, symmetry)
+      elphon/             Electron–phonon coupling: native coarse vertex from ph.x dvscf (dfpt_io, plane_waves,
+                          pseudopotential_terms, dfpt_vertex, coupling_cache; wavefunction_symmetry unfolds an
+                          irreducible-wedge nscf to the full grid), EPW/QE elph I/O, dense-q drivers,
+                          Migdal–Eliashberg, absorption, mobility; finite-difference route (folding, symmetry)
       models/             Tight-binding models, Slater–Koster fitting, band unfolding, surface projection
       pyskeaf/            Python SKEAF: de Haas–van Alphen extremal Fermi-surface orbits (CLI + adapter)
       agentic/            Library code of the agentic workflows (agentic/ folder below): qo_analysis/ (pyskeaf
@@ -55,9 +58,10 @@ user-invocable: true
       graphics/           Color and plotting utilities
       writers/            BXSF / XSF / BoltzTraP2 writers
       utils/              Constants, MPI communication, FFT grids, smearing, pyints (Gaussian integrals)
-      acbn0_native/, epsilon_native/   Optional bridges to the Rust extension, with pure-Python fallback
+      acbn0_native/, epsilon_native/, elphon_native/   Optional bridges to the Rust extension, with pure-Python fallback
       defs/               Back-compat shim that aliases legacy PAOFLOW.defs.* imports and emits FutureWarning
-    rust/paoflow_rs/      Optional Rust (PyO3 + rayon) kernels for ACBN0 ERIs and epsilon/JDOS. Parity < 1e-12
+    rust/paoflow_rs/      Optional Rust (PyO3 + rayon) kernels for ACBN0 ERIs, epsilon/JDOS and the e-ph absorption
+                          kernel; one pool tied to the MPI core budget. Parity < 1e-12
     tests/unit/           Fast unit tests, organized by subpackage
     tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data
     examples/             qe_examples, transport_examples, acbn0_examples, TBmodel_examples, elphon_example,

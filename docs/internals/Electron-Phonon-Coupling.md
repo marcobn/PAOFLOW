@@ -130,6 +130,7 @@ the same physical k.
 
 | `source` | Coupling file | Pseudopotentials | $\psi_{k+q}$ in $d$ | Usable for interpolation |
 |---|---|---|---|---|
+| **`'dfpt'`** | `ph.x` outputs: `dvscf`, `patterns.N.xml`, `dyn` (no EPW) | norm-conserving (scalar or spin-orbit) | computed by PAOFLOW from the nscf save (grid point $k+q-G$) | **yes, all q** |
 | **`'epw'`** | `prefix.epb*` (`epw.x`, `epbwrite = .true.`) | any (NC, US, PAW) | read from the nscf save (grid point $k+q-G$) | **yes, all q** |
 | `'ahc'` | `ahc_gkk_iq*.bin` (`ph.x`, `electron_phonon='ahc'`) | norm-conserving | re-diagonalised by `ph.x`, arbitrary phases | only $q=\Gamma$ |
 | `'elphmat'` | `elphmat.<iq>.dat` (PAOFLOW-patched `ph.x`) | any | re-diagonalised by `ph.x` | only $q=\Gamma$ |
@@ -149,6 +150,23 @@ matrix elements therefore share the gauge of PAOFLOW projections computed on
 the same save. The details and diagnostics are in the wiki page
 *PAOFLOW_elphon_AHC_symmetry_notes*.
 
+The **`'dfpt'` source** (`elphon/dfpt_vertex.py`, October 2026) does the same
+natively: it reads the induced potential `dvscf` of `ph.x` (the Hartree and
+exchange-correlation response to each displacement pattern, which excludes the bare
+ionic term), adds the bare local-pseudopotential derivative and the Kleinman–Bylander
+derivative terms, and takes the matrix elements with the nscf wavefunctions of the
+save that provides the projections, so the gauge consistency holds by construction.
+The irreducible q of `ph.x` are unfolded to the full grid by rotating the induced
+potential on the FFT grid (QE's `dfile_star` identity) and using the true wavefunctions
+at $k$ and $k+Sq$; $-q$ partners use the complex-conjugate potential. The matrix
+elements are either taken between the bands and rotated with $A$ (`basis='band'`), or
+directly between the projected PAO functions $\tilde\phi_{j,k} = \sum_n A^*_{nj}(k)\psi_{nk}$
+(`basis='pao'`), which is identical by linearity and never forms the band-basis array.
+Spin-orbit coupling is supported (spinor wavefunctions, QE's `fcoef` coupling matrix of
+the fully relativistic projectors); ultrasoft and PAW pseudopotentials are not (use EPW).
+See [DFPT coupling port](dfpt-coupling-port.md) for the design, the parity with EPW and
+the limits.
+
 ---
 
 ## Module map
@@ -157,6 +175,12 @@ Paths relative to `src/PAOFLOW/`.
 
 | File | Role |
 |------|------|
+| `elphon/dfpt_io.py` | `ph.x` readers of the native vertex: `locate_dfpt_files` (pp.py `save/` or raw `_ph0/` layout), `read_patterns`, `read_dvscf`, `read_irreducible_q`, `read_long_range_tensors`; `read_space_group` (crystal operations, `x -> R x - t`), `read_nscf_plane_wave_setup`. |
+| `elphon/plane_waves.py` | Raw plane-wave blocks (`read_plane_wave_block`, no Löwdin step), `periodic_part_on_grid` / `project_on_plane_waves` (FFT box, umklapp gather), `interpolate_to_grid`, `g_sphere`. |
+| `elphon/pseudopotential_terms.py` | Bare terms: `LocalPotentialTable` (`vloc_of_g` tables), `bare_local_perturbation` (`compute_dvloc`), `KleinmanBylanderProjectors` (`init_us_2`, `average_pp`, spin-orbit `dvan_so`), `nonlocal_perturbation` (`dvqpsi_us_only`), `real_spherical_harmonics_qe` (`ylmr2`). |
+| `elphon/dfpt_vertex.py` | `CoarseVertexSetup` (tables, symmetries, star members, `potential_at`, `matrix_elements`, `pao_vertex_at_q`, `band_vertex_at_q`), `star_members`, `cartesian_perturbation_potentials` (dvscf rotation), `rotate_pao_vertex` / `unfolded_pao_vertices` (irreducible-q unfolding in the PAO basis with self-check). |
+| `elphon/coupling_cache.py` | Opt-in disk cache of $g(R_e, R_p)$ (`cache_dir`, `cache_tag`, `basis_tag`). |
+| `elphon_native/` | Bridge to the Rust kernel of `indirect_absorption_kernel` (`paoflow_rs.elphon_indirect_absorption`; `PAOFLOW_ELPHON_DISABLE` turns it off). |
 | `elphon/qe_elph_io.py` | Readers: `read_epw_epb` (EPW coarse Bloch coupling, multi-pool, gfortran subrecords), `read_epw_ukk` (EPW band bookkeeping: kept bands, window), `read_qe_ahc_gkk`, `read_qe_el_ph_mat`, `el_ph_mat_to_cartesian`, `read_qe_dyn`, plus the older `elph.inp_lambda`/`lambda.in` readers of the property-only route. |
 | `elphon/elph_bloch.py` | Core machinery: `read_nscf` (k-points, lattice, Fermi level, crystal symmetries, atom species), `atom_masses` (per-species masses → one per atom), `kq_index_map`, `vertex_pao_R`, `_ws_lattice`, `precompute_dense_electrons` + `lambda_q_dense_ws_fast` (dense-$k$ electron cache + Fermi-surface double delta, shared across q). |
 | `elphon/do_pao_eph.py` | **Workflow 1** driver `eliashberg_from_qe_coupling`; per-source vertex builders `vertex_from_epw`, `vertex_from_qe_ahc`, `vertex_from_qe_elphmat`; `load_epw_coupling` (`.ukk` + `.epb` + q in crystal coordinates); `phonon_modes_from_force_constants`. |
@@ -175,7 +199,43 @@ Paths relative to `src/PAOFLOW/`.
 
 ## Required inputs
 
-### EPW source (recommended)
+### DFPT source (native, recommended)
+
+1. **`pw.x` scf**, with symmetry (norm-conserving pseudopotentials).
+2. **`ph.x` DFPT** on the coarse q-grid, irreducible q only, with `fildvscf`.
+   PAOFLOW reads either the run directory (`_ph0/<prefix>.dvscf1`,
+   `_ph0/<prefix>.q_N/`, `_ph0/<prefix>.phsave/patterns.N.xml`, `<prefix>.dynN`) or
+   EPW's `pp.py` collection (`save/<prefix>.dvscf_qN`, `<prefix>.dyn_qN`, `<prefix>.phsave/`).
+3. **`pw.x` nscf** on the Γ-centred coarse k-grid, `nbnd` above the PAO orbitals,
+   in a directory of its own (copy `charge-density.dat` and `data-file-schema.xml`
+   of the scf).  Either the **full** grid as an explicit `K_POINTS crystal` list in
+   $[0,1)$ (`kpoints_card`; give the k-points with full precision, a list written
+   with seven digits limits the agreement with EPW to $10^{-8}$), or the
+   **irreducible wedge** with `K_POINTS automatic nk1 nk2 nk3 0 0 0`: PAOFLOW then
+   rotates the stored Bloch functions to the full grid by symmetry
+   (`unfold_kpoints=True` in `PAOFLOW` / `pao_hamiltonian_from_save`, detected
+   automatically by the vertex), with the same wavefunction storage savings as
+   QE's own symmetry reduction (Si 6³: 16 k instead of 216; Pb 12³ with SOC: 72
+   instead of 1728).  The rotated states equal those of a full-grid nscf up to a
+   unitary mixing inside degenerate multiplets, to which the projections, the
+   Hamiltonian and the vertex are invariant.
+4. **PAOFLOW** on that save: `projections` + `projectability` +
+   `pao_hamiltonian(expand_wedge=False)` (`PAOFLOW(savedir, unfold_kpoints=True)`
+   for an irreducible-wedge nscf), then any dense-q driver with
+   `coupling_source='dfpt'` (`source='dfpt'` for the Eliashberg drivers),
+   `coupling_dir` = the `ph.x` directory and `save_dir` = the nscf save.
+   `basis='auto'` applies the perturbation to the projected PAO functions when
+   they are fewer than the bands.  `unfold='irreducible'` computes the vertex at
+   the irreducible q only and rotates it to the stars in the PAO basis
+   (`basis_shells=data_controller`); it is exact when the nscf band set does not
+   cut a degenerate multiplet at any k-point, which the self-check on one star
+   member verifies (`unfold_tol`).  `cache_dir` stores $g(R_e, R_p)$ for later runs.
+
+The coarse vertex is distributed over the ranks of each node (one q at a time per
+rank), and the band-basis array of EPW never exists: the memory per rank is one
+potential on the FFT grid plus the cached plane-wave blocks (`cache_bytes`).
+
+### EPW source (alternative)
 
 The example in `examples/elphon_epw_example` follows this sequence (EPW
 tutorial 04, Pb):
@@ -1205,6 +1265,28 @@ its gauge limitation. The `elphmat` choice is disabled in the menu.
 
 ## Validation
 
+### DFPT source (October 2026)
+
+The native vertex was compared with EPW's `epmatq` on identical inputs, in the
+band basis, every k and every q of the full grid:
+
+| system | grids | pseudopotential | agreement |
+|---|---|---|---|
+| Si (EPW tutorial 06, PBE, 20 Ry) | 6³ k / 3³ q, 12 bands, 24³ FFT | ONCV FR used in a scalar run (`average_pp`) | $5\times10^{-15}$ at Γ and at the second star; $\le 10^{-7}$ elsewhere except $3$–$5\times10^{-4}$ at the umklapp k-points of the two largest stars |
+| Pb (EPW tutorial 04, SR) | 6³ k / 6³ q, 16 bands (`exclude_bands = 1:5`), 36³ FFT | ONCV SR | $\le 3\times10^{-9}$ at $G_0 = 0$ points, $\le 2\times10^{-6}$ at umklapp points, all 216 q |
+| Pb (fully relativistic, local run) | 4³ k / 2³ q, 30 bands (`exclude_bands = 1:10`), spin-orbit | `PSEUDOS/nc-fr-04` | $\le 4\times10^{-10}$ at $G_0 = 0$, $\le 4\times10^{-7}$ at umklapp points |
+
+The umklapp residuals are on EPW's side: restricting the gathered Fourier
+components to EPW's wave-function FFT stick map reduces them tenfold, and EPW's own
+$q \leftrightarrow -q$ hermiticity is violated at the same level ($7\times10^{-5}$ on
+the Si data) where the native vertex satisfies it to the DFPT convergence
+($10^{-6}$).  Through `prepare_dense_vertex`, $g(R_e, R_p)$ agrees to
+$8\times10^{-7}$ (Si) and $9\times10^{-9}$ (Pb FR, kept bands) with the EPW source, the
+phonons and the dielectric data are identical, and the Si phonon-assisted absorption
+at 12³/6³ agrees to $7\times10^{-6}$.  The irreducible-q unfolding reproduces the
+direct vertex to $7\times10^{-8}$ on Si with a 20-band projector and fails only where a
+band set cuts a degenerate multiplet (12 and 32 bands: up to 0.2 at a few k-points).
+
 ### EPW source (October 2026)
 
 Pb, EPW tutorial 04 (ONCV pseudopotential, 6³ coarse k and q, 16 irreducible
@@ -1322,6 +1404,17 @@ remains a convergence statement, not a code defect.
   element by recovering the grid from the list (`uniform_grid_from_kpoints`).
   The list must be the complete grid in `K_POINTS automatic` order (third index
   fastest), as written by `kpoints_card` or wannier90's `kmesh.pl`.
+- **Irreducible-wedge nscf** (`K_POINTS automatic`, Γ-centred, no `nosym`):
+  `PAOFLOW(..., unfold_kpoints=True)` expands `kpnts`, `kpnts_wght`, `my_eigsmat`
+  and `nkpnts` to the full grid before the broadcast and `read_QE_wfc` returns the
+  rotated block of every grid point
+  (`PAOFLOW.elphon.wavefunction_symmetry.WavefunctionProvider`:
+  $c_{Rk}(RG)=e^{2\pi i(\kappa'+m')\cdot t}c_k(G)$, SU(2) of the proper part for
+  spinors, $i\sigma_y K$ for time reversal); `read_nscf(save, unfold=True)` gives
+  the matching k list, and `CoarseVertexSetup` recognises such a save by itself
+  (`unfold_kpoints=False` raises).  Without the option an irreducible-wedge save
+  still works for the Hamiltonian through `pao_hamiltonian(expand_wedge=True)`,
+  but its projections cover the irreducible points only, which the vertex rejects.
 - **`expand_wedge=False`** for the EPW save (see above).
 - **Hamiltonian from another save.** `phonon_assisted_absorption_dense_q` and
   `carrier_scattering_dense_q` only check that `A` and `HRs` have the same
@@ -1368,12 +1461,24 @@ pf.pao_hamiltonian(expand_wedge=False)                         # explicit full k
 HRs = pf.data_controller.data_arrays['HRs']
 info = read_nscf('epw/pb.save')
 ng = (6, 6, 6)
+# nscf on the irreducible wedge (K_POINTS automatic 6 6 6 0 0 0) instead of the explicit list:
+#   pf = PAOFLOW(savedir='epw/pb.save', unfold_kpoints=True); ...; info = read_nscf('epw/pb.save', unfold=True)
+# or in one call: pao_hamiltonian_from_save('epw/pb.save', ..., unfold_kpoints=True)
 
 # Workflow 1 (coarse q from EPW):
 out = eliashberg_from_qe_coupling(
     A, HRs, info['kpts_cryst'], info['bg'], info['at'],
     'epw', None, ng, None, source='epw',
     masses_amu=[207.2], nk_dense=48, sigmas_ry=[0.05 / 13.6057], nelec=14, mu_star=0.10,
+)
+
+# Native vertex from the ph.x outputs (no EPW): coupling_dir = the ph.x run directory,
+# save_dir = the nscf save of the projections; dense-q drivers take coupling_source='dfpt'.
+out = eliashberg_dense_q(
+    A, HRs, info['kpts_cryst'], info['bg'], info['at'],
+    'phonon', (6, 6, 6), None, None, ng, None, source='dfpt', save_dir='epw/pb.save',
+    masses_amu=[207.2], nk_dense=48, nq_dense=24, sigmas_ry=[0.05 / 13.6057], nelec=14,
+    sym_rots=info['s_cryst'], tau_cryst=info['tau_cryst'], species=info['atom_names'],
 )
 
 # Hamiltonian of another save (eACBN0 electrons, PBE coupling):

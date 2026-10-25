@@ -158,7 +158,9 @@ class FermiSurfaceLambda:
         :func:`PAOFLOW.elphon.fermi_surface_coupling.write_fs_coupling`, or the
         dictionary returned by :func:`read_fs_coupling`): irreducible states with
         ``k_cryst`` (crystal coordinates on the ``nk_dense`` grid), ``band``,
-        ``energy_ev`` and ``lambda_nk``.
+        ``energy_ev`` and either ``lambda_nk`` or the pair coupling ``coupling`` /
+        ``freq_ev`` / ``weight`` from which it is derived
+        (:func:`~PAOFLOW.elphon.anisotropic_eliashberg.coupling_strength`).
     sym_rots : ndarray ``(nsym, 3, 3)`` or None
         Real-space crystal rotations of the structure (``read_nscf(save)['s_cryst']``).
         ``None`` uses the point group of the Bravais lattice
@@ -180,6 +182,12 @@ class FermiSurfaceLambda:
         self.at = np.asarray(fs_coupling['at'], dtype=float)
         self.fsthick_ev = float(fs_coupling.get('fsthick_ev', np.nan))
         band = np.asarray(fs_coupling['band'], dtype=int)
+        if 'lambda_nk' not in fs_coupling:
+            # the file of write_fs_coupling stores the pair coupling Lambda_ab(omega);
+            # the state-resolved lambda_nk is its frequency integral summed over partners
+            from PAOFLOW.elphon.anisotropic_eliashberg import coupling_strength
+
+            fs_coupling = dict(fs_coupling, lambda_nk=coupling_strength(fs_coupling)['lambda_nk'])
         lam = np.asarray(fs_coupling['lambda_nk'], dtype=float)
         energy = np.asarray(fs_coupling['energy_ev'], dtype=float)
         k_int = np.rint(np.asarray(fs_coupling['k_cryst'], dtype=float) * self.nk).astype(int)
@@ -333,8 +341,14 @@ def enhanced_masses(
     for band, freq_file in sorted(files.items()):
         table = read_frequency_table(freq_file)
         outline_file = _outline_path(Path(freq_file))
-        if table.empty or not outline_file.is_file():
+        if table.empty:
             continue
+        if not outline_file.is_file():
+            raise FileNotFoundError(
+                '%s has no orbit outlines (%s): run pyskeaf with write_auxiliary_files=True '
+                '(PAOFLOW.pyskeaf(verbose=True)) so the orbit coordinates are written.'
+                % (Path(freq_file).name, outline_file.name)
+            )
         for orbit in read_orbit_outlines(outline_file):
             same_angle = (
                 np.abs(table.azimuthal_deg - orbit['azimuthal_deg']) < angle_tolerance_deg

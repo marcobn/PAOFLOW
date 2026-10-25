@@ -32,6 +32,7 @@ Bloch-basis coupling that ``epw.x`` writes with ``epbwrite = .true.``;
 from __future__ import annotations
 
 import glob
+import itertools
 import os
 import re
 
@@ -824,3 +825,110 @@ def read_epw_epb(
         'zstar': zstar,
         'epsi': epsi,
     }
+
+
+def write_epw_ukk(
+    path: str, nk: int, nbnd: int, ibndkept: NDArray[np.integer] | None = None
+) -> None:
+    """Write a ``prefix.ukk`` with identity rotations for :func:`read_epw_ukk` (dev / parity tool).
+
+    Parameters
+    ----------
+    path : str
+    nk : int
+        Number of coarse k-points.
+    nbnd : int
+        Bands of the nscf run.
+    ibndkept : ndarray of int, optional
+        0-based bands kept (default: all).  Only a contiguous block starting at the
+        lowest kept band is representable (EPW ``exclude_bands = 1:nbndskip``).
+    """
+    kept = np.arange(nbnd) if ibndkept is None else np.asarray(ibndkept, dtype=int)
+    nbndskip = int(kept.min())
+    nbndep = int(kept.size)
+    if not np.array_equal(kept, np.arange(nbndskip, nbndskip + nbndep)):
+        raise ValueError('only a contiguous block of kept bands can be written to .ukk')
+    lines = ['%12d%12d' % (nbndep, nbndskip)] + ['%12d' % (b + 1) for b in kept]
+    lines += [' (1.0000000000000000E+00,0.0000000000000000E+00)'] * (nk * nbndep)  # nwann = 1
+    lines += [' T'] * (nk * nbndep)  # lwin
+    lines += [' T' if b < nbndskip else ' F' for b in range(nbnd)]  # exband
+    lines += ['  0.0E+00  0.0E+00  0.0E+00']
+    with open(path, 'w') as fh:
+        fh.write('\n'.join(lines) + '\n')
+
+
+def write_epw_epb(
+    epw_dir: str,
+    prefix: str,
+    xq_cart: NDArray[np.float64],
+    et_ry: NDArray[np.float64],
+    dynq: NDArray[np.complex128],
+    epmatq: NDArray[np.complex128],
+    zstar: NDArray[np.float64],
+    epsi: NDArray[np.float64],
+    npool: int = 1,
+) -> list[str]:
+    """Write ``prefix.epb1..N`` in EPW's ``epbwrite`` layout (dev / parity tool).
+
+    Parameters
+    ----------
+    epw_dir : str
+    prefix : str
+    xq_cart : ndarray ``(nq, 3)``
+        Coarse q-points (Cartesian, ``2 pi / alat``).
+    et_ry : ndarray ``(nk, nbnd)``
+        Band energies (Ry).
+    dynq : ndarray ``(3 nat, 3 nat, nq)``
+    epmatq : ndarray ``(nbndep, nbndep, nk, 3 nat, nq)``
+        Matrix elements as returned by :func:`read_epw_epb`.
+    zstar : ndarray ``(nat, 3, 3)``
+    epsi : ndarray ``(3, 3)``
+    npool : int, optional
+        Number of pool files; the k-points are split as QE does.
+
+    Returns
+    -------
+    list of str
+        The files written.  Records above 2 GiB are split into gfortran subrecords.
+    """
+    xq_cart = np.asarray(xq_cart, dtype=float)
+    et_ry = np.asarray(et_ry, dtype=float)
+    epmatq = np.asarray(epmatq, dtype=np.complex128)
+    nq = xq_cart.shape[0]
+    nk = et_ry.shape[0]
+    base, extra = divmod(nk, npool)
+    paths = []
+    k0 = 0
+    for ip in range(npool):
+        nks = base + (1 if ip < extra else 0)
+        sl = slice(k0, k0 + nks)
+        parts = [
+            np.array([nq], np.int32),
+            xq_cart.ravel(),  # xqc(3, nq): Fortran order == C ravel of (nq, 3)
+            np.ascontiguousarray(et_ry[sl].T).ravel(order='F'),  # et(nbnd, nks)
+            np.asarray(dynq, np.complex128).ravel(order='F'),
+            np.ascontiguousarray(epmatq[:, :, sl]).ravel(order='F'),
+            np.ascontiguousarray(np.transpose(np.asarray(zstar, float), (1, 2, 0))).ravel(
+                order='F'
+            ),  # zstar(3,3,nat)
+            np.asarray(epsi, float).ravel(order='F'),
+        ]
+        payload = np.concatenate([p.view(np.uint8) for p in parts])
+        path = os.path.join(epw_dir, '%s.epb%d' % (prefix, ip + 1))
+        limit = 2**31 - 1
+        with open(path, 'wb') as fh:
+            if payload.size <= limit:
+                np.array([payload.size], np.int32).tofile(fh)
+                payload.tofile(fh)
+                np.array([payload.size], np.int32).tofile(fh)
+            else:
+                cuts = list(range(0, payload.size, limit)) + [payload.size]
+                for i, (a, b) in enumerate(itertools.pairwise(cuts)):
+                    n = b - a
+                    more = i < len(cuts) - 2
+                    np.array([-n if more else n], np.int32).tofile(fh)
+                    payload[a:b].tofile(fh)
+                    np.array([-n if i > 0 else n], np.int32).tofile(fh)
+        paths.append(path)
+        k0 += nks
+    return paths

@@ -42,9 +42,9 @@ from .elph_bloch import (
     RY_TO_THZ,
     band_velocities,
     band_vertex,
+    precompute_dense_electrons,
     release_dense_electrons,
     vertex_phases,
-    precompute_dense_electrons,
     vertex_ws_coefficients,
 )
 from .pao_electrons import check_orbital_dimensions
@@ -237,6 +237,18 @@ def indirect_absorption_kernel(
         )
         candidate &= relevance.max(axis=0) > occupation_tol
     k_idx, i_idx, j_idx = np.nonzero(candidate)
+
+    from ..elphon_native import available as _native_available
+
+    if _native_available() and k_idx.size > 0:
+        from ..elphon_native import indirect_absorption as _native_indabs
+
+        gauss, lorentz = _native_indabs(
+            energy_k, energy_kq, velocity_k, velocity_kq, coupling, omega_ph, occ_k, occ_kq, bose,
+            photon_energy, etas, degauss, cutoff, k_idx, i_idx, j_idx,
+        )  # fmt: skip
+        prefactor = weight * 8.0 * np.pi**2 * spin_degeneracy / photon_energy**2
+        return gauss * prefactor, lorentz * prefactor
 
     eta_imag = 1j * etas[None, None, :, None]
     for start in range(0, k_idx.size, pair_block):
@@ -872,6 +884,16 @@ def phonon_assisted_absorption_dense_q(
     kblock: int = 512,
     comm=None,
     allow_missing_long_range: bool = False,
+    coupling_source: str = 'epw',
+    save_dir: str | None = None,
+    pseudo_dir: str | None = None,
+    prefix: str | None = None,
+    basis: str = 'auto',
+    unfold: str = 'full',
+    basis_shells=None,
+    unfold_tol: float = 1e-6,
+    cache_dir: str | None = None,
+    cache_tag: str | None = None,
 ) -> dict:
     """Phonon-assisted and direct optical absorption with dense k and q interpolation.
 
@@ -999,6 +1021,13 @@ def phonon_assisted_absorption_dense_q(
         over its ranks.
     allow_missing_long_range : bool, optional
         Run a polar material without the long-range dipole term instead of raising.
+    coupling_source : {'epw', 'dfpt'}, optional
+        ``'epw'`` reads EPW's ``.epb`` files from ``coupling_dir``; ``'dfpt'`` computes the
+        coarse vertex from the ``ph.x`` outputs in ``coupling_dir`` and the nscf
+        wavefunctions of ``save_dir`` (:func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`).
+    save_dir, pseudo_dir, prefix, basis, unfold, basis_shells, unfold_tol, cache_dir, cache_tag
+        ``coupling_source='dfpt'`` and cache options of
+        :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`.
 
     Returns
     -------
@@ -1066,9 +1095,11 @@ def phonon_assisted_absorption_dense_q(
 
     vertex = prepare_dense_vertex(
         A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, None,
-        source='epw', masses_amu=masses_amu, tau_cryst=tau_cryst,
+        source=coupling_source, masses_amu=masses_amu, tau_cryst=tau_cryst,
         orbital_positions=orbital_positions, comm=comm,
         allow_missing_long_range=allow_missing_long_range,
+        save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
+        basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
     )  # fmt: skip
     g_ReRp, phonon_at_q = vertex['g_ReRp'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']

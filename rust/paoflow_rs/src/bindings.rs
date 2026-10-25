@@ -4,38 +4,16 @@
 //! whole rank-local chunk of unique integral keys is evaluated in one call,
 //! amortising the Python<->Rust overhead and releasing the GIL during compute.
 
-use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3};
+use numpy::{
+    Complex64, IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3,
+    PyReadonlyArray4,
+};
 use pyo3::prelude::*;
 use rayon::prelude::*;
-use std::sync::OnceLock;
 
 use crate::acbn0::eri::{contr_coulomb, Cgbf};
+use crate::elphon::indabs;
 use crate::epsilon::{eps, jdos};
-
-/// Optional dedicated rayon pool sized by `PAOFLOW_RS_THREADS`.
-///
-/// When the variable is unset (or invalid / `<= 0`) the legacy
-/// `PAOFLOW_ACBN0_THREADS` is consulted for backward compatibility, then the
-/// global rayon pool is used (which itself honours `RAYON_NUM_THREADS`).
-/// Setting either lets callers cap intra-rank threads to avoid oversubscription
-/// when launching many MPI ranks per node.
-fn custom_pool() -> Option<&'static rayon::ThreadPool> {
-    static POOL: OnceLock<Option<rayon::ThreadPool>> = OnceLock::new();
-    POOL.get_or_init(|| {
-        std::env::var("PAOFLOW_RS_THREADS")
-            .or_else(|_| std::env::var("PAOFLOW_ACBN0_THREADS"))
-            .ok()
-            .and_then(|s| s.trim().parse::<usize>().ok())
-            .filter(|&n| n > 0)
-            .map(|n| {
-                rayon::ThreadPoolBuilder::new()
-                    .num_threads(n)
-                    .build()
-                    .expect("failed to build PAOFLOW_RS_THREADS rayon pool")
-            })
-    })
-    .as_ref()
-}
 
 /// Evaluate `f(i)` for `i in 0..n` in parallel, honouring the optional
 /// `PAOFLOW_RS_THREADS` pool. The caller is expected to have released the
@@ -44,11 +22,7 @@ fn par_eval<F>(n: usize, f: F) -> Vec<f64>
 where
     F: Fn(usize) -> f64 + Sync,
 {
-    let run = || (0..n).into_par_iter().map(&f).collect::<Vec<f64>>();
-    match custom_pool() {
-        Some(pool) => pool.install(run),
-        None => run(),
-    }
+    crate::pool::install(|| (0..n).into_par_iter().map(&f).collect::<Vec<f64>>())
 }
 
 /// Reconstruct the contracted basis from flat CSR arrays.
@@ -189,14 +163,61 @@ fn acbn0_eri_batch_2c<'py>(
     values.into_pyarray(py)
 }
 
+/// Phonon-assisted absorption inner loop (`indirect_absorption_kernel`): returns the
+/// Gaussian and Lorentzian `Im eps` accumulators flattened as `(ntemp, neta, 3, nomega)`,
+/// without the `weight * 8 pi^2 g_s / omega^2` prefactor.
+#[pyfunction]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn elphon_indirect_absorption<'py>(
+    py: Python<'py>,
+    energy_k: PyReadonlyArray2<f64>,
+    energy_kq: PyReadonlyArray2<f64>,
+    velocity_k: PyReadonlyArray4<Complex64>,
+    velocity_kq: PyReadonlyArray4<Complex64>,
+    coupling: PyReadonlyArray4<Complex64>,
+    omega_ph: PyReadonlyArray1<f64>,
+    occ_k: PyReadonlyArray3<f64>,
+    occ_kq: PyReadonlyArray3<f64>,
+    bose: PyReadonlyArray2<f64>,
+    photon: PyReadonlyArray1<f64>,
+    etas: PyReadonlyArray1<f64>,
+    degauss: f64,
+    cutoff: f64,
+    pairs_k: PyReadonlyArray1<i64>,
+    pairs_i: PyReadonlyArray1<i64>,
+    pairs_j: PyReadonlyArray1<i64>,
+) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+    let nb = energy_k.as_array().shape()[1];
+    let nmode = coupling.as_array().shape()[1];
+    let inp = indabs::Inputs {
+        nb,
+        nmode,
+        energy_k: energy_k.as_slice()?,
+        energy_kq: energy_kq.as_slice()?,
+        velocity_k: velocity_k.as_slice()?,
+        velocity_kq: velocity_kq.as_slice()?,
+        coupling: coupling.as_slice()?,
+        omega_ph: omega_ph.as_slice()?,
+        occ_k: occ_k.as_slice()?,
+        occ_kq: occ_kq.as_slice()?,
+        bose: bose.as_slice()?,
+        photon: photon.as_slice()?,
+        etas: etas.as_slice()?,
+        degauss,
+        cutoff,
+        pairs_k: pairs_k.as_slice()?,
+        pairs_i: pairs_i.as_slice()?,
+        pairs_j: pairs_j.as_slice()?,
+    };
+    let (g, l) = py.allow_threads(|| indabs::indirect_absorption(&inp));
+    Ok((g.into_pyarray(py), l.into_pyarray(py)))
+}
+
 /// Number of threads the batched kernels will use (the `PAOFLOW_RS_THREADS`
 /// pool size when set, otherwise the global rayon pool size).
 #[pyfunction]
 fn thread_count() -> usize {
-    match custom_pool() {
-        Some(pool) => pool.current_num_threads(),
-        None => rayon::current_num_threads(),
-    }
+    crate::pool::thread_count()
 }
 
 /// Interband dielectric inner loop over the local k-slice.
@@ -288,6 +309,7 @@ pub fn paoflow_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(acbn0_eri_batch_2c, m)?)?;
     m.add_function(wrap_pyfunction!(epsilon_eps_loop, m)?)?;
     m.add_function(wrap_pyfunction!(epsilon_jdos_loop, m)?)?;
+    m.add_function(wrap_pyfunction!(elphon_indirect_absorption, m)?)?;
     m.add_function(wrap_pyfunction!(thread_count, m)?)?;
     Ok(())
 }

@@ -48,6 +48,7 @@ from .elph_bloch import (
     vertex_phases,
     vertex_ws_coefficients,
 )
+from .pao_electrons import check_orbital_dimensions
 from .phonon_assisted_absorption import (
     EV_TO_CM1,
     KELVIN_TO_EV,
@@ -55,7 +56,6 @@ from .phonon_assisted_absorption import (
     fermi_occupation,
     scissor_per_temperature,
 )
-from .pao_electrons import check_orbital_dimensions
 
 HBAR_EV_S = 6.582119569e-16
 BOHR_M = 0.529177210903e-10
@@ -337,6 +337,16 @@ def carrier_scattering_dense_q(
     kblock: int = 256,
     comm=None,
     allow_missing_long_range: bool = False,
+    coupling_source: str = 'epw',
+    save_dir: str | None = None,
+    pseudo_dir: str | None = None,
+    prefix: str | None = None,
+    basis: str = 'auto',
+    unfold: str = 'full',
+    basis_shells=None,
+    unfold_tol: float = 1e-6,
+    cache_dir: str | None = None,
+    cache_tag: str | None = None,
 ) -> dict:
     """State-resolved electron-phonon scattering rates on the dense PAO grid.
 
@@ -390,6 +400,13 @@ def carrier_scattering_dense_q(
         PAO orbital centres (pair-resolved Wigner-Seitz sums, velocity operator).
     ispin, kblock, comm, allow_missing_long_range : optional
         Spin channel, k-points per task, MPI communicator, polar guard.
+    coupling_source : {'epw', 'dfpt'}, optional
+        ``'epw'`` reads EPW's ``.epb`` files from ``coupling_dir``; ``'dfpt'`` computes the
+        coarse vertex from the ``ph.x`` outputs in ``coupling_dir`` and the nscf
+        wavefunctions of ``save_dir`` (:func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`).
+    save_dir, pseudo_dir, prefix, basis, unfold, basis_shells, unfold_tol, cache_dir, cache_tag
+        ``coupling_source='dfpt'`` and cache options of
+        :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`.
 
     Returns
     -------
@@ -443,9 +460,11 @@ def carrier_scattering_dense_q(
 
     vertex = prepare_dense_vertex(
         A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, None,
-        source='epw', masses_amu=masses_amu, tau_cryst=tau_cryst,
+        source=coupling_source, masses_amu=masses_amu, tau_cryst=tau_cryst,
         orbital_positions=orbital_positions, comm=comm,
         allow_missing_long_range=allow_missing_long_range,
+        save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
+        basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
     )  # fmt: skip
     g_ReRp, phonon_at_q = vertex['g_ReRp'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']

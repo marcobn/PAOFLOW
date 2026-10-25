@@ -62,6 +62,19 @@ python3 write_ukk.py                             # pb.ukk for wannierize = .fals
 mpirun -np 8 epw.x -nk 8 -in epw.in > epw.out   # EPW: one process per pool (-np = -nk)
 ```
 
+**Without EPW (default since October 2026).** `main.py` has
+`COUPLING_SOURCE = 'dfpt'`: PAOFLOW computes the coarse coupling itself from the
+`ph.x` outputs (`phonon/_ph0/`, `phonon/pb.dyn*`, or the `pp.py` `save/`) and the
+nscf wavefunctions of `epw/pb.save`, so `pp.py`, `write_ukk.py` and `epw.x` are not
+needed; only the scf, `ph.x` (with `fildvscf`) and the nscf steps above remain. The
+native vertex reproduces EPW's `.epb` matrix elements to the rounding level (see
+`docs/internals/dfpt-coupling-port.md`); set `COUPLING_SOURCE = 'epw'` to read the
+`.epb` files instead (required for ultrasoft or PAW pseudopotentials).
+With the native source the nscf may also be run on the irreducible wedge,
+`K_POINTS automatic 6 6 6 0 0 0` (16 irreducible k instead of 216): set `UNFOLD_KPOINTS = True` in the driver and
+PAOFLOW rotates the stored Bloch functions to the full grid by symmetry
+(`docs/internals/dfpt-coupling-port.md`, phase 4B); EPW needs the explicit list.
+
 The scf and the nscf run in separate directories, so the phonon calculation
 keeps its own `phonon/pb.save` and the nscf overwrites nothing that ph.x or
 `pp.py` produced. The nscf reads the scf charge density, hence the copy into
@@ -216,7 +229,9 @@ q and is shown only as the cheaper workflow.
 - **Explicit k list:** EPW requires the full grid as `K_POINTS crystal` in
   [0, 1). `PAOFLOW.gen.epw_inputs.kpoints_card((6, 6, 6))` writes exactly the
   list in `epw/nscf.in`. PAOFLOW recovers the grid from the list and must be run
-  with `pao_hamiltonian(expand_wedge=False)`, as in `main.py`.
+  with `pao_hamiltonian(expand_wedge=False)`, as in `main.py`. With
+  `COUPLING_SOURCE = 'dfpt'` the nscf may use `K_POINTS automatic 6 6 6 0 0 0`
+  instead, with `UNFOLD_KPOINTS = True`.
 - **Band exclusion without Wannier functions:** with `wannierize = .false.`
   EPW takes the excluded bands from `pb.ukk` (`write_placeholder_ukk(...,
   exclude_bands=..., nelec=...)`); `bands_skipped` in `epw.in` only documents
