@@ -2,8 +2,8 @@
 """MgB2 superconductivity with PAOFLOW on EPW's coarse electron-phonon coupling.
 
 The QE/EPW steps follow the MgB2 exercise of EPW tutorial 04 (see README.md).
-This script builds the PAO electronic structure on the EPW nscf save and
-interpolates EPW's coarse coupling (``epw/mgb2.epb*``) to dense k and q grids in
+This script builds the PAO electronic structure on the coarse-grid nscf save and
+interpolates EPW's coarse coupling (``nscf/mgb2.epb*``) to dense k and q grids in
 the PAO gauge:
 
     mpirun -np 8 python main.py                 # dense k and q (default)
@@ -27,6 +27,7 @@ from PAOFLOW import PAOFLOW
 from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
 from PAOFLOW.elphon.do_pao_eph_dense_q import eliashberg_dense_q
 from PAOFLOW.elphon.elph_bloch import RY_TO_EV, atom_masses, pao_orbital_positions, read_nscf
+from PAOFLOW.elphon.wavefunction_symmetry import stores_irreducible_wedge
 from PAOFLOW.elphon.fermi_surface_coupling import write_fs_coupling
 
 # ----------------------------------------------------------------------- #
@@ -35,10 +36,9 @@ from PAOFLOW.elphon.fermi_surface_coupling import write_fs_coupling
 HERE = os.path.dirname(os.path.abspath(__file__))
 COUPLING_SOURCE = 'dfpt'  # 'dfpt': native vertex from ph.x's dvscf + the nscf save; 'epw': EPW's .epb files
 PHONON_DIR = os.path.join(HERE, 'phonon')  # ph.x run directory (_ph0/, mgb2.dyn*) or its pp.py save/
-EPW_DIR = os.path.join(HERE, 'epw')  # nscf save (mgb2.save); with COUPLING_SOURCE='epw' also mgb2.epb*, mgb2.ukk
-SAVEDIR = os.path.join(EPW_DIR, 'mgb2.save')  # the nscf save on the coarse k-grid
-UNFOLD_KPOINTS = False  # True if epw/nscf.in used 'K_POINTS automatic' (irreducible wedge) instead of the explicit list
-COUPLING_DIR = PHONON_DIR if COUPLING_SOURCE == 'dfpt' else EPW_DIR
+NSCF_DIR = os.path.join(HERE, 'nscf')  # nscf run; with COUPLING_SOURCE='epw' also mgb2.epb*, mgb2.ukk
+SAVEDIR = os.path.join(NSCF_DIR, 'mgb2.save')  # the nscf save on the coarse k-grid (full list or irreducible wedge)
+COUPLING_DIR = PHONON_DIR if COUPLING_SOURCE == 'dfpt' else NSCF_DIR
 BASISDIR = os.path.join(HERE, 'BASIS_PS')  # paoflow-genbasis-ps --pseudo-dir . --out BASIS_PS
 OUTPUTDIR = os.path.join(HERE, 'output')
 
@@ -58,23 +58,24 @@ KB_EV = 8.617333262e-5
 
 def pao_electronic_structure():
     """PAO projections, Hamiltonian and orbital centres on the EPW nscf save."""
+    # An nscf on the irreducible wedge (K_POINTS automatic) is unfolded to the full grid by
+    # symmetry; the explicit full list EPW needs is used as is.
+    unfold = stores_irreducible_wedge(SAVEDIR)
     pf = PAOFLOW.PAOFLOW(
         workpath=HERE,
         outputdir=OUTPUTDIR,
         savedir=SAVEDIR,
         save_overlaps=False,
         verbose=False,
-        unfold_kpoints=UNFOLD_KPOINTS,
+        unfold_kpoints=unfold,
     )
     pf.projections(basispath=BASISDIR, configuration='standard')
     pf.projectability(pthr=PTHR)
     # The projections A_k = <phi|psi_k> rotate EPW's matrix elements to the PAO
     # gauge; pao_hamiltonian deletes them, so keep a copy first.
     projections = pf.data_controller.full_projections()[:, :, :, 0].copy()
-    # The explicit K_POINTS list already spans the whole Brillouin zone (an irreducible-wedge
-    # nscf was unfolded to it by symmetry when UNFOLD_KPOINTS is set).
-    pf.pao_hamiltonian(expand_wedge=False)
-    nscf = read_nscf(SAVEDIR, unfold=UNFOLD_KPOINTS)
+    pf.pao_hamiltonian(expand_wedge=False)  # the k-points span the whole Brillouin zone
+    nscf = read_nscf(SAVEDIR, unfold=unfold)
     # Orbital centres: pair-resolved Wigner-Seitz interpolation (several atoms per cell).
     nscf['orbital_positions'] = pao_orbital_positions(pf.data_controller, nscf['at'])
     return projections, pf.data_controller.data_arrays['HRs'], nscf

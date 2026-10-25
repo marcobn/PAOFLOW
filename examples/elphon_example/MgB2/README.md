@@ -29,9 +29,9 @@ The QE steps follow the MgB₂ exercise of EPW tutorial 04
 |------|---------|
 | `phonon/scf.in` | `pw.x` scf (8³ k, with symmetry) |
 | `phonon/ph.in` | `ph.x` DFPT on the 3³ q-grid (6 irreducible q, `fildvscf`) |
-| `epw/nscf.in` | `pw.x` nscf on the full 6³ grid as an explicit `K_POINTS crystal` list (`nbnd = 24`) |
-| `epw/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, all 24 bands kept |
-| `epw/write_ukk.py` | writes `mgb2.ukk` (band bookkeeping EPW reads when `wannierize = .false.`) and empty `mgb2.bvec`/`mgb2.mmn` stubs |
+| `nscf/nscf.in` | `pw.x` nscf on the full 6³ grid as an explicit `K_POINTS crystal` list (`nbnd = 24`) |
+| `nscf/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, all 24 bands kept |
+| `nscf/write_ukk.py` | writes `mgb2.ukk` (band bookkeeping EPW reads when `wannierize = .false.`) and empty `mgb2.bvec`/`mgb2.mmn` stubs |
 | `main.py` | PAOFLOW analysis: PAO electronic structure, Eliashberg on EPW's coupling, Fermi-surface coupling |
 | `me.py` | isotropic Migdal–Eliashberg on the α²F of `main.py`: gap vs T, real axis, linearised-kernel Tc |
 | `plot_me.py` | plots the `me.py` results |
@@ -39,12 +39,13 @@ The QE steps follow the MgB₂ exercise of EPW tutorial 04
 | `plot_me_aniso.py` | plots the `me_aniso.py` results (with the isotropic gap for comparison) |
 
 **Pseudopotentials:** copy the ONCVPSP (PBE, norm-conserving) `Mg.upf` and
-`B.upf` of the reference run into this directory. Both `phonon/` and `epw/` use
+`B.upf` of the reference run into this directory. Both `phonon/` and `nscf/` use
 `pseudo_dir = '../'`. `Mg.upf` includes the 2s 2p semicore states, hence 16
 valence electrons for the cell (10 + 2 × 3).
 
 `paoflow-gen` (electron-phonon workflow, EPW source) produces this layout from
-`scf.in`, as `main.elphon.py`, `me.elphon.py`, `me_aniso.elphon.py` and
+`scf.in` (the nscf and EPW inputs under its default directory `epw/`, option
+`epw_dir`), as `main.elphon.py`, `me.elphon.py`, `me_aniso.elphon.py` and
 `plot.elphon.py`.
 
 ---
@@ -59,7 +60,7 @@ mpirun -np 8 pw.x -in scf.in > scf.out
 mpirun -np 8 ph.x -in ph.in  > ph.out
 python3 /path/to/q-e/EPW/bin/pp.py           # prefix 'mgb2' -> collects dvscf, patterns, dyn into save/
 
-cd ../epw
+cd ../nscf
 mkdir -p mgb2.save                                # the nscf starts from the scf charge density
 cp ../phonon/mgb2.save/{charge-density.dat,data-file-schema.xml} mgb2.save/
 mpirun -np 8 pw.x -in nscf.in > nscf.out
@@ -70,13 +71,13 @@ mpirun -np 20 epw.x -nk 20 -in epw.in > epw.out  # EPW: one process per pool (-n
 **Without EPW (default since October 2026).** `main.py` has
 `COUPLING_SOURCE = 'dfpt'`: PAOFLOW computes the coarse coupling itself from the
 `ph.x` outputs (`phonon/_ph0/`, `phonon/mgb2.dyn*`, or the `pp.py` `save/`) and the
-nscf wavefunctions of `epw/mgb2.save`, so `pp.py`, `write_ukk.py` and `epw.x` are not
+nscf wavefunctions of `nscf/mgb2.save`, so `pp.py`, `write_ukk.py` and `epw.x` are not
 needed; only the scf, `ph.x` (with `fildvscf`) and the nscf steps above remain. The
 native vertex reproduces EPW's `.epb` matrix elements to the rounding level (see
 `docs/internals/dfpt-coupling-port.md`); set `COUPLING_SOURCE = 'epw'` to read the
 `.epb` files instead (required for ultrasoft or PAW pseudopotentials).
 With the native source the nscf may also be run on the irreducible wedge,
-`K_POINTS automatic 6 6 6 0 0 0` (irreducible k only): set `UNFOLD_KPOINTS = True` in the driver and
+`K_POINTS automatic 6 6 6 0 0 0` (irreducible k only): the driver detects it and
 PAOFLOW rotates the stored Bloch functions to the full grid by symmetry
 (`docs/internals/dfpt-coupling-port.md`, phase 4B); EPW needs the explicit list.
 

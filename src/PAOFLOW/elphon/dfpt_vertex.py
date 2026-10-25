@@ -22,7 +22,6 @@ forming the band-basis array).
 from __future__ import annotations
 
 import os
-import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -323,8 +322,10 @@ class CoarseVertexSetup:
         self.setup = read_nscf_plane_wave_setup(save_dir)
         self.nscf = read_nscf(save_dir)
         self.group = read_space_group(save_dir)
+        from .wavefunction_symmetry import stores_irreducible_wedge
+
         self.provider = None
-        irreducible = _stores_irreducible_wedge(save_dir, self.nscf['nk'])
+        irreducible = stores_irreducible_wedge(save_dir)
         if unfold_kpoints is None:
             unfold_kpoints = irreducible
         elif irreducible and not unfold_kpoints:
@@ -679,18 +680,6 @@ class CoarseVertexSetup:
             return self.provider.grid
         (n1, n2, n3), _ = uniform_grid_from_kpoints(self.nscf['kpts_cart'], self.bg)
         return (int(n1), int(n2), int(n3))
-
-
-def _stores_irreducible_wedge(save_dir: str, nk_stored: int) -> bool:
-    """True for a Gamma-centred ``K_POINTS automatic`` nscf with fewer stored k than grid points."""
-    root = ET.parse(os.path.join(save_dir, 'data-file-schema.xml')).getroot()
-    mp = root.find('output/band_structure/starting_k_points/monkhorst_pack')
-    if mp is None:
-        return False
-    a = mp.attrib
-    if any(int(a[s]) for s in ('k1', 'k2', 'k3')):
-        return False
-    return nk_stored < int(a['nk1']) * int(a['nk2']) * int(a['nk3'])
 
 
 # --------------------------------------------------------------------------- #

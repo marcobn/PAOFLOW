@@ -419,6 +419,7 @@ def eliashberg_from_qe_coupling(
     nk_dense=18,
     sigmas_ry=(0.02,),
     nelec=None,
+    spin_degeneracy=2.0,
     mu_star=0.10,
     ispin=0,
     isig=0,
@@ -485,6 +486,9 @@ def eliashberg_from_qe_coupling(
         Fermi-surface smearing(s) (Ry); ``isig`` selects which one is reported.
     nelec : float, optional
         Valence electrons for the dense-grid Fermi-level recompute.
+    spin_degeneracy : float, optional
+        2 for scalar bands, 1 for spinors (spin-orbit coupling): sets the Fermi
+        level of ``nelec`` electrons on the dense grid.
     mu_star : float, optional
         Coulomb pseudopotential for ``Tc``.
     ispin, isig : int, optional
@@ -572,7 +576,7 @@ def eliashberg_from_qe_coupling(
     # V(k+q) are index shifts), so the per-q cost is only the vertex interpolation.
     electrons = precompute_dense_electrons(
         HRs, at, nk_dense, sigmas_ry, nelec, tuple(ng), ispin=ispin, fs_window=fs_window,
-        orbital_positions=orbital_positions,
+        orbital_positions=orbital_positions, spin_degeneracy=spin_degeneracy,
     )  # fmt: skip
 
     # Distribute the embarrassingly parallel per-q loop across MPI ranks: each q

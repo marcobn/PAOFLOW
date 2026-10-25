@@ -1,15 +1,20 @@
-# Si phonon-assisted optical absorption — PAOFLOW on EPW's coarse coupling
+# Si phonon-assisted optical absorption — PAOFLOW's native coupling
 
 This example computes the phonon-assisted (indirect) optical absorption of
 silicon, the second-order photon + phonon process that dominates between the
 indirect and the direct gap. PAOFLOW interpolates every ingredient in the PAO
-basis: EPW's coarse electron-phonon coupling, the electrons and their velocity
+basis: the coarse electron-phonon coupling, the electrons and their velocity
 matrix elements, and the phonons. It then evaluates the formula of EPW's
 `lindabs` (`indabs.f90`; Noffsinger et al., Phys. Rev. Lett. **108**, 167402
 (2012)). The direct (vertical) absorption is computed alongside.
 
-The QE/EPW steps are those of `../Pb` and `../MgB2`: the coarse coupling from an
-EPW run **without Wannier functions** (`wannierize = .false.`). The fine-grid
+The coarse coupling is computed by PAOFLOW itself from the `ph.x` outputs and
+the nscf wavefunctions (`COUPLING_SOURCE = 'dfpt'` in the drivers): only `pw.x`
+and `ph.x` are run, no EPW. The nscf is run on the irreducible wedge
+(`K_POINTS automatic`), and PAOFLOW unfolds its Bloch functions to the full
+grid by symmetry. The EPW route (`epw.x` with `epbwrite`, `wannierize =
+.false.`, as in `../Pb` and `../MgB2`) remains available as the alternative
+source and is described at the end of section 1. The fine-grid
 settings follow the `indabs` exercise of EPW tutorial 06
 (<https://docs.epw-code.org/tutorials/tutorial_06/index.html>): 12³ k, 6³ q,
 photon energies 0.05–3 eV, 300 K, `degaussw = 0.05` eV, `fsthick = 4` eV, and a
@@ -24,65 +29,70 @@ mid-gap Fermi level.
 | `phonon/scf.in` | `pw.x` scf (18³ k, 38 Ry, PBE norm-conserving) |
 | `phonon/ph.in` | `ph.x` DFPT on the 3³ q-grid (4 irreducible q, `fildvscf`) |
 | `phonon/q2r_matdyn.py` | `q2r.x` + `matdyn.x` in PAOFLOW: force constants (`output/Si2.fc`), dispersion and DOS from the `Si2.dyn*` files, plotted with `GPAO.plot_phonons` |
-| `epw/nscf.in` | `pw.x` nscf on the full 6³ grid as an explicit `K_POINTS crystal` list (`nbnd = 21`) |
-| `epw/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, all 21 bands kept |
-| `epw/write_ukk.py` | writes `Si2.ukk` (band bookkeeping for `wannierize = .false.`) and empty `Si2.bvec`/`Si2.mmn` stubs |
-| `epw/kmesh.py` | sets the coarse k-mesh: `python kmesh.py NK1 NK2 NK3` rewrites the `K_POINTS crystal` list of `nscf.in`, `nk1-3` of `epw.in`, `write_ukk.py` and `COARSE_GRID` of `main.py`/`mobility.py` (the q-grid must divide it) |
+| `nscf/nscf.in` | `pw.x` nscf on the 6³ coarse grid, `K_POINTS automatic` (16 irreducible k, `nbnd = 21`) |
+| `nscf/kmesh.py` | sets the coarse k-mesh: `python kmesh.py NK1 NK2 NK3` rewrites the `K_POINTS` card of `nscf.in` (`--explicit` for the full list EPW needs), `nk1-3` of `epw.in`, `write_ukk.py` and `COARSE_GRID` of `main.py`/`mobility.py` (the q-grid must divide it) |
+| `nscf/epw.in` | EPW route only: `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, all 21 bands kept |
+| `nscf/write_ukk.py` | EPW route only: writes `Si2.ukk` (band bookkeeping for `wannierize = .false.`) and empty `Si2.bvec`/`Si2.mmn` stubs |
 | `main.py` | PAOFLOW analysis: PAO electronic structure, then phonon-assisted + direct absorption |
 | `optics/nscf.in` | `pw.x` nscf with 60 bands (8³ k) for the extended-basis direct dielectric function |
 | `optics_eps.py` | PAOFLOW `dielectric_tensor` on the extended basis with the position dipoles in the velocity → `optics/output/epsr_*/epsi_*.dat` |
 | `emissivity_from_absorption.py` | recomputes the thermal emissivity of a finished run from `absorption.npz` with another direct dielectric function or `--direct-scissor` (writes to a new directory) |
-| `make_hubbard_nscf.py` | from the converged `HUBBARD` card of an eACBN0 run: the nscf inputs for eACBN0 electrons (`acbn0/epw_nscf/`, the EPW k list) and for the eACBN0 optics run (`acbn0/optics/`) |
+| `make_hubbard_nscf.py` | from the converged `HUBBARD` card of an eACBN0 run: the nscf inputs for eACBN0 electrons (`acbn0/nscf/`, the EPW k list) and for the eACBN0 optics run (`acbn0/optics/`) |
 | `plot.py` | plots Im ε(ω) and α(ω), overlaying EPW's `epsilon2_indabs_<T>K.dat` when present; after `--emissivity` it also plots the thermal emissivity |
 | `mobility.py` | phonon-limited carrier mobility: state-resolved SERTA/MRTA rates near the band edges, electron and hole mobilities, `scattering_rates.npz` for `pf.transport` |
 | `plot_mobility.py` | plots μ(T) and 1/τ against the energy from the band edge → `output/mobility/mobility.png` |
 
 **Pseudopotential:** copy the PseudoDojo `Si.upf` (nc-sr-05, PBE standard;
 `PSEUDOS/nc-sr-05_pbe_standard_upf/` in this repository) into this directory.
-Both `phonon/` and `epw/` use `pseudo_dir = '../'`.
+Both `phonon/` and `nscf/` use `pseudo_dir = '../'`.
 
 `paoflow-gen` (electron-phonon workflow, EPW source, property "phonon-assisted
 optical absorption") produces this layout as `main.elphon.py` and
-`plot.elphon.py`. The property "carrier transport (mobility, SERTA/MRTA)"
-produces `mobility.py` and `plot_mobility.py` under the same names.
+`plot.elphon.py`, with the nscf and EPW inputs under its default directory
+`epw/` (option `epw_dir`). The property "carrier transport (mobility,
+SERTA/MRTA)" produces `mobility.py` and `plot_mobility.py` under the same names.
 
 ---
 
 ## Procedure
 
-### 1. Quantum ESPRESSO and EPW
+### 1. Quantum ESPRESSO
 
 ```bash
 cd phonon
 mpirun -np 8 pw.x -in scf.in > scf.out
-mpirun -np 8 ph.x -in ph.in  > ph.out
-python3 /path/to/q-e/EPW/bin/pp.py           # prefix 'Si2' -> collects dvscf, patterns, dyn into save/
+mpirun -np 8 ph.x -in ph.in  > ph.out        # 3^3 q-grid, 4 irreducible q, fildvscf -> _ph0/
 
 python q2r_matdyn.py                         # optional: phonon dispersion + DOS (q2r + matdyn) -> output/si_phonons.png
 
-cd ../epw
-python kmesh.py 6 6 6                         # coarse k-mesh (default 6x6x6; any multiple of the 3x3x3 q-grid)
+cd ../nscf
 mkdir -p Si2.save
 cp ../phonon/Si2.save/{charge-density.dat,data-file-schema.xml} Si2.save/
-mpirun -np 8 pw.x -in nscf.in > nscf.out
-python3 write_ukk.py
-mpirun -np 32 epw.x -nk 32 -in epw.in > epw.out   # one process per pool
+mpirun -np 8 pw.x -in nscf.in > nscf.out     # 6^3 grid, K_POINTS automatic: 16 irreducible k
 ```
 
-**Without EPW (default since October 2026).** `main.py` has
-`COUPLING_SOURCE = 'dfpt'`: PAOFLOW computes the coarse coupling itself from the
-`ph.x` outputs (`phonon/_ph0/`, `phonon/Si2.dyn*`, or the `pp.py` `save/`) and the
-nscf wavefunctions of `epw/Si2.save`, so `pp.py`, `write_ukk.py` and `epw.x` are not
-needed; only the scf, `ph.x` (with `fildvscf`) and the nscf steps above remain. The
-native vertex reproduces EPW's `.epb` matrix elements to the rounding level (see
-`docs/internals/dfpt-coupling-port.md`); set `COUPLING_SOURCE = 'epw'` to read the
-`.epb` files instead (required for ultrasoft or PAW pseudopotentials).
-With the native source the nscf may also be run on the irreducible wedge,
-`K_POINTS automatic 6 6 6 0 0 0` (16 irreducible k instead of 216): set `UNFOLD_KPOINTS = True` in the driver and
-PAOFLOW rotates the stored Bloch functions to the full grid by symmetry
-(`docs/internals/dfpt-coupling-port.md`, phase 4B); EPW needs the explicit list.
+That is all the native coupling needs: PAOFLOW reads the `ph.x` outputs
+(`phonon/_ph0/` and `phonon/Si2.dyn*`, or a `pp.py` `save/`) and the nscf
+wavefunctions of `nscf/Si2.save`, and rotates the 16 stored Bloch functions to the
+216 points of the grid by symmetry (the drivers detect an irreducible-wedge
+save). Another coarse mesh: `python kmesh.py 8 8 8` (any multiple of the 3³
+q-grid), then rerun the nscf. The native vertex reproduces EPW's `.epb` matrix
+elements to the rounding level (`docs/internals/dfpt-coupling-port.md`).
 
-The reference run used QE 7.5 / EPW 6.0 with 32 pools; EPW took 19 s.
+**EPW route (alternative, required for ultrasoft or PAW pseudopotentials).**
+Set `COUPLING_SOURCE = 'epw'` in the drivers and run EPW without Wannier
+functions on the explicit full k list:
+
+```bash
+cd phonon && python3 /path/to/q-e/EPW/bin/pp.py   # prefix 'Si2' -> collects dvscf, patterns, dyn into save/
+cd ../nscf
+python kmesh.py 6 6 6 --explicit                   # K_POINTS crystal list (216 points), epw.in, write_ukk.py
+mpirun -np 8 pw.x -in nscf.in > nscf.out
+python3 write_ukk.py
+mpirun -np 32 epw.x -nk 32 -in epw.in > epw.out    # one process per pool; writes Si2.epb*
+```
+
+The reference EPW run used QE 7.5 / EPW 6.0 with 32 pools; EPW took 19 s.
 
 ### 2. PAOFLOW basis
 
@@ -250,13 +260,13 @@ automatic grid with 60 bands (the extended-basis dielectric function), both
 started from the eACBN0 save (charge density **and** `occup.txt`):
 
 ```bash
-python make_hubbard_nscf.py <eACBN0 workdir>/scf.in --nk 6 6 6 --nbnd 21   # -> acbn0/epw_nscf/nscf.in, acbn0/optics/nscf.in
-for run in epw_nscf optics; do
+python make_hubbard_nscf.py <eACBN0 workdir>/scf.in --nk 6 6 6 --nbnd 21   # -> acbn0/nscf/nscf.in, acbn0/optics/nscf.in
+for run in nscf optics; do
   cp <eACBN0 outdir>/Si2.save/{charge-density.dat,data-file-schema.xml,occup.txt} acbn0/$run/Si2.save/; done
-(cd acbn0/epw_nscf && mpirun -np 8 pw.x -in nscf.in > nscf.out)
+(cd acbn0/nscf && mpirun -np 8 pw.x -in nscf.in > nscf.out)
 (cd acbn0/optics && mpirun -np 8 pw.x -nk 8 -in nscf.in > nscf.out)
 python optics_eps.py --savedir acbn0/optics/Si2.save --outdir acbn0/optics/output
-mpirun -np 8 python main.py --electrons-save acbn0/epw_nscf/Si2.save --emissivity \
+mpirun -np 8 python main.py --electrons-save acbn0/nscf/Si2.save --emissivity \
     --direct-dielectric acbn0/optics/output --varshni 4.73e-4 636 --nk 24 --nq 12 \
     --omega-min 0.01 --omega-step 0.01 --degauss-ev 0.01 --temps 300 500 700 900 1100 1300 1500
 ```
@@ -378,7 +388,7 @@ an energy-only τ.
 
 ---
 
-`mobility.py --electrons-save acbn0/epw_nscf/Si2.save [--varshni 4.73e-4 636]`
+`mobility.py --electrons-save acbn0/nscf/Si2.save [--varshni 4.73e-4 636]`
 takes the gap, the masses and the carrier statistics from the eACBN0 PAO
 Hamiltonian (see section 4); the rates keep the PBE coupling. The energies of
 `scattering_rates.npz` are then on the scale of that save.

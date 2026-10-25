@@ -12,7 +12,7 @@ one; PAOFLOW takes the band energies and eigenvectors from the eACBN0 PAO
 Hamiltonian instead (``main.py --electrons-save``, ``mobility.py
 --electrons-save``).  That needs two more pw.x nscf runs with the card:
 
-  <out>/epw_nscf/nscf.in   the EPW k list (full grid, same NK as epw/nscf.in, NBND bands):
+  <out>/nscf/nscf.in   the EPW k list (full grid, same NK as nscf/nscf.in, NBND bands):
                            the PAO Hamiltonian that replaces the PBE one
   <out>/optics/nscf.in     an automatic grid with many bands for the extended-basis
                            dielectric_tensor run (optics_eps.py --savedir ...)
@@ -56,7 +56,7 @@ def main():
         template = handle.read()
     prefix = prefix_of(template)
     runs = {
-        'epw_nscf': hubbard_nscf_input(template, prefix, tuple(args.nk), args.nbnd, args.pseudo_dir),
+        'nscf': hubbard_nscf_input(template, prefix, tuple(args.nk), args.nbnd, args.pseudo_dir),
         'optics': optics_nscf_input(
             template, prefix, tuple(args.optics_nk), args.optics_nbnd, args.pseudo_dir
         ),
@@ -75,11 +75,11 @@ def main():
               % (prefix, os.path.join(args.out, run, prefix + '.save')))
     print('  (the eACBN0 template was %s)' % os.path.join(save, os.path.basename(args.template)))
     print('\nThen, e.g.:')
-    print('  (cd %s/epw_nscf && mpirun -np 8 pw.x -in nscf.in > nscf.out)' % args.out)
+    print('  (cd %s/nscf && mpirun -np 8 pw.x -in nscf.in > nscf.out)' % args.out)
     print('  (cd %s/optics && mpirun -np 8 pw.x -nk 8 -in nscf.in > nscf.out)' % args.out)
     print('  python optics_eps.py --savedir %s/optics/%s.save --outdir %s/optics/output'
           % (args.out, prefix, args.out))
-    print('  mpirun -np 8 python main.py --electrons-save %s/epw_nscf/%s.save \\'
+    print('  mpirun -np 8 python main.py --electrons-save %s/nscf/%s.save \\'
           % (args.out, prefix))
     print('      --emissivity --direct-dielectric %s/optics/output --varshni 4.73e-4 636' % args.out)
 

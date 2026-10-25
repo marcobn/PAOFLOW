@@ -6,7 +6,7 @@
 Reads OUTPUTDIR/absorption.npz written by main.py: Im eps(omega)
 (direct, phonon-assisted and total) and the absorption coefficient alpha(omega)
 for every temperature, with the indirect and direct gaps marked.  When EPW's
-own epsilon2_indabs_<T>K.dat exists in the EPW directory (an EPW run with
+own epsilon2_indabs_<T>K.dat exists in the nscf directory (an EPW run with
 lindabs = .true.), it is overlaid (dashed) for comparison.  The figure is saved
 as OUTPUTDIR/absorption.png.  After main.py --emissivity a second figure
 shows the spectral and total hemispherical emissivity versus temperature
@@ -23,7 +23,7 @@ from PAOFLOW import GPAO
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUTDIR = os.path.join(HERE, 'output')
 NPZ = os.path.join(OUTPUTDIR, 'absorption.npz')
-EPW_DIR = os.path.join(HERE, 'epw')  # looked up for EPW's epsilon2_indabs_<T>K.dat
+EPW_DIR = os.path.join(HERE, 'nscf')  # EPW's run directory, looked up for its epsilon2_indabs_<T>K.dat
 
 
 def main():

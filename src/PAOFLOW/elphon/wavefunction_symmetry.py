@@ -237,6 +237,32 @@ def rotate_block(
     )
 
 
+def stores_irreducible_wedge(save_dir: str) -> bool:
+    """True when a QE save holds the irreducible wedge of a Gamma-centred automatic grid.
+
+    Parameters
+    ----------
+    save_dir : str
+        QE save directory (``data-file-schema.xml``).
+
+    Returns
+    -------
+    bool
+        A ``monkhorst_pack`` element without shift and fewer stored k-points than
+        ``nk1 * nk2 * nk3``; ``False`` for explicit k lists and complete grids.  The
+        electron-phonon drivers pass this to ``unfold_kpoints``.
+    """
+    root = ET.parse(os.path.join(save_dir, 'data-file-schema.xml')).getroot()
+    mp = root.find('output/band_structure/starting_k_points/monkhorst_pack')
+    if mp is None:
+        return False
+    a = mp.attrib
+    if any(int(a[s]) for s in ('k1', 'k2', 'k3')):
+        return False
+    nks = int(root.findtext('output/band_structure/nks'))
+    return nks < int(a['nk1']) * int(a['nk2']) * int(a['nk3'])
+
+
 def monkhorst_pack_grid(save_dir: str) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
     """``((nk1, nk2, nk3), (k1, k2, k3))`` of an automatic nscf from ``data-file-schema.xml``.
 

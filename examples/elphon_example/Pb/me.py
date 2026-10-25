@@ -5,7 +5,7 @@ Post-processing of the alpha^2F written by main.py (output/eliashberg.npz), as i
 the Eliashberg steps of EPW tutorial 04 (see README.md):
 
     python me.py                      # gap on the imaginary and real axes, Delta(T), Tc
-    python me.py --a2f epw/pb.a2f     # the same on EPW's own alpha^2F
+    python me.py --a2f nscf/pb.a2f     # the same on EPW's own alpha^2F
     python plot_me.py
 
 For every temperature output/me/ receives, in EPW's formats, pb.imag_iso_<T>

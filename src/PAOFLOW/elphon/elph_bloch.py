@@ -477,8 +477,12 @@ def lambda_q_dense_ws(
     ispin=0,
     kblock=4096,
     nelec=None,
+    spin_degeneracy=2.0,
 ):
     """``lambda_{q nu}`` with a Wigner-Seitz (EPW-style) electron interpolation.
+
+    ``spin_degeneracy`` (2 for scalar bands, 1 for spinors) sets the Fermi level
+    of ``nelec`` electrons.
 
     Same as :func:`lambda_q_dense` but the vertex ``gR`` and the PAO Hamiltonian
     ``HRs`` are interpolated to the dense grid with explicit Wigner-Seitz real-space
@@ -550,7 +554,7 @@ def lambda_q_dense_ws(
             Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
             Eall[s0 : s0 + Kb.shape[0]] = np.linalg.eigvalsh(Hk) / RY_TO_EV
         for isig, sig in enumerate(sigmas):
-            ef_sig[isig] = _fermi_level(Eall, sig, nelec)
+            ef_sig[isig] = _fermi_level(Eall, sig, nelec, spin_degeneracy)
     for s0 in range(0, nkd, kblock):
         Kb = K[s0 : s0 + kblock]
         # Electrons: PAOFLOW builds HRs = ifftn(Hks), so H(k) = sum_R exp(-2 pi i k.R) HRs(R).
@@ -604,8 +608,13 @@ def precompute_dense_electrons(
     diagonal_velocities: bool = False,
     keep_bands: Callable | None = None,
     comm=None,
+    spin_degeneracy: float = 2.0,
 ) -> dict:
     """Dense-grid electron spectrum + Fermi-surface delta, shared by every q.
+
+    ``spin_degeneracy`` (2 for scalar bands, 1 for spinors with spin-orbit
+    coupling) sets the Fermi level of ``nelec`` electrons; it must match the
+    degeneracy the caller uses for the density of states and the plasma frequency.
 
     Diagonalises ``H(k)`` **once** on the regular ``Nk^3`` grid (Wigner-Seitz
     interpolation of ``HRs``).  Because the electronic spectrum is q-independent,
@@ -751,7 +760,7 @@ def precompute_dense_electrons(
     dk = np.empty((sigmas.size, nkd, nawf))
     dos = np.zeros(sigmas.size)
     for isig, sig in enumerate(sigmas):
-        ef = _fermi_level(E, sig, nelec) if nelec is not None else 0.0
+        ef = _fermi_level(E, sig, nelec, spin_degeneracy) if nelec is not None else 0.0
         ef_sig[isig] = ef
         d = np.exp(-(((E - ef) / sig) ** 2)) / (sig * np.sqrt(np.pi))
         dk[isig] = d

@@ -728,6 +728,7 @@ def eliashberg_dense_q(
         alat=alat,
         diagonal_velocities=transport,
         comm=comm,
+        spin_degeneracy=spin_degeneracy,
     )
 
     # --- (b) dense q-grid loop (distributed over MPI ranks) ---------------- #

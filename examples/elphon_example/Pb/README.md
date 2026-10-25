@@ -22,10 +22,10 @@ matrix elements, and PAOFLOW does all the interpolation.
 |------|---------|
 | `phonon/scf.in` | `pw.x` scf (8³ k, with symmetry) |
 | `phonon/ph.in` | `ph.x` DFPT on the 6³ q-grid (irreducible q, `fildvscf`) |
-| `epw/nscf.in` | `pw.x` nscf on the full 6³ grid as an explicit `K_POINTS crystal` list (`nbnd = 16`) |
-| `epw/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, `exclude_bands = 1:5` |
-| `epw/write_ukk.py` | writes `pb.ukk` (band bookkeeping EPW reads when `wannierize = .false.`) and empty `pb.bvec`/`pb.mmn` stubs |
-| `epw/epw_wannier.in` | the tutorial's Wannierized EPW input (alternative; same `.epb` content) |
+| `nscf/nscf.in` | `pw.x` nscf on the full 6³ grid as an explicit `K_POINTS crystal` list (`nbnd = 16`) |
+| `nscf/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, `exclude_bands = 1:5` |
+| `nscf/write_ukk.py` | writes `pb.ukk` (band bookkeeping EPW reads when `wannierize = .false.`) and empty `pb.bvec`/`pb.mmn` stubs |
+| `nscf/epw_wannier.in` | the tutorial's Wannierized EPW input (alternative; same `.epb` content) |
 | `main.py` | PAOFLOW analysis: PAO electronic structure + Eliashberg on EPW's coupling |
 | `me.py` | isotropic Migdal–Eliashberg on the α²F of `main.py`: gap vs T, real axis, linearised-kernel Tc |
 | `plot_me.py` | plots the `me.py` results |
@@ -34,13 +34,13 @@ matrix elements, and PAOFLOW does all the interpolation.
 | `optics/nscf.in`, `optics_eps.py` | optional: interband dielectric function on the extended basis (`dielectric_tensor(intraband=False)`) |
 
 **Pseudopotential:** copy `Pb.upf` (ONCVPSP, from the EPW tutorial material) into
-this directory. Both `phonon/` and `epw/` use `pseudo_dir = '../'`.
+this directory. Both `phonon/` and `nscf/` use `pseudo_dir = '../'`.
 
-`paoflow-gen` (electron-phonon workflow, EPW source) produces this same layout
-from a `pw.x` input of the system: `phonon/scf.in`, `phonon/ph.in`,
-`epw/nscf.in`, `epw/epw.in`, `epw/write_ukk.py`, plus `main.elphon.py` (the
-equivalent of `main.py`), `me.elphon.py` (the equivalent of `me.py`) and
-`plot.elphon.py`.
+`paoflow-gen` (electron-phonon workflow, EPW source) produces the same layout
+from a `pw.x` input of the system: `phonon/scf.in`, `phonon/ph.in`, the nscf
+and EPW inputs (`nscf.in`, `epw.in`, `write_ukk.py`, under its default
+directory `epw/`, option `epw_dir`), plus `main.elphon.py` (the equivalent of
+`main.py`), `me.elphon.py` (the equivalent of `me.py`) and `plot.elphon.py`.
 
 ---
 
@@ -54,7 +54,7 @@ mpirun -np 8 pw.x -in scf.in > scf.out
 mpirun -np 8 ph.x -in ph.in  > ph.out
 python3 /path/to/q-e/EPW/bin/pp.py          # prefix 'pb' -> collects dvscf, patterns, dyn into save/
 
-cd ../epw
+cd ../nscf
 mkdir -p pb.save                                 # the nscf starts from the scf charge density
 cp ../phonon/pb.save/{charge-density.dat,data-file-schema.xml} pb.save/
 mpirun -np 8 pw.x -in nscf.in > nscf.out
@@ -65,20 +65,20 @@ mpirun -np 8 epw.x -nk 8 -in epw.in > epw.out   # EPW: one process per pool (-np
 **Without EPW (default since October 2026).** `main.py` has
 `COUPLING_SOURCE = 'dfpt'`: PAOFLOW computes the coarse coupling itself from the
 `ph.x` outputs (`phonon/_ph0/`, `phonon/pb.dyn*`, or the `pp.py` `save/`) and the
-nscf wavefunctions of `epw/pb.save`, so `pp.py`, `write_ukk.py` and `epw.x` are not
+nscf wavefunctions of `nscf/pb.save`, so `pp.py`, `write_ukk.py` and `epw.x` are not
 needed; only the scf, `ph.x` (with `fildvscf`) and the nscf steps above remain. The
 native vertex reproduces EPW's `.epb` matrix elements to the rounding level (see
 `docs/internals/dfpt-coupling-port.md`); set `COUPLING_SOURCE = 'epw'` to read the
 `.epb` files instead (required for ultrasoft or PAW pseudopotentials).
 With the native source the nscf may also be run on the irreducible wedge,
-`K_POINTS automatic 6 6 6 0 0 0` (16 irreducible k instead of 216): set `UNFOLD_KPOINTS = True` in the driver and
+`K_POINTS automatic 6 6 6 0 0 0` (16 irreducible k instead of 216): the driver detects it and
 PAOFLOW rotates the stored Bloch functions to the full grid by symmetry
 (`docs/internals/dfpt-coupling-port.md`, phase 4B); EPW needs the explicit list.
 
 The scf and the nscf run in separate directories, so the phonon calculation
 keeps its own `phonon/pb.save` and the nscf overwrites nothing that ph.x or
 `pp.py` produced. The nscf reads the scf charge density, hence the copy into
-`epw/pb.save`.
+`nscf/pb.save`.
 
 `epw.x` writes `pb.epb1 … pb.epbN` (the coarse Bloch coupling, one file per
 pool), which together with `pb.ukk` is all PAOFLOW reads. After printing "The
@@ -116,7 +116,7 @@ result arrays).
 ```bash
 python me.py                    # serial, a few seconds
 python plot_me.py               # figure -> output/me/migdal_eliashberg.png
-python me.py --a2f epw/pb.a2f   # optional: the same solver on EPW's own alpha^2F
+python me.py --a2f nscf/pb.a2f   # optional: the same solver on EPW's own alpha^2F
 ```
 
 `me.py` uses the parameters of the tutorial's Eliashberg steps:
@@ -228,14 +228,14 @@ q and is shown only as the cheaper workflow.
   6³ / 6³), and `NK_DENSE` must be a multiple of `NQ_DENSE`.
 - **Explicit k list:** EPW requires the full grid as `K_POINTS crystal` in
   [0, 1). `PAOFLOW.gen.epw_inputs.kpoints_card((6, 6, 6))` writes exactly the
-  list in `epw/nscf.in`. PAOFLOW recovers the grid from the list and must be run
+  list in `nscf/nscf.in`. PAOFLOW recovers the grid from the list and must be run
   with `pao_hamiltonian(expand_wedge=False)`, as in `main.py`. With
   `COUPLING_SOURCE = 'dfpt'` the nscf may use `K_POINTS automatic 6 6 6 0 0 0`
-  instead, with `UNFOLD_KPOINTS = True`.
+  instead (detected by the driver).
 - **Band exclusion without Wannier functions:** with `wannierize = .false.`
   EPW takes the excluded bands from `pb.ukk` (`write_placeholder_ukk(...,
   exclude_bands=..., nelec=...)`); `bands_skipped` in `epw.in` only documents
   the choice. `PAOFLOW.gen.epw_inputs.epw_input` writes the matching `epw.in`,
   and `paoflow-gen` (electron-phonon workflow) generates both.
-- **Wannierized EPW runs** work too (`epw/epw_wannier.in`), as long as the
+- **Wannierized EPW runs** work too (`nscf/epw_wannier.in`), as long as the
   outer disentanglement window contains every band (no `dis_win_min/max`).

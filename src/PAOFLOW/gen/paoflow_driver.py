@@ -1892,6 +1892,7 @@ from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
 from PAOFLOW.elphon.do_pao_eph_dense_q import eliashberg_dense_q
 from PAOFLOW.elphon.elph_bloch import RY_TO_EV, atom_masses, pao_orbital_positions, read_nscf
 from PAOFLOW.elphon.fermi_surface_coupling import write_fs_coupling
+from PAOFLOW.elphon.wavefunction_symmetry import stores_irreducible_wedge
 
 # ----------------------------------------------------------------------- #
 # Configuration  (edit freely -- masses / NELEC are system-specific)      #
@@ -1921,18 +1922,21 @@ KB_EV = 8.617333262e-5
 
 
 def pao_electronic_structure():
-    """PAO projections, Hamiltonian and orbital centres on the EPW nscf save."""
+    """PAO projections, Hamiltonian and orbital centres on the coarse-grid nscf save."""
+    # An nscf on the irreducible wedge (K_POINTS automatic) is unfolded to the full grid by
+    # symmetry; the explicit full list EPW needs is used as is.
+    unfold = stores_irreducible_wedge(SAVEDIR)
     pf = PAOFLOW.PAOFLOW(
-        workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=__SAVE_OVERLAPS__, verbose=False
+        workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=__SAVE_OVERLAPS__, verbose=False,
+        unfold_kpoints=unfold,
     )
 __PROJECTION_CALL__
     pf.projectability(pthr=PTHR)
-    # The projections A_k = <phi|psi_k> rotate EPW's matrix elements to the PAO
+    # The projections A_k = <phi|psi_k> rotate the coarse matrix elements to the PAO
     # gauge; pao_hamiltonian deletes them, so keep a copy first.
     projections = pf.data_controller.full_projections()[:, :, :, 0].copy()
-    # The explicit K_POINTS list already spans the whole Brillouin zone.
-    pf.pao_hamiltonian(expand_wedge=False)
-    nscf = read_nscf(SAVEDIR)
+    pf.pao_hamiltonian(expand_wedge=False)  # the k-points span the whole Brillouin zone
+    nscf = read_nscf(SAVEDIR, unfold=unfold)
     # Orbital centres: pair-resolved Wigner-Seitz interpolation (several atoms per cell).
     nscf['orbital_positions'] = pao_orbital_positions(pf.data_controller, nscf['at'])
     return projections, pf.data_controller.data_arrays['HRs'], nscf, pf.data_controller
@@ -2221,6 +2225,7 @@ from PAOFLOW.elphon.pao_electrons import (
     format_hubbard_info,
     pao_hamiltonian_from_save,
 )
+from PAOFLOW.elphon.wavefunction_symmetry import stores_irreducible_wedge
 from PAOFLOW.elphon.phonon_assisted_absorption import (
     pao_band_gaps,
     phonon_assisted_absorption_dense_q,
@@ -2301,8 +2306,11 @@ def pao_electronic_structure(electrons_save=None):
     """
     options = dict(basispath=BASISDIR, configuration='standard', pthr=PTHR, projector=PROJECTOR,
                    workpath=HERE, outputdir=OUTPUTDIR, save_overlaps=SAVE_OVERLAPS)
-    # The explicit K_POINTS list of the EPW nscf already spans the whole Brillouin zone.
-    coupling = pao_hamiltonian_from_save(SAVEDIR, expand_wedge=False, verbose=False, **options)
+    # The nscf may hold the irreducible wedge (K_POINTS automatic): its Bloch functions are then
+    # unfolded to the full grid by symmetry; an explicit full list is used as is.
+    coupling = pao_hamiltonian_from_save(
+        SAVEDIR, expand_wedge=False, unfold_kpoints=stores_irreducible_wedge(SAVEDIR), verbose=False, **options
+    )
     kind = lambda run: run.hubbard['kind'] if run.hubbard else 'PBE'  # noqa: E731
     provenance = {'coupling_save': SAVEDIR, 'electrons_save': '', 'electrons_dft': kind(coupling),
                   'electrons_hubbard': format_hubbard_info(coupling.hubbard)}
@@ -2655,6 +2663,7 @@ from PAOFLOW.elphon.pao_electrons import (
     format_hubbard_info,
     pao_hamiltonian_from_save,
 )
+from PAOFLOW.elphon.wavefunction_symmetry import stores_irreducible_wedge
 from PAOFLOW.elphon.phonon_assisted_absorption import varshni_gap, varshni_shift
 
 # ----------------------------------------------------------------------- #
@@ -2706,8 +2715,11 @@ def pao_electronic_structure(electrons_save=None):
     """
     options = dict(basispath=BASISDIR, configuration='standard', pthr=PTHR, projector=PROJECTOR,
                    workpath=HERE, outputdir=OUTPUTDIR, save_overlaps=SAVE_OVERLAPS)
-    # The explicit K_POINTS list of the EPW nscf already spans the whole Brillouin zone.
-    coupling = pao_hamiltonian_from_save(SAVEDIR, expand_wedge=False, verbose=False, **options)
+    # The nscf may hold the irreducible wedge (K_POINTS automatic): its Bloch functions are then
+    # unfolded to the full grid by symmetry; an explicit full list is used as is.
+    coupling = pao_hamiltonian_from_save(
+        SAVEDIR, expand_wedge=False, unfold_kpoints=stores_irreducible_wedge(SAVEDIR), verbose=False, **options
+    )
     kind = lambda run: run.hubbard['kind'] if run.hubbard else 'PBE'  # noqa: E731
     provenance = {'coupling_save': SAVEDIR, 'electrons_save': '', 'electrons_dft': kind(coupling),
                   'electrons_hubbard': format_hubbard_info(coupling.hubbard)}

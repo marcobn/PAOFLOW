@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Set the coarse k-mesh of the EPW run (nscf k-points list, epw.in, write_ukk.py, drivers).
+"""Set the coarse k-mesh (nscf K_POINTS card, epw.in, write_ukk.py, drivers).
 
-    python kmesh.py NK1 NK2 NK3 [--no-drivers]
+    python kmesh.py NK1 NK2 NK3 [--explicit] [--no-drivers]
 
-e.g. ``python kmesh.py 8 8 8``.  EPW needs the nscf on the full Gamma-centred
-grid as an explicit list (``K_POINTS crystal``, all NK1*NK2*NK3 points, the
-order of ``K_POINTS automatic``), and every file that refers to the grid has to
-agree with it.  This script rewrites, in place:
+e.g. ``python kmesh.py 8 8 8``.  PAOFLOW's native coupling reads the nscf on the
+irreducible wedge of the Gamma-centred grid (``K_POINTS automatic``, the
+default here) or on the full grid as an explicit list; EPW needs the explicit
+list (``K_POINTS crystal``, all NK1*NK2*NK3 points in ``K_POINTS automatic``
+order, ``--explicit``).  Every file that refers to the grid has to agree with
+it.  This script rewrites, in place:
 
-  nscf.in       the K_POINTS crystal card (NK1*NK2*NK3 points, equal weights);
+  nscf.in       the K_POINTS card (automatic NK1 NK2 NK3 0 0 0, or the explicit
+                list with --explicit);
   epw.in        nk1, nk2, nk3;
   write_ukk.py  the number of k-points of the placeholder Si2.ukk;
   ../main.py, ../mobility.py
@@ -57,6 +60,9 @@ def replace_once(text, pattern, replacement, path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('nk', type=int, nargs=3, metavar=('NK1', 'NK2', 'NK3'), help='k-mesh')
+    parser.add_argument('--explicit', action='store_true',
+                        help='write the explicit K_POINTS crystal list (required by EPW) '
+                             'instead of K_POINTS automatic (irreducible wedge)')
     parser.add_argument('--no-drivers', action='store_true',
                         help='do not update COARSE_GRID in ../main.py and ../mobility.py')
     args = parser.parse_args()
@@ -73,8 +79,9 @@ def main():
 
     with open(NSCF) as handle:
         nscf_text = handle.read()
+    card = kpoints_card(nk) if args.explicit else 'K_POINTS automatic\n  %d %d %d 0 0 0\n' % nk
     with open(NSCF, 'w') as handle:
-        handle.write(edit_pw_input(nscf_text, kpoints=kpoints_card(nk)))
+        handle.write(edit_pw_input(nscf_text, kpoints=card))
     with open(EPW, 'w') as handle:
         handle.write(edit_pw_input(
             epw_text, {'inputepw': {'nk1': str(nk[0]), 'nk2': str(nk[1]), 'nk3': str(nk[2])}}
@@ -101,7 +108,10 @@ def main():
           % ('x'.join(map(str, nk)), nk[0] * nk[1] * nk[2], 'x'.join(map(str, nq))))
     for path in edited:
         print('  updated %s' % path)
-    print('Now rerun here: pw.x -in nscf.in; python write_ukk.py; epw.x -in epw.in')
+    if args.explicit:
+        print('Now rerun here: pw.x -in nscf.in; python write_ukk.py; epw.x -in epw.in')
+    else:
+        print('Now rerun here: pw.x -in nscf.in (irreducible wedge; EPW would need --explicit)')
 
 
 if __name__ == '__main__':

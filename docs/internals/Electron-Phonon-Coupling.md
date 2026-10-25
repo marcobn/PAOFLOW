@@ -213,8 +213,9 @@ Paths relative to `src/PAOFLOW/`.
    with seven digits limits the agreement with EPW to $10^{-8}$), or the
    **irreducible wedge** with `K_POINTS automatic nk1 nk2 nk3 0 0 0`: PAOFLOW then
    rotates the stored Bloch functions to the full grid by symmetry
-   (`unfold_kpoints=True` in `PAOFLOW` / `pao_hamiltonian_from_save`, detected
-   automatically by the vertex), with the same wavefunction storage savings as
+   (`unfold_kpoints=True` in `PAOFLOW` / `pao_hamiltonian_from_save`; the example
+   drivers pass `stores_irreducible_wedge(save_dir)` and the vertex detects it by
+   itself), with the same wavefunction storage savings as
    QE's own symmetry reduction (Si 6³: 16 k instead of 216; Pb 12³ with SOC: 72
    instead of 1728).  The rotated states equal those of a full-grid nscf up to a
    unitary mixing inside degenerate multiplets, to which the projections, the
@@ -1416,6 +1417,15 @@ remains a convergence statement, not a code defect.
   still works for the Hamiltonian through `pao_hamiltonian(expand_wedge=True)`,
   but its projections cover the irreducible points only, which the vertex rejects.
 - **`expand_wedge=False`** for the EPW save (see above).
+- **Spinor bands (spin-orbit coupling).** Pass `spin_degeneracy=1` to the
+  dense drivers (`eliashberg_dense_q`, `eliashberg_from_qe_coupling`,
+  `carrier_scattering_dense_q`, `phonon_assisted_absorption_dense_q`; the
+  examples set it from the case). It sets the Fermi level of `nelec` electrons
+  on the dense grid (`precompute_dense_electrons`), the density of states and
+  the plasma frequency. With the default of 2, `nelec` spinor electrons fill
+  only `nelec/2` bands: for Pb the Fermi level then sits inside the 5d manifold
+  and $\lambda$ vanishes (bug fixed on October 25 2026, when only the plasma
+  frequency honoured the value).
 - **Hamiltonian from another save.** `phonon_assisted_absorption_dense_q` and
   `carrier_scattering_dense_q` only check that `A` and `HRs` have the same
   orbital count (`check_orbital_dimensions`); the physical requirement (same
@@ -1453,17 +1463,17 @@ from PAOFLOW.elphon.elph_bloch import read_nscf
 from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
 from PAOFLOW.elphon.do_pao_eph_dense_q import eliashberg_dense_q
 
-pf = PAOFLOW.PAOFLOW(workpath=..., outputdir='output', savedir='epw/pb.save')
+pf = PAOFLOW.PAOFLOW(workpath=..., outputdir='output', savedir='nscf/pb.save')
 pf.projections(configuration='standard', basispath=BASIS)
 pf.projectability(pthr=0.95)
 A = pf.data_controller.full_projections()[:, :, :, 0].copy()   # BEFORE pao_hamiltonian
 pf.pao_hamiltonian(expand_wedge=False)                         # explicit full k list
 HRs = pf.data_controller.data_arrays['HRs']
-info = read_nscf('epw/pb.save')
+info = read_nscf('nscf/pb.save')
 ng = (6, 6, 6)
 # nscf on the irreducible wedge (K_POINTS automatic 6 6 6 0 0 0) instead of the explicit list:
-#   pf = PAOFLOW(savedir='epw/pb.save', unfold_kpoints=True); ...; info = read_nscf('epw/pb.save', unfold=True)
-# or in one call: pao_hamiltonian_from_save('epw/pb.save', ..., unfold_kpoints=True)
+#   pf = PAOFLOW(savedir='nscf/pb.save', unfold_kpoints=True); ...; info = read_nscf('nscf/pb.save', unfold=True)
+# or in one call: pao_hamiltonian_from_save('nscf/pb.save', ..., unfold_kpoints=True)
 
 # Workflow 1 (coarse q from EPW):
 out = eliashberg_from_qe_coupling(
@@ -1476,14 +1486,14 @@ out = eliashberg_from_qe_coupling(
 # save_dir = the nscf save of the projections; dense-q drivers take coupling_source='dfpt'.
 out = eliashberg_dense_q(
     A, HRs, info['kpts_cryst'], info['bg'], info['at'],
-    'phonon', (6, 6, 6), None, None, ng, None, source='dfpt', save_dir='epw/pb.save',
+    'phonon', (6, 6, 6), None, None, ng, None, source='dfpt', save_dir='nscf/pb.save',
     masses_amu=[207.2], nk_dense=48, nq_dense=24, sigmas_ry=[0.05 / 13.6057], nelec=14,
     sym_rots=info['s_cryst'], tau_cryst=info['tau_cryst'], species=info['atom_names'],
 )
 
 # Hamiltonian of another save (eACBN0 electrons, PBE coupling):
 from PAOFLOW.elphon.pao_electrons import check_same_pao_basis, pao_hamiltonian_from_save
-coupling = pao_hamiltonian_from_save('epw/Si2.save', BASIS, 'standard', 0.95, expand_wedge=False)
+coupling = pao_hamiltonian_from_save('nscf/Si2.save', BASIS, 'standard', 0.95, expand_wedge=False)
 electrons = pao_hamiltonian_from_save('acbn0/epw_nscf/Si2.save', BASIS, 'standard', 0.95)
 check_same_pao_basis(coupling.data_controller, electrons.data_controller)   # raises on mismatch
 # ... phonon_assisted_absorption_dense_q(coupling.projections, electrons.HRs, ...,

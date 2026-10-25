@@ -319,8 +319,10 @@ the umklapp of the map but derives the integer shift from the block's own header
 an automatic grid may carry a different lattice translation than the folded list); (ii) the option
 is `unfold_kpoints` everywhere (`PAOFLOW`, `DataController`, `pao_hamiltonian_from_save`,
 `CoarseVertexSetup`; `read_nscf(unfold=True)`), and `CoarseVertexSetup` detects an irreducible-wedge
-save by itself (Γ-centred `monkhorst_pack` element with fewer stored k than grid points), so the
-dense-q drivers need no new keyword; (iii) the projections at $Sk$ come from feeding the rotated block
+save by itself (`stores_irreducible_wedge`: Γ-centred `monkhorst_pack` element with fewer stored k
+than grid points), so the dense-q drivers need no new keyword, and the example and generated
+drivers pass `unfold_kpoints=stores_irreducible_wedge(SAVEDIR)` (the Si example ships its nscf
+with `K_POINTS automatic`; `kmesh.py --explicit` restores the list EPW needs); (iii) the projections at $Sk$ come from feeding the rotated block
 through the unchanged `read_QE_wfc` → `calc_atwfc_k` path (the Löwdin step is now
 `loewdin_orthonormalize`).  The `DataController` expansion replaces `kpnts`, `kpnts_wght` (uniform,
 same total), `my_eigsmat` and `nkpnts` on the reading rank before the broadcast.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PAOFLOW phonon-assisted optical absorption on EPW's coarse coupling (examples/elphon_example/Si).
+"""PAOFLOW phonon-assisted optical absorption on the coarse electron-phonon coupling (examples/elphon_example/Si).
 
 Second-order (photon + phonon) absorption of an indirect-gap semiconductor, as
 EPW's ``lindabs`` (indabs.f90; Noffsinger et al., PRL 108, 167402 (2012); EPW
@@ -7,28 +7,30 @@ tutorial 06), with the coupling, the electrons, their velocity matrix elements
 and the phonons all interpolated in the PAO basis.  The direct (vertical)
 absorption is computed alongside.
 
-The coarse electron-phonon matrix elements come from EPW (``epbwrite = .true.``),
-exactly as for the Eliashberg workflow.  paoflow-gen wrote the QE/EPW inputs in
-two run directories:
+The coarse electron-phonon matrix elements are computed by PAOFLOW from the
+``ph.x`` outputs (COUPLING_SOURCE = 'dfpt'; EPW's ``.epb`` files are the alternative).
+paoflow-gen wrote the QE inputs in two run directories:
 
-    phonon/scf.in, phonon/ph.in               pw.x scf + ph.x DFPT (irreducible q)
-    epw/nscf.in, epw/epw.in, epw/write_ukk.py   pw.x nscf (full k list) + epw.x
+    phonon/scf.in, phonon/ph.in     pw.x scf + ph.x DFPT (irreducible q, fildvscf)
+    nscf/nscf.in                    pw.x nscf on the coarse k-grid (K_POINTS automatic:
+                                    irreducible wedge, unfolded by symmetry; an explicit
+                                    full list, as EPW needs it, works as well)
 
 Run them in this order:
 
     cd phonon
     mpirun -np N pw.x -in scf.in > scf.out
     mpirun -np N ph.x -in ph.in  > ph.out
-    python3 /path/to/q-e/EPW/bin/pp.py      # collects dvscf/patterns/dyn into save/
-    cd ../epw
+    cd ../nscf
     mkdir -p Si2.save          # the nscf starts from the scf charge density
     cp ../phonon/Si2.save/{charge-density.dat,data-file-schema.xml} Si2.save/
     mpirun -np N pw.x -in nscf.in > nscf.out
-    python3 write_ukk.py                    # Si2.ukk (+ empty .bvec/.mmn stubs)
-    mpirun -np N epw.x -nk N -in epw.in > epw.out   # writes Si2.epb*, one file per pool
     cd ..
-    mpirun -np N python main.py      # PAO interpolation -> Im eps(omega), alpha(omega)
+    mpirun -np N python main.py
     python plot.py
+
+EPW route (COUPLING_SOURCE = 'epw'): python nscf/kmesh.py 6 6 6 --explicit, rerun the
+nscf, python nscf/write_ukk.py, mpirun -np N epw.x -nk N -in nscf/epw.in (writes Si2.epb*).
 
 Outputs (OUTPUTDIR), one set per temperature, in EPW's layout:
 epsilon2_indabs_<T>K.dat and epsilon2_indabs_lorenz<T>K.dat (photon energy and
@@ -113,6 +115,7 @@ from PAOFLOW.elphon.pao_electrons import (
     format_hubbard_info,
     pao_hamiltonian_from_save,
 )
+from PAOFLOW.elphon.wavefunction_symmetry import stores_irreducible_wedge
 from PAOFLOW.elphon.phonon_assisted_absorption import (
     pao_band_gaps,
     phonon_assisted_absorption_dense_q,
@@ -134,12 +137,9 @@ COUPLING_SOURCE = (
     'dfpt'  # 'dfpt': native vertex from ph.x's dvscf + the nscf save; 'epw': EPW's .epb files
 )
 PHONON_DIR = os.path.join(HERE, 'phonon')  # ph.x run directory (_ph0/, Si2.dyn*) or its pp.py save/
-EPW_DIR = os.path.join(
-    HERE, 'epw'
-)  # nscf save (Si2.save); with COUPLING_SOURCE='epw' also Si2.epb*, Si2.ukk
-SAVEDIR = os.path.join(HERE, 'epw/Si2.save')  # the nscf save on the coarse k-grid
-UNFOLD_KPOINTS = False  # True if epw/nscf.in used 'K_POINTS automatic' (irreducible wedge) instead of the explicit list
-COUPLING_DIR = PHONON_DIR if COUPLING_SOURCE == 'dfpt' else EPW_DIR
+NSCF_DIR = os.path.join(HERE, 'nscf')  # nscf run; with COUPLING_SOURCE='epw' also Si2.epb*, Si2.ukk
+SAVEDIR = os.path.join(NSCF_DIR, 'Si2.save')  # the nscf save on the coarse k-grid (irreducible wedge or full list)
+COUPLING_DIR = PHONON_DIR if COUPLING_SOURCE == 'dfpt' else NSCF_DIR
 BASISDIR = os.path.join(HERE, 'BASIS_PS')  # paoflow-genbasis-ps --pseudo <upf> --out <BASISDIR>
 OUTPUTDIR = os.path.join(HERE, 'output')
 
@@ -198,7 +198,7 @@ def pao_electronic_structure(electrons_save=None):
     """PAO projections and Hamiltonian; the Hamiltonian optionally from another save.
 
     The coupling (the projections A, the .epb files, the k list and the
-    symmetries) always comes from SAVEDIR, the nscf EPW read.  With
+    symmetries) always comes from SAVEDIR, the coarse-grid nscf.  With
     ``electrons_save`` (an eACBN0 nscf of the same crystal in the same PAO basis)
     the band energies and eigenvectors are those of its PAO Hamiltonian, while the
     coupling in the orbital basis stays that of the DFPT/EPW run.  Returns the
@@ -214,10 +214,14 @@ def pao_electronic_structure(electrons_save=None):
         outputdir=OUTPUTDIR,
         save_overlaps=SAVE_OVERLAPS,
     )
-    # The explicit K_POINTS list of the nscf already spans the whole Brillouin zone; an
-    # irreducible-wedge nscf is unfolded to it by symmetry (UNFOLD_KPOINTS).
+    # The nscf may hold the irreducible wedge (K_POINTS automatic): its Bloch functions are then
+    # unfolded to the full grid by symmetry; an explicit full list is used as is.
     coupling = pao_hamiltonian_from_save(
-        SAVEDIR, expand_wedge=False, unfold_kpoints=UNFOLD_KPOINTS, verbose=False, **options
+        SAVEDIR,
+        expand_wedge=False,
+        unfold_kpoints=stores_irreducible_wedge(SAVEDIR),
+        verbose=False,
+        **options,
     )
     kind = lambda run: run.hubbard['kind'] if run.hubbard else 'PBE'  # noqa: E731
     provenance = {
@@ -543,12 +547,12 @@ def main():
     if args.nk % args.nq:
         sys.exit('--nk (%d) must be a multiple of --nq (%d).' % (args.nk, args.nq))
     if not os.path.isdir(SAVEDIR):
-        sys.exit('%s not found. Run the pw.x nscf in epw/ first.' % SAVEDIR)
+        sys.exit('%s not found. Run the pw.x nscf in nscf/ first.' % SAVEDIR)
     if COUPLING_SOURCE == 'epw' and not any(
-        f.startswith(PREFIX + '.epb') for f in os.listdir(EPW_DIR)
+        f.startswith(PREFIX + '.epb') for f in os.listdir(NSCF_DIR)
     ):
         sys.exit(
-            'No %s.epb* files in %s. Run epw.x with epbwrite = .true. first.' % (PREFIX, EPW_DIR)
+            'No %s.epb* files in %s. Run epw.x with epbwrite = .true. first.' % (PREFIX, NSCF_DIR)
         )
     if COUPLING_SOURCE == 'dfpt' and not (
         os.path.isdir(os.path.join(PHONON_DIR, '_ph0'))
