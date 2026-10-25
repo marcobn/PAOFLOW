@@ -13,15 +13,17 @@ The driver is exposed through the :class:`ACBN0` class.  An instance
 orchestrates the full self-consistent cycle:
 
 1. Parse a user-supplied Quantum ESPRESSO ``<prefix>.scf.in`` template
-   (and the matching ``<prefix>.nscf.in`` / ``<prefix>.projwfc.in``).
+   (and the matching ``<prefix>.nscf.in``; a ``<prefix>.projwfc.in`` is
+   only needed on the ``projwfc.x`` route, ``use_local_basis=False``).
 2. Fit each pseudopotential's atomic wavefunctions to a contracted
    Gaussian basis (:mod:`PAOFLOW.projection.upf_gaussfit`) so the Coulomb
    integrals required by the ACBN0 formula can be evaluated
    analytically.
 3. On every outer iteration, inject the current ``HUBBARD`` card into
    the SCF/NSCF templates and run ``pw.x`` (scf), ``pw.x`` (nscf),
-   ``projwfc.x``, PAOFLOW and finally :class:`ACBN0_Hartree`
-   (under MPI).
+   PAOFLOW (whose internal projection on the atomic orbitals replaces
+   ``projwfc.x`` when ``use_local_basis=True``, the setting of the
+   examples) and finally :class:`ACBN0_Hartree` (under MPI).
 4. Recompute U for every Hubbard-active orbital from the ACBN0
    numerator (renormalized two-electron integrals) and denominator
    (occupation-matrix invariants).
@@ -64,8 +66,8 @@ Public API
   :attr:`vVals` so the ``HUBBARD`` card emits ``V`` lines; used by
   :class:`eACBN0` and for fixed-V runs.
 - :meth:`ACBN0.optimize_hubbard_U` — outer self-consistent loop.
-- :meth:`ACBN0.run_dft` — one shot of pw.x (scf) + pw.x (nscf) +
-  projwfc.x with the current ``HUBBARD`` card injected.
+- :meth:`ACBN0.run_dft` — one shot of pw.x (scf) + pw.x (nscf) with the
+  current ``HUBBARD`` card injected (+ projwfc.x on the ``projwfc.x`` route).
 - :meth:`ACBN0.run_paoflow` — invoke PAOFLOW on the QE save folder to
   produce the PAO Hamiltonian/overlap and k-point dumps consumed by
   the ACBN0 numerator/denominator.
@@ -88,7 +90,7 @@ External tools
 The driver shells out to several commands.  The launchers are
 configured at construction time:
 
-- ``pw.x`` and ``projwfc.x`` from ``qe_path``, optionally prefixed by
+- ``pw.x`` (and ``projwfc.x`` when ``use_local_basis=False``) from ``qe_path``, optionally prefixed by
   ``mpi_qe`` (e.g. ``'mpirun -np 8'``) with extra options in
   ``qe_options`` (e.g. ``'-npool 4'``).
 - PAOFLOW is launched as a separate Python process under

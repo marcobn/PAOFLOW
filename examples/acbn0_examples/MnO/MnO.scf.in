@@ -14,6 +14,7 @@
    nspin = 2,
    starting_magnetization(1) = -0.2,
    starting_magnetization(2) = 0.2
+    nbnd = 36,
  /
  &electrons
    diagonalization = 'david',
@@ -32,7 +33,7 @@
    O     0.250   0.250   0.250
    O     0.750   0.750   0.750
  K_POINTS automatic
-   2  2  2   0  0  0
+   4  4  4   0  0  0
  CELL_PARAMETERS alat
     0.272169 0.680413 0.680413
     0.680413 0.272169 0.680413

@@ -32,8 +32,8 @@ Driver and worker communicate exclusively through pickle files, so there's no MP
 
 Each self-consistent iteration goes through these steps:
 
-1. QE SCF/NSCF calculation with the current `HUBBARD` card
-2. Projector augmented-wave projection via `projwfc.x`
+1. QE SCF calculation with the current `HUBBARD` card, on the full k-grid and with the number of bands the projection needs (an optional `<prefix>.nscf.in` template is run after the scf when present; the examples do without it)
+2. Projection of the Kohn–Sham states on the atomic orbitals: PAOFLOW's internal projection (`use_local_basis=True`, the default in the examples; `configuration='minimal'` uses the UPF pseudo-atomic wavefunctions and matches the `projwfc.x` projectors most closely) or, with `use_local_basis=False`, `projwfc.x`
 3. PAOFLOW bandstructure computation — H(k) and S(k)
 4. Density-matrix construction and Hartree energy evaluation
 5. Convergence check, with optional mixing

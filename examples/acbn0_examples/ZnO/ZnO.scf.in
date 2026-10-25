@@ -16,6 +16,7 @@ MgO FCC
     ntyp=2,
     ecutwfc = 150,
     occupations='fixed',
+    nbnd = 28,
  /   
 
  &electrons
@@ -26,7 +27,7 @@ MgO FCC
  /
 
 K_POINTS automatic
- 6 6 4 1 1 1 
+ 6 6 4 0 0 0
 
 ATOMIC_SPECIES 
  Zn  65.39 Zn.pbe-n-nc.UPF
