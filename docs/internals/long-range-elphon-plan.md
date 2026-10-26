@@ -193,5 +193,10 @@ Local scripts in `Workspace/PAOFLOW/dfpt_port/sic{,6,40}/` (QE 7.5 / EPW 6.0, PA
   pseudopotential and cutoff); the fitted Born charges agree with the Γ run to 0.03 e (Z* ≈ 0 for
   Si, the residual is the $q^3$ term of the $|q| = 0.04$ samples amplified by ε∞). A charge-density
   file convention would have given $Z^*_{\rm el} - Z_{\rm ion}$ with the wrong sign and is
-  detected by `calibrate_sign`. Not done: convergence of Q with the k grid and cutoff, and the
-  comparison of Si mobilities with and without the quadrupole term.
+  detected by `calibrate_sign`. On the polar 3C-SiC (`examples/elphon_example/SiC/quadrupoles.py`,
+  6³ k, 60 Ry, PBE, |q| = 0.02 and 0.04, 10 s per run): $Q^{\rm Si}_{x,yz} = +7.49$ and
+  $Q^{\rm C}_{x,yz} = -3.01$ e bohr² (Si at the origin), against 7.41 and −2.63 fitted from small-q
+  DFPT by Poncé et al., Phys. Rev. Research 3, 043022 (2021), Table IV (Abinit LDA: 7.03 / −1.42);
+  the fitted Born charges reproduce the Γ-point $Z^* = +2.65 / -2.83$ to 0.05 e, which checks the
+  screening bookkeeping and the relative sign of the dipole and quadrupole terms (EPW's
+  `coeff_delta = facq (i q·Z* + ½ q·Q·q)`). Not done: convergence of Q with the k grid and cutoff.

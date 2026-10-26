@@ -23,7 +23,9 @@ the irreducible wedge (`K_POINTS automatic`) and unfolded by symmetry.
 | `nscf/nscf.in` | `pw.x` nscf on the 6³ grid, `K_POINTS automatic` (16 irreducible k, 12 bands) |
 | `phonons.py` | q2r + matdyn in PAOFLOW with the dipole term: dispersion, DOS, `sic.fc`, figure with and without the term |
 | `coupling.py` | the band-resolved coupling at k = Γ along Γ-X with and without the model: the Fröhlich 1/|q| divergence of the LO mode |
-| `mobility.py` | SERTA/MRTA electron and hole mobilities with the polar coupling (`--no-long-range` for the plain interpolation; `--adaptive-smearing A` for velocity-dependent delta widths, see REPORT.md) |
+| `mobility.py` | SERTA/MRTA electron and hole mobilities with the polar coupling (`--no-long-range` for the plain interpolation; `--quadrupoles quadrupole.fmt` adds the dynamical quadrupoles; `--adaptive-smearing A` for velocity-dependent delta widths, see REPORT.md) |
+| `quadrupoles.py` | dynamical quadrupoles from twelve single-q `ph.x` density responses (`--write-inputs`, `--extract` → `quadrupole.fmt`), no ABINIT needed |
+| `quadrupole.fmt` | the quadrupoles of this run (Q_Si = 7.49, Q_C = −3.01 e·bohr², EPW's format), so the quadrupole runs can be skipped |
 | `REPORT.md` | results of the reference run (phonons vs `matdyn.x`, coupling vs EPW, mobilities) |
 
 **Pseudopotentials:** copy `Si.upf` and `C.upf` (PseudoDojo nc-sr-05 PBE standard,
@@ -59,6 +61,11 @@ mpirun -np 8 python mobility.py --nk 48 --nq 48   # the X-valley electrons conve
 mpirun -np 8 python mobility.py --no-long-range   # what the plain interpolation gives
 mpirun -np 8 python mobility.py --nk 48 --nq 48 --adaptive-smearing 0.7 --smearing-ev 0.001
                                                   # adaptive widths a |v| dq per final state (floor 1 meV)
+python quadrupoles.py --write-inputs              # phonon/quadrupoles/q*/ph.in + run.sh (needs the scf save)
+(cd phonon/quadrupoles && NP=8 bash run.sh)       # twelve single-q ph.x runs with fildrho, 10 s each
+python quadrupoles.py --extract                   # Z* check and Q -> quadrupole.fmt
+mpirun -np 8 python coupling.py --quadrupoles quadrupole.fmt   # adds the dipole + quadrupole curve
+mpirun -np 8 python mobility.py --nk 60 --nq 60 --quadrupoles quadrupole.fmt   # the complete long-range model
 ```
 
 The drivers detect the irreducible-wedge nscf and build the long-range model from

@@ -2,7 +2,7 @@
 """Dynamical quadrupoles of Si from single-q ph.x density responses (no ABINIT needed).
 
     python quadrupoles.py --write-inputs      # phonon/quadrupoles/q*/ph.in and run.sh
-    (cd phonon/quadrupoles && bash run.sh)    # twelve single-q ph.x runs with fildrho (~1 min each)
+    (cd phonon/quadrupoles && bash run.sh)    # twelve single-q ph.x runs with fildrho (~1 min each; needs the scf wfc files)
     python quadrupoles.py --extract           # fit Z*_el (check) and Q, write quadrupole.fmt
 
 The electronic charge induced by a monochromatic displacement has the expansion
@@ -46,7 +46,8 @@ def write_inputs():
     os.makedirs(QDIR, exist_ok=True)
     lines = ['#!/bin/bash', '# single-q ph.x runs for the quadrupole expansion (run from this directory)', 'set -e',
              'NP=${NP:-8}', 'for d in q*/; do', '  cd $d', "  rm -rf _ph0; mkdir -p %s.save" % PREFIX,
-             "  cp ../../%s.save/charge-density.dat ../../%s.save/data-file-schema.xml %s.save/" % (PREFIX, PREFIX, PREFIX),
+             "  cp ../../%s.save/charge-density.dat ../../%s.save/data-file-schema.xml ../../%s.save/wfc*.dat %s.save/"
+             % (PREFIX, PREFIX, PREFIX, PREFIX),
              "  cp ../../%s.save/*.upf ../../%s.save/*.UPF %s.save/ 2>/dev/null || true" % (PREFIX, PREFIX, PREFIX),
              '  echo "$(date +%T) $d"; mpirun -np $NP ph.x -nk $NP -in ph.in > ph.out 2>&1', '  cd ..', 'done', 'echo done']
     with open(os.path.join(QDIR, 'run.sh'), 'w') as fh:

@@ -43,6 +43,7 @@ TEMPS_K = [200.0, 300.0, 400.0]
 WINDOW_EV = 0.3
 SMEARING_EV = 0.01
 LONG_RANGE = True  # subtract and restore the dipole (Fröhlich) term; False reproduces the plain interpolation
+QUADRUPOLES = None  # 'quadrupole.fmt' (from quadrupoles.py) adds the dynamical quadrupoles to the long-range model
 
 
 def main():
@@ -57,6 +58,8 @@ def main():
     parser.add_argument('--adaptive-smearing', type=float, default=None, metavar='A',
                         help='adaptive smearing prefactor a (Yates; 0.7 for Gaussians): width a |v| dq per final state, floored at --smearing-ev; default fixed smearing')
     parser.add_argument('--no-long-range', action='store_true', help='plain interpolation (for comparison)')
+    parser.add_argument('--quadrupoles', default=QUADRUPOLES, metavar='FILE',
+                        help='quadrupole.fmt of quadrupoles.py: dipole + quadrupole long-range model')
     args = parser.parse_args()
     from mpi4py import MPI
 
@@ -67,7 +70,8 @@ def main():
     )  # fmt: skip
     nscf = el.nscf
     use_model = LONG_RANGE and not args.no_long_range
-    model = LongRangeModel.from_coupling(PHONON_DIR, SAVEDIR) if use_model else None
+    quadrupoles = os.path.join(HERE, args.quadrupoles) if args.quadrupoles else None
+    model = LongRangeModel.from_coupling(PHONON_DIR, SAVEDIR, quadrupoles=quadrupoles) if use_model else None
     out = carrier_scattering_dense_q(
         el.projections, el.HRs, nscf['kpts_cryst'], nscf['bg'], nscf['at'], nscf['alat'], nscf['omega'],
         PHONON_DIR, QGRID, COARSE_GRID,
@@ -81,13 +85,17 @@ def main():
     )  # fmt: skip
     if rank == 0:
         tag = 'mobility' if use_model else 'mobility_plain'
+        if use_model and model.has_quadrupoles:
+            tag += '_quadrupole'
         if args.adaptive_smearing is not None:
             tag += '_adaptive'
         smearing = ('%.3f eV' % args.smearing_ev if args.adaptive_smearing is None else
                     'adaptive a = %.2f (floor %.1f meV)' % (args.adaptive_smearing, 1e3 * args.smearing_ev))
+        treatment = 'plain interpolation'
+        if use_model:
+            treatment = ('dipole + quadrupole terms' if model.has_quadrupoles else 'Fröhlich term') + ' subtracted and restored'
         print('PAOFLOW carrier transport of 3C-SiC (k %d^3, q %d^3, window %.2f eV, smearing %s, %s):'
-              % (args.nk, args.nq, args.window_ev, smearing,
-                 'Fröhlich term subtracted and restored' if use_model else 'plain interpolation'))
+              % (args.nk, args.nq, args.window_ev, smearing, treatment))
         print('  gap %.3f eV (DFT), doping %.2e cm^-3' % (out['cbm_ev'] - out['vbm_ev'], args.doping))
         serta, mrta = rta_transport(out, 'serta'), rta_transport(out, 'mrta')
         print('    T (K)   mobility e / h (cm^2/Vs):  SERTA              MRTA')

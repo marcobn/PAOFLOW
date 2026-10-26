@@ -84,7 +84,35 @@ too small; at the first coarse q-point the two routes coincide to all digits, th
 subtract-and-restore identity. Beyond |q| ≈ 0.4 the short-range part dominates and the three
 curves separate as expected.
 
-## 5. Carrier mobility (`mobility.py`)
+## 5. Dynamical quadrupoles (`quadrupoles.py`)
+
+The dipole (Fröhlich) term is the leading long-range piece, but the next order of the
+multipole expansion, the dynamical quadrupoles Q^κ_{βαγ}, gives a q-independent long-range
+coupling that the short-range interpolation misses and that interferes with the dipole term in
+polar crystals (Brunin et al. 2020, Poncé et al. 2021). PAOFLOW extracts them from twelve
+single-q `ph.x` runs (`fildrho`; six directions × |q| = 0.02 and 0.04 (2π/a), 10 s each on
+8 cores) through the long-wavelength expansion of the induced charge,
+ε_L(q̂)[−Ω⟨ñ⟩e^{iq·τ} − i q Z_ion] = −i q·Z* − ½ q·Q·q + O(q³): the imaginary part at order q
+is the Born charge, the real part at order q² the quadrupole (Royo and Stengel 2019), with a
+Richardson extrapolation in |q|.
+
+| | PAOFLOW (this run) | Poncé et al. 2021, Table IV | Abinit LDA (same ref.) |
+|---|---|---|---|
+| Q_Si (= Q_{x,yz}, Si at the origin) | +7.49 (7.47 at |q| = 0.02, 7.43 at 0.04) | 7.41 | 7.03 |
+| Q_C | −3.01 (−2.99, −2.93) | −2.63 | −1.42 |
+| Z* from the linear term vs the Γ run | max deviation 0.05 e (Z* = +2.65 / −2.83) | | |
+
+Only the |ε_{αβγ}| components survive, as the 4̄3m site symmetry requires. The Born charges
+recovered from the same expansion check the screening bookkeeping of a polar crystal (a
+finite-q DFPT run screens the total charge, and the rigid ion must be added back before the
+division by ε_L) and fix the relative sign of the dipole and quadrupole terms, the one the
+coupling depends on (EPW's `coeff_delta = facq (i q·Z* + ½ q·Q·q)`). The values are in
+`quadrupole.fmt`; `--quadrupoles quadrupole.fmt` adds them to the long-range model of
+`coupling.py` and `mobility.py`.
+
+<!-- QUADRUPOLE_COUPLING -->
+
+## 6. Carrier mobility (`mobility.py`)
 
 `mobility.py` computes the state-resolved SERTA and MRTA scattering rates of the carriers within
 0.3 eV of the band edges and the intrinsic mobilities. The conduction-band minimum of 3C-SiC lies
@@ -168,7 +196,7 @@ Temperature dependence at 84³ / 84³ (cm²/Vs):
 The electron MRTA mobility falls as T^-1.25 between 200 and 400 K; the measured exponent for
 3C-SiC is about −1.5 [2].
 
-## 6. Cost
+## 7. Cost
 
 | step | wall time (8 cores, Mac Studio) |
 |---|---|
