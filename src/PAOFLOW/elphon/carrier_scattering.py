@@ -37,6 +37,7 @@ from .do_pao_eph_dense_q import (
     irreducible_mesh,
     prepare_dense_vertex,
 )
+from .adaptive_smearing import grid_spacing, state_widths, summarize_widths
 from .elph_bloch import (
     AMU_RY,
     RY_TO_EV,
@@ -170,7 +171,7 @@ def scattering_rate_kernel(
     phonon_energy: NDArray[np.float64],
     temps_ev: Sequence[float],
     occupation_energy_kq: NDArray[np.float64],
-    smearing: float,
+    smearing: float | NDArray[np.float64],
     eps_acoustic: float,
     weight: float = 1.0,
     velocity_floor: float = 0.0,
@@ -193,8 +194,10 @@ def scattering_rate_kernel(
     occupation_energy_kq : ndarray, shape ``(ntemp, nb, nband_kq)``
         :math:`\\varepsilon_{m\\mathbf k+\\mathbf q} - \\mu(T)` used in the Fermi
         occupation of the final states (eV).
-    smearing : float
-        Gaussian width of the energy-conserving delta (eV), cut at six widths.
+    smearing : float or ndarray, shape ``(nb, nband_kq)``
+        Gaussian width of the energy-conserving delta (eV), cut at six widths: one
+        value, or one per final state ``m k+q`` (adaptive smearing,
+        :func:`~PAOFLOW.elphon.adaptive_smearing.state_widths`).
     eps_acoustic : float
         Phonon-energy threshold (eV).
     weight : float, optional
@@ -229,13 +232,16 @@ def scattering_rate_kernel(
         return serta, mrta
     omega = np.asarray(phonon_energy, dtype=float)[active]
     g2 = g2[:, active]
-    cutoff = DELTA_CUTOFF * smearing
-    norm = 1.0 / (smearing * np.sqrt(np.pi))
+    sigma = np.asarray(smearing, dtype=float)
+    if sigma.ndim == 2:
+        sigma = sigma[:, None, :, None]  # one width per final state m at k+q
+    cutoff = DELTA_CUTOFF * sigma
+    norm = 1.0 / (sigma * np.sqrt(np.pi))
     gap = energy_kq[:, None, :, None] - energy_k[:, None, None, :]  # (nb, 1, m, n)
     x_abs = gap - omega[None, :, None, None]
     x_emi = gap + omega[None, :, None, None]
-    d_abs = np.where(np.abs(x_abs) < cutoff, norm * np.exp(-((x_abs / smearing) ** 2)), 0.0)
-    d_emi = np.where(np.abs(x_emi) < cutoff, norm * np.exp(-((x_emi / smearing) ** 2)), 0.0)
+    d_abs = np.where(np.abs(x_abs) < cutoff, norm * np.exp(-((x_abs / sigma) ** 2)), 0.0)
+    d_emi = np.where(np.abs(x_emi) < cutoff, norm * np.exp(-((x_emi / sigma) ** 2)), 0.0)
     if not (d_abs.any() or d_emi.any()):
         return serta, mrta
     v2 = np.einsum('bna,bna->bn', velocity_k, velocity_k)
@@ -323,6 +329,8 @@ def carrier_scattering_dense_q(
     doping_cm3: float = 0.0,
     window_ev: float = 0.3,
     smearing_ev: float = 0.01,
+    adaptive_smearing: float | None = None,
+    min_smearing_ev: float = 0.001,
     scissor_ev: float | Callable[[float], float] | None = None,
     target_gap_ev: float | Callable[[float], float] | None = None,
     eps_acoustic_cm: float = 5.0,
@@ -371,6 +379,15 @@ def carrier_scattering_dense_q(
         (semiconductors and insulators) or of the Fermi level (metals).
     smearing_ev : float, optional
         Gaussian width of the energy-conserving delta (eV).
+    adaptive_smearing : float, optional
+        Adaptive smearing: the width of the delta of every final state ``m k+q``
+        is ``adaptive_smearing * |v_{m k+q}| * dq`` (Yates et al.; 0.7 is the
+        usual Gaussian prefactor), floored at ``min_smearing_ev``, with ``dq`` the
+        spacing of the dense q-grid
+        (:func:`~PAOFLOW.elphon.adaptive_smearing.state_widths`).  ``None`` keeps
+        the fixed ``smearing_ev``.
+    min_smearing_ev : float, optional
+        Floor of the adaptive widths (eV), EPW's 1 meV.
     scissor_ev : float or callable, optional
         Scissor of the carrier statistics: a shift (eV) or ``T -> Delta(T)``
         relative to the Hamiltonian's own gap
@@ -506,6 +523,20 @@ def carrier_scattering_dense_q(
     energies_all = electrons['E'] * RY_TO_EV  # (nkd, nawf)
     energies = energies_all[:, bands]
     velocity_ms = velocity_ry * RY_TO_EV * BOHR_M / HBAR_EV_S
+    widths = None  # adaptive smearing: one width per state, used for the final states m k+q
+    width_max = float(smearing_ev)
+    smearing_info = {'smearing_ev': float(smearing_ev), 'adaptive_smearing': None}
+    if adaptive_smearing is not None:
+        widths = state_widths(
+            velocity_ry * RY_TO_EV, grid_spacing(cell_volume, nq_dense), adaptive_smearing,
+            min_smearing_ev,
+        )  # (nkd, nband), eV
+        width_max = float(widths.max())
+        smearing_info = {
+            'smearing_ev': float(min_smearing_ev),
+            'adaptive_smearing': float(adaptive_smearing),
+            **{'width_%s_ev' % key: val for key, val in summarize_widths(widths).items()},
+        }
     nkd, nband = energies.shape
     vbm, cbm = float(energies_all[:, nocc - 1].max()), float(energies_all[:, nocc].min())
     metal = cbm <= vbm
@@ -572,6 +603,14 @@ def carrier_scattering_dense_q(
                                     'metal' if metal else 'gap %.3f eV' % (cbm - vbm)),
             flush=True,
         )  # fmt: skip
+        if widths is not None:
+            print(
+                '  adaptive smearing a = %.2f: widths %.1f / %.1f / %.1f meV (min / median / '
+                'max), floor %.1f meV' % (adaptive_smearing, 1e3 * widths.min(),
+                                          1e3 * np.median(widths), 1e3 * widths.max(),
+                                          1e3 * min_smearing_ev),
+                flush=True,
+            )  # fmt: skip
 
     row = -np.ones(nkd, dtype=int)  # grid index -> row of the window-k arrays
     row[window_k] = np.arange(window_k.size)
@@ -591,7 +630,7 @@ def carrier_scattering_dense_q(
             q_cryst = qmesh[iq]
             freq_thz, z = _phonon_modes_at_q(q_cryst, phonon_at_q)
             omega_ry = freq_thz / RY_TO_THZ
-            reach = max(float(omega_ry.max()) * RY_TO_EV, 0.0) + DELTA_CUTOFF * smearing_ev
+            reach = max(float(omega_ry.max()) * RY_TO_EV, 0.0) + DELTA_CUTOFF * width_max
             shift = np.round(q_cryst * nk_dense).astype(int)
             gn_flat = None  # built on the first block with reachable final states
             lr_q = None
@@ -620,7 +659,8 @@ def carrier_scattering_dense_q(
         occupation_kq = energies[kq][None] + stat_shift  # (ntemp, nb, m)
         s_part, m_part = scattering_rate_kernel(
             energies[kk], energies[kq], velocity_ms[kk], velocity_ms[kq], g2,
-            omega_ry * RY_TO_EV, temps_ev, occupation_kq, smearing_ev, eps_acoustic,
+            omega_ry * RY_TO_EV, temps_ev, occupation_kq,
+            smearing_ev if widths is None else widths[kq], eps_acoustic,
             weight=q_weights[iq], velocity_floor=MRTA_VELOCITY_FLOOR_MS,
         )  # fmt: skip
         serta[:, row[kk]] += s_part
@@ -667,6 +707,7 @@ def carrier_scattering_dense_q(
         'spin_degeneracy': float(spin_degeneracy),
         'nk_dense': nk_dense,
         'nq_dense': nq_dense,
+        **smearing_info,
         **screening_info,
     }
 

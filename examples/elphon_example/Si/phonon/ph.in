@@ -6,6 +6,7 @@ Si2
   reduce_io = .true.
   fildyn    = 'Si2.dyn',
   fildvscf  = 'dvscf'
+  epsil     = .true.
   ldisp     = .true.,
   nq1 = 3,
   nq2 = 3,

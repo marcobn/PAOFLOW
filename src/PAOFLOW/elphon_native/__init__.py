@@ -53,6 +53,9 @@ def indirect_absorption(
 ):
     """Native ``indirect_absorption_kernel`` accumulation (see the Rust kernel for the layout).
 
+    ``degauss`` and ``cutoff`` are per pair, shape ``(npairs,)`` (a constant width is
+    broadcast to it).
+
     Returns
     -------
     gaussian, lorentzian : ndarray ``(ntemp, neta, 3, nomega)``
@@ -72,8 +75,8 @@ def indirect_absorption(
         c(bose, dtype=np.float64),
         c(photon, dtype=np.float64),
         c(np.asarray(etas), dtype=np.float64),
-        float(degauss),
-        float(cutoff),
+        c(np.broadcast_to(degauss, pairs_k.shape), dtype=np.float64),
+        c(np.broadcast_to(cutoff, pairs_k.shape), dtype=np.float64),
         c(pairs_k, dtype=np.int64),
         c(pairs_i, dtype=np.int64),
         c(pairs_j, dtype=np.int64),

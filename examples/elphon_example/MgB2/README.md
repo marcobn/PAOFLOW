@@ -101,6 +101,8 @@ paoflow-genbasis-ps --pseudo-dir . --out BASIS_PS
 mpirun -np 20 python main.py                   # dense k 24^3, dense q 24^3 (8 min on 20 cores)
 mpirun -np 20 python main.py --nk 40 --nq 20   # the fine grids of EPW tutorial 04
 mpirun -np 20 python main.py --coarse-q        # q kept on the coarse 3^3 grid
+mpirun -np 20 python main.py --adaptive-smearing 0.7 --sigma-ev 0.001
+                                               # adaptive Fermi-surface delta widths a |v_nk| dk (floor 1 meV)
 ```
 
 The dense 24³ q-grid folds to 793 irreducible q. Output goes to `output/`:

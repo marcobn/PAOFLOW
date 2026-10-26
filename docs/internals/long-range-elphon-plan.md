@@ -165,6 +165,33 @@ Local scripts in `Workspace/PAOFLOW/dfpt_port/sic{,6,40}/` (QE 7.5 / EPW 6.0, PA
   identity < 2 %, LO coupling grows by > 2.5× when |q| halves only with the model and exceeds the plain
   interpolation by > 3× near Γ, EPW agreement < 2 % at coarse points and < 70 % elsewhere, LO-TO
   splitting within 3 % of the rigid-ion value from ε∞ and Z*.
-- Not wired: the `q2r_matdyn` dispersion path (`phonon_interpolator` accepts `long_range`, the
-  high-level helper does not build it yet); quadrupoles are implemented after EPW but not compared
-  numerically (no `quadrupole.fmt` case run).
+- `q2r_matdyn` (Oct 26 2026): `long_range='auto'` builds the model from the dyn files
+  (`LongRangeModel.from_dynamical_matrices`, `zasr='simple'`, QE's Ewald parameter
+  $\alpha = (a/2\pi)^2$ in $(2\pi/a)^2$ units, which `rigid.f90` uses with G in $2\pi/a$; EPW
+  uses 1), subtracts its force constants before the q → R transform, writes the `T` flag with
+  α, ε∞ and Z* into the `flfrc` file, restores the term at every q and takes the
+  direction-dependent limit at Γ along a path (`gamma_limit_points`, as `matdyn.x`). SiC 3³:
+  `matdyn.x` reproduced to 0.01 cm⁻¹ (optical branches 1e-4), LO-TO at Γ 790/952 cm⁻¹
+  (`tests/unit/phonon/test_qe_force_constants.py`, data `tests/unit/phonon/data/sic_dyn`).
+- **Quadrupoles from finite-q DFPT** (`elphon/quadrupoles.py`, Oct 26 2026): instead of ABINIT's
+  long-wave DFPT, the multipole expansion of the induced electron density of single-q `ph.x` runs
+  (`fildrho`): $\varepsilon_L(\hat q)\,[-\Omega\langle\tilde n_{\kappa\beta}\rangle e^{iq\cdot\tau_\kappa}
+  - iq_\beta Z^{\rm ion}_\kappa] = -iq\cdot Z^* - \tfrac12 q\cdot Q^\kappa_\beta\cdot q + O(q^3)$.
+  The screening of a finite-q DFPT run acts on the total (ion + electron) charge, so the point ion
+  that moves rigidly with the atom is added before dividing out $\varepsilon_L$; the imaginary part
+  then reproduces the Born charges of the Γ run (and fixes the sign convention of the file), the
+  real part at $q^2$ is the quadrupole, free of the $q^2$ dependence of $\varepsilon_L$ and of the
+  ionic term (imaginary, orders $q^3$ and $q$). Six directions × two magnitudes
+  (`single_q_phonon_inputs`), least squares on the symmetric quadratic forms, Richardson
+  extrapolation in $|q|$, `write_quadrupole_fmt` for EPW's format and `LongRangeModel(quadrupoles=...)`.
+  Driver: `examples/elphon_example/Si/quadrupoles.py`.
+  Validation on Si (`Workspace/PAOFLOW/quadrupoles/si`: scf 12³ k, 38 Ry, PBE `Si.upf`, Γ run
+  with `epsil` ε∞ = 13.11, twelve single-q runs with |q| = 0.02 and 0.04 (2π/a), 45 s each):
+  the only non-zero components are $Q_{x,yz}$ and its permutations, $Q^{\rm Si_1}_{x,yz} = -14.37$
+  (|q| = 0.02), $-14.21$ (0.04), extrapolated $-14.42$ e bohr², atom 2 opposite in sign, against
+  13.66 e bohr² of Brunin et al., PRL 125, 136601 (2020) (ABINIT long-wave DFPT, different
+  pseudopotential and cutoff); the fitted Born charges agree with the Γ run to 0.03 e (Z* ≈ 0 for
+  Si, the residual is the $q^3$ term of the $|q| = 0.04$ samples amplified by ε∞). A charge-density
+  file convention would have given $Z^*_{\rm el} - Z_{\rm ion}$ with the wrong sign and is
+  detected by `calibrate_sign`. Not done: convergence of Q with the k grid and cutoff, and the
+  comparison of Si mobilities with and without the quadrupole term.

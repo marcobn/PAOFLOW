@@ -103,3 +103,70 @@ def test_is_polar():
     charges[0] = 2.0 * np.eye(3)
     charges[1] = -2.0 * np.eye(3)
     assert is_polar(charges)
+
+
+# ----------------------------------------------------------------------------- polar crystal (3C-SiC)
+DATA_SIC = os.path.join(os.path.dirname(__file__), 'data', 'sic_dyn')
+
+
+def _matdyn_path(at):
+    """The q-list of data/sic_dyn/matdyn.in (band form, Cartesian 2 pi / a): 20 + 20 + 20 + 1 points."""
+    points = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.5, 0.5, 0.5]])
+    q_cart = []
+    for start, stop in zip(points[:-1], points[1:]):
+        q_cart += [start + (stop - start) * i / 20.0 for i in range(20)]
+    q_cart.append(points[-1])
+    return np.array(q_cart) @ at.T  # crystal coordinates
+
+
+def test_sic_dispersion_matches_matdyn_with_the_nonanalytic_term(tmp_path):
+    from PAOFLOW.phonon.qe_force_constants import gamma_limit_points
+
+    result = q2r_matdyn('sic', DATA_SIC, outdir=str(tmp_path), fname='sic', mesh=None, npoints=5)
+    model = result['long_range']
+    assert model is not None and model.is_polar()
+    np.testing.assert_allclose(model.born_charges.sum(axis=0), 0.0, atol=1e-12)  # zasr = 'simple'
+    dyn = result['dynamical_matrices']
+    reference = np.loadtxt(os.path.join(DATA_SIC, 'matdyn_freq.gp'))[:, 1:]  # cm^-1
+    q_cryst = gamma_limit_points(_matdyn_path(dyn['at']), dyn['bg'])
+    frequencies, _ = result['phonon_at_q'](q_cryst)
+    np.testing.assert_allclose(
+        np.sort(frequencies, axis=1) * THZ_TO_CM1, np.sort(reference, axis=1), atol=0.05
+    )
+    # LO-TO splitting at Gamma along Gamma-X (matdyn: 790 / 952 cm^-1); without the model LO = TO
+    gamma = np.sort(frequencies[0]) * THZ_TO_CM1
+    assert gamma[-1] - gamma[-2] > 150.0
+    with pytest.warns(UserWarning, match='LO-TO'):
+        plain = q2r_matdyn(
+            'sic', DATA_SIC, outdir=str(tmp_path / 'plain'), mesh=None, npoints=5, long_range=False
+        )
+    plain_gamma = np.sort(plain['phonon_at_q'](q_cryst[:1])[0][0]) * THZ_TO_CM1
+    assert abs(plain_gamma[-1] - plain_gamma[-2]) < 1.0
+
+
+def test_sic_force_constant_file_carries_the_tensors_and_reproduces_the_grid(tmp_path):
+    result = q2r_matdyn(
+        'sic',
+        DATA_SIC,
+        outdir=str(tmp_path),
+        fname='sic',
+        force_constants_file='sic.fc',
+        mesh=None,
+        npoints=5,
+    )
+    dyn, model = result['dynamical_matrices'], result['long_range']
+    path = os.path.join(str(tmp_path), 'sic.fc')
+    ifc = read_qe_ifc(path)
+    assert ifc['has_zeu']
+    lines = open(path).read().splitlines()
+    flag = [ln for ln in lines if ln.strip().startswith('T')][0].split()
+    np.testing.assert_allclose(float(flag[1]), model.alpha)
+    np.testing.assert_allclose(model.alpha, (dyn['alat'] / (2 * np.pi)) ** 2)  # q2r.x's choice
+    # short-range part from the file + the model restores the coarse matrices exactly
+    cells = np.stack(np.meshgrid(*[np.arange(3)] * 3, indexing='ij'), -1).reshape(-1, 3)
+    phi = ifc['frc'].reshape(3, 3, 2, 2, -1)
+    for label in [(0, 0, 0), (1, 0, 2), (2, 2, 1)]:
+        q = np.array(label) / 3.0
+        phase = np.exp(-2j * np.pi * cells @ q)
+        C = np.einsum('abijm,m->iajb', phi, phase).reshape(6, 6) + model.dynamical_matrix(q)
+        np.testing.assert_allclose(C, dyn['force_constants_q'][label], atol=1e-8)

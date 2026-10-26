@@ -27,8 +27,9 @@ pub struct Inputs<'a> {
     pub bose: &'a [f64],
     pub photon: &'a [f64],
     pub etas: &'a [f64],
-    pub degauss: f64,
-    pub cutoff: f64,
+    /// Gaussian width and its cutoff (`6 sigma`) of every pair.
+    pub degauss: &'a [f64],
+    pub cutoff: &'a [f64],
     pub pairs_k: &'a [i64],
     pub pairs_i: &'a [i64],
     pub pairs_j: &'a [i64],
@@ -103,14 +104,15 @@ fn accumulate_pair(
             }
         }
     }
-    let sigma = inp.degauss;
+    let sigma = inp.degauss[p];
+    let cutoff = inp.cutoff[p];
     let gnorm = 1.0 / (sigma * std::f64::consts::PI.sqrt());
     let lnorm = sigma / std::f64::consts::PI;
     for v in 0..nmode {
         let w = inp.omega_ph[v];
         // photon energies where either delta is inside the cutoff
-        let (lo_a, hi_a) = photon_window(inp.photon, delta_e - w, inp.cutoff);
-        let (lo_e, hi_e) = photon_window(inp.photon, delta_e + w, inp.cutoff);
+        let (lo_a, hi_a) = photon_window(inp.photon, delta_e - w, cutoff);
+        let (lo_e, hi_e) = photon_window(inp.photon, delta_e + w, cutoff);
         let lo = lo_a.min(lo_e);
         let hi = hi_a.max(hi_e);
         if lo >= hi {
@@ -128,7 +130,7 @@ fn accumulate_pair(
             for wi in lo..hi {
                 let x_abs = delta_e - inp.photon[wi] - w;
                 let x_emi = delta_e - inp.photon[wi] + w;
-                if x_abs.abs() > inp.cutoff && x_emi.abs() > inp.cutoff {
+                if x_abs.abs() > cutoff && x_emi.abs() > cutoff {
                     continue;
                 }
                 let ga = (-(x_abs / sigma) * (x_abs / sigma)).exp() * gnorm;
@@ -236,8 +238,8 @@ mod tests {
             bose: &[0.5],
             photon: &[0.45],
             etas: &[0.01],
-            degauss: 0.05,
-            cutoff: 0.3,
+            degauss: &[0.05],
+            cutoff: &[0.3],
             pairs_k: &[0],
             pairs_i: &[0],
             pairs_j: &[1],

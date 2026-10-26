@@ -597,6 +597,7 @@ def eliashberg_dense_q(
     alat=None,
     cell_volume=None,
     spin_degeneracy=2.0,
+    adaptive_smearing=None,
     save_dir=None,
     pseudo_dir=None,
     prefix=None,
@@ -610,6 +611,12 @@ def eliashberg_dense_q(
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
 
+    adaptive_smearing : float, optional
+        Adaptive Fermi-surface smearing (Yates et al., 0.7 for Gaussians): the
+        delta of every dense state gets the width ``adaptive_smearing * |v_nk| *
+        dk``, floored at ``sigmas_ry`` (one series entry per floor); needs
+        ``alat`` (the group velocities are computed).  ``None`` keeps the fixed
+        ``sigmas_ry``.
     Mirrors :func:`~PAOFLOW.elphon.do_pao_eph.eliashberg_from_qe_coupling`, but
     replaces the coarse-q loop by (a) one build of ``g(R_e, R_p)`` from the full
     coarse-q couplings and (b) a loop over a dense ``nq_dense^3`` q-grid, WS-
@@ -737,6 +744,8 @@ def eliashberg_dense_q(
     nmodes = int(mass_flat_ry.size)
 
     # --- electron cache (dense k), shared by every dense q ----------------- #
+    if adaptive_smearing is not None and alat is None:
+        raise ValueError('adaptive_smearing needs alat (group velocities on the dense grid)')
     if transport and (alat is None or cell_volume is None):
         raise ValueError('transport=True needs alat (bohr) and cell_volume (bohr^3).')
     electrons = precompute_dense_electrons(
@@ -749,12 +758,26 @@ def eliashberg_dense_q(
         ispin=ispin,
         fs_window=fs_window,
         orbital_positions=orbital_positions,
-        velocities=transport,
+        velocities=transport or adaptive_smearing is not None,
         alat=alat,
-        diagonal_velocities=transport,
+        diagonal_velocities=transport or adaptive_smearing is not None,
         comm=comm,
         spin_degeneracy=spin_degeneracy,
+        adaptive_smearing=adaptive_smearing,
     )
+    if adaptive_smearing is not None and rank == 0:
+        # widths of the states that matter: within fs_window local widths of E_F
+        for isig, sig in enumerate(np.atleast_1d(sigmas_ry)):
+            widths = electrons['widths'][isig]
+            near = np.abs(electrons['E'] - electrons['ef_sig'][isig]) < fs_window * widths
+            w = widths[near] * RY_TO_EV
+            print(
+                '  adaptive Fermi-surface smearing a = %.2f (floor %.1f meV): widths of the states '
+                'near E_F %.1f / %.1f / %.1f meV (min / median / max), N(E_F) = %.4f states/eV'
+                % (adaptive_smearing, 1e3 * sig * RY_TO_EV, 1e3 * w.min(), 1e3 * np.median(w),
+                   1e3 * w.max(), electrons['dos'][isig] / RY_TO_EV),
+                flush=True,
+            )  # fmt: skip
 
     # --- (b) dense q-grid loop (distributed over MPI ranks) ---------------- #
     # Fold to the irreducible wedge when symmetries are supplied (identical

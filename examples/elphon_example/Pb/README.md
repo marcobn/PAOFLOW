@@ -106,6 +106,8 @@ paoflow-genbasis-ps --pseudo Pb.upf --out BASIS_PS
 mpirun -np 8 python main.py               # dense k 48^3, dense q 24^3 (about 2 min on 8 cores)
 mpirun -np 8 python main.py --nk 24 --nq 24
 mpirun -np 8 python main.py --coarse-q    # q kept on the coarse 6^3 grid
+mpirun -np 8 python main.py --adaptive-smearing 0.7 --sigma-ev 0.001
+                                          # adaptive Fermi-surface delta widths a |v_nk| dk (floor 1 meV)
 ```
 
 Output in `output/`: `alpha2F.dat` (ω in meV, α²F) and `eliashberg.npz` (all
@@ -190,6 +192,23 @@ velocity change, giving the transport Eliashberg function α²F_tr and λ_tr
 - **Equal grids.** Equal k- and q-grids are not required for these
   Fermi-surface averages (the anisotropic Migdal–Eliashberg equations do need
   them), but the q-grid must still be converged.
+- **Smearing.** `--adaptive-smearing A` replaces the fixed Fermi-surface
+  width by `A |v_nk| dk` per state (floored at `--sigma-ev`; see "Adaptive
+  smearing of the deltas" in `docs/internals/Electron-Phonon-Coupling.md`).
+  With the native DFPT coupling and q = 24³ (8 cores, October 2026):
+
+  | k-grid | σ = 0.05 eV | σ = 0.02 eV | adaptive a = 0.7 | a = 0.35 | a = 0.2 |
+  |---|---|---|---|---|---|
+  | 24³ | λ = 1.018 | 1.373 | 1.068 | | |
+  | 48³ | 1.176 | | 1.069 | 1.054 | 1.100 |
+  | 72³ | 1.029 | | 1.069 | | |
+
+  The fixed-width λ scatters by ±8 % between the grids (its 50 meV is far
+  below the level spacing |v_F| dk, 0.3–1 eV at these grids), while the
+  adaptive value is flat from 24³ to 72³ and moves by 2 % between a = 0.2 and
+  0.7. The widths of the states near E_F are 1 meV to 0.25 eV at 72³ (median
+  8 meV with a = 0.7). Tc follows λ: 4.5 K (Allen–Dynes, μ* = 0.1) with the
+  adaptive widths against 4.2–5.2 K for the fixed ones.
 
 ---
 

@@ -262,6 +262,8 @@ def carrier_scattering(projections, HRs, nscf, args, scissor_ev=None, target_gap
         doping_cm3=args.doping,
         window_ev=args.window_ev,
         smearing_ev=args.smearing_ev,
+        adaptive_smearing=args.adaptive_smearing,
+        min_smearing_ev=args.smearing_ev,
         scissor_ev=scissor_ev,
         target_gap_ev=target_gap_ev,
         screening_eps=args.screening_eps,
@@ -273,11 +275,18 @@ def carrier_scattering(projections, HRs, nscf, args, scissor_ev=None, target_gap
     )
 
 
+def smearing_label(args):
+    """'0.010 eV' or 'adaptive a = 0.70 (floor 1.0 meV)'."""
+    if args.adaptive_smearing is None:
+        return '%.3f eV' % args.smearing_ev
+    return 'adaptive a = %.2f (floor %.1f meV)' % (args.adaptive_smearing, 1e3 * args.smearing_ev)
+
+
 def report(out, args):
     """Print the mobilities and write the outputs to OUTPUTDIR/mobility."""
     print(
-        'PAOFLOW carrier transport (k %d^3, q %d^3, smearing %.3f eV, window %.2f eV):'
-        % (args.nk, args.nq, args.smearing_ev, args.window_ev)
+        'PAOFLOW carrier transport (k %d^3, q %d^3, smearing %s, window %.2f eV):'
+        % (args.nk, args.nq, smearing_label(args), args.window_ev)
     )
     if out['metal']:
         print('  metal: conductivity only')
@@ -334,8 +343,14 @@ def main():
     )
     parser.add_argument('--window-ev', type=float, default=WINDOW_EV, help='band-edge window (eV)')
     parser.add_argument(
-        '--smearing-ev', type=float, default=SMEARING_EV, help='delta smearing (eV)'
-    )
+        '--smearing-ev', type=float, default=SMEARING_EV,
+        help='delta smearing (eV); the floor of the widths with --adaptive-smearing',
+    )  # fmt: skip
+    parser.add_argument(
+        '--adaptive-smearing', type=float, default=None, metavar='A',
+        help='adaptive smearing prefactor a (Yates; 0.7 for Gaussians): width a |v| dq per '
+             'final state, floored at --smearing-ev; default fixed smearing',
+    )  # fmt: skip
     parser.add_argument(
         '--target-gap-ev',
         type=float,

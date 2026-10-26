@@ -1,0 +1,11 @@
+3C-SiC phonons on the 6^3 q-grid, with the dielectric tensor and Born charges
+ &inputph
+    prefix   = 'sic'
+    outdir   = './'
+    fildyn   = 'sic.dyn'
+    fildvscf = 'dvscf'
+    ldisp    = .true.
+    epsil    = .true.
+    nq1 = 6, nq2 = 6, nq3 = 6
+    tr2_ph   = 1.0d-16
+ /

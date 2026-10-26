@@ -36,10 +36,12 @@ from .do_pao_eph_dense_q import (
     irreducible_qmesh,
     prepare_dense_vertex,
 )
+from .adaptive_smearing import grid_spacing, pair_widths, summarize_widths
 from .elph_bloch import (
     AMU_RY,
     RY_TO_EV,
     RY_TO_THZ,
+    _diagonal_velocities,
     band_velocities,
     band_vertex,
     precompute_dense_electrons,
@@ -117,7 +119,7 @@ def indirect_absorption_kernel(
     temperatures: Sequence[float],
     photon_energy: NDArray[np.float64],
     etas: Sequence[float],
-    degauss: float,
+    degauss: float | NDArray[np.float64],
     fsthick: float,
     eps_acoustic: float,
     weight: float = 1.0,
@@ -146,8 +148,10 @@ def indirect_absorption_kernel(
         Photon energies (Ry), positive.
     etas : sequence of float
         Imaginary broadenings of the intermediate-state denominators (Ry).
-    degauss : float
-        Smearing of the energy-conserving delta (Ry).
+    degauss : float or ndarray, shape ``(nk, nband, nband)``
+        Smearing of the energy-conserving delta (Ry): one value, or one per
+        ``(k, i, j)`` pair (adaptive smearing,
+        :func:`~PAOFLOW.elphon.adaptive_smearing.pair_widths`).
     fsthick : float
         Only states with ``|e| < fsthick`` enter as initial or final states (Ry).
     eps_acoustic : float
@@ -219,7 +223,9 @@ def indirect_absorption_kernel(
     omega_ph = np.asarray(phonon_energy, dtype=float)[active_modes]
     coupling = coupling[:, active_modes]
     omega_ph_max = float(np.max(phonon_energy))
-    cutoff = DELTA_CUTOFF * degauss
+    degauss = np.asarray(degauss, dtype=float)
+    adaptive = degauss.ndim == 3  # one width per (k, i, j) pair
+    cutoff = DELTA_CUTOFF * (float(degauss.max()) if adaptive else float(degauss))
 
     mu = _fermi_levels(fermi_levels, temperatures.size)
     occ_k = np.stack([fermi_occupation(energy_k - m, t) for m, t in zip(mu, temperatures)])
@@ -243,9 +249,10 @@ def indirect_absorption_kernel(
     if _native_available() and k_idx.size > 0:
         from ..elphon_native import indirect_absorption as _native_indabs
 
+        sigma = degauss[k_idx, i_idx, j_idx] if adaptive else np.full(k_idx.size, float(degauss))
         gauss, lorentz = _native_indabs(
             energy_k, energy_kq, velocity_k, velocity_kq, coupling, omega_ph, occ_k, occ_kq, bose,
-            photon_energy, etas, degauss, cutoff, k_idx, i_idx, j_idx,
+            photon_energy, etas, sigma, DELTA_CUTOFF * sigma, k_idx, i_idx, j_idx,
         )  # fmt: skip
         prefactor = weight * 8.0 * np.pi**2 * spin_degeneracy / photon_energy**2
         return gauss * prefactor, lorentz * prefactor
@@ -280,13 +287,18 @@ def indirect_absorption_kernel(
         delta_e = transition[kp, ip, jp]  # (P,)
         x_abs = delta_e[:, None, None] - photon_energy[None, None, :] - omega_ph[None, :, None]
         x_emi = delta_e[:, None, None] - photon_energy[None, None, :] + omega_ph[None, :, None]
-        keep = (np.abs(x_abs) <= cutoff) | (np.abs(x_emi) <= cutoff)  # (P, nmode, nomega)
+        if adaptive:
+            sigma = degauss[kp, ip, jp][:, None, None]
+            cut = DELTA_CUTOFF * sigma
+        else:
+            sigma, cut = float(degauss), cutoff
+        keep = (np.abs(x_abs) <= cut) | (np.abs(x_emi) <= cut)  # (P, nmode, nomega)
         if not keep.any():
             continue
-        gauss_abs = gaussian_delta(x_abs, degauss) * keep
-        gauss_emi = gaussian_delta(x_emi, degauss) * keep
-        lorentz_abs = lorentzian_delta(x_abs, degauss) * keep
-        lorentz_emi = lorentzian_delta(x_emi, degauss) * keep
+        gauss_abs = gaussian_delta(x_abs, sigma) * keep
+        gauss_emi = gaussian_delta(x_emi, sigma) * keep
+        lorentz_abs = lorentzian_delta(x_abs, sigma) * keep
+        lorentz_emi = lorentzian_delta(x_emi, sigma) * keep
 
         f_i = occ_k[:, kp, ip]  # (nT, P)
         f_j = occ_kq[:, kp, jp]
@@ -312,7 +324,7 @@ def direct_absorption_kernel(
     velocity_k: NDArray[np.complex128],
     temperatures: Sequence[float],
     photon_energy: NDArray[np.float64],
-    degauss: float,
+    degauss: float | NDArray[np.float64],
     fsthick: float,
     weight: float = 1.0,
     spin_degeneracy: float = 2.0,
@@ -331,7 +343,10 @@ def direct_absorption_kernel(
         ``k_B T`` values (Ry).
     photon_energy : ndarray, shape ``(nomega,)``
         Photon energies (Ry).
-    degauss : float
+    degauss : float or ndarray, shape ``(nk, nband, nband)``
+        Smearing of the delta (Ry): one value, or one per ``(k, i, j)`` pair
+        (adaptive smearing, :func:`~PAOFLOW.elphon.adaptive_smearing.pair_widths`
+        with a zero q spacing).
         Smearing of the energy-conserving delta (Ry).
     fsthick : float
         Energy window around the Fermi level (Ry).
@@ -362,7 +377,9 @@ def direct_absorption_kernel(
     """
     temperatures = np.atleast_1d(np.asarray(temperatures, dtype=float))
     photon_energy = np.atleast_1d(np.asarray(photon_energy, dtype=float))
-    cutoff = DELTA_CUTOFF * degauss
+    degauss = np.asarray(degauss, dtype=float)
+    adaptive = degauss.ndim == 3
+    cutoff = DELTA_CUTOFF * (float(degauss.max()) if adaptive else float(degauss))
     transition = energy_k[:, None, :] - energy_k[:, :, None]  # (nk, i, j)
     candidate = (np.abs(energy_k)[:, :, None] < fsthick) & (np.abs(energy_k)[:, None, :] < fsthick)
     candidate &= (transition > photon_energy.min() - cutoff) & (
@@ -380,10 +397,15 @@ def direct_absorption_kernel(
         delta_e = transition[kp, ip, jp]
         v2 = np.abs(velocity_k[kp, :, jp, ip]) ** 2  # (P, 3)
         x = delta_e[:, None] - photon_energy[None, :]
-        keep = np.abs(x) <= cutoff
+        if adaptive:
+            sigma = degauss[kp, ip, jp][:, None]
+            keep = np.abs(x) <= DELTA_CUTOFF * sigma
+        else:
+            sigma = float(degauss)
+            keep = np.abs(x) <= cutoff
         pfac = occ[:, kp, ip] - occ[:, kp, jp]  # (nT, P)
-        gauss += np.einsum('tp,pa,pw->taw', pfac, v2, gaussian_delta(x, degauss) * keep)
-        lorentz += np.einsum('tp,pa,pw->taw', pfac, v2, lorentzian_delta(x, degauss) * keep)
+        gauss += np.einsum('tp,pa,pw->taw', pfac, v2, gaussian_delta(x, sigma) * keep)
+        lorentz += np.einsum('tp,pa,pw->taw', pfac, v2, lorentzian_delta(x, sigma) * keep)
     prefactor = weight * 8.0 * np.pi**2 * spin_degeneracy / photon_energy**2
     return gauss * prefactor, lorentz * prefactor
 
@@ -860,6 +882,8 @@ def phonon_assisted_absorption_dense_q(
     omega_ev: tuple[float, float, float] = (0.05, 3.0, 0.05),
     temps_k: Sequence[float] = (300.0,),
     degauss_ev: float = 0.05,
+    adaptive_smearing: float | None = None,
+    min_degauss_ev: float = 0.001,
     fsthick_ev: float = 4.0,
     fermi_energy_ev: float | str | None = None,
     etas_ev: Sequence[float] = EPW_ETAS_EV,
@@ -931,6 +955,16 @@ def phonon_assisted_absorption_dense_q(
         Temperatures (K).
     degauss_ev : float, optional
         Smearing of the energy-conserving delta (eV), EPW ``degaussw``.
+    adaptive_smearing : float, optional
+        Adaptive smearing (Yates et al.; 0.7 is the usual Gaussian prefactor): the
+        width of every ``(k, i, j)`` pair is ``adaptive_smearing *
+        sqrt(|v_i(k) - v_j(k+q)|^2 dk^2 + |v_j(k+q)|^2 dq^2)``, floored at
+        ``min_degauss_ev``, from the group velocities and the spacings of the dense
+        k- and q-grids (:func:`~PAOFLOW.elphon.adaptive_smearing.pair_widths`);
+        the direct term uses the k part alone.  ``None`` keeps the fixed
+        ``degauss_ev``; the Kramers-Kronig direct term keeps ``kk_degauss_ev``.
+    min_degauss_ev : float, optional
+        Floor of the adaptive widths (eV).
     fsthick_ev : float, optional
         Window around the Fermi level for initial, final and intermediate states
         (eV), EPW ``fsthick``.
@@ -1242,6 +1276,43 @@ def phonon_assisted_absorption_dense_q(
     tasks = [(iq, ib) for iq in range(qmesh.shape[0]) for ib in range(len(kblocks))]
     tstart, tstop = load_balancing(size, rank, len(tasks))
     V = electrons['V']
+    # adaptive smearing: group velocities (degenerate subspaces averaged) of the window bands
+    velocity_diag = None
+    smearing_info = {'degauss_ev': float(degauss_ev), 'adaptive_smearing': None}
+    if adaptive_smearing is not None:
+        vstart, vstop = load_balancing(size, rank, nkd)
+        velocity_diag = _diagonal_velocities(electrons, kblock, k_range=(vstart, vstop))
+        if size > 1:
+            from mpi4py import MPI
+
+            comm.Allreduce(MPI.IN_PLACE, velocity_diag, op=MPI.SUM)
+        velocity_diag = velocity_diag[:, bands]  # (nkd, nband, 3), Ry bohr
+        spacing_k = grid_spacing(cell_volume, nk_dense)
+        spacing_q = grid_spacing(cell_volume, nq_dense)
+        width_floor = min_degauss_ev / RY_TO_EV
+        direct_widths = pair_widths(
+            velocity_diag[:, :, None, :], velocity_diag[:, None, :, :], spacing_k, 0.0,
+            adaptive_smearing, width_floor,
+        ) if nkd * bands.size**2 < 2**25 else None  # fmt: skip
+        sample = direct_widths if direct_widths is not None else pair_widths(
+            velocity_diag[:1, :, None, :], velocity_diag[:1, None, :, :], spacing_k, 0.0,
+            adaptive_smearing, width_floor,
+        )  # fmt: skip
+        smearing_info = {
+            'degauss_ev': float(min_degauss_ev),
+            'adaptive_smearing': float(adaptive_smearing),
+            **{'direct_width_%s_ev' % key: val
+               for key, val in summarize_widths(sample, RY_TO_EV).items()},
+        }  # fmt: skip
+        if rank == 0:
+            print(
+                '  adaptive smearing a = %.2f: direct widths %.1f / %.1f / %.1f meV (min / '
+                'median / max), floor %.1f meV' % (
+                    adaptive_smearing, 1e3 * smearing_info['direct_width_min_ev'],
+                    1e3 * smearing_info['direct_width_median_ev'],
+                    1e3 * smearing_info['direct_width_max_ev'], 1e3 * min_degauss_ev),
+                flush=True,
+            )  # fmt: skip
     current_q = None
     for iq, ib in tasks[tstart:tstop]:
         if iq != current_q:
@@ -1267,6 +1338,12 @@ def phonon_assisted_absorption_dense_q(
             gn_flat, vertex_phases(electrons, kk), V[kq][:, :, bands], V[kk][:, :, bands], zmass,
             lr_q,
         )  # fmt: skip
+        degauss_block = degauss
+        if velocity_diag is not None:
+            degauss_block = pair_widths(
+                velocity_diag[kk][:, :, None, :], velocity_diag[kq][:, None, :, :],
+                spacing_k, spacing_q, adaptive_smearing, width_floor,
+            )  # (nb, i, j), Ry  # fmt: skip
         for (delta, tidx), energy_g in zip(groups, group_energy):
             v_k = scissor_velocities(
                 velocities[kk], energies[kk][:, bands], delta, conduction, scissor_velocity
@@ -1276,7 +1353,7 @@ def phonon_assisted_absorption_dense_q(
             )
             g_part, l_part = indirect_absorption_kernel(
                 energy_g[kk], energy_g[kq], v_k, v_kq, coupling,
-                omega_ry, temps_ry[tidx], photon, etas, degauss, fsthick, eps_acoustic,
+                omega_ry, temps_ry[tidx], photon, etas, degauss_block, fsthick, eps_acoustic,
                 weight=weight, spin_degeneracy=spin_degeneracy, fermi_levels=fermi_levels[tidx],
             )  # fmt: skip
             eps_ind[tidx] += g_part
@@ -1284,12 +1361,18 @@ def phonon_assisted_absorption_dense_q(
 
     dstart, dstop = load_balancing(size, rank, len(kblocks))
     for kk in kblocks[dstart:dstop]:
+        degauss_block = degauss
+        if velocity_diag is not None:
+            degauss_block = direct_widths[kk] if direct_widths is not None else pair_widths(
+                velocity_diag[kk][:, :, None, :], velocity_diag[kk][:, None, :, :],
+                spacing_k, 0.0, adaptive_smearing, width_floor,
+            )  # fmt: skip
         for (delta, tidx), energy_g in zip(groups, group_energy):
             v_k = scissor_velocities(
                 velocities[kk], energies[kk][:, bands], delta, conduction, scissor_velocity
             )
             g_part, l_part = direct_absorption_kernel(
-                energy_g[kk], v_k, temps_ry[tidx], photon, degauss, fsthick,
+                energy_g[kk], v_k, temps_ry[tidx], photon, degauss_block, fsthick,
                 weight=1.0 / (nkd * cell_volume), spin_degeneracy=spin_degeneracy,
                 fermi_levels=fermi_levels[tidx],
             )  # fmt: skip

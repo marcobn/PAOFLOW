@@ -1,0 +1,3 @@
+&input
+  fildyn = 'sic.dyn', zasr = 'simple', flfrc = 'sic.fc'
+/

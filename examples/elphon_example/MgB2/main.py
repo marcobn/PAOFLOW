@@ -81,7 +81,8 @@ def pao_electronic_structure():
     return projections, pf.data_controller.data_arrays['HRs'], nscf
 
 
-def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, fs_coupling):
+def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, fs_coupling,
+               adaptive_smearing=None):
     """Eliashberg properties from the coarse coupling (and the Fermi-surface coupling)."""
     common = dict(
         source=COUPLING_SOURCE,
@@ -104,7 +105,8 @@ def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q, f
     return eliashberg_dense_q(
         projections, HRs, *lattice, COUPLING_DIR, QGRID, None, None, COARSE_GRID, None,
         nq_dense=nq_dense, sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'],
-        species=nscf['atom_names'], fs_coupling=fs_coupling, fsthick_ev=FSTHICK_EV, **common,
+        species=nscf['atom_names'], fs_coupling=fs_coupling, fsthick_ev=FSTHICK_EV,
+        alat=nscf['alat'], adaptive_smearing=adaptive_smearing, **common,
     )  # fmt: skip
 
 
@@ -147,7 +149,11 @@ def main():
     parser.add_argument(
         '--nq', type=int, default=NQ_DENSE, help='dense q-grid (default %(default)s)'
     )
-    parser.add_argument('--sigma-ev', type=float, default=SIGMA_EV, help='smearing in eV')
+    parser.add_argument('--sigma-ev', type=float, default=SIGMA_EV,
+                        help='Fermi-surface smearing in eV (the floor with --adaptive-smearing)')
+    parser.add_argument('--adaptive-smearing', type=float, default=None, metavar='A',
+                        help='adaptive Fermi-surface smearing prefactor a (Yates; 0.7 for Gaussians): '
+                             'width a |v_nk| dk per dense state, floored at --sigma-ev')
     parser.add_argument(
         '--iso-only', action='store_true', help='skip the Fermi-surface (anisotropic) coupling'
     )
@@ -156,12 +162,15 @@ def main():
 
     projections, HRs, nscf = pao_electronic_structure()
     out = eliashberg(
-        projections, HRs, nscf, args.nk, args.nq, args.sigma_ev, args.coarse_q, fs_coupling
+        projections, HRs, nscf, args.nk, args.nq, args.sigma_ev, args.coarse_q, fs_coupling,
+        args.adaptive_smearing,
     )
 
     if MPI.COMM_WORLD.Get_rank() == 0:
         grids = 'k %d^3, q %s' % (args.nk, 'coarse 3^3' if args.coarse_q else '%d^3' % args.nq)
-        report(out, '%s, sigma %.3f eV' % (grids, args.sigma_ev))
+        smearing = ('sigma %.3f eV' % args.sigma_ev if args.adaptive_smearing is None else
+                    'adaptive a = %.2f (floor %.1f meV)' % (args.adaptive_smearing, 1e3 * args.sigma_ev))
+        report(out, '%s, %s' % (grids, smearing))
 
 
 if __name__ == '__main__':

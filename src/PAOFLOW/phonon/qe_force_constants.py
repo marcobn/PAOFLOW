@@ -20,9 +20,12 @@ directly on the ``<prefix>.dyn0`` ... ``<prefix>.dynN`` files written by ``ph.x`
   route, plotted by :meth:`PAOFLOW.GPAO.GPAO.plot_phonons`.
 
 The same interpolator serves the dense-q electron-phonon routes of
-:mod:`PAOFLOW.elphon.do_pao_eph_dense_q`.  Polar materials need the
-non-analytic (LO-TO) term, which is not included: a warning is issued when the
-dynamical matrices carry Born effective charges.
+:mod:`PAOFLOW.elphon.do_pao_eph_dense_q`.  Polar materials get the dipole
+(LO-TO) term of :class:`~PAOFLOW.elphon.long_range.LongRangeModel`: as ``q2r.x``
+with ``zasr`` it is subtracted from the coarse dynamical matrices before the
+transform to real space (and the Born charges and dielectric tensor are written
+to the ``flfrc`` file), and as ``matdyn.x`` it is added back at every q,
+including the direction-dependent limit at Gamma along a path.
 
 Units: force constants in Ry/bohr^2, masses in QE Rydberg units (amu * 911.444),
 lattice vectors in ``alat``, q in crystal coordinates unless stated, frequencies
@@ -338,7 +341,10 @@ def apply_acoustic_sum_rule(
 
 
 def write_qe_force_constants(
-    path: str, dynamical_matrices: dict, force_constants_r: NDArray[np.complex128]
+    path: str,
+    dynamical_matrices: dict,
+    force_constants_r: NDArray[np.complex128],
+    long_range=None,
 ) -> str:
     """Write the real-space force constants in QE's ``flfrc`` format (``q2r.x`` output).
 
@@ -350,7 +356,12 @@ def write_qe_force_constants(
         Output of :func:`read_dynamical_matrices` (crystal header).
     force_constants_r : ndarray, shape ``(nq1, nq2, nq3, 3 nat, 3 nat)``
         Output of :func:`real_space_force_constants`, before the acoustic sum
-        rule (as ``q2r.x``; ``matdyn.x`` applies it).
+        rule (as ``q2r.x``; ``matdyn.x`` applies it).  For a polar crystal the
+        short-range remainder after subtracting ``long_range``.
+    long_range : LongRangeModel, optional
+        Polar crystal: write the ``T`` flag, QE's Ewald parameter, the dielectric
+        tensor and the Born charges of the model, so that ``matdyn.x`` restores
+        the dipole term (:func:`q2r_matdyn`).
 
     Returns
     -------
@@ -362,8 +373,8 @@ def write_qe_force_constants(
     QE stores :math:`\\Phi(\\mathbf R)` with
     :math:`C(\\mathbf q) = \\sum_{\\mathbf R}\\Phi(\\mathbf R) e^{-i\\mathbf q\\cdot\\mathbf R}`,
     i.e. :math:`\\Phi(\\mathbf m) = C(-\\mathbf m)` of
-    :func:`real_space_force_constants`.  Born effective charges are not
-    written (the ``F`` flag).
+    :func:`real_space_force_constants`.  Without ``long_range`` the Born
+    effective charges are not written (the ``F`` flag).
     """
     d = dynamical_matrices
     nat = int(d['nat'])
@@ -379,7 +390,17 @@ def write_qe_force_constants(
         for atom in range(nat):
             handle.write('%5d%5d' % (atom + 1, d['atom_types'][atom] + 1))
             handle.write(''.join('%18.10f' % x for x in d['tau_cart'][atom]) + '\n')
-        handle.write(' F\n')
+        if long_range is None:
+            handle.write(' F\n')
+        else:
+            # q2r.x writes its Ewald parameter after the flag (same units as the model's alpha)
+            handle.write(' T %22.16f\n' % long_range.alpha)
+            for row in long_range.epsilon:
+                handle.write(''.join('%24.12f' % x for x in row) + '\n')
+            for atom in range(nat):
+                handle.write('%5d\n' % (atom + 1))
+                for row in long_range.born_charges[atom]:
+                    handle.write(''.join('%15.7f' % x for x in row) + '\n')
         handle.write('%4d%4d%4d\n' % tuple(nr))
         for a in range(3):
             for b in range(3):
@@ -484,6 +505,43 @@ def phonon_interpolator(
     return phonon_at_q
 
 
+def gamma_limit_points(
+    q_cryst: NDArray[np.float64], bg: NDArray[np.float64], step: float = 1.0e-5
+) -> NDArray[np.float64]:
+    """Replace exact Gamma points of a path by the limit along the path (``matdyn.x``).
+
+    Parameters
+    ----------
+    q_cryst : ndarray, shape ``(nq, 3)``
+        Path in crystal coordinates, in order.
+    bg : ndarray, shape ``(3, 3)``
+        Reciprocal lattice vectors (rows, 2 pi / alat).
+    step : float, optional
+        Length of the displacement (2 pi / alat).
+
+    Returns
+    -------
+    ndarray, shape ``(nq, 3)``
+        The path with every Gamma point moved by ``step`` towards the next point of
+        the path (towards the previous one for the last point), where the non-analytic
+        dipole term of a polar crystal takes its direction-dependent limit.
+    """
+    q = np.array(q_cryst, dtype=float)
+    for n in range(q.shape[0]):
+        if np.abs(q[n] - np.rint(q[n])).max() > 1.0e-8:
+            continue
+        other = None
+        for m in list(range(n + 1, q.shape[0])) + list(range(n - 1, -1, -1)):
+            if np.abs(q[m] - q[n]).max() > 1.0e-8:
+                other = q[m]
+                break
+        if other is None:
+            continue
+        direction = other - q[n]
+        q[n] = q[n] + direction * (step / np.linalg.norm(direction @ bg))
+    return q
+
+
 def high_symmetry_path(
     ibrav: int, alat: float, at: NDArray[np.float64]
 ) -> tuple[list[list[NDArray[np.float64]]], list[str]]:
@@ -559,7 +617,10 @@ def phonon_dispersion(
             distance += length
             ticks.append(distance)
     q_cryst = np.concatenate(q_list)
-    frequency_thz, _ = phonon_at_q(q_cryst)
+    q_eval = q_cryst
+    if getattr(phonon_at_q, 'long_range', None) is not None:
+        q_eval = gamma_limit_points(q_cryst, bg)  # LO-TO limit at Gamma along the path
+    frequency_thz, _ = phonon_at_q(q_eval)
     return {
         'distance': np.concatenate(distances),
         'frequency_thz': frequency_thz,
@@ -700,6 +761,8 @@ def q2r_matdyn(
     sigma_thz: float = 0.1,
     units: str = 'THz',
     acoustic_sum_rule: bool = True,
+    long_range='auto',
+    zasr: str = 'simple',
 ) -> dict:
     """``q2r.x`` + ``matdyn.x``: dispersion and DOS from the ``ph.x`` dynamical matrices.
 
@@ -729,34 +792,67 @@ def q2r_matdyn(
         Frequency unit of the written files.
     acoustic_sum_rule : bool, optional
         Impose the simple acoustic sum rule.
+    long_range : {'auto', False} or LongRangeModel, optional
+        Polar crystals (:func:`is_polar`): ``'auto'`` builds the dipole model from
+        the Born charges and dielectric tensor of the dynamical matrices
+        (:meth:`~PAOFLOW.elphon.long_range.LongRangeModel.from_dynamical_matrices`),
+        subtracts its force constants before the transform to real space and adds
+        them back at every q (LO-TO splitting, ``q2r.x`` + ``matdyn.x``); ``False``
+        interpolates the full matrices and warns; a model is used as given.
+    zasr : {'simple', 'no'}, optional
+        Charge-neutrality sum rule on the Born charges of the model (``q2r.x``).
 
     Returns
     -------
     dict
-        ``dynamical_matrices``, ``dispersion``, ``dos`` (or ``None``) and
-        ``files`` (written paths).
+        ``dynamical_matrices``, ``dispersion``, ``dos`` (or ``None``), ``files``
+        (written paths), ``phonon_at_q`` (the interpolator) and ``long_range``
+        (the model or ``None``).
     """
     dyn = read_dynamical_matrices(prefix, directory)
-    if dyn['polar']:
-        warnings.warn(
-            'The dynamical matrices carry non-zero Born effective charges: the '
-            'non-analytic (LO-TO) term is not included, so the LO branches near Gamma '
-            'are not reliable.',
-            stacklevel=2,
-        )
-    force_constants_r = real_space_force_constants(dyn['force_constants_q'])
+    model = None
+    if long_range is False or long_range is None:
+        if dyn['polar']:
+            warnings.warn(
+                'The dynamical matrices carry non-zero Born effective charges: the '
+                'non-analytic (LO-TO) term is not included, so the LO branches near Gamma '
+                'are not reliable (long_range=False).',
+                stacklevel=2,
+            )
+    elif isinstance(long_range, str):
+        if long_range != 'auto':
+            raise ValueError("long_range must be 'auto', False or a LongRangeModel")
+        if dyn['polar']:
+            from ..elphon.long_range import LongRangeModel
+
+            model = LongRangeModel.from_dynamical_matrices(dyn, zasr=zasr)
+    else:
+        model = long_range
+    force_constants_q = dyn['force_constants_q']
+    restore = None
+    if model is not None:
+        # q2r.x with zasr: the dipole term leaves the coarse matrices before the transform
+        force_constants_q = np.array(force_constants_q, dtype=complex)
+        grid = np.asarray(dyn['qgrid'])
+        for label in np.ndindex(*dyn['qgrid']):
+            force_constants_q[label] -= model.dynamical_matrix(
+                np.asarray(label, dtype=float) / grid
+            )
+        restore = model.dynamical_matrix
+    force_constants_r = real_space_force_constants(force_constants_q)
     os.makedirs(outdir, exist_ok=True)
     files = []
     if force_constants_file:
         files.append(
             write_qe_force_constants(
-                os.path.join(outdir, force_constants_file), dyn, force_constants_r
+                os.path.join(outdir, force_constants_file), dyn, force_constants_r, model
             )
         )
     phonon_at_q = phonon_interpolator(
         force_constants_r, dyn['masses_ry'], dyn['qgrid'], dyn['at'],
-        atom_positions=dyn['tau_cryst'], acoustic_sum_rule=acoustic_sum_rule,
+        atom_positions=dyn['tau_cryst'], acoustic_sum_rule=acoustic_sum_rule, long_range=restore,
     )  # fmt: skip
+    phonon_at_q.long_range = model
     if segments is None:
         segments, labels = high_symmetry_path(dyn['ibrav'], dyn['alat'], dyn['at'])
     dispersion = phonon_dispersion(phonon_at_q, dyn['bg'], segments, labels, npoints)
@@ -765,4 +861,11 @@ def q2r_matdyn(
     if mesh is not None:
         dos = phonon_density_of_states(phonon_at_q, mesh, sigma_thz)
         files.append(write_phonon_dos_file(outdir, fname, dos, units))
-    return {'dynamical_matrices': dyn, 'dispersion': dispersion, 'dos': dos, 'files': files}
+    return {
+        'dynamical_matrices': dyn,
+        'dispersion': dispersion,
+        'dos': dos,
+        'files': files,
+        'phonon_at_q': phonon_at_q,
+        'long_range': model,
+    }

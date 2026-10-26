@@ -62,6 +62,22 @@ def read_quadrupole_fmt(path: str, nat: int) -> NDArray[np.float64]:
     return quad
 
 
+def impose_charge_neutrality(born_charges) -> NDArray[np.float64]:
+    """Born charges with the acoustic (charge-neutrality) sum rule imposed (QE ``zasr = 'simple'``).
+
+    Parameters
+    ----------
+    born_charges : array_like ``(nat, 3, 3)``
+
+    Returns
+    -------
+    ndarray ``(nat, 3, 3)``
+        ``Z*_kappa - (1/nat) sum_kappa' Z*_kappa'``, so that ``sum_kappa Z*_kappa = 0``.
+    """
+    z = np.asarray(born_charges, dtype=float)
+    return z - z.mean(axis=0, keepdims=True)
+
+
 @dataclass
 class LongRangeModel:
     """Analytic long-range model of a crystal (dielectric tensor, Born charges, quadrupoles).
@@ -81,7 +97,9 @@ class LongRangeModel:
     quadrupoles : ndarray ``(nat, 3, 3, 3)``, optional
         ``Q[atom, displacement, p, q]`` (:func:`read_quadrupole_fmt`); ``None`` for dipoles only.
     alpha : float, optional
-        Ewald parameter in ``(2 pi / alat)^2`` (EPW ``alph = 1``).
+        Ewald parameter in ``(2 pi / alat)^2``: EPW uses 1 (the default here, for the coupling);
+        QE's ``q2r.x``/``matdyn.x`` use ``(alat / 2 pi)^2`` (:meth:`from_dynamical_matrices`).  The
+        value only moves weight between the analytic and the interpolated parts.
     gmax : float, optional
         Cutoff of the G sum (EPW ``gmax = 14``).
 
@@ -215,6 +233,44 @@ class LongRangeModel:
         return cls(
             epsilon, zstar, tau_alat, nscf['alat'], nscf['at'], nscf['bg'],
             quadrupoles=quadrupoles, **kwargs,
+        )  # fmt: skip
+
+    @classmethod
+    def from_dynamical_matrices(
+        cls, dyn: dict, zasr: str = 'simple', alpha: float | None = None, **kwargs
+    ) -> LongRangeModel:
+        """From :func:`~PAOFLOW.phonon.qe_force_constants.read_dynamical_matrices` (the ``q2r.x`` chain).
+
+        Parameters
+        ----------
+        dyn : dict
+            Its ``epsilon``, ``born_charges``, ``tau_cart`` (alat), ``alat``, ``at``, ``bg``.
+        zasr : {'simple', 'no'}, optional
+            Impose charge neutrality on the Born charges (``q2r.x`` ``zasr``).
+        alpha : float, optional
+            Ewald parameter; ``None`` takes QE's ``(alat / 2 pi)^2`` (``q2r.x``), which makes the
+            interpolated dispersion that of ``matdyn.x``.
+
+        Raises
+        ------
+        ValueError
+            Without a dielectric tensor (``ph.x`` run without ``epsil``).
+        """
+        if dyn.get('epsilon') is None or dyn.get('born_charges') is None:
+            raise ValueError(
+                'the dynamical matrices carry no dielectric tensor / Born charges (ph.x without '
+                'epsil=.true.)'
+            )
+        zstar = np.asarray(dyn['born_charges'], dtype=float)
+        if zasr == 'simple':
+            zstar = impose_charge_neutrality(zstar)
+        elif zasr != 'no':
+            raise ValueError("zasr must be 'simple' or 'no', got %r" % zasr)
+        if alpha is None:
+            alpha = (float(dyn['alat']) / (2.0 * np.pi)) ** 2
+        return cls(
+            dyn['epsilon'], zstar, np.asarray(dyn['tau_cart'], dtype=float), dyn['alat'],
+            dyn['at'], dyn['bg'], alpha=alpha, **kwargs,
         )  # fmt: skip
 
     @classmethod

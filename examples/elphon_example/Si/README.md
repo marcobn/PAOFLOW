@@ -27,7 +27,7 @@ mid-gap Fermi level.
 | file | purpose |
 |------|---------|
 | `phonon/scf.in` | `pw.x` scf (18³ k, 38 Ry, PBE norm-conserving) |
-| `phonon/ph.in` | `ph.x` DFPT on the 3³ q-grid (4 irreducible q, `fildvscf`) |
+| `phonon/ph.in` | `ph.x` DFPT on the 3³ q-grid (4 irreducible q, `fildvscf`, `epsil` for ε∞ and Z*) |
 | `phonon/q2r_matdyn.py` | `q2r.x` + `matdyn.x` in PAOFLOW: force constants (`output/Si2.fc`), dispersion and DOS from the `Si2.dyn*` files, plotted with `GPAO.plot_phonons` |
 | `nscf/nscf.in` | `pw.x` nscf on the 6³ coarse grid, `K_POINTS automatic` (16 irreducible k, `nbnd = 21`) |
 | `nscf/kmesh.py` | sets the coarse k-mesh: `python kmesh.py NK1 NK2 NK3` rewrites the `K_POINTS` card of `nscf.in` (`--explicit` for the full list EPW needs), `nk1-3` of `epw.in`, `write_ukk.py` and `COARSE_GRID` of `main.py`/`mobility.py` (the q-grid must divide it) |
@@ -40,6 +40,7 @@ mid-gap Fermi level.
 | `make_hubbard_nscf.py` | from the converged `HUBBARD` card of an eACBN0 run: the nscf inputs for eACBN0 electrons (`acbn0/nscf/`, the EPW k list) and for the eACBN0 optics run (`acbn0/optics/`) |
 | `plot.py` | plots Im ε(ω) and α(ω), overlaying EPW's `epsilon2_indabs_<T>K.dat` when present; after `--emissivity` it also plots the thermal emissivity |
 | `mobility.py` | phonon-limited carrier mobility: state-resolved SERTA/MRTA rates near the band edges, electron and hole mobilities, `scattering_rates.npz` for `pf.transport` |
+| `quadrupoles.py` | dynamical quadrupoles from twelve single-q `ph.x` density responses (`--write-inputs`, `--extract` → `quadrupole.fmt`), the long-range term that Si needs at small q (`QUADRUPOLES` in the drivers) |
 | `plot_mobility.py` | plots μ(T) and 1/τ against the energy from the band edge → `output/mobility/mobility.png` |
 
 **Pseudopotential:** copy the PseudoDojo `Si.upf` (nc-sr-05, PBE standard;
@@ -109,6 +110,8 @@ mpirun -np 8 python main.py                        # 12^3 k, 6^3 q, 300 K (13 s 
 mpirun -np 8 python main.py --temps 10 300 600     # several temperatures in one run
 mpirun -np 8 python main.py --nk 24 --nq 12        # denser grids (35 s on 8 cores)
 mpirun -np 8 python main.py --no-position-dipoles # PAO dH/dk velocity only
+mpirun -np 8 python main.py --adaptive-smearing 0.7 --degauss-ev 0.001
+                                                  # adaptive delta widths per transition (floor 1 meV)
 python plot.py --temp 300                          # figure -> output/absorption.png
 ```
 
@@ -311,6 +314,8 @@ The same EPW coupling gives the phonon-limited electron and hole mobilities.
 mpirun -np 20 python mobility.py                       # 48^3 k = q, 200-500 K, intrinsic (3.5 min)
 mpirun -np 20 python mobility.py --nk 72 --nq 72       # 14 min (3^3 DFPT q)
 mpirun -np 20 python mobility.py --doping 1e18         # n type (cm^-3; negative = p type)
+mpirun -np 20 python mobility.py --adaptive-smearing 0.7 --smearing-ev 0.001
+                                                       # adaptive delta widths a |v_mk+q| dq (floor 1 meV)
 python plot_mobility.py                                # -> output/mobility/mobility.png
 ```
 
@@ -484,6 +489,15 @@ Phonon-assisted Im ε and α (direct + indirect, constant n_r = 3.4 here; with
 - **Emissivity model.** The slab is incoherent: there is no thin-film
   interference. It has no multiphonon lattice absorption (the two-phonon bands
   of Si at 0.07–0.17 eV), no doping, and no band-gap change with temperature.
-- **Polar materials.** Si is non-polar, so no long-range (Fröhlich) term is
-  needed. PAOFLOW refuses polar materials (Z* ≠ 0) unless
-  `allow_missing_long_range=True`.
+- **Long-range terms.** Si is non-polar (Z* ≈ 0), so the Fröhlich (dipole) term
+  vanishes, but the dynamical quadrupoles (Q_{x,yz} = ∓14.4 e bohr² on the two
+  atoms with this pseudopotential, 13.66 in Brunin *et al.* 2020) give a
+  q-independent long-range piece that the interpolation of the short-range
+  vertex alone misses at small q. The drivers build the model with
+  `long_range_model()` from the Γ-run dielectric data (`epsil = .true.` in
+  `phonon/ph.in`) and, when `QUADRUPOLES` points to a `quadrupole.fmt`, from
+  the quadrupoles; `quadrupoles.py --write-inputs` prepares the twelve single-q
+  `ph.x` runs (≈ 1 min each) and `--extract` fits the tensor and writes the file.
+  The default `QUADRUPOLES = None` runs with the dipole term only, which for Si
+  is the plain interpolation. PAOFLOW refuses polar materials (Z* ≠ 0) without a
+  long-range model unless `allow_missing_long_range=True`.

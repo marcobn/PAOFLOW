@@ -351,6 +351,8 @@ def optical_absorption(
         omega_ev=(args.omega_min, args.omega_max, args.omega_step),
         temps_k=args.temps,
         degauss_ev=args.degauss_ev,
+        adaptive_smearing=args.adaptive_smearing,
+        min_degauss_ev=args.degauss_ev,
         fsthick_ev=FSTHICK_EV,
         fermi_energy_ev='intrinsic' if args.emissivity else FERMI_ENERGY_EV,
         kk_omega_max_ev=KK_OMEGA_MAX_EV if args.emissivity and not args.direct_dielectric else None,
@@ -372,11 +374,12 @@ def optical_absorption(
 def report(out, args, direct=None):
     """Print the gaps and write the spectra to OUTPUTDIR."""
     print(
-        'PAOFLOW phonon-assisted absorption (k %d^3, q %d^3, degauss %.3f eV%s):'
+        'PAOFLOW phonon-assisted absorption (k %d^3, q %d^3, degauss %s%s):'
         % (
             args.nk,
             args.nq,
-            args.degauss_ev,
+            '%.3f eV' % args.degauss_ev if args.adaptive_smearing is None else
+            'adaptive a = %.2f (floor %.1f meV)' % (args.adaptive_smearing, 1e3 * args.degauss_ev),
             ', position dipoles (%s)' % args.position_dipole_level if args.position_dipoles else '',
         )
     )
@@ -466,7 +469,14 @@ def main():
         '--nq', type=int, default=NQ_DENSE, help='dense q-grid (default %(default)s)'
     )
     parser.add_argument('--temps', type=float, nargs='+', default=TEMPS_K, help='temperatures (K)')
-    parser.add_argument('--degauss-ev', type=float, default=DEGAUSS_EV, help='delta smearing (eV)')
+    parser.add_argument(
+        '--degauss-ev', type=float, default=DEGAUSS_EV,
+        help='delta smearing (eV); the floor of the widths with --adaptive-smearing',
+    )  # fmt: skip
+    parser.add_argument(
+        '--adaptive-smearing', type=float, default=None, metavar='A',
+        help='adaptive smearing prefactor a (Yates; 0.7 for Gaussians): width a sqrt(|v_i(k) - v_j(k+q)|^2 dk^2 + |v_j(k+q)|^2 dq^2) per transition, floored at --degauss-ev; default fixed smearing',
+    )  # fmt: skip
     parser.add_argument(
         '--omega-min', type=float, default=OMEGA_EV[0], help='min photon energy (eV)'
     )

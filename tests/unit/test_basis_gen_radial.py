@@ -39,7 +39,7 @@ from PAOFLOW.inputs.read_upf import UPF
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SI_UPF = _REPO_ROOT / 'examples/qe_examples/example16/Si_ONCV/Si_ONCV_PBE_sr.UPF'
-_PT_UPF = _REPO_ROOT / 'examples/qe_examples/example16/Pt_REL/Pt_ONCV_PBE_fr.upf'
+_PT_UPF = _REPO_ROOT / 'examples/qe_examples/example16/Pt_ONCV/Pt_ONCV_PBE_fr.upf'
 
 
 @pytest.fixture(scope='module')
@@ -285,7 +285,7 @@ def test_driver_unknown_preset_raises(tmp_path):
 
 def test_directory_driver_collects_all_upfs(tmp_path):
     """``generate_basis_for_directory`` walks every UPF in a folder."""
-    # Use the Pt_REL directory (single UPF) for a stable smoke test.
+    # Use the Pt_ONCV directory (single UPF) for a stable smoke test.
     pseudo_dir = _PT_UPF.parent
     out = generate_basis_for_directory(str(pseudo_dir), str(tmp_path), preset='minimal')
     assert 'Pt' in out

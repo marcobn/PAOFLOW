@@ -25,6 +25,8 @@ from collections.abc import Callable, Sequence
 import numpy as np
 from numpy.typing import NDArray
 
+from .adaptive_smearing import fermi_level_adaptive, grid_spacing, state_widths
+
 HARTREE_TO_RY = 2.0
 RY_TO_THZ = 3289.842
 VERTEX_WS_SIGN = 1  # sign of R in the orbital separation of the vertex (see _ws_lattice_pairs)
@@ -617,6 +619,7 @@ def precompute_dense_electrons(
     keep_bands: Callable | None = None,
     comm=None,
     spin_degeneracy: float = 2.0,
+    adaptive_smearing: float | None = None,
 ) -> dict:
     """Dense-grid electron spectrum + Fermi-surface delta, shared by every q.
 
@@ -680,6 +683,14 @@ def precompute_dense_electrons(
         node (identical results).  Release them with
         :func:`release_dense_electrons` once every rank is done.  ``None`` keeps
         private arrays (serial use).
+    adaptive_smearing : float, optional
+        Adaptive Fermi-surface smearing (Yates et al.; 0.7 is the usual Gaussian
+        prefactor): the delta of every state has the width ``adaptive_smearing *
+        |v_nk| * dk`` with ``dk`` the spacing of the dense grid
+        (:func:`~PAOFLOW.elphon.adaptive_smearing.state_widths`), floored at the
+        corresponding entry of ``sigmas_ry``; the Fermi level, ``dk``, ``dos`` and
+        the shell follow (``'widths'`` ``(nsigma, nkd, nawf)`` is stored).  Needs
+        ``velocities=True``, ``diagonal_velocities=True`` and all bands kept.
 
     Returns
     -------
@@ -764,23 +775,6 @@ def precompute_dense_electrons(
         E.setflags(write=False)
         V.setflags(write=False)
 
-    ef_sig = np.zeros(sigmas.size)
-    dk = np.empty((sigmas.size, nkd, nawf))
-    dos = np.zeros(sigmas.size)
-    for isig, sig in enumerate(sigmas):
-        ef = _fermi_level(E, sig, nelec, spin_degeneracy) if nelec is not None else 0.0
-        ef_sig[isig] = ef
-        d = np.exp(-(((E - ef) / sig) ** 2)) / (sig * np.sqrt(np.pi))
-        dk[isig] = d
-        dos[isig] = d.sum() / nkd
-
-    # Fermi-surface shell: k with a band within ``fs_window`` smearings of E_F.
-    # The double delta is negligible (exp(-fs_window^2)) outside it, so it prunes
-    # the per-q vertex contraction to the states that actually scatter.
-    shell = np.empty((sigmas.size, nkd), dtype=bool)
-    for isig, sig in enumerate(sigmas):
-        shell[isig] = np.min(np.abs(E - ef_sig[isig]), axis=1) < fs_window * sig
-
     if orbital_positions is None:
         Nintg, Wg, Midxg = _ws_lattice(tuple(ng_vertex), at)
     else:
@@ -795,11 +789,11 @@ def precompute_dense_electrons(
         'K': K,
         'E': E,
         'V': V,
-        'ef_sig': ef_sig,
-        'dk': dk,
-        'dos': dos,
+        'ef_sig': None,  # filled below
+        'dk': None,
+        'dos': None,
         'sigmas': sigmas,
-        'shell': shell,
+        'shell': None,
         'fs_window': fs_window,
         'ng_vertex': tuple(int(n) for n in ng_vertex),
         'Wg': Wg,
@@ -813,6 +807,46 @@ def precompute_dense_electrons(
         )
         if diagonal_velocities:
             cache['velocity_diag'] = _diagonal_velocities(cache, kblock)
+
+    # Fermi-surface delta of every state: fixed width, or adaptive from the group velocity
+    widths = None
+    if adaptive_smearing is not None:
+        if 'velocity_diag' not in cache or kept.size != nawf:
+            raise ValueError(
+                'adaptive_smearing needs velocities=True, diagonal_velocities=True and all bands'
+            )
+        spacing = grid_spacing(float(alat) ** 3 * abs(np.linalg.det(np.asarray(at, float))), Nk)
+        widths = np.stack(
+            [
+                state_widths(cache['velocity_diag'], spacing, adaptive_smearing, sig)
+                for sig in sigmas
+            ]
+        )  # (nsigma, nkd, nawf), Ry
+        cache['widths'] = widths
+        cache['adaptive_smearing'] = float(adaptive_smearing)
+    ef_sig = np.zeros(sigmas.size)
+    dk = np.empty((sigmas.size, nkd, nawf))
+    dos = np.zeros(sigmas.size)
+    # Fermi-surface shell: k with a band within ``fs_window`` smearings of E_F.
+    # The double delta is negligible (exp(-fs_window^2)) outside it, so it prunes
+    # the per-q vertex contraction to the states that actually scatter.
+    shell = np.empty((sigmas.size, nkd), dtype=bool)
+    for isig, sig in enumerate(sigmas):
+        if widths is None:
+            ef = _fermi_level(E, sig, nelec, spin_degeneracy) if nelec is not None else 0.0
+            w = sig
+        else:
+            w = widths[isig]
+            ef = fermi_level_adaptive(E, w, nelec, spin_degeneracy) if nelec is not None else 0.0
+        ef_sig[isig] = ef
+        d = np.exp(-(((E - ef) / w) ** 2)) / (w * np.sqrt(np.pi))
+        dk[isig] = d
+        dos[isig] = d.sum() / nkd
+        if widths is None:
+            shell[isig] = np.min(np.abs(E - ef), axis=1) < fs_window * sig
+        else:
+            shell[isig] = np.min(np.abs(E - ef) / w, axis=1) < fs_window
+    cache['ef_sig'], cache['dk'], cache['dos'], cache['shell'] = ef_sig, dk, dos, shell
     return cache
 
 

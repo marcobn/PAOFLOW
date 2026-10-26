@@ -27,7 +27,7 @@ ANGLES = [(0.0, 0.0), (0.7, 1.1), (np.pi / 3, np.pi / 5), (np.pi / 2, 0.0)]
 def test_generic_matches_sp(theta, phi):
     norb = 4
     HR_p_ref = soc_p_sp(theta, phi, norb)
-    HR_p, HR_d = build_generic_soc(theta, phi, [0, 1], norb)
+    HR_p, HR_d, _ = build_generic_soc(theta, phi, [0, 1], norb)
     assert np.allclose(HR_p, HR_p_ref)
     assert np.allclose(HR_d, 0)
 
@@ -36,7 +36,7 @@ def test_generic_matches_sp(theta, phi):
 def test_generic_matches_spd_p(theta, phi):
     norb = 9
     HR_p_ref = soc_p_spd(theta, phi, norb)
-    HR_p, _ = build_generic_soc(theta, phi, [0, 1, 2], norb)
+    HR_p, _, _ = build_generic_soc(theta, phi, [0, 1, 2], norb)
     assert np.allclose(HR_p, HR_p_ref)
 
 
@@ -44,7 +44,7 @@ def test_generic_matches_spd_p(theta, phi):
 def test_generic_matches_sspd_p(theta, phi):
     norb = 10
     HR_p_ref = soc_p_sspd(theta, phi, norb)
-    HR_p, _ = build_generic_soc(theta, phi, [0, 0, 1, 2], norb)
+    HR_p, _, _ = build_generic_soc(theta, phi, [0, 0, 1, 2], norb)
     assert np.allclose(HR_p, HR_p_ref)
 
 
@@ -52,7 +52,7 @@ def test_generic_matches_sspd_p(theta, phi):
 def test_generic_matches_spds_p(theta, phi):
     norb = 10
     HR_p_ref = soc_p_spds(theta, phi, norb)
-    HR_p, _ = build_generic_soc(theta, phi, [0, 1, 2, 0], norb)
+    HR_p, _, _ = build_generic_soc(theta, phi, [0, 1, 2, 0], norb)
     assert np.allclose(HR_p, HR_p_ref)
 
 
@@ -67,7 +67,7 @@ def test_generic_matches_ssppd_p(theta, phi):
     norb = 13
     HR_p_ref = soc_p_ssppd(theta, phi, norb)
     active = [False, False, False, True, False]  # only second p (l=1)
-    HR_p, _ = build_generic_soc(theta, phi, [0, 0, 1, 1, 2], norb, active_shells=active)
+    HR_p, _, _ = build_generic_soc(theta, phi, [0, 0, 1, 1, 2], norb, active_shells=active)
     assert np.allclose(HR_p, HR_p_ref)
 
 
@@ -79,7 +79,7 @@ def test_generic_default_falloff_mask(theta, phi):
     reference block respectively (same Hermitian kernel, just scaled)."""
     shells = [0, 1, 2, 0, 0, 0, 1, 1, 1, 2, 2]
     norb = sum(2 * l + 1 for l in shells)
-    HR_p, HR_d = build_generic_soc(theta, phi, shells, norb)
+    HR_p, HR_d, _ = build_generic_soc(theta, phi, shells, norb)
     starts = []
     off = 0
     for l in shells:
@@ -110,7 +110,7 @@ def test_generic_matches_spds_d(theta, phi):
     Hermitian-clean version derived in this session)."""
     norb = 10
     HR_d_ref = soc_d_spds(theta, phi, norb)
-    _, HR_d = build_generic_soc(theta, phi, [0, 1, 2, 0], norb)
+    _, HR_d, _ = build_generic_soc(theta, phi, [0, 1, 2, 0], norb)
     assert np.allclose(HR_d, HR_d_ref)
 
 
@@ -118,7 +118,7 @@ def test_generic_matches_spds_d(theta, phi):
 def test_generic_matches_sspd_d(theta, phi):
     norb = 10
     HR_d_ref = soc_d_sspd(theta, phi, norb)
-    _, HR_d = build_generic_soc(theta, phi, [0, 0, 1, 2], norb)
+    _, HR_d, _ = build_generic_soc(theta, phi, [0, 0, 1, 2], norb)
     # soc_d_sspd has the same missing [.,.] Hermitian fill as soc_d_spd;
     # the generic builder produces the Hermitian-clean version, so compare
     # only on entries the hardcoded kernel actually wrote.
@@ -130,7 +130,7 @@ def test_generic_matches_sspd_d(theta, phi):
 def test_generic_matches_ssppd_d(theta, phi):
     norb = 13
     HR_d_ref = soc_d_ssppd(theta, phi, norb)
-    _, HR_d = build_generic_soc(theta, phi, [0, 0, 1, 1, 2], norb)
+    _, HR_d, _ = build_generic_soc(theta, phi, [0, 0, 1, 1, 2], norb)
     mask = HR_d_ref != 0
     assert np.allclose(HR_d[mask], HR_d_ref[mask])
 
@@ -140,7 +140,7 @@ def test_generic_hermitian(theta, phi):
     """Generic SOC blocks must always be Hermitian."""
     shells = [0, 1, 2, 0, 0, 0, 1, 1, 1, 2, 2]  # extended Pt
     norb = sum(2 * l + 1 for l in shells)
-    HR_p, HR_d = build_generic_soc(theta, phi, shells, norb)
+    HR_p, HR_d, _ = build_generic_soc(theta, phi, shells, norb)
     assert np.allclose(HR_p, HR_p.conj().T)
     assert np.allclose(HR_d, HR_d.conj().T)
 
@@ -151,7 +151,7 @@ def test_generic_extended_pt_layout():
     shells = [0, 1, 2, 0, 0, 0, 1, 1, 1, 2, 2]
     norb = sum(2 * l + 1 for l in shells)
     assert norb == 31
-    HR_p, HR_d = build_generic_soc(0.3, 0.7, shells, norb)
+    HR_p, HR_d, _ = build_generic_soc(0.3, 0.7, shells, norb)
     assert HR_p.shape == (2 * norb, 2 * norb)
     assert HR_d.shape == (2 * norb, 2 * norb)
     assert np.any(HR_p != 0)

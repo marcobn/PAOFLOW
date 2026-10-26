@@ -33,6 +33,7 @@ ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 - [Carrier transport in semiconductors and insulators (SERTA / MRTA)](#carrier-transport-in-semiconductors-and-insulators-serta--mrta)
 - [Screening correction of the coupling (Poncé 2018)](#screening-correction-of-the-coupling-poncé-2018)
 - [Parallelisation and memory](#parallelisation-and-memory)
+- [Adaptive smearing of the deltas](#adaptive-smearing-of-the-deltas)
 - [Grid consistency rules](#grid-consistency-rules)
 - [The `paoflow-gen elphon` CLI workflow](#the-paoflow-gen-elphon-cli-workflow)
 - [Validation](#validation)
@@ -180,6 +181,7 @@ Paths relative to `src/PAOFLOW/`.
 | `elphon/pseudopotential_terms.py` | Bare terms: `LocalPotentialTable` (`vloc_of_g` tables), `bare_local_perturbation` (`compute_dvloc`), `KleinmanBylanderProjectors` (`init_us_2`, `average_pp`, spin-orbit `dvan_so`), `nonlocal_perturbation` (`dvqpsi_us_only`), `real_spherical_harmonics_qe` (`ylmr2`). |
 | `elphon/dfpt_vertex.py` | `CoarseVertexSetup` (tables, symmetries, star members, `potential_at`, `matrix_elements`, `pao_vertex_at_q`, `band_vertex_at_q`), `star_members`, `cartesian_perturbation_potentials` (dvscf rotation), `rotate_pao_vertex` / `unfolded_pao_vertices` (irreducible-q unfolding in the PAO basis with self-check). |
 | `elphon/coupling_cache.py` | Opt-in disk cache of $g(R_e, R_p)$ (`cache_dir`, `cache_tag`, `basis_tag`). |
+| `adaptive_smearing.py` | Velocity-dependent widths of the energy-conserving deltas (grid spacing, state and pair widths, adaptive Fermi level); see [Adaptive smearing](#adaptive-smearing-of-the-deltas). |
 | `elphon_native/` | Bridge to the Rust kernel of `indirect_absorption_kernel` (`paoflow_rs.elphon_indirect_absorption`; `PAOFLOW_ELPHON_DISABLE` turns it off). |
 | `elphon/qe_elph_io.py` | Readers: `read_epw_epb` (EPW coarse Bloch coupling, multi-pool, gfortran subrecords), `read_epw_ukk` (EPW band bookkeeping: kept bands, window), `read_qe_ahc_gkk`, `read_qe_el_ph_mat`, `el_ph_mat_to_cartesian`, `read_qe_dyn`, plus the older `elph.inp_lambda`/`lambda.in` readers of the property-only route. |
 | `elphon/elph_bloch.py` | Core machinery: `read_nscf` (k-points, lattice, Fermi level, crystal symmetries, atom species), `atom_masses` (per-species masses → one per atom), `kq_index_map`, `vertex_pao_R`, `_ws_lattice`, `precompute_dense_electrons` + `lambda_q_dense_ws_fast` (dense-$k$ electron cache + Fermi-surface double delta, shared across q). |
@@ -618,6 +620,7 @@ $\lambda_{n\mathbf k}$ distribution and $\rho(T)$.
 |---|---|---|
 | `laniso`, `fsthick` | `eliashberg_dense_q(fs_coupling=True, fsthick_ev=)` | off; `fs_window` smearings |
 | `degaussw` | `sigmas_ry` | |
+| `adapt_smearing` | `adaptive_smearing=` ([adaptive widths](#adaptive-smearing-of-the-deltas) of the Fermi-surface delta, floored at `sigmas_ry`) | off |
 | `muc`, `wscut`, `npade` | `migdal_eliashberg_aniso(mu_star=, wscut=, npade=)` | 0.1, 0.1 eV, 90 |
 | `nsiter`, `conv_thr_iaxis` | `nsiter=`, `conv_thr_iaxis=` | 500, 1e-4 |
 | `tc_linear` | `linearized_eigenvalues_aniso` | |
@@ -719,6 +722,7 @@ stages:
 | `omegamin`, `omegamax`, `omegastep` | `omega_ev=(min, max, step)` | (0.05, 3.0, 0.05) eV |
 | `temps` | `temps_k` | 300 K |
 | `degaussw` | `degauss_ev` | 0.05 eV |
+| `adapt_smearing` | `adaptive_smearing=`, `min_degauss_ev` ([adaptive widths](#adaptive-smearing-of-the-deltas) per transition) | off, 1 meV |
 | `fsthick` | `fsthick_ev` | 4 eV |
 | `efermi_read`, `fermi_energy` | `fermi_energy_ev` (`None` = mid-gap) | mid-gap |
 | `eps_acoustic` | `eps_acoustic_cm` | 0.1 cm⁻¹ |
@@ -984,7 +988,10 @@ $$
 
 - **Coupling.** $|g|^2 = |\tilde g|^2/2\omega$, with $\tilde g$ from
   `band_vertex`.
-- **Delta function.** A Gaussian of width `smearing_ev`, cut at 6σ. Modes below
+- **Delta function.** A Gaussian of width `smearing_ev`, cut at 6σ, or with
+  `adaptive_smearing=a` one width per final state,
+  $a\,|\mathbf v_{m\mathbf k+\mathbf q}|\,\Delta q$ floored at `min_smearing_ev`
+  ([adaptive smearing](#adaptive-smearing-of-the-deltas)). Modes below
   `eps_acoustic_cm` are skipped.
 - **MRTA.** Each process is weighted by
   $1-\mathbf v_{n\mathbf k}\cdot\mathbf v_{m\mathbf k+\mathbf q}/|\mathbf v_{n\mathbf k}|^2$
@@ -1212,6 +1219,63 @@ electrons. The paper neglects local-field effects (a few per cent).
 
 ---
 
+## Adaptive smearing of the deltas
+
+Every energy-conserving delta of the dense-grid drivers can take a state-dependent
+Gaussian width instead of a fixed one, following PAOFLOW's `adaptive_smearing` of
+the DOS and of the dielectric function (Yates, Wang, Vanderbilt and Souza, Phys.
+Rev. B **75**, 195121 (2007)): the width is the variation of the argument of the
+delta across one cell of the grid it is summed over,
+
+$$
+\sigma = a\,|\nabla\varepsilon|\,\Delta k,\qquad
+\Delta k = \Big(\frac{8\pi^3}{\Omega N}\Big)^{1/3},
+$$
+
+with $a \simeq 0.7$ for Gaussians and a floor that keeps the width finite at the
+band extrema (EPW's `adapt_smearing` uses the standard deviation of a uniform
+distribution over the cell and a 1 meV floor). Coarse grids then get broad,
+smooth deltas and fine grids sharp ones without retuning the smearing, so the
+grid is converged alone instead of jointly with the smearing. The helpers are in
+`PAOFLOW.elphon.adaptive_smearing`; the drivers take `adaptive_smearing=a`
+(`None`, the default, keeps the fixed width) and the fixed-width argument
+becomes the floor.
+
+| Quantity | delta | summed over | width |
+|---|---|---|---|
+| scattering rates, `carrier_scattering_dense_q(adaptive_smearing=, min_smearing_ev=)` | $\delta(\varepsilon_{m\mathbf k+\mathbf q}-\varepsilon_{n\mathbf k}\mp\omega_{\mathbf q\nu})$ | q | $a\,|\mathbf v_{m\mathbf k+\mathbf q}|\,\Delta q$ (the phonon group velocity, two orders of magnitude smaller, is neglected) |
+| phonon-assisted absorption, `phonon_assisted_absorption_dense_q(adaptive_smearing=, min_degauss_ev=)` | $\delta(\varepsilon_{j\mathbf k+\mathbf q}-\varepsilon_{i\mathbf k}-\omega\mp\omega_{\mathbf q\nu})$ | k and q | $a\sqrt{|\mathbf v_{i\mathbf k}-\mathbf v_{j\mathbf k+\mathbf q}|^2\Delta k^2+|\mathbf v_{j\mathbf k+\mathbf q}|^2\Delta q^2}$; the direct term uses the k part alone |
+| Eliashberg function, `eliashberg_dense_q(adaptive_smearing=)` via `precompute_dense_electrons` | $\delta(\varepsilon_{n\mathbf k}-E_F)\,\delta(\varepsilon_{m\mathbf k+\mathbf q}-E_F)$ | k and q | $a\,|\mathbf v_{n\mathbf k}|\,\Delta k$ per state, floored at `sigmas_ry`; the Fermi level, $N(E_F)$ and the Fermi-surface shell use the same widths (`electrons['widths']`) |
+
+The group velocities are the diagonal of the PAO velocity operator averaged over
+degenerate subspaces (`_diagonal_velocities`, the same velocities as the MRTA
+and transport weights), computed once on the dense grid and shared between the
+ranks. With a fixed width the numerics are unchanged: the kernels accept a
+scalar or an array of widths, and the Rust absorption kernel takes one width
+per pair. Not covered: the coarse-q path (`eliashberg_from_qe_coupling`,
+`lambda_q_dense_ws`), the Kramers–Kronig direct term (`kk_degauss_ev`) and the
+`fsthick_ev` window of the anisotropic Fermi-surface coupling.
+
+Validation (`tests/unit/elphon/test_adaptive_smearing.py`): a constant array of
+widths reproduces the scalar path bit for bit, per-state widths are additive,
+and the adaptive $N(E_F)$ of a simple-cubic band on a $14^3$ grid is within 5 %
+of a converged $90^3$ reference where a fixed 0.1 meV smearing is off by more
+than 50 %. On real data (October 2026): the Pb isotropic λ with the native
+DFPT coupling and q = 24³ is 1.068, 1.069 and 1.069 on k = 24³, 48³ and 72³
+with a = 0.7 (1.054 and 1.100 for a = 0.35 and 0.2 at 48³), where the fixed
+50 meV width gives 1.018, 1.176 and 1.029 (`examples/elphon_example/Pb/README.md`);
+the 3C-SiC MRTA electron mobility converges from 48³ on with a = 0.7 (956,
+993, 942 cm²/Vs at 48³–72³, experiment 900–1000) where the fixed 10 meV width
+was still moving at 60³ (`examples/elphon_example/SiC/REPORT.md`). The SERTA
+rate of the polar acoustic term keeps drifting with either smearing (it
+diverges logarithmically without free-carrier screening). Mind that a
+Fermi-surface width of $a|\mathbf v_F|\Delta k$ is large in a metal (up to
+0.25 eV at 72³ in Pb), so the adaptive λ is an average over that energy
+window; it is grid-stable, and converges to the sharp Fermi-surface limit as
+$1/N$.
+
+---
+
 ## Grid consistency rules
 
 | Constraint | Reason |
@@ -1391,12 +1455,17 @@ remains a convergence statement, not a code defect.
 
 - **Long-range (polar) terms.** Pass `long_range=LongRangeModel.from_coupling(coupling_dir,
   save_dir, quadrupoles=...)` (`PAOFLOW.elphon.long_range`) to the dense drivers: the
-  analytic dipole (Fröhlich) and, with a `quadrupole.fmt`, quadrupole vertex is subtracted
+  analytic dipole (Fröhlich) and, with a `quadrupole.fmt` (EPW's format; computed by
+  `PAOFLOW.elphon.quadrupoles` from twelve single-q `ph.x` density responses, see the Si
+  example's `quadrupoles.py`), quadrupole vertex is subtracted
   from the coarse PAO-gauge vertex and added back at every dense q, and the dipole force
   constants likewise (LO-TO splitting). The phonons must be built with the same model
   (`phonon_at_q=None`, or `phonon_interp_from_dyn(..., long_range=model)`); the driver
   raises otherwise. The model follows EPW's `rgd_blk_epw`/`rgd_blk` term by term
-  (`docs/internals/long-range-elphon-plan.md`). Without a model the interpolation
+  (`docs/internals/long-range-elphon-plan.md`); `q2r_matdyn` applies the same model to
+  the phonon dispersion and DOS (QE's Ewald parameter, `matdyn.x` to 0.01 cm⁻¹). The
+  worked case is `examples/elphon_example/SiC` (phonons, the Fröhlich 1/|q| vertex,
+  carrier mobility). Without a model the interpolation
   Fourier-transforms the full coupling and force constants, which is exact for metals
   ($Z^* = \varepsilon^\infty = 0$, MgB₂, Pb) but not for insulators:
   `check_long_range_terms` (`do_pao_eph.py`) then
