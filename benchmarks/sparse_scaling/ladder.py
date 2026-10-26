@@ -1,4 +1,4 @@
-"""Expand the benchmark config into one plain dict per case."""
+"""Expand one system of the benchmark into one plain dict per case."""
 
 import copy
 
@@ -23,62 +23,79 @@ def _merged(defaults, override):
     return out
 
 
-def pipeline_properties(config, pipe):
-    """``[[method, kwargs], ...]`` of a pipeline, in the order of
-    ``config['properties']``, with its ``property_args`` applied."""
+def pipeline_properties(system, pipe):
+    """``[[name, kwargs], ...]`` of a pipeline, in the order of
+    ``system['properties']``, with its ``property_args`` applied."""
     wanted = set(pipe['properties'])
-    unknown = wanted - set(config['properties'])
+    unknown = wanted - set(system['properties'])
     if unknown:
-        raise ValueError('properties not in CONFIG["properties"]: %s' % sorted(unknown))
+        raise ValueError('properties not in SYSTEM["properties"]: %s' % sorted(unknown))
     overrides = pipe.get('property_args', {})
     return [
         [name, _merged(kwargs, overrides.get(name))]
-        for name, kwargs in config['properties'].items()
+        for name, kwargs in system['properties'].items()
         if name in wanted
     ]
 
 
-def build_cases(config):
-    """Every case of ``config``, in submission order.
+def case_system(name, system):
+    """The part of a system every case carries: what ``run_case`` and
+    ``observables`` read back from ``cases.json`` and ``record.json``."""
+    keys = ('label', 'savedir', 'projections', 'pthr', 'smearing', 'zeros', 'nonzero')
+    out = {key: copy.deepcopy(system.get(key)) for key in keys}
+    out['name'] = name
+    return out
+
+
+def build_cases(config, name, system):
+    """Every case of one system, in submission order.
 
     Parameters
     ----------
     config : dict
         :data:`config.CONFIG`.
+    name : str
+        The system's folder name.
+    system : dict
+        Its :data:`SYSTEM` (:func:`config.load_system`).
 
     Returns
     -------
     list of dict
         One self-contained dict per case: everything ``run_case`` needs, so a
-        case can be re-run from ``cases.json`` alone.  ``id`` is unique and
-        doubles as the directory name.
+        case can be re-run from ``cases.json`` alone.  ``id`` is unique within
+        the system and doubles as the directory name under its ``runs/``.
     """
     cases = []
-    system = copy.deepcopy(config['system'])
-    for name, pipe in config['pipelines'].items():
+    csys = case_system(name, system)
+    for pname, pipe in system['pipelines'].items():
         if not pipe.get('enabled', True):
             continue
         for d in range(int(pipe['max_doublings']) + 1):
             doublings = doubling_pattern(d)
             cases.append(
                 {
-                    'id': '%s_d%02d' % (name, d),
+                    'id': '%s_d%02d' % (pname, d),
                     'kind': 'pipeline',
-                    'pipeline': name,
+                    'pipeline': pname,
                     'sparse': bool(pipe['sparse']),
                     'sparse_config': copy.deepcopy(pipe.get('sparse_config', {})),
                     'd': d,
                     'doublings': doublings,
-                    'nfft': target_nfft(config['base_nfft'], doublings, config['min_nfft']),
-                    'system': system,
-                    'properties': pipeline_properties(config, pipe),
+                    'nfft': target_nfft(system['base_nfft'], doublings, system['min_nfft']),
+                    'system': csys,
+                    'properties': pipeline_properties(system, pipe),
                     'band_curvature': bool(pipe.get('band_curvature', False)),
+                    # the band path is folded by doubling: undoubled cell only
+                    'bands': copy.deepcopy(system.get('bands'))
+                    if pipe.get('bands') and d == 0
+                    else None,
                     'disorder_meV': float(config['disorder_meV']) if pipe['sparse'] else 0.0,
                     'disorder_seed': int(config['disorder_seed']),
-                    'npool': int(pipe['slurm']['npool']),
+                    'npool': int(resources(config, pipe)['npool']),
                 }
             )
-    sweep = config.get('solver_sweep', {})
+    sweep = system.get('solver_sweep', {})
     if sweep.get('enabled', False):
         for d in sweep['doublings']:
             cases.append(
@@ -90,13 +107,13 @@ def build_cases(config):
                     'sparse_config': {'bond_order': sweep['bond_order'], 'dense_n_max': 10**9},
                     'd': int(d),
                     'doublings': doubling_pattern(d),
-                    'system': system,
+                    'system': csys,
                     'nev_fractions': list(sweep['nev_fractions']),
                     'nk_probe': int(sweep['nk_probe']),
                     'stop_ratio': float(sweep['stop_ratio']),
                     'disorder_meV': float(config['disorder_meV']),
                     'disorder_seed': int(config['disorder_seed']),
-                    'npool': int(sweep['slurm']['npool']),
+                    'npool': int(resources(config, sweep)['npool']),
                 }
             )
     ids = [c['id'] for c in cases]
@@ -104,10 +121,16 @@ def build_cases(config):
     return cases
 
 
-def slurm_resources(config, case):
+def resources(config, pipe):
+    """The resources of one pipeline (or the solver sweep):
+    ``config['resources']`` with the pipeline's ``slurm`` applied."""
+    return _merged(config['resources'], pipe.get('slurm'))
+
+
+def slurm_resources(config, system, case):
     """The merged Slurm settings of the pipeline a case belongs to."""
     if case['kind'] == 'solver_sweep':
-        own = config['solver_sweep']['slurm']
+        own = system['solver_sweep']
     else:
-        own = config['pipelines'][case['pipeline']]['slurm']
-    return _merged(config['slurm'], own)
+        own = system['pipelines'][case['pipeline']]
+    return _merged(config['slurm'], resources(config, own))

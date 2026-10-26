@@ -7,8 +7,9 @@ task and stores its ``State``, ``ExitCode``, ``MaxRSS`` and ``Elapsed``
 under ``scheduler``; a record still marked running gets its status from
 the state (``'oom'``, ``'timeout'``, ``'killed'``, or ``'not_run'`` when
 sacct knows nothing of the task), and an error file left by a non-zero
-rank is folded in.  Run by the dependent finalize job, or by
-hand with ``python finalize.py``; it takes no arguments.
+rank is folded in.  Run by the dependent finalize job on the system named by
+``BENCH_OUTPUT_ROOT``, or by hand with ``python finalize.py``, which takes no
+arguments and finalizes every system that has a ``runs/jobs.json``.
 """
 
 import glob
@@ -91,6 +92,12 @@ def finalize(root):
 
 
 if __name__ == '__main__':
-    from config import CONFIG
+    from config import all_systems, output_root
 
-    finalize(os.environ.get('BENCH_OUTPUT_ROOT', CONFIG['output_root']))
+    if 'BENCH_OUTPUT_ROOT' in os.environ:
+        finalize(os.environ['BENCH_OUTPUT_ROOT'])
+    else:
+        for name in all_systems():
+            if os.path.exists(os.path.join(output_root(name), 'jobs.json')):
+                print('== %s' % name)
+                finalize(output_root(name))

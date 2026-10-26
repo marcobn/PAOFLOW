@@ -1,6 +1,7 @@
-"""Merge every ``record.json`` into flat tables for the analysis notebook.
+"""Merge every ``record.json`` of a system into flat tables for the analysis notebook.
 
-``python collect.py`` (no arguments) writes, under the output root:
+``python collect.py`` (no arguments) writes, under each system's
+``systems/<name>/runs`` (or only under ``BENCH_OUTPUT_ROOT`` when it is set):
 
 ``results.csv``
     One row per pipeline case: status and failure reason, sizes, stage
@@ -10,7 +11,8 @@
     One row per (size, nev/n, kernel) of the solver sweep.
 
 Accuracy: every per-primitive-cell curve of :mod:`observables` (DoS, PDOS,
-transport, conductivity, doping, dielectric, effective masses) is compared,
+transport, conductivity, doping, dielectric, effective masses, the Hall
+conductivities and the linear responses) is compared,
 as a relative L2 deviation on the range it shares with the other curve, with
 (a) the ``reference`` case, the dense pipeline on the primitive cell without
 doubling, in columns ``dev_<name>_vs_ref``, and (b) the same pipeline one
@@ -29,45 +31,31 @@ import observables
 # the dense pipeline on the primitive cell, without doubling
 REFERENCE_ID = 'reference_d00'
 
+# the order of the t_<stage> columns; property stages not listed here (every
+# property of the dense pipeline is a stage) follow in the order they ran
 STAGE_ORDER = [
     'projections',
     'projectability',
     'pao_hamiltonian',
+    'operators',
     'doubling',
     'disorder',
+    'bands',
     'interpolated_hamiltonian',
     'window',
     'pao_eigh',
     'gradient_and_momenta',
     'adaptive_smearing',
-    'doping',
-    'conductivity',
-    'dielectric_tensor',
-    'transport',
-    'effective_mass',
-    'dos',
     'mesh_and_properties',
     'solver_sweep',
     'finish',
 ]
 
-# stages whose cost is the k-space work, summed per pipeline so the dense
-# and the fused sparse stages compare like for like
-KSPACE = {
-    'interpolated_hamiltonian',
-    'window',
-    'pao_eigh',
-    'gradient_and_momenta',
-    'adaptive_smearing',
-    'doping',
-    'conductivity',
-    'dielectric_tensor',
-    'transport',
-    'effective_mass',
-    'dos',
-    'mesh_and_properties',
-}
-SETUP = {'projections', 'projectability', 'pao_hamiltonian', 'doubling', 'disorder'}
+# stages that build the Hamiltonian; every other stage but these and the
+# band path (d = 0 only) is mesh work, summed per pipeline so the dense and the
+# fused sparse stages compare like for like
+SETUP = {'projections', 'projectability', 'pao_hamiltonian', 'operators', 'doubling', 'disorder'}
+NOT_KSPACE = SETUP | {'bands', 'solver_sweep', 'finish'}
 
 
 def load_records(root):
@@ -115,6 +103,7 @@ def pipeline_rows(records):
         base_nawf = ham.get('base', {}).get('nawf', base_any)
         nawf = ham.get('nawf', base_nawf * 2 ** case['d'] if base_nawf else np.nan)
         row = {
+            'system': (case.get('system') or {}).get('name', 'si'),
             'id': case['id'],
             'pipeline': case['pipeline'],
             'd': case['d'],
@@ -146,13 +135,15 @@ def pipeline_rows(records):
             'sched_elapsed': sched.get('Elapsed'),
             'node_mem_total': (env.get('meminfo') or {}).get('MemTotal'),
         }
-        for name in STAGE_ORDER:
-            if name in stages and 'seconds' in stages[name]:
+        names = [n for n in STAGE_ORDER if n in stages]
+        names += [n for n in stages if n not in STAGE_ORDER]
+        for name in names:
+            if 'seconds' in stages[name]:
                 row['t_' + name] = stages[name]['seconds']
                 row['peak_' + name] = stages[name].get('peak_rss_max')
         done = [s for s in rec.get('stages', []) if s.get('status') == 'ok']
         row['t_setup'] = sum(s['seconds'] for s in done if s['name'] in SETUP)
-        row['t_kspace'] = sum(s['seconds'] for s in done if s['name'] in KSPACE)
+        row['t_kspace'] = sum(s['seconds'] for s in done if s['name'] not in NOT_KSPACE)
         row['t_total'] = sum(s.get('seconds', 0.0) for s in rec.get('stages', []))
         peaks = [s.get('peak_rss_max') for s in done if s.get('peak_rss_max')]
         row['peak_rss_max'] = max(peaks) if peaks else np.nan
@@ -218,6 +209,12 @@ def collect(root):
 
 
 if __name__ == '__main__':
-    from config import CONFIG
+    from config import all_systems, output_root
 
-    collect(os.environ.get('BENCH_OUTPUT_ROOT', CONFIG['output_root']))
+    if 'BENCH_OUTPUT_ROOT' in os.environ:
+        collect(os.environ['BENCH_OUTPUT_ROOT'])
+    else:
+        for name in all_systems():
+            if os.path.isdir(output_root(name)):
+                print('== %s' % name)
+                collect(output_root(name))

@@ -1155,6 +1155,7 @@ class SparseEngine:
         adhoc_SO=False,
         fname='bands',
         nk=500,
+        write_QE_path=False,
     ):
         """Band structure along a path: every well-projected band (or the
         ``'nev'`` of ``sparse_config``, or the states inside the interior
@@ -1183,6 +1184,8 @@ class SparseEngine:
             attr['band_path'] = band_path
         if high_sym_points is not None:
             arrays['high_sym_points'] = high_sym_points
+        # read by the path writer, as the dense method sets it
+        attr['write_QE_bands'] = write_QE_path
 
         def _bands():
             do_bands_sparse(

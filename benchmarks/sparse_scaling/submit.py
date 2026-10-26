@@ -1,11 +1,15 @@
-"""Write the case list and the Slurm job arrays, and submit them.
+"""Write the case lists and the Slurm job arrays, and submit them.
 
 ``python submit.py`` takes no arguments: it reads ``CONFIG`` from
-:mod:`config`.  Each pipeline (and the solver sweep) becomes one job array
-with one task per size, all submitted at once; a size that fails is a data
-point, not a reason to stop the ladder.  A last job, held until every array
-has finished (``afterany``), runs :mod:`finalize` to add the scheduler's
-verdict (``OUT_OF_MEMORY``, ``TIMEOUT``, ``MaxRSS``) to each record.
+:mod:`config` and submits every system of ``CONFIG['systems']``.  Each
+pipeline of a system (and its solver sweep) becomes one job array with one
+task per size, all submitted at once; a size that fails is a data point, not
+a reason to stop the ladder.  A system's ``cases.json``, job scripts,
+``jobs.json`` and logs go into its ``systems/<name>/runs``.  A last job, held
+until every array has finished (``afterany``), runs :mod:`finalize` and
+:mod:`collect` on every submitted system, to add the scheduler's verdict
+(``OUT_OF_MEMORY``, ``TIMEOUT``, ``MaxRSS``) to each record and build the
+tables.
 
 Set ``CONFIG['slurm']['dry_run'] = True`` to write the scripts without
 calling ``sbatch``.
@@ -15,17 +19,33 @@ import json
 import os
 import subprocess
 
+from config import load_system, output_root
 from ladder import build_cases, slurm_resources
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def group_cases(config):
+def group_cases(config, name, system):
     """``{group: [case, ...]}``: one group (job array) per pipeline."""
     groups = {}
-    for case in build_cases(config):
+    for case in build_cases(config, name, system):
         groups.setdefault(case['pipeline'], []).append(case)
     return groups
+
+
+def check_savedirs(systems):
+    """Raise unless every system's QE save directory exists."""
+    missing = [
+        '%s: %s' % (name, system['savedir'])
+        for name, system in systems.items()
+        if not os.path.isdir(system['savedir'])
+    ]
+    if missing:
+        raise FileNotFoundError(
+            'QE save directories not found:\n  %s\nThe Pt, Fe and Te save directories are '
+            'not under version control: copy systems/<name>/*.save along with the benchmark, '
+            'or extract them from the QE test assets (see the README).' % '\n  '.join(missing)
+        )
 
 
 def _sbatch_header(config, name, res, ntasks_array, log):
@@ -51,26 +71,26 @@ def _sbatch_header(config, name, res, ntasks_array, log):
     return lines
 
 
-def write_scripts(config):
-    """Write ``cases.json`` and one job script per group.
+def write_scripts(config, name, system):
+    """Write one system's ``cases.json`` and one job script per group.
 
     Returns
     -------
     dict
-        ``{group: script path}``, plus ``'_finalize'`` for the finalize job.
+        ``{group: script path}``.
     """
-    root = config['output_root']
+    root = output_root(name)
     os.makedirs(os.path.join(root, 'logs'), exist_ok=True)
-    groups = group_cases(config)
+    groups = group_cases(config, name, system)
     with open(os.path.join(root, 'cases.json'), 'w') as f:
-        json.dump({'groups': groups, 'config': config}, f, indent=1, default=list)
+        json.dump({'groups': groups, 'config': config, 'system': system}, f, indent=1, default=list)
 
     scripts = {}
     for group, cases in groups.items():
-        res = slurm_resources(config, cases[0])
+        res = slurm_resources(config, system, cases[0])
         lines = _sbatch_header(
             config,
-            'sps_' + group,
+            'sps_%s_%s' % (name, group),
             res,
             len(cases),
             os.path.join(root, 'logs', group + '_%a.out'),
@@ -90,21 +110,30 @@ def write_scripts(config):
         with open(path, 'w') as f:
             f.write('\n'.join(lines) + '\n')
         scripts[group] = path
+    return scripts
 
+
+def write_finalize(config, names):
+    """The finalize job: :mod:`finalize`, then :mod:`collect`, per system."""
     res = dict(
         config['slurm'], ntasks=1, cpus_per_task=1, mem='2G', time='00:30:00', exclusive=False
     )
-    lines = _sbatch_header(
-        config, 'sps_finalize', res, None, os.path.join(root, 'logs', 'finalize.out')
-    )
-    lines += ['', 'set -uo pipefail'] + res.get('setup', [])
-    lines += ['export BENCH_OUTPUT_ROOT=%s' % root, 'cd %s' % HERE]
-    lines += ['%s finalize.py' % res['python'], '%s collect.py' % res['python']]
-    path = os.path.join(root, 'job_finalize.sh')
+    # the one job that spans the systems lives in the top-level runs/
+    log_dir = os.path.join(HERE, 'runs')
+    os.makedirs(log_dir, exist_ok=True)
+    lines = _sbatch_header(config, 'sps_finalize', res, None, os.path.join(log_dir, 'finalize.out'))
+    lines += ['', 'set -uo pipefail'] + res.get('setup', []) + ['cd %s' % HERE]
+    for name in names:
+        root = output_root(name)
+        lines += [
+            'export BENCH_OUTPUT_ROOT=%s' % root,
+            '%s finalize.py' % res['python'],
+            '%s collect.py' % res['python'],
+        ]
+    path = os.path.join(log_dir, 'job_finalize.sh')
     with open(path, 'w') as f:
         f.write('\n'.join(lines) + '\n')
-    scripts['_finalize'] = path
-    return scripts
+    return path
 
 
 def _sbatch(args):
@@ -115,24 +144,28 @@ def _sbatch(args):
 
 
 def submit(config):
-    """Write everything and submit it; returns ``{group: job id}``."""
-    scripts = write_scripts(config)
-    root = config['output_root']
+    """Write everything and submit it; returns ``{system: {group: job id}}``."""
+    systems = {name: load_system(name) for name in config['systems']}
+    check_savedirs(systems)
+    scripts = {name: write_scripts(config, name, system) for name, system in systems.items()}
+    finalize = write_finalize(config, list(systems))
     if config['slurm'].get('dry_run'):
-        for group, path in scripts.items():
-            print('[dry run] %-20s %s' % (group, path))
+        for name, paths in scripts.items():
+            for group, path in paths.items():
+                print('[dry run] %-4s %-20s %s' % (name, group, path))
+        print('[dry run] %-25s %s' % ('finalize', finalize))
         return {}
     jobs = {}
-    for group, path in scripts.items():
-        if group != '_finalize':
-            jobs[group] = _sbatch([path])
-            print('submitted %-20s job %s' % (group, jobs[group]))
-    jobs['_finalize'] = _sbatch(
-        ['--dependency=afterany:' + ':'.join(jobs.values()), scripts['_finalize']]
-    )
-    print('submitted %-20s job %s (after all arrays)' % ('finalize', jobs['_finalize']))
-    with open(os.path.join(root, 'jobs.json'), 'w') as f:
-        json.dump(jobs, f, indent=1)
+    for name, paths in scripts.items():
+        jobs[name] = {}
+        for group, path in paths.items():
+            jobs[name][group] = _sbatch([path])
+            print('submitted %-4s %-20s job %s' % (name, group, jobs[name][group]))
+        with open(os.path.join(output_root(name), 'jobs.json'), 'w') as f:
+            json.dump(jobs[name], f, indent=1)
+    ids = [job for groups in jobs.values() for job in groups.values()]
+    final = _sbatch(['--dependency=afterany:' + ':'.join(ids), finalize])
+    print('submitted %-25s job %s (after all arrays)' % ('finalize', final))
     return jobs
 
 

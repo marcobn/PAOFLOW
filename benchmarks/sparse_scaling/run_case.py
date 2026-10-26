@@ -4,7 +4,8 @@ Two kinds of case come out of :func:`ladder.build_cases`:
 
 ``'pipeline'``
     The example01 workflow on a doubled cell: QE projections ->
-    ``pao_hamiltonian`` -> ``doubling_Hamiltonian`` -> property mesh ->
+    ``pao_hamiltonian`` -> the spin/orbital operators the properties need ->
+    ``doubling_Hamiltonian`` -> property mesh ->
     the case's properties (``case['properties']``), on the dense pipeline or
     the sparse one (from the bottom of the spectrum, or ``interior_window``).
     The sparse pipeline runs them in one fused mesh pass.
@@ -14,7 +15,8 @@ Two kinds of case come out of :func:`ladder.build_cases`:
     (``dense_ratio``) and how much per-k scratch each kernel needs.
 
 As a Slurm array task the module takes no arguments: the entry block reads
-``SLURM_ARRAY_TASK_ID`` and the case list that ``submit`` wrote.  From
+``SLURM_ARRAY_TASK_ID``, and the case list that ``submit`` wrote into the
+system's ``runs/`` directory (``BENCH_OUTPUT_ROOT``).  From
 Python, call :func:`run_case` with a case dict.
 """
 
@@ -129,6 +131,13 @@ def _build_cell(case, outdir, rec):
         pao.projectability(pthr=system['pthr'])
     with rec.stage('pao_hamiltonian', arrays):
         pao.pao_hamiltonian()
+    builders = _operator_builders(case.get('properties', []))
+    if builders:
+        # the sparse engine doubles Sj/Lj with the cell, but builds them only
+        # at the base cell; the dense reference (d = 0) would build them lazily
+        with rec.stage('operators', arrays):
+            for builder in builders:
+                getattr(pao, builder)()
     from PAOFLOW.spectrum.do_pdos import _build_orbital_prefixes
 
     rec.set(
@@ -188,6 +197,30 @@ def _method(name):
     return name.split(':')[0]
 
 
+# the operators a property reads, by the PAOFLOW method that builds them
+_SPIN, _ORBITAL = 'spin_operator', 'orbital_operator'
+
+
+def _operator_builders(properties):
+    """The operator builders (``spin_operator``, ``orbital_operator``) the
+    properties need, in that order."""
+    needed = set()
+    for name, kwargs in properties:
+        method = _method(name)
+        if method in ('spin_Hall', 'spin_texture'):
+            needed.add(_SPIN)
+        elif method in ('orbital_Hall', 'orbital_texture'):
+            needed.add(_ORBITAL)
+        elif method == 'rashba_edelstein':
+            if kwargs.get('spin', True):
+                needed.add(_SPIN)
+            if kwargs.get('orbital', False):
+                needed.add(_ORBITAL)
+        elif method == 'linear_response' and kwargs.get('response', 'shc') in ('shc', 'ree'):
+            needed.add(_SPIN)
+    return [b for b in (_SPIN, _ORBITAL) if b in needed]
+
+
 def _solver_info(pao, case):
     """The per-k kernel the sparse mesh pass dispatched to."""
     from PAOFLOW.sparse.solver import INTERIOR_DENSE_N, select_hk_solver
@@ -245,6 +278,11 @@ def _run_pipeline(case, outdir, rec):
 
     nfft, clamped = _mesh(case, attr)
     properties = [(name, dict(kwargs)) for name, kwargs in case['properties']]
+
+    if case.get('bands'):
+        # before the mesh: the dense bands() leaves the path eigenvalues in E_k
+        with rec.stage('bands', arrays):
+            pao.bands(**case['bands'])
 
     with rec.stage('interpolated_hamiltonian', arrays):
         pao.interpolated_hamiltonian(nfft1=nfft[0], nfft2=nfft[1], nfft3=nfft[2])
@@ -421,11 +459,8 @@ def load_cases(output_root):
 
 if __name__ == '__main__':
     # a Slurm array task: the case comes from cases.json, never from argv
-    root = os.environ.get('BENCH_OUTPUT_ROOT')
-    if root is None:
-        from config import CONFIG
-
-        root = CONFIG['output_root']
+    # the job script names the system's runs/ directory
+    root = os.environ['BENCH_OUTPUT_ROOT']
     listing = load_cases(root)
     task = int(os.environ['SLURM_ARRAY_TASK_ID'])
     group = os.environ['BENCH_GROUP']
