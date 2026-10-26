@@ -8,8 +8,9 @@ stages (Hamiltonian, doubling, interpolation, bands) are methods of the
 engine; the properties are :class:`~PAOFLOW.sparse.properties.MeshProperty`
 classes, which the engine finds by name in the registry.  Features that
 exist only in sparse mode (``fused``, the bond list ``H``) are reached as
-``pao.sparse.<name>``; the energy windows are the ``'energy_window'`` and
-``'interior_window'`` options of ``sparse_config``.
+``pao.sparse.<name>``.  The energy window of each pass is derived from the
+energy ranges of its properties (:mod:`~PAOFLOW.sparse.window`); the
+``'nev'`` and ``'interior_window'`` options of ``sparse_config`` override it.
 
 The DFT input stages (QE parsing, projectability, base-cell Hamiltonian
 construction — the one sanctioned dense stage, at the small pre-doubling
@@ -33,8 +34,9 @@ long as they lie below the shift ``eta`` (``attr['shift']``), and places
 everything else in the PAO space at ``eta`` itself (around it off the DFT
 grid).  The states from ``eta - shift_margin`` up are therefore treated as
 placeholders, not bands.  The engine drops them at
-every k-point (:meth:`SparseEngine._projectable_top`), pulls a window or a
-property range that reaches past ``eta`` back below it with a warning, and
+every k-point (:meth:`SparseEngine._projectable_top`), caps every window at
+``eta - shift_margin``, pulls a property range that reaches past it back
+below it with a warning, and
 leaves them only as the intermediate states of the full-spectrum sums,
 which the dense kernels include as well.
 
@@ -51,6 +53,7 @@ from contextlib import contextmanager
 import numpy as np
 from mpi4py import MPI
 
+from . import window as _window
 from .bridge import init_restart_session, sparsify
 from .config import resolve_threshold
 from .dispatch import call_dense
@@ -112,38 +115,37 @@ class SparseEngine:
             # the mesh pass always produces adaptive widths
             attr['smearing'] = 'gauss'
 
-        self._interior = None  # (elo, ehi) when an interior window is active
+        self._interior = None  # (elo, ehi) of the last interior window
         self._skipped = []  # properties skipped because the window cannot support them
         self.H = None  # SparseHamiltonian, set by pao_hamiltonian
         self._Dnm = None  # base-cell Dnm, kept only for release_to_dense()
         self._mesh_plan = {}  # parameters recorded for the fused mesh pass
         self._mesh_passes = 0  # mesh passes run so far
+        self._path_passes = 0  # band and path passes run so far
         self._mesh_products = set()  # products ('d2Ed2k') stored by those passes
         self._fusing = None  # properties queued inside fused(), else None
-        self._window = None  # the EnergyWindow once applied
+        self._bnd_projectable = None  # attr['bnd'] before the first window
+        self._mesh_window = None  # PassWindow of the last mesh pass
+        self._mesh_bnd = None  # attr['bnd'] the last mesh pass left (its E_k width)
+        self._last_window = None  # PassWindow of the last pass of any kind
+        self._probe_cache = {}  # window probe results, by probe kind
+        self._warned = set()  # one-time warnings already issued
         self._ptop = None  # top of the well-projected range, set by _projectable_top
         self._ptop_known = False
 
         cfg = self.config
         self.log = get_sparse_log(self.data_controller)
         self.log.header(
-            'Sparse run configuration',
+            'Run',
             (
                 ('output directory', attr['opath']),
                 ('MPI ranks', self.comm.Get_size()),
                 ('k-point pools', attr['npool']),
-                ('hopping_threshold (eV)', _threshold_label(cfg)),
-                ('rcut (Bohr)', 'none' if cfg.rcut is None else '%.3f' % cfg.rcut),
-                ('bond_order', 'none' if cfg.bond_order is None else cfg.bond_order),
-                ('H(k) solver', cfg.hk_solver),
-                ('dense_n_max', cfg.dense_n_max),
-                ('dense_ratio', cfg.dense_ratio),
-                ('shift_margin (eV)', cfg.shift_margin),
-                ('energy window', _window_label(cfg)),
                 ('smearing', attr['smearing']),
                 ('verbose', attr['verbose']),
             ),
         )
+        self.log.header('Sparse configuration', _config_fields(cfg))
 
     # ------------------------------------------------------------------
     # Plumbing
@@ -223,37 +225,63 @@ class SparseEngine:
             # carried per bond by the container; the (nawf, nawf, 3) base-cell
             # copy is kept aside only so release_to_dense() can hand it back
             self._Dnm = arrays.pop('Dnm', None)
-            self.log.section('Base-cell conversion (dense H(R) -> sparse bond list)')
+            self.log.section('Hamiltonian (base cell)')
             self._log_truncation()
 
         self._guard('sparse_conversion', _convert)
         self._time('Sparse conversion')
 
     def _log_truncation(self):
-        """Describe the truncation carried by ``self.H`` and its error bound."""
+        """Log the truncation carried by ``self.H`` and what it costs.
+
+        The eigenvalue bound is the Gershgorin bound of everything the
+        truncation dropped: no eigenvalue at any k-point moves by more.  A
+        real-space cutoff keeps or drops whole atom-pair blocks by bond
+        length and so preserves the crystal symmetry; an element threshold
+        does not, and can split symmetry-protected degeneracies by up to
+        the bound (see :func:`~PAOFLOW.sparse.config.resolve_threshold`).
+        """
         report = self.H.drop_report
+        st = self.H.stats()
+        rows = []
         rcut = report.get('rcut')
         if rcut is not None:
-            how = (
-                'neighbour shell %d -> rcut = %.3f Bohr' % (report['bond_order'], rcut)
-                if report.get('bond_order') is not None
-                else 'rcut = %.3f Bohr, snapped to the shell gap at %.4f Bohr'
-                % (report.get('rcut_requested', rcut), rcut)
-            )
-            if report.get('threshold', 0.0) > 0.0:
-                how += ', threshold = %.1e eV' % report['threshold']
-            self.log.write(
-                'Real-space cutoff (%s) applied at the base cell. It is folded\n'
-                'into the eigenvalue bound below.' % how
+            order = report.get('bond_order')
+            requested = report.get('rcut_requested')
+            if order is not None:
+                value = '%.3f  (bond length of neighbour shell %d)' % (rcut, order)
+            elif requested is not None and abs(float(requested) - rcut) > 5.0e-4:
+                value = '%.3f requested, %.3f applied (moved into the gap above the last shell)' % (
+                    float(requested),
+                    rcut,
+                )
+            else:
+                value = '%.3f' % rcut
+            rows.append(('cutoff radius (Bohr)', value))
+        threshold = float(report.get('threshold', self.H.threshold) or 0.0)
+        if threshold > 0.0:
+            rows.append(
+                (
+                    'hopping threshold (eV)',
+                    '%.1e  (can split degeneracies by up to the eigenvalue shift below)'
+                    % threshold,
+                )
             )
         else:
-            self.log.write(
-                'Element threshold = %.1e eV applied at the base cell; no real-space '
-                'cutoff. An element threshold does not preserve symmetry: degenerate\n'
-                'bands can split by up to the eigenvalue bound below.'
-                % report.get('threshold', self.H.threshold)
-            )
-        self.log.write(self.H.stats_line())
+            rows.append(('hopping threshold (eV)', 'none'))
+        rows += [
+            ('orbitals (nawf)', st['nawf']),
+            ('R vectors', st['nR']),
+            (
+                'bonds kept',
+                '%.3gM of %.3gM  (%.1f%%)'
+                % (st['nnz'] / 1e6, st['total'] / 1e6, 100.0 * st['density']),
+            ),
+            ('bond list (MB)', '%.1f' % st['mbytes']),
+            ('dense H(R) (MB)', '%.1f' % st['dense_mbytes']),
+            ('max eigenvalue shift from truncation (eV)', '%.3g' % st['eig_bound']),
+        ]
+        self.log.rows(rows)
 
     # ------------------------------------------------------------------
     # Persistence of the base-cell bond list
@@ -320,7 +348,8 @@ class SparseEngine:
             self.H, bundle = read_sparse_hamiltonian(path)
             restore_data_controller(self.data_controller, bundle)
             self._Dnm = archive_Dnm(bundle)
-            self.log.section('Loaded sparse Hamiltonian (%s)' % path)
+            self.log.section('Hamiltonian (loaded)')
+            self.log.field('file', path)
             self._log_truncation()
 
         self._guard('load_sparse_hamiltonian', _load)
@@ -346,9 +375,8 @@ class SparseEngine:
         Raises
         ------
         RuntimeError
-            After doubling, interpolation or an energy window: the dense
-            body would act on a base-cell ``HRs`` that no longer describes
-            the run.
+            After doubling, interpolation or a solve: the dense body would
+            act on a base-cell ``HRs`` that no longer describes the run.
 
         Notes
         -----
@@ -370,16 +398,11 @@ class SparseEngine:
         self._require_H(name)
         arrays, attr = self.data_controller.data_dicts()
         grid = (attr.get('nk1'), attr.get('nk2'), attr.get('nk3'))
-        if (
-            self.H._doubled
-            or grid != tuple(self.H.nk_grid)
-            or self._window is not None
-            or self._interior is not None
-        ):
+        if self.H._doubled or grid != tuple(self.H.nk_grid) or self._solved():
             raise RuntimeError(
                 'sparse %s transforms the base-cell H(R): call it after pao_hamiltonian() or '
                 'load_sparse_hamiltonian() and before doubling_Hamiltonian(), '
-                'interpolated_hamiltonian() and the energy windows.' % name
+                'interpolated_hamiltonian(), bands() and the properties.' % name
             )
         nnz_before = self.H.nnz
         nawf_before = self.H.nawf
@@ -415,13 +438,18 @@ class SparseEngine:
         if modifies:
             self._mesh_passes = 0
             self._mesh_products = set()
+            self._bnd_projectable = None
+            self._probe_cache = {}
+            self._mesh_window = self._last_window = self._mesh_bnd = None
+            self._interior = None
             for key in ('E_k', 'velkp', 'deltakp', 'd2Ed2k'):
                 arrays.pop(key, None)
-            self.log.section('%s (base cell, through the dense body)' % name)
-            self.log.write(
-                'The %d-bond list was scattered into a dense HRs, %s ran on it, and the result was\n'
-                'converted back with the same truncation: %d -> %d bonds, nawf %d -> %d.'
-                % (nnz_before, name, nnz_before, self.H.nnz, nawf_before, self.H.nawf)
+            self.log.section('%s (base cell)' % name)
+            self.log.rows(
+                (
+                    ('bonds', '%d -> %d' % (nnz_before, self.H.nnz)),
+                    ('orbitals (nawf)', '%d -> %d' % (nawf_before, self.H.nawf)),
+                )
             )
             self._log_truncation()
         return result
@@ -443,7 +471,7 @@ class SparseEngine:
             )
         attr = self.data_controller.data_attributes
         grid = (attr['nk1'], attr['nk2'], attr['nk3'])
-        if grid != self.H.nk_grid or self._window is not None or self._interior is not None:
+        if grid != self.H.nk_grid or self._solved():
             # sparse interpolation and the windows only rewrite attributes the
             # dense pipeline would then read against a base-grid HRs
             raise RuntimeError(
@@ -454,15 +482,12 @@ class SparseEngine:
             )
 
         cfg = self.config
-        if cfg.energy_window is not None or cfg.interior_window is not None:
-            message = (
-                'WARNING: to_dense: the %s of sparse_config does not apply to the dense '
-                'pipeline; the run continues without it.'
-                % ('energy_window' if cfg.energy_window is not None else 'interior_window')
+        if cfg.nev is not None or cfg.interior_window is not None:
+            self.log.warning(
+                "to_dense: the '%s' option of sparse_config does not apply to the dense "
+                'pipeline; the run continues without it'
+                % ('nev' if cfg.nev is not None else 'interior_window')
             )
-            if self.rank == 0:
-                print(message, flush=True)
-            self.log.write(message)
         nnz = self.H.nnz
         densify(self.data_controller, self.H, Dnm=self._Dnm)
         from .operators import OPERATOR_KEYS, to_dense_operator
@@ -473,10 +498,14 @@ class SparseEngine:
                 arrays[key] = to_dense_operator(arrays[key])
         self.H, self._Dnm = None, None
         self.log.section('Handoff to the dense pipeline')
-        self.log.write(
-            'The %d-bond list was scattered into a dense HRs (%d x %d x %d x %d x %d x %d);\n'
-            'the run continues on the dense pipeline of the same PAOFLOW object.'
-            % ((nnz,) + self.data_controller.data_arrays['HRs'].shape)
+        self.log.rows(
+            (
+                ('bonds', nnz),
+                (
+                    'dense H(R) shape',
+                    ' x '.join(str(d) for d in self.data_controller.data_arrays['HRs'].shape),
+                ),
+            )
         )
         self._time('Handoff to dense')
 
@@ -508,97 +537,70 @@ class SparseEngine:
 
         local_ranks = _node_local_ranks(self.comm)
         avail = _available_memory_bytes()
+        budget = None if avail is None else 0.8 * avail / local_ranks
+
+        # doubling_attr_arry doubles attr['bnd'] once per doubling
+        bnd_final = cfg.nev if cfg.nev is not None else int(attr['bnd']) * proj['N']
+        if cfg.interior_window is not None:
+            solver_note = 'interior solve'
+        else:
+            try:
+                chosen = select_hk_solver(
+                    proj['nawf'], bnd_final, hk_solver=cfg.hk_solver, **cfg.limits
+                )[0]
+                solver_note = 'dense (LAPACK)' if chosen == 'dense' else 'sparse (ARPACK)'
+            except NotImplementedError:
+                solver_note = (
+                    'refused: nev = %d is %.0f%% of n (limit %.0f%% above dense_n_max); give '
+                    "'nev' below %d or use 'interior_window'"
+                    % (
+                        bnd_final,
+                        100.0 * bnd_final / proj['nawf'],
+                        100.0 * cfg.dense_ratio,
+                        int(cfg.dense_ratio * proj['nawf']),
+                    )
+                )
+
         if avail is not None:
-            budget = 0.8 * avail / local_ranks
-            budget_note = '[%.2f GB available: 80%% of MemAvailable (%.1f GB) over %d rank(s)]' % (
+            available = '%.2f  (80%% of MemAvailable %.1f GB, shared by %d rank%s on this node)' % (
                 budget / gb,
                 avail / gb,
                 local_ranks,
+                '' if local_ranks == 1 else 's',
             )
         else:
-            budget = None
-            budget_note = '[available memory unknown: MemAvailable unreadable]'
-
-        # nev without an 'energy_window' option: doubling_attr_arry doubles
-        # attr['bnd'] once per doubling.
-        bnd_final = int(attr['bnd']) * proj['N']
-        try:
-            solver_note = 'dispatch: %s' % (
-                select_hk_solver(proj['nawf'], bnd_final, hk_solver=cfg.hk_solver, **cfg.limits)[
-                    0
-                ].upper()
-            )
-        except NotImplementedError:
-            solver_note = (
-                'solve REFUSED at nev=bnd=%d (%.0f%% of n, past the %.0f%% iterative '
-                'regime, and n > dense_n_max) — an energy_window in sparse_config would '
-                'have to bring nev under %d for this to run'
-                % (
-                    bnd_final,
-                    100.0 * bnd_final / proj['nawf'],
-                    100.0 * cfg.dense_ratio,
-                    int(cfg.dense_ratio * proj['nawf']),
-                )
-            )
-
-        report = (
-            'Doubling projection for nx,ny,nz = %d,%d,%d  (N = 2^%d = %d cells)\n'
-            '  nawf        %d -> %d\n'
-            '  bonds       %.3gM -> %.3gM  (doubling replicates each bond exactly 2x per step)\n'
-            '  peak/rank   %.2f GB during hermitize   %s\n'
-            '  steady/rank %.2f GB after compact()\n'
-            '  dense H(k)  %.2f GB per k-point;  %s'
-            % (
-                nx,
-                ny,
-                nz,
-                proj['d'],
-                proj['N'],
-                self.H.nawf,
-                proj['nawf'],
-                self.H.nnz / 1e6,
-                proj['nnz'] / 1e6,
-                proj['peak_bytes'] / gb,
-                budget_note,
-                proj['steady_bytes'] / gb,
-                proj['dense_hk_bytes'] / gb,
-                solver_note,
+            available = 'unknown (MemAvailable unreadable)'
+        self.log.section('Doubling (nx, ny, nz = %d, %d, %d)' % (nx, ny, nz))
+        self.log.rows(
+            (
+                ('cells', '%d  (2^%d)' % (proj['N'], proj['d'])),
+                ('orbitals (nawf)', '%d -> %d' % (self.H.nawf, proj['nawf'])),
+                ('bonds', '%.3gM -> %.3gM' % (self.H.nnz / 1e6, proj['nnz'] / 1e6)),
+                ('peak memory per rank (GB)', '%.2f' % (proj['peak_bytes'] / gb)),
+                ('available per rank (GB)', available),
+                ('steady memory per rank (GB)', '%.2f' % (proj['steady_bytes'] / gb)),
+                ('dense H(k) per k-point (GB)', '%.2f' % (proj['dense_hk_bytes'] / gb)),
+                ('H(k) solver after doubling', solver_note),
             )
         )
-
-        self.log.section('Doubling pre-flight projection')
-        self.log.write(report)
 
         if budget is not None and proj['peak_bytes'] > budget:
             remedies = []
             if cfg.rcut is None and cfg.bond_order is None:
-                remedies.append(
-                    "set 'rcut' (Bohr) or 'bond_order' in sparse_config: the bond list is currently "
-                    'untruncated in real space, which is usually the largest single factor'
-                )
+                remedies.append("set 'rcut' or 'bond_order' in sparse_config")
             if proj['d'] > 1:
-                remedies.append(
-                    'reduce the doubling count — d = nx+ny+nz is an exponent, so d-1 '
-                    'halves every number above (%.2f GB peak)' % (proj['peak_bytes'] / 2 / gb)
-                )
+                remedies.append('reduce the doubling count (one step less halves the memory)')
             if local_ranks > 1:
-                remedies.append(
-                    'run fewer ranks per node: the bond list is replicated, so %d ranks '
-                    'here each need the full %.2f GB' % (local_ranks, proj['peak_bytes'] / gb)
-                )
-            message = (
-                'WARNING: doubling_Hamiltonian may run out of memory: the projected peak of '
-                '%.2f GB per rank is %.1fx the memory available to each rank. Doubling '
-                'continues; to reduce the memory:%s'
+                remedies.append('run fewer ranks per node (each rank holds the whole bond list)')
+            self.log.warning(
+                'doubling_Hamiltonian may run out of memory: peak %.2f GB per rank, %.2f GB '
+                'available per rank; doubling continues%s'
                 % (
                     proj['peak_bytes'] / gb,
-                    proj['peak_bytes'] / budget,
-                    ''.join('\n  - ' + r for r in remedies),
+                    budget / gb,
+                    ''.join('; ' + r for r in remedies),
                 )
             )
-            if self.rank == 0:
-                print(report + '\n' + message, flush=True)
-            self.log.write('\n' + message)
 
         return proj
 
@@ -618,12 +620,10 @@ class SparseEngine:
 
         self._require_H('doubling_Hamiltonian')
         arrays, attr = self.data_controller.data_dicts()
-        if self._window is not None:
+        if self._solved():
             raise RuntimeError(
-                "sparse: the 'energy_window' of sparse_config was already applied by an earlier "
-                "solve. doubling_attr_arry doubles attr['bnd'] on every call, which would scale "
-                'the window-sized nev by the cell multiplier. Call doubling_Hamiltonian() before '
-                'bands() and the properties.'
+                'sparse: call doubling_Hamiltonian() before bands() and the properties: a solve '
+                "already sized attr['bnd'] for the undoubled cell."
             )
         self._preflight_doubling(nx, ny, nz)
         attr['nx'], attr['ny'], attr['nz'] = nx, ny, nz
@@ -644,35 +644,26 @@ class SparseEngine:
             # the bond list is final here: release the raw arrays the
             # assembly plan duplicates (most of the steady-state bytes)
             self.H.compact()
-            self.log.section('Doubling (%d,%d,%d)' % (nx, ny, nz))
-            self.log.write(self.H.stats_line())
+            st = self.H.stats()
+            self.log.rows(
+                (
+                    ('bonds after doubling', '%.3gM' % (st['nnz'] / 1e6)),
+                    ('bond list after doubling (MB)', '%.1f' % st['mbytes']),
+                    ('max eigenvalue shift from truncation (eV)', '%.3g' % st['eig_bound']),
+                )
+            )
 
         self._guard('doubling_Hamiltonian', _double)
         self._time('doubling_Hamiltonian')
 
     # ------------------------------------------------------------------
-    # Energy windows (sparse_config options), applied before the first solve
+    # Energy window of each pass (see PAOFLOW.sparse.window)
     # ------------------------------------------------------------------
 
-    def _ensure_window(self):
-        """Apply the ``'energy_window'`` or ``'interior_window'`` option of
-        ``sparse_config`` once, right before the first solve (``bands`` or
-        the first property).
-
-        Running it lazily puts it after ``doubling_Hamiltonian`` and
-        ``interpolated_hamiltonian`` whatever the call order of the script,
-        and before anything reads ``attr['bnd']`` or the interior state.  A
-        no-op without either option or once applied.  See
-        :class:`~PAOFLOW.sparse.config.EnergyWindow` and
-        :class:`~PAOFLOW.sparse.config.InteriorWindow` for the semantics.
-        """
-        self._projectable_top()
-        if self._window is not None or self._interior is not None:
-            return
-        if self.config.energy_window is not None:
-            self._apply_energy_window(self.config.energy_window)
-        elif self.config.interior_window is not None:
-            self._apply_interior_window(self.config.interior_window)
+    def _solved(self):
+        """Whether a mesh, path or band pass already ran.  The first pass
+        fixes ``attr['bnd']`` for the cell it was run on."""
+        return self._mesh_passes > 0 or self._path_passes > 0
 
     def _projectable_top(self):
         """Top of the well-projected energy range (eV), or ``None`` without one.
@@ -683,10 +674,12 @@ class SparseEngine:
         (``shift_type`` 0 and 1).  On the DFT k-grid those placeholders sit
         at ``eta`` exactly; at interpolated k-points they spread around it,
         so the real states of each k-point are taken to be the ones below
-        ``eta - shift_margin`` (``sparse_config``).  With ``shift_type`` 2 the rest sits at
-        zero instead, inside the spectrum, and cannot be told apart by
-        energy; there, and for a Hamiltonian without a shift (a model, or a
-        restart that did not record one), nothing is dropped.
+        ``eta - shift_margin`` (``sparse_config``).  States above it are
+        dropped at every k-point, and windows and property ranges are kept
+        below it.  With ``shift_type`` 2 the rest sits at zero instead,
+        inside the spectrum, and cannot be told apart by energy; there, and
+        for a Hamiltonian without a shift (a model, or a restart that did
+        not record one), nothing is dropped.
         """
         if self._ptop_known:
             return self._ptop
@@ -697,33 +690,29 @@ class SparseEngine:
         self.log.section('Well-projected range')
         if shift_type == 2 or not isinstance(shift, (int, float, np.floating)):
             reason = (
-                'shift_type 2 leaves the non-projectable states at 0 eV, inside the spectrum'
+                'shift_type 2 leaves the non-projectable states inside the spectrum'
                 if shift_type == 2
                 else 'no PAO shift is known for this Hamiltonian'
             )
-            message = (
-                'WARNING: sparse: every solved state is used: %s, so states outside the '
-                'well-projected bands cannot be told apart by energy.' % reason
+            self.log.warning(
+                'sparse: every solved state is used (%s), so states outside the well-projected '
+                'bands cannot be told apart by energy' % reason
             )
-            if self.rank == 0:
-                print(message, flush=True)
-            self.log.write(message)
             return None
         self._ptop = float(shift) - self.config.shift_margin
-        self.log.field('PAO shift eta (eV)', '%.3f' % float(shift))
-        self.log.field('shift_margin (eV)', '%.3f' % self.config.shift_margin)
-        self.log.field('pthr', attr.get('pthr', 'n/a'))
-        self.log.write(
-            'The non-projectable part of the PAO space sits at eta, and off the DFT grid\n'
-            'around it. States above %.3f eV are dropped at every k-point; windows and\n'
-            'property ranges are kept below it.' % self._ptop
+        self.log.rows(
+            (
+                ('PAO shift (eV)', '%.3f' % float(shift)),
+                ('pthr', attr.get('pthr', 'n/a')),
+                ('usable top (eV)', '%.3f  (PAO shift - shift_margin)' % self._ptop),
+            )
         )
         return self._ptop
 
-    def _warn(self, message):
-        if self.rank == 0:
-            print(message, flush=True)
-        self.log.write('\n' + message)
+    def _warn_once(self, key, message):
+        if key not in self._warned:
+            self._warned.add(key)
+            self.log.warning(message)
 
     def _clamp_to_projectable(self, prop, emin, emax, margin=0.0):
         """Keep the top of a property's energy range in the well-projected range.
@@ -743,7 +732,8 @@ class SparseEngine:
         -------
         (float, float)
             ``(emin, emax)``, with ``emax`` lowered, and a warning printed,
-            if it reached past ``eta - margin``.
+            if it reached past ``eta - margin``.  Above it the PAO spectrum
+            holds only the non-projectable states placed at the shift.
 
         Raises
         ------
@@ -761,226 +751,397 @@ class SparseEngine:
                 'or raise the shift with more bands or a lower pthr in projectability().'
                 % (prop, emin, emax, top, margin)
             )
-        self._warn(
-            'WARNING: sparse %s: emax lowered from %.3f to %.3f eV, the top of the '
-            'well-projected bands (PAO shift %.3f eV%s). Above it the PAO spectrum holds only '
-            'the non-projectable states placed at the shift.'
-            % (
-                prop,
-                emax,
-                hi,
-                top + self.config.shift_margin,
-                '' if margin == 0 else ', %.3f eV margin' % margin,
-            )
+        self.log.warning(
+            'sparse %s: emax lowered from %.3f to %.3f eV, the top of the well-projected bands'
+            '%s; more bands or a lower pthr in projectability() raise it'
+            % (prop, emax, hi, '' if margin == 0 else ' minus a %.3f eV margin' % margin)
         )
         return emin, hi
 
-    def _apply_energy_window(self, window):
-        """Size ``nev`` (``attr['bnd']``) from the bottom of the spectrum up
-        to ``window.ehi``, probing ``count_below`` unless ``window.nev`` is set."""
-        import itertools
+    def _afac_dk(self):
+        """Adaptive-smearing prefactor and mesh spacing of the next mesh pass,
+        as :func:`~PAOFLOW.sparse.mesh.run_mesh` computes them."""
+        attr = self.data_controller.data_attributes
+        afac = self._mesh_plan.get('afac')
+        if afac is None:
+            smearing = self._mesh_plan.get('smearing', attr['smearing'])
+            afac = 1.0 if smearing == 'm-p' else 0.7
+        nk = attr['nk1'] * attr['nk2'] * attr['nk3']
+        dk = (8.0 * np.pi**3 / attr['omega'] / nk) ** (1.0 / 3.0)
+        return float(afac), float(dk)
 
-        from .solver import count_below
+    def _probe(self, ptop, interior=None):
+        """Eigenvalues and band-velocity norms at the probe k-points.
 
-        import dataclasses
+        :func:`~PAOFLOW.sparse.window.probe_points` (Gamma, the zone corners
+        and generic points for the band velocities), shared over the ranks; each is solved by :func:`~PAOFLOW.sparse.mesh.probe_k`, from
+        the bottom up to ``ptop`` or, with ``interior``, inside it.  A
+        failure on one rank is raised on all, so none waits in the
+        reduction.  Collective; cached until the Hamiltonian changes.
 
-        arrays, attr = self.data_controller.data_dicts()
-        top = self._projectable_top()
-        if top is not None and window.ehi > top:
-            # solving past the top only adds placeholder states
-            emax = min(window.emax, top)
-            if window.emax > top:
-                self._warn(
-                    'WARNING: sparse energy_window: emax lowered from %.3f to %.3f eV, the top '
-                    'of the well-projected bands (PAO shift %.3f eV); the window top is now '
-                    'there too.' % (window.emax, emax, top + self.config.shift_margin)
-                )
-            else:
-                self.log.write(
-                    'energy_window: the margin above emax = %.3f eV is cut at the top of the '
-                    'well-projected bands, %.3f eV.' % (window.emax, top)
-                )
-            window = dataclasses.replace(window, emax=emax, margin=top - emax)
-        ehi = window.ehi
-        nawf = self.H.nawf
+        Returns
+        -------
+        dict or None
+            ``{'points': [(E, vnorm), ...], 'nk': int}`` over all ranks, or
+            ``None`` when a from-the-bottom probe would densify H(k) above
+            ``dense_n_max``.
+        """
+        from .mesh import probe_k
 
-        def _window():
-            if window.nev is not None:
-                chosen, probed = window.nev, None
-            else:
-                from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
+        key = 'bottom' if interior is None else ('interior',) + tuple(interior)
+        if key in self._probe_cache:
+            return self._probe_cache[key]
+        cfg = self.config
+        if interior is None and self.H.nawf > cfg.dense_n_max:
+            self._probe_cache[key] = None
+            return None
+        kprobe = np.array(_window.probe_points())
 
-                kprobe = np.array(list(itertools.product((0.0, 0.5), repeat=3)))  # Gamma + corners
-                extra = window.nprobe - len(kprobe)
-                if extra > 0:
-                    kgrid = get_K_grid_fft_crystal(attr['nk1'], attr['nk2'], attr['nk3'])
-                    stride = max(1, len(kgrid) // extra)
-                    kprobe = np.vstack((kprobe, kgrid[::stride][:extra]))
-
-                # each rank probes its share of the k-points (a probe is a
-                # dense eigvalsh, ~150 s each at nawf = 9216).  A failure on
-                # one rank is raised on all, so none waits in the reduction.
-                probed, error = 0, None
-                nranks = self.comm.Get_size()
-                try:
-                    for ispin in range(self.H.nspin):
-                        for kf in kprobe[self.rank :: nranks]:
-                            hk = self.H.assemble_hk(kf, ispin=ispin, sign=-1)
-                            probed = max(
-                                probed, count_below(hk, ehi, dense_n_max=self.config.dense_n_max)
-                            )
-                except Exception as exc:
-                    error = exc
-                if self.comm.allreduce(error is not None, op=MPI.LOR):
-                    raise error or RuntimeError(
-                        'sparse energy_window: the probe failed on another rank; see its error.'
+        local, error = [], None
+        nranks = self.comm.Get_size()
+        try:
+            for ispin in range(self.H.nspin):
+                for kf in kprobe[self.rank :: nranks]:
+                    local.append(
+                        probe_k(
+                            self.H,
+                            kf,
+                            ispin,
+                            ptop,
+                            interior=interior,
+                            hk_solver=cfg.hk_solver,
+                            dense_n_max=cfg.dense_n_max,
+                        )
                     )
-                probed = self.comm.allreduce(probed, op=MPI.MAX)
-                chosen = min(nawf, probed + max(8, int(np.ceil(0.02 * probed))))
-
-            old = attr.get('bnd', nawf)
-            attr['bnd'] = chosen
-            self._window = window
-            self.log.section('Energy window')
-            self.log.field(
-                'window (eV)',
-                'bottom of the spectrum to %.3f + %.3f margin' % (window.emax, window.margin),
+        except Exception as exc:
+            error = exc
+        if self.comm.allreduce(error is not None, op=MPI.LOR):
+            raise error or RuntimeError(
+                'sparse window probe: the probe failed on another rank; see its error.'
             )
-            self.log.field('ehi (eV)', '%.3f' % ehi)
-            self.log.field('nev', '%d of nawf = %d (was bnd = %d)' % (chosen, nawf, old))
-            self.log.field(
+        points = [point for part in self.comm.allgather(local) for point in part]
+        result = {'points': points, 'nk': len(kprobe)}
+        self._probe_cache[key] = result
+        return result
+
+    def _resolve_window(self, props, tag):
+        """The energy window of a pass over ``props``.
+
+        Collective.  The window covers the energy range of every property
+        of the pass plus the margin it needs (see :mod:`PAOFLOW.sparse.window`),
+        and never reaches past the well-projected top.  The smearing margin
+        is applied only to a window the engine places itself: with a given
+        ``nev`` or explicit interior bounds the property ranges are clipped
+        to the window as given, and the widths measured on the mesh are
+        checked after the pass.  From the bottom of
+        the spectrum the band count is the projectable count when the window
+        reaches that top, ``sparse_config['nev']`` when given, and otherwise
+        the largest number of states below the window top at the probe
+        k-points, padded; it is capped at the projectable count, since no
+        k-point has more real states than that.  Nothing is written to the
+        run data: the pass that uses the window sets ``attr['bnd']``.
+
+        Parameters
+        ----------
+        props : sequence of MeshProperty
+            The properties of the pass.
+        tag : str
+            Name of the pass, for the log.
+
+        Returns
+        -------
+        PassWindow
+        """
+        cfg = self.config
+        attr = self.data_controller.data_attributes
+        ptop = self._projectable_top()
+        if self._bnd_projectable is None:
+            self._bnd_projectable = int(attr['bnd'])
+        bnd = self._bnd_projectable
+        nawf = self.H.nawf
+        iw = cfg.interior_window
+
+        raw = []
+        for p in props:
+            r = p.energy_range()
+            if r is not None:
+                emin, emax, kind, tmax = r
+                raw.append((p.method, float(emin), float(emax), kind, tmax))
+        if iw is not None and iw.auto and not raw:
+            if self._last_window is not None and self._last_window.mode == 'interior':
+                return self._last_window
+            _window.derive_interior([], ptop)  # raises, naming the way out
+
+        # the smearing margin needs the widths at the probe points; it places
+        # a window the engine chooses, so it is not estimated with a given
+        # nev or explicit interior bounds (the widths are still checked
+        # after the pass)
+        smeared = [r for r in raw if r[3] == _window.SMEARING]
+        probe = dmax = None
+        placed = cfg.nev is None if iw is None else iw.auto
+        if smeared and placed:
+            lo = min(r[1] for r in smeared)
+            hi = max(r[2] for r in smeared)
+            if ptop is not None:
+                hi = min(hi, ptop)
+            if iw is not None and nawf > cfg.dense_n_max:
+                probe = self._probe(ptop, interior=(lo, hi)) if hi > lo else None
+            else:
+                probe = self._probe(ptop)
+            if probe is not None:
+                # the steepest band of every probed state, as the mesh pass
+                # measures the widths of every state it keeps
+                vmax = max((float(vn.max()) for _, vn in probe['points'] if len(vn)), default=0.0)
+                afac, dk = self._afac_dk()
+                dmax = afac * dk * vmax
+
+        ranges = []
+        for method, emin, emax, kind, tmax in raw:
+            if kind == _window.THERMAL:
+                margin = _window.kt_margin(tmax)
+            elif kind == _window.SMEARING and dmax is not None:
+                margin = _window.smearing_margin(dmax)
+            else:
+                margin = 0.0
+            ranges.append(_window.Range(method, emin, emax, kind, margin, tmax))
+
+        if iw is None:
+            ehi, reaches_top = _window.derive_bottom(ranges, ptop)
+            probed = None
+            if cfg.nev is not None:
+                nev, source = min(cfg.nev, nawf), 'given'
+            elif reaches_top or ehi is None:
+                nev, source = bnd, 'projectable'
+            else:
+                if probe is None:
+                    probe = self._probe(ptop)
+                if probe is None:
+                    # past dense_n_max: solve every real state
+                    nev, source, ehi = bnd, 'projectable', ptop
+                else:
+                    probed = max(
+                        (int(np.searchsorted(E, ehi, side='right')) for E, _ in probe['points']),
+                        default=0,
+                    )
+                    nev, source = min(bnd, nawf, _window.padded_count(probed)), 'probe'
+            window = _window.PassWindow(
+                'bottom', None, ehi, nev, nev >= bnd, tuple(ranges), source, probed
+            )
+        else:
+            if iw.auto:
+                elo, ehi = _window.derive_interior(ranges, ptop)
+            else:
+                elo, ehi = iw.elo, iw.ehi
+                if ptop is not None and ehi > ptop:
+                    if elo >= ptop:
+                        raise ValueError(
+                            'sparse interior_window: [%.3f, %.3f] eV lies above the '
+                            'well-projected bands, which end at %.3f eV (the PAO shift). Move '
+                            'the window down, or raise the shift with more bands or a lower '
+                            'pthr in projectability().' % (elo, ehi, ptop)
+                        )
+                    self._warn_once(
+                        'interior ehi',
+                        'sparse interior_window: ehi lowered from %.3f to %.3f eV, the top of '
+                        'the well-projected bands' % (ehi, ptop),
+                    )
+                    ehi = ptop
+            window = _window.PassWindow(
+                'interior', elo, ehi, None, False, tuple(ranges), 'interior'
+            )
+            self._interior = (elo, ehi)
+        self._log_window(window, tag, props, probe, dmax)
+        return window
+
+    def _log_window(self, window, tag, props, probe, dmax):
+        """The ``Solve window`` section of ``sparse.log``."""
+        log = self.log
+        log.section('Solve window (%s)' % tag)
+        log.field('properties', ', '.join(p.method for p in props) or 'none')
+        if probe is not None and dmax is not None:
+            afac, dk = self._afac_dk()
+            log.field(
                 'probe',
-                'skipped (nev given)'
-                if probed is None
-                else '%d bands found over %d k-points' % (probed, len(kprobe)),
+                '%d k-points; largest adaptive width %.3f eV (afac %.2f, k spacing %.4f 1/Bohr)'
+                % (probe['nk'], dmax, afac, dk),
             )
-            self.log.write(
-                "attr['bnd'] now means 'bands inside the window', not 'projectable bands\n"
-                "x cell multiplier'; band files are not column-comparable with runs that\n"
-                'have no window.'
+        elif probe is not None:
+            log.field('probe', '%d k-points' % probe['nk'])
+        if dmax is not None:
+            log.field(
+                'smearing margin (eV)',
+                '%.3f  (%g x the largest adaptive width)'
+                % (_window.smearing_margin(dmax), _window.SIGMA_FACTOR),
             )
-
-        self._guard('energy_window', _window)
-        self._time('Energy window')
-
-    def _apply_interior_window(self, window):
-        """Solve inside ``[window.elo, window.ehi]`` from here on; properties
-        that need states below the window are skipped with a warning."""
-        elo, ehi = window.elo, window.ehi
-        top = self._projectable_top()
-        if top is not None and ehi > top:
-            if elo >= top:
-                raise ValueError(
-                    'sparse interior_window: [%.3f, %.3f] eV lies above the well-projected '
-                    'bands, which end at %.3f eV (the PAO shift). Move the window down, or raise '
-                    'the shift with more bands or a lower pthr in projectability().'
-                    % (elo, ehi, top)
-                )
-            self._warn(
-                'WARNING: sparse interior_window: ehi lowered from %.3f to %.3f eV, the top of '
-                'the well-projected bands (PAO shift %.3f eV).'
-                % (ehi, top, top + self.config.shift_margin)
+        elif any(r.kind == _window.SMEARING for r in window.ranges):
+            log.field(
+                'smearing margin (eV)',
+                'not applied (%s; widths checked after the pass)'
+                % ("'nev' given" if window.mode == 'bottom' else 'explicit window'),
             )
-            ehi = top
-        self._interior = (elo, ehi)
-        self._kT_margin = window.kT_margin_eV
-        self._smear_margin = window.smear_margin_eV
-        self.log.section('Interior energy window')
-        self.log.field('window (eV)', '[%.3f, %.3f]' % self._interior)
-        self.log.field('transport margin (eV)', '%.3f each side' % self._kT_margin)
-        self.log.field('DoS smearing margin (eV)', '%.3f each side' % self._smear_margin)
-        self.log.write(
-            'Only states inside the window are computed; nothing below elo exists.\n'
-            'DoS/PDoS ranges are clamped to the window, the transport chemical-potential\n'
-            'scan is clamped to [elo+margin, ehi-margin], and properties that need the\n'
-            'full occupied manifold (carrier density, Hall) are skipped with a warning.'
+        temperatures = sorted({r.tmax for r in window.ranges if r.kind == _window.THERMAL})
+        if temperatures:
+            log.field(
+                'thermal margin (eV)',
+                ', '.join('%.3f at %g K' % (_window.kt_margin(tmax), tmax) for tmax in temperatures)
+                + '  (%g kT)' % _window.KT_FACTOR,
+            )
+        for r in window.ranges:
+            lo = 'bottom' if not np.isfinite(r.emin) else '%.3f' % r.emin
+            if r.kind == _window.THERMAL:
+                extra = '  + thermal margin at %g K' % r.tmax
+            elif r.kind == _window.SMEARING:
+                extra = '  + smearing margin'
+            else:
+                extra = ''
+            log.field('%s range (eV)' % r.method, '[%s, %.3f]%s' % (lo, r.emax, extra))
+        nawf = self.H.nawf
+        if window.mode == 'interior':
+            log.field(
+                'window (eV)',
+                '[%.3f, %.3f]  (interior: states outside it are not computed)'
+                % (window.elo, window.ehi),
+            )
+            log.field('bands per k-point', 'varies with k (interior solve)')
+            return
+        log.field(
+            'window (eV)',
+            'whole spectrum'
+            if window.ehi is None
+            else 'bottom of the spectrum to %.3f' % window.ehi,
         )
-        self._time('Interior window')
+        bnd = self._bnd_projectable
+        if window.nev_source == 'given':
+            note = 'given'
+        elif window.nev_source == 'projectable':
+            note = 'all %d projectable bands' % bnd
+        else:
+            padded = _window.padded_count(window.probed)
+            note = '%d states below the window top at the probe points, padded to %d%s' % (
+                window.probed,
+                padded,
+                '; capped at the %d projectable bands' % bnd if padded > window.nev else '',
+            )
+        log.field('bands per k-point', '%d of %d  (%s)' % (window.nev, nawf, note))
 
     def _skip(self, prop, reason):
-        """Warn loudly, record, and let the caller move to the next property."""
+        """Warn, record, and let the caller move to the next property."""
         self._skipped.append((prop, reason))
-        message = (
-            'WARNING: sparse %s SKIPPED under the interior window [%.3f, %.3f] -- %s\n'
-            '         No output was written for it; the run continues.'
-            % (prop, self._interior[0], self._interior[1], reason)
+        self.log.warning(
+            'sparse %s SKIPPED under the interior window: %s; no output was written for it'
+            % (prop, reason)
         )
-        if self.rank == 0:
-            print(message, flush=True)
-        self.log.write('\n' + message)
 
     def _check_smearing_margin(self, prop, emin, emax):
-        """Warn if adaptive widths reach further past the window edge than the
-        margin allowed -- i.e. if uncomputed states below ``elo`` are leaking
-        into what was plotted."""
+        """Warn if the adaptive widths measured on the mesh reach past the
+        solved states: a smeared property plotted that close to the window
+        edge misses the tails of states that were never computed.
+
+        The window margin is ``SIGMA_FACTOR`` widths estimated at the probe
+        points; the mesh can hold wider states, so the warning fires when the
+        solved states end less than ``SIGMA_CHECK`` measured widths past the
+        range (where a Gaussian tail has dropped to about 1%).
+        """
+        window = self._mesh_window
+        if window is None or window.at_top:
+            return
         attr = self.data_controller.data_attributes
-        dmax = float(attr.get('sparse_interior_dmax', 0.0))
+        dmax = float(attr.get('sparse_dmax', 0.0))
         if dmax <= 0.0:
             return
-        elo, ehi = self._interior
-        reach = 4.0 * dmax  # 4 sigma -> ~1e-7 relative tail
-        gap = min(float(emin) - elo, ehi - float(emax))
-        if reach > gap:
-            message = (
-                'WARNING: sparse %s may be contaminated near the interior-window edges.\n'
-                '         Measured max adaptive width %.3f eV reaches %.3f eV (4 sigma), but '
-                'the plotted\n         range [%.3f, %.3f] is only %.3f eV inside the window '
-                '[%.3f, %.3f].\n         States below elo were never computed, so their '
-                'smearing tails are missing.\n'
-                '         Widen the window or raise smear_margin_eV to at least %.3f.'
-                % (prop, dmax, reach, emin, emax, gap, elo, ehi, reach)
+        # no real states above the well-projected top: nothing missing there
+        ptop = self._projectable_top()
+        if window.mode == 'interior':
+            gap = float(emin) - window.elo
+            if ptop is None or window.ehi < ptop - 1e-9:
+                gap = min(gap, window.ehi - float(emax))
+            remedy = 'use a finer k-mesh or give wider interior_window bounds'
+        else:
+            top = attr.get('sparse_solved_top')
+            if top is None or (ptop is not None and top >= ptop):
+                return
+            gap = top - float(emax)
+            remedy = "use a finer k-mesh or give a larger 'nev'"
+        reach = _window.SIGMA_CHECK * dmax
+        if reach > gap + 1e-9:
+            self.log.warning(
+                'sparse %s may be contaminated near the window edge: the largest adaptive width '
+                'on the mesh is %.3f eV, but the solved states end %.3f eV past the range '
+                '[%.3f, %.3f]; %s' % (prop, dmax, gap, emin, emax, remedy)
             )
-            if self.rank == 0:
-                print(message, flush=True)
-            self.log.write('\n' + message)
 
     def _check_window_covers(self, prop, emax):
-        """Raise if ``emax`` lies above the lowest top band of an
-        energy window: some k-point would be missing states inside the
-        requested range.  Collective.
+        """Raise if ``emax`` lies above the lowest solved top band of the last
+        mesh pass: some k-point would be missing states inside the requested
+        range.  Collective.
 
-        A no-op without an energy window, where the solve keeps the dense
-        ``bnd`` bands and every dense kernel reused here sums over the same
-        ones, and under an interior window, whose solve is complete inside
-        it by construction."""
-        if self._window is None or self._interior is not None:
+        A no-op without a mesh pass, under an interior window (complete
+        inside it by construction), and when the pass solved every
+        projectable band, as the dense pipeline does.  A property of the
+        same pass is always covered; this catches a later property that
+        reuses the pass with a wider range.
+        """
+        window = self._mesh_window
+        if window is None or window.mode == 'interior' or window.at_top:
             return
         arrays, attr = self.data_controller.data_dicts()
         top = attr.get('sparse_solved_top')
         if top is None:
             top = self.comm.allreduce(float(np.min(arrays['E_k'][:, -1, :])), op=MPI.MIN)
-        if float(emax) > top:
+        if float(emax) > top + 1e-9:
             raise RuntimeError(
-                'sparse %s: requested emax=%.3f eV exceeds the lowest computed top band '
-                '(%.3f eV); the %d-band window does not cover the energy range. Raise emax or '
-                "margin in the 'energy_window' of sparse_config." % (prop, emax, top, attr['bnd'])
+                'sparse %s: requested emax = %.3f eV lies above the lowest solved top band '
+                '(%.3f eV) of the %d-band mesh pass. Call the properties inside one '
+                '`with pao.sparse.fused():` block, or call the one with the widest range '
+                "first, or give a larger 'nev' in sparse_config." % (prop, emax, top, window.nev)
             )
 
-    def _clamp_to_window(self, prop, emin, emax, margin=0.0):
-        """Intersect a requested range with the interior window.
+    def _clamp_to_window(self, prop, emin, emax, margin, window):
+        """Intersect a requested range with an interior window, ``margin``
+        inside each edge.
+
+        At a window top on the well-projected top no margin is kept: there
+        are no real states above it whose tails could be missing.
 
         Returns ``(emin, emax)`` clamped, or ``None`` if nothing usable is
-        left -- in which case the caller skips the property.
+        left, in which case the property is skipped.
         """
-        elo, ehi = self._interior
-        lo, hi = max(float(emin), elo + margin), min(float(emax), ehi - margin)
+        elo, ehi = window.elo, window.ehi
+        emin, emax = float(emin), float(emax)
+        tol = 1e-9
+        ptop = self._projectable_top()
+        top_margin = 0.0 if ptop is not None and ehi >= ptop - tol else margin
+        lo = emin if emin >= elo + margin - tol else elo + margin
+        hi = emax if emax <= ehi - top_margin + tol else ehi - top_margin
         if hi <= lo:
             self._skip(
                 prop,
                 'the requested range [%.3f, %.3f] does not overlap the usable part of the '
-                'window [%.3f, %.3f]' % (emin, emax, elo + margin, ehi - margin),
+                'window [%.3f, %.3f]' % (emin, emax, elo + margin, ehi - top_margin),
             )
             return None
-        if (lo, hi) != (float(emin), float(emax)):
-            message = (
-                'WARNING: sparse %s range clamped from [%.3f, %.3f] to [%.3f, %.3f] by '
-                'the interior window; states outside it were never computed.'
-                % (prop, emin, emax, lo, hi)
+        if (lo, hi) != (emin, emax):
+            self.log.warning(
+                'sparse %s range clamped from [%.3f, %.3f] to [%.3f, %.3f] by the interior '
+                'window; states outside it are not computed' % (prop, emin, emax, lo, hi)
             )
-            if self.rank == 0:
-                print(message, flush=True)
-            self.log.write('\n' + message)
         return lo, hi
+
+    def _fit_to_window(self, prop, window):
+        """Clamp a property's range to an interior window; ``False`` if it
+        was skipped."""
+        if window is None or window.mode != 'interior':
+            return True
+        r = prop.energy_range()
+        if r is None:
+            return True
+        emin, emax, kind, tmax = r
+        clamped = self._clamp_to_window(prop.method, emin, emax, window.margin(kind, tmax), window)
+        if clamped is None:
+            return False
+        if clamped != (float(emin), float(emax)):
+            prop.apply_range(*clamped)
+        return True
 
     # ------------------------------------------------------------------
     # Bands along a high-symmetry path
@@ -995,9 +1156,9 @@ class SparseEngine:
         fname='bands',
         nk=500,
     ):
-        """Band structure along a path; computes only the lowest
-        ``attr['bnd']`` bands (set by the ``'energy_window'`` option).  Output
-        format matches the dense ``bands_{ispin}.dat``."""
+        """Band structure along a path: every well-projected band (or the
+        ``'nev'`` of ``sparse_config``, or the states inside the interior
+        window).  Output format matches the dense ``bands_{ispin}.dat``."""
         from ..utils.communication import gather_full
         from .bands import do_bands_sparse
 
@@ -1007,8 +1168,8 @@ class SparseEngine:
                 'base cell first.'
             )
         self._require_H('bands')
-        self._ensure_window()
         arrays, attr = self.data_controller.data_dicts()
+        window = self._resolve_window((), 'bands')
 
         if ibrav is not None:
             attr['ibrav'] = ibrav
@@ -1027,14 +1188,16 @@ class SparseEngine:
             do_bands_sparse(
                 self.data_controller,
                 self.H,
-                attr['bnd'],
+                window.nev if window.nev is not None else attr['bnd'],
                 verbose=attr['verbose'],
                 hk_solver=self.config.hk_solver,
-                ehi=None if self._window is None else self._window.ehi,
-                interior=self._interior,
+                ehi=None if window.at_top or window.mode == 'interior' else window.ehi,
+                interior=window.interior,
                 ptop=self._projectable_top(),
                 **self.config.limits,
             )
+            self._path_passes += 1
+            self._last_window = window
             E_kp = gather_full(arrays['E_k'], attr['npool'])
             self.data_controller.write_bands(fname, E_kp)
 
@@ -1068,9 +1231,8 @@ class SparseEngine:
         attr['nk1'], attr['nk2'], attr['nk3'] = nfft
         attr['nkpnts'] = nfft[0] * nfft[1] * nfft[2]
         self.log.section('Interpolation')
-        self.log.write(
-            'Property mesh set to %d x %d x %d (no new data — the bond list is simply\n'
-            'evaluated on the finer grid; zero-padding H(R) is exact here).' % tuple(nfft)
+        self.log.field(
+            'property mesh', '%d x %d x %d  (%d k-points)' % (tuple(nfft) + (attr['nkpnts'],))
         )
         self._time('R -> k with Zero Padding')
 
@@ -1084,7 +1246,6 @@ class SparseEngine:
         call that needs it.  Only ``bval`` is recorded."""
         self.data_controller.data_attributes.setdefault('bval', bval)
         self._mesh_plan['eigh'] = True
-        self.log.write('pao_eigh(): fused into the mesh pass run by the first property.')
 
     def gradient_and_momenta(
         self,
@@ -1110,18 +1271,13 @@ class SparseEngine:
             )
         self._mesh_plan['velocities'] = True
         if band_curvature:
-            if self._interior is not None:
+            if self.config.interior_window is not None:
                 self._skip(
                     'gradient_and_momenta band_curvature',
-                    'the band curvature sums over interband pairs that include every state, '
-                    'and an interior window computes none outside it',
+                    'needs the band curvature (interband sum over every state)',
                 )
             else:
                 self._mesh_plan.setdefault('products', set()).add('d2Ed2k')
-        self.log.write(
-            'gradient_and_momenta(): fused into the mesh pass (band-diagonal velocities%s).'
-            % (' + band curvature' if band_curvature and self._interior is None else '')
-        )
 
     def adaptive_smearing(self, smearing='gauss', afac=None):
         """Record the adaptive-smearing type and prefactor for the fused mesh
@@ -1145,10 +1301,12 @@ class SparseEngine:
         pass runs with the union of what they need (streaming consumers,
         stored products such as ``d2Ed2k``, the full spectrum), and then
         each property's post-pass step (file writes, the dense
-        band-diagonal body) runs in call order.  If the block raises,
-        nothing queued runs.  Outside a block every property call that needs
-        something the last pass did not provide costs a full pass of its
-        own::
+        band-diagonal body) runs in call order.  The energy window of that
+        pass covers the ranges of every property in the block.  If the
+        block raises, nothing queued runs.  Outside a block every property
+        call that needs something the last pass did not provide costs a full
+        pass of its own, and a later property whose range reaches above the
+        bands of an earlier pass raises::
 
             with pao.sparse.fused():
                 pao.dos(emin=-12.0, emax=2.2)
@@ -1184,56 +1342,99 @@ class SparseEngine:
         """Build a registered property with the dense arguments and run it,
         or queue it inside :meth:`fused`."""
         self._require_H(cls.method)
-        self._ensure_window()
         arrays, attr = self.data_controller.data_dicts()
         before = (dict(attr), dict(arrays))
         prop = cls(self, *args, **kwargs)
-        if self._interior is not None:
+        if self.config.interior_window is not None:
             reason = prop.interior_reason
             if reason is not None:
                 self._skip(cls.method, reason)
                 return
-        if not prop.prepare():
-            return
-        if self._interior is not None and 'd2Ed2k' in prop.products:
-            # prepare() may drop it (transport skips only its Hall term)
-            self._skip(
-                cls.method,
-                'it needs the band curvature, whose interband sum runs over every state, '
-                'and an interior window computes none outside it',
-            )
-            return
         prop.remember_context(*before)
         if self._fusing is not None:
             self._fusing.append(prop)
-            self.log.write('%s(): queued for the fused mesh pass.' % cls.method)
             return
         self._execute([prop])
 
+    def _mesh_needed(self, products, consumers):
+        """Whether a mesh pass must run for these products and consumers."""
+        wanted = set(products) | self._mesh_plan.get('products', set())
+        return not self._mesh_passes or bool(wanted - self._mesh_products) or bool(consumers)
+
     def _execute(self, props):
-        """One mesh pass and the path passes ``props`` need, then their
-        post-pass steps in call order."""
+        """Resolve the window, prepare ``props``, run the mesh pass and the
+        path passes they need, then their post-pass steps in call order.
+
+        ``prepare`` runs only once the window of the pass is known, since
+        under an interior window a range may have to be clamped to it; the
+        run data it writes is added to what ``activate`` restores.  A
+        property that reuses an earlier mesh pass gets that pass's window.
+        """
+        arrays, attr = self.data_controller.data_dicts()
         mesh = [p for p in props if not p.path and p.uses_mesh]
-        if mesh:
-            consumers = [p for p in mesh if p.streaming]
-            products = set().union(*(p.products for p in mesh))
-            self._ensure_mesh(products=products, consumers=consumers)
-        for with_dnm in (True, False):
-            group = [p for p in props if p.path and p.with_dnm == with_dnm]
-            if group:
-                self._run_path(group, with_dnm)
+        paths = [p for p in props if p.path]
+        products = set().union(*(p.products for p in mesh)) if mesh else set()
+        consumers = [p for p in mesh if p.streaming]
+        if mesh and self._mesh_needed(products, consumers):
+            mesh_window = self._resolve_window(
+                mesh + paths, 'mesh pass %d' % (self._mesh_passes + 1)
+            )
+            path_window = mesh_window
+        else:
+            mesh_window = self._mesh_window
+            path_window = self._resolve_window(paths, 'path pass') if paths else None
+
+        ready = []
         for p in props:
+            window = path_window if p.path else mesh_window
             p.activate()
+            snapshot = (dict(attr), dict(arrays))
+            if not self._fit_to_window(p, window):
+                continue
+            if not p.prepare():
+                continue
+            if self.config.interior_window is not None and 'd2Ed2k' in p.products:
+                # prepare() may drop it (transport skips only its Hall term)
+                self._skip(p.method, 'needs the band curvature (interband sum over every state)')
+                continue
+            p.merge_context(*snapshot)
+            ready.append(p)
+
+        mesh = [p for p in ready if not p.path and p.uses_mesh]
+        if mesh:
+            self._ensure_mesh(
+                products=set().union(*(p.products for p in mesh)),
+                consumers=[p for p in mesh if p.streaming],
+                window=mesh_window,
+            )
+        for with_dnm in (True, False):
+            group = [p for p in ready if p.path and p.with_dnm == with_dnm]
+            if group:
+                self._run_path(group, with_dnm, path_window)
+        for p in ready:
+            p.activate()
+            # the band count of the pass this property reads
+            if p.path and path_window is not None and path_window.nev is not None:
+                attr['bnd'] = path_window.nev
+            elif self._mesh_bnd is not None:
+                attr['bnd'] = self._mesh_bnd
             self._guard(p.method, lambda p=p: p.finalize(self.data_controller))
+            r = p.energy_range()
+            if p.uses_mesh and not p.path and r is not None and r[2] == _window.SMEARING:
+                self._check_smearing_margin(p.method, r[0], r[1])
             if p.label:
                 self._time(p.label)
+        if self._mesh_bnd is not None:
+            attr['bnd'] = self._mesh_bnd
 
-    def _run_path(self, consumers, with_dnm):
+    def _run_path(self, consumers, with_dnm, window=None):
         """One pass over the band path for path properties (never cached:
         nothing is stored per path point)."""
         from .bands import run_path
 
         attr = self.data_controller.data_attributes
+        if window is None:
+            window = self._resolve_window(consumers, 'path pass')
         full = any('full_spectrum' in c.needs for c in consumers)
         dense_n_max = self.config.dense_n_max
         if full and self.H.nawf > dense_n_max:
@@ -1243,7 +1444,9 @@ class SparseEngine:
                 'solve for them is not implemented yet.'
                 % (', '.join(sorted({c.method for c in consumers})), self.H.nawf, dense_n_max)
             )
-        nsolve = self.H.nawf if full else int(attr['bnd'])
+        # run_path and the path finalizers read the band count from attr['bnd']
+        attr['bnd'] = window.nev
+        nsolve = self.H.nawf if full else int(window.nev)
 
         def _path():
             run_path(
@@ -1257,11 +1460,13 @@ class SparseEngine:
                 ptop=self._projectable_top(),
                 **self.config.limits,
             )
+            self._path_passes += 1
+            self._last_window = window
 
         self._guard('sparse_path', _path)
         self._time('Sparse path pass')
 
-    def _ensure_mesh(self, products=(), consumers=()):
+    def _ensure_mesh(self, products=(), consumers=(), window=None):
         """Run the fused mesh pass unless the last one already provides
         everything asked for.
 
@@ -1270,37 +1475,32 @@ class SparseEngine:
         streaming consumers, which can only see the k-points while a pass
         runs.  A second pass is announced loudly, since it costs as much as
         the first; :meth:`fused` avoids it.  Products of earlier passes stay
-        valid and are not recomputed.
+        valid and are not recomputed, unless the new window solves a
+        different number of bands, which they would no longer match.
         """
         from .mesh import run_mesh
 
         arrays, attr = self.data_controller.data_dicts()
         wanted = set(products) | self._mesh_plan.get('products', set())
-        if self._interior is not None and 'd2Ed2k' in self._mesh_plan.get('products', set()):
-            # recorded by gradient_and_momenta(band_curvature=True) before
-            # the interior window was applied
-            self._mesh_plan['products'].discard('d2Ed2k')
-            wanted.discard('d2Ed2k')
-            self._skip(
-                'gradient_and_momenta band_curvature',
-                'the band curvature sums over interband pairs that include every state, '
-                'and an interior window computes none outside it',
-            )
         missing = wanted - self._mesh_products
         if self._mesh_passes and not missing and not consumers:
             return
+        if window is None:
+            window = self._resolve_window(consumers, 'mesh pass %d' % (self._mesh_passes + 1))
         if self._mesh_passes:
             why = [p.method for p in consumers] + sorted(missing)
-            message = (
-                'WARNING: Sparse mesh pass %d is being run from scratch for %s, which the '
-                'earlier pass did not provide. It costs as much as the first pass. Put the '
-                'property calls in one `with pao.sparse.fused():` block to compute them in a '
-                'single pass.' % (self._mesh_passes + 1, ', '.join(why))
+            self.log.warning(
+                'Sparse mesh pass %d recomputes the whole mesh for %s, which the earlier pass '
+                'did not provide; put the property calls in one `with pao.sparse.fused():` '
+                'block to compute them in one pass' % (self._mesh_passes + 1, ', '.join(why))
             )
-            if self.rank == 0:
-                print(message, flush=True)
-            self.log.write('\n' + message)
+            old = self._mesh_window
+            if old is not None and (old.nev, old.interior) != (window.nev, window.interior):
+                self._mesh_products = set()
+                missing = wanted
 
+        if window.mode == 'bottom':
+            attr['bnd'] = window.nev
         nev = attr['bnd']
 
         def _mesh():
@@ -1314,15 +1514,18 @@ class SparseEngine:
                 smearing=self._mesh_plan.get('smearing', attr['smearing']),
                 verbose=attr['verbose'],
                 hk_solver=self.config.hk_solver,
-                ehi=None if self._window is None else self._window.ehi,
-                interior=self._interior,
+                ehi=None if window.at_top or window.mode == 'interior' else window.ehi,
+                interior=window.interior,
                 ptop=self._projectable_top(),
+                label='Mesh pass %d' % (self._mesh_passes + 1),
                 **self.config.limits,
             )
 
         self._guard('sparse_mesh', _mesh)
         self._mesh_passes += 1
         self._mesh_products |= missing
+        self._mesh_window = self._last_window = window
+        self._mesh_bnd = attr['bnd']
         self._time('Sparse mesh pass')
 
     # ------------------------------------------------------------------
@@ -1339,34 +1542,50 @@ class SparseEngine:
             % (len(self._skipped), 'y was' if len(self._skipped) == 1 else 'ies were')
         ]
         lines += ['  - %s: %s' % (p, r) for p, r in self._skipped]
-        text = '\n'.join(lines)
         if self.rank == 0:
-            print('\n' + text, flush=True)
+            print('\n' + '\n'.join(lines), flush=True)
         self.log.section('Skipped properties')
-        self.log.write(text)
+        self.log.rows(self._skipped)
 
     def finish_execution(self):
         self._report_skips()
         call_dense(self.host, 'finish_execution')
 
 
-def _window_label(cfg):
-    """Header entry for the window option of a config."""
-    if cfg.energy_window is not None:
-        w = cfg.energy_window
-        return 'from the bottom up to %.3f + %.3f eV%s' % (
-            w.emax,
-            w.margin,
-            '' if w.nev is None else ' (nev = %d)' % w.nev,
-        )
-    if cfg.interior_window is not None:
-        return 'interior [%.3f, %.3f] eV' % (cfg.interior_window.elo, cfg.interior_window.ehi)
-    return 'none'
+def _config_fields(cfg):
+    """The ``Sparse configuration`` section of ``sparse.log``."""
+    iw = cfg.interior_window
+    fields = [('hopping_threshold (eV)', _threshold_label(cfg))]
+    if cfg.bond_order is not None:
+        fields.append(('bond_order', cfg.bond_order))
+    if cfg.rcut is not None:
+        fields.append(('rcut (Bohr)', '%.3f' % cfg.rcut))
+    if iw is not None:
+        bands = 'varies with k (interior solve)'
+    elif cfg.nev is not None:
+        bands = '%d (given)' % cfg.nev
+    else:
+        bands = 'automatic (from the property ranges)'
+    if iw is None:
+        interior = 'none'
+    elif iw.auto:
+        interior = 'automatic bounds (from the property ranges)'
+    else:
+        interior = '[%.3f, %.3f] eV' % (iw.elo, iw.ehi)
+    fields += [
+        ('bands per k-point', bands),
+        ('interior window', interior),
+        ('H(k) solver', cfg.hk_solver),
+        ('dense_n_max', cfg.dense_n_max),
+        ('dense_ratio', cfg.dense_ratio),
+        ('shift_margin (eV)', '%.3f' % cfg.shift_margin),
+    ]
+    return fields
 
 
 def _threshold_label(cfg):
     """Header entry for the element threshold a config actually applies."""
     threshold = resolve_threshold(cfg.hopping_threshold, cfg.rcut, cfg.bond_order)
     if threshold == 0.0 and (cfg.rcut is not None or cfg.bond_order is not None):
-        return 'none (real-space cutoff)'
-    return '%.3e' % threshold
+        return 'none (a real-space cutoff is used instead)'
+    return '%.1e' % threshold

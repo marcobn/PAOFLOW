@@ -14,10 +14,7 @@ if TYPE_CHECKING:
     from ..engine import SparseEngine
     from ..kpoint import KPoint
 
-_BAND_INDICES = (
-    'it is tabulated by band index, and under an interior window the number of states '
-    'in the window varies across the BZ'
-)
+_BAND_INDICES = 'needs absolute band indices'
 
 
 @register

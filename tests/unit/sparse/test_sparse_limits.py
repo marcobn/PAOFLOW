@@ -51,7 +51,7 @@ def _mesh_solver_line(p):
     with open(os.path.join(p.data_controller.data_attributes['opath'], 'sparse.log')) as f:
         text = f.read()
     mesh = text[text.index('Mesh pass') :]
-    return next(line for line in mesh.splitlines() if line.startswith('H(k) solver'))
+    return next(line for line in mesh.splitlines() if line.strip().startswith('H(k) solver'))
 
 
 def test_defaults_take_the_dense_kernel(tmp_path):

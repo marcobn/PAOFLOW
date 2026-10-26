@@ -90,6 +90,7 @@ class LinearResponse(MeshProperty):
         attr['twoD'] = twoD
         # the dense method clips emaxH at the shift; here with a warning
         attr['eminH'], attr['emaxH'] = engine._clamp_to_projectable('linear_response', eminH, emaxH)
+        self.emin, self.emax = attr['eminH'], attr['emaxH']
         attr['esize'] = esize
         attr['intraband'] = intraband
         attr['interband'] = interband
@@ -103,6 +104,9 @@ class LinearResponse(MeshProperty):
         for kind, key in _jobs(response, t_odd, full_chi2, intraband, interband):
             for tensor in arry[key]:
                 self.jobs.append((kind, tuple(int(x) for x in tensor)))
+
+    def energy_range(self):
+        return self.emin, self.emax, 'none', None
 
     def prepare(self) -> bool:
         from ...utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI

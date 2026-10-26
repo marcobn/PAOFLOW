@@ -13,7 +13,7 @@ import inspect
 import pytest
 
 from PAOFLOW.PAOFLOW import PAOFLOW
-from PAOFLOW.sparse.config import EnergyWindow, InteriorWindow, SparseConfig, resolve_threshold
+from PAOFLOW.sparse.config import InteriorWindow, SparseConfig, resolve_threshold
 from PAOFLOW.sparse.engine import SparseEngine
 
 
@@ -87,44 +87,44 @@ def test_config_parse_takes_only_a_dict(value):
         SparseConfig.parse(value)
 
 
-def test_config_parses_the_energy_window():
-    cfg = SparseConfig.parse({'energy_window': {'emax': 2.2}})
-    assert cfg.energy_window == EnergyWindow(emax=2.2)
-    assert cfg.energy_window.margin == 1.0 and cfg.energy_window.nev is None
-    assert cfg.energy_window.ehi == pytest.approx(3.2)
+def test_config_parses_nev():
+    assert SparseConfig.parse({'nev': 12}).nev == 12
+    assert SparseConfig().nev is None
 
 
-@pytest.mark.parametrize(
-    'window, error, match',
-    [
-        ({'margin': 1.0}, ValueError, "needs 'emax'"),
-        ({'emin': -12.0, 'emax': 2.2}, ValueError, "takes no 'emin'"),
-        ({'emax': 1.0, 'margin': -0.1}, ValueError, 'margin'),
-        ({'emax': 1.0, 'nev': 0}, ValueError, 'nev'),
-        ({'emax': 1.0, 'nevv': 3}, ValueError, "did you mean 'nev'"),
-        ((-12.0, 2.2), TypeError, 'takes a dict'),
-    ],
-)
-def test_config_rejects_a_bad_energy_window(window, error, match):
-    with pytest.raises(error, match=match):
-        SparseConfig.parse({'energy_window': window})
+@pytest.mark.parametrize('value', [0, -3, 2.5, True])
+def test_config_rejects_a_bad_nev(value):
+    with pytest.raises(ValueError, match='nev must be an integer'):
+        SparseConfig.parse({'nev': value})
+
+
+def test_config_has_no_energy_window_option():
+    with pytest.raises(ValueError, match="unknown option 'energy_window'"):
+        SparseConfig.parse({'energy_window': {'emax': 2.2}})
 
 
 def test_config_parses_the_interior_window():
     cfg = SparseConfig.parse({'interior_window': {'elo': -3, 'ehi': 3}})
     assert cfg.interior_window == InteriorWindow(elo=-3.0, ehi=3.0)
-    assert cfg.interior_window.kT_margin_eV == 0.26
-    assert cfg.interior_window.smear_margin_eV == 0.5
+    assert not cfg.interior_window.auto
+    auto = SparseConfig.parse({'interior_window': {}}).interior_window
+    assert auto == InteriorWindow() and auto.auto
 
 
 @pytest.mark.parametrize(
     'window, error, match',
     [
-        ({'elo': -3.0}, ValueError, "needs 'ehi'"),
+        ({'elo': -3.0}, ValueError, "both 'elo' and 'ehi'"),
         ({'elo': 1.0, 'ehi': -1.0}, ValueError, 'ehi > elo'),
-        ({'elo': -1.0, 'ehi': 1.0, 'smear_margin_eV': -0.1}, ValueError, 'smear_margin_eV'),
-        ({'elo': -1.0, 'ehi': 1.0, 'kT_margin': 0.1}, ValueError, "did you mean 'kT_margin_eV'"),
+        (
+            {'elo': -1.0, 'ehi': 1.0, 'kT_margin_eV': 0.1},
+            ValueError,
+            "unknown option 'kT_margin_eV'",
+        ),
+        ({'smear_margin_eV': 0.5}, ValueError, "unknown option 'smear_margin_eV'"),
+        ({'elo': -1.0, 'eh': 1.0}, ValueError, "did you mean 'ehi'"),
         ([-1.0, 1.0], TypeError, 'takes a dict'),
+        (True, TypeError, 'takes a dict'),
     ],
 )
 def test_config_rejects_a_bad_interior_window(window, error, match):
@@ -154,14 +154,9 @@ def test_config_rejects_bad_solver_limits(value, match):
         SparseConfig.parse(value)
 
 
-def test_config_rejects_both_window_modes():
-    with pytest.raises(ValueError, match='mutually exclusive'):
-        SparseConfig.parse(
-            {
-                'energy_window': {'emax': 2.2},
-                'interior_window': {'elo': -1.0, 'ehi': 1.0},
-            }
-        )
+def test_config_rejects_nev_with_an_interior_window():
+    with pytest.raises(ValueError, match="either 'nev' or 'interior_window'"):
+        SparseConfig.parse({'nev': 8, 'interior_window': {'elo': -1.0, 'ehi': 1.0}})
 
 
 @pytest.mark.parametrize('value', [{}, {'hopping_threshold': 1e-4}, None, 'yes', 1])
@@ -188,9 +183,9 @@ def test_constructor_passes_the_config_to_the_engine(tmp_path):
         outputdir='s',
         restart=True,
         sparse=True,
-        sparse_config={'bond_order': 3, 'energy_window': {'emax': 1.0}},
+        sparse_config={'bond_order': 3, 'nev': 10},
     )
-    assert p.sparse.config == SparseConfig(bond_order=3, energy_window=EnergyWindow(emax=1.0))
+    assert p.sparse.config == SparseConfig(bond_order=3, nev=10)
 
 
 def test_config_parse_names_unknown_options():
@@ -387,13 +382,13 @@ def test_doubling_preflight_warns_and_continues(sparse, monkeypatch, capsys, ava
 
 
 # ----------------------------------------------------------------------
-# The 'energy_window' option is applied once, before the first solve
+# The solve window is resolved before every pass; only a pass sets bnd
 # ----------------------------------------------------------------------
 
 
 class _WindowH:
-    """Stands in for the bond list: only what applying a window with an
-    explicit nev reads."""
+    """Stands in for the bond list: only what resolving a window without a
+    probe reads."""
 
     nawf = 20
     _doubled = False
@@ -406,68 +401,66 @@ def windowed(tmp_path):
         outputdir='w',
         restart=True,
         sparse=True,
-        sparse_config={'energy_window': {'emax': 2.2, 'nev': 10}},
+        sparse_config={'nev': 10},
     )
     p.sparse.H = _WindowH()
     p.data_controller.data_attributes['bnd'] = 8
     return p
 
 
-def test_window_waits_for_the_first_solve(windowed):
-    assert windowed.sparse._window is None
+def test_a_given_nev_sizes_the_window_but_not_bnd(windowed):
+    engine = windowed.sparse
+    window = engine._resolve_window((), 'test')
+    assert (window.mode, window.nev, window.nev_source) == ('bottom', 10, 'given')
+    assert window.at_top  # more than the 8 projectable bands
+    # only a pass writes attr['bnd']
     assert windowed.data_controller.data_attributes['bnd'] == 8
 
 
-def test_window_is_applied_once(windowed):
-    engine = windowed.sparse
-    engine._ensure_window()
-    attr = windowed.data_controller.data_attributes
-    assert attr['bnd'] == 10
-    assert engine._window == EnergyWindow(emax=2.2, nev=10)
-    assert engine._window.ehi == pytest.approx(3.2)
-    attr['bnd'] = 7  # a second call must not re-size the solve
-    engine._ensure_window()
-    assert attr['bnd'] == 7
+def test_the_default_window_solves_the_projectable_bands(sparse):
+    sparse.sparse.H = _WindowH()
+    sparse.data_controller.data_attributes['bnd'] = 8
+    window = sparse.sparse._resolve_window((), 'test')
+    assert (window.nev, window.nev_source, window.at_top) == (8, 'projectable', True)
+    assert sparse.data_controller.data_attributes['bnd'] == 8
 
 
-def test_window_is_applied_by_a_property_call(windowed, monkeypatch):
-    from PAOFLOW.sparse.properties import _load
-
-    class _Stop(Exception):
-        pass
-
-    def _stop(self, *args, **kwargs):
-        raise _Stop
-
-    monkeypatch.setattr(_load()['dos'], '__init__', _stop)
-    with pytest.raises(_Stop):
-        windowed.dos()
-    assert windowed.data_controller.data_attributes['bnd'] == 10
-
-
-def test_doubling_refuses_after_the_window_was_applied(windowed):
-    windowed.sparse._ensure_window()
+def test_doubling_refuses_after_a_solve(windowed):
+    windowed.sparse._mesh_passes = 1
     with pytest.raises(RuntimeError, match='before bands'):
         windowed.doubling_Hamiltonian(1, 0, 0)
 
 
-def test_interior_window_waits_and_is_applied_once(tmp_path):
+def test_an_explicit_interior_window_is_used_as_given(tmp_path):
     p = PAOFLOW(
         workpath=str(tmp_path),
         outputdir='i',
         restart=True,
         sparse=True,
-        sparse_config={'interior_window': {'elo': -3.0, 'ehi': 3.0, 'kT_margin_eV': 0.1}},
+        sparse_config={'interior_window': {'elo': -3.0, 'ehi': 3.0}},
     )
     engine = p.sparse
     engine.H = _WindowH()
     p.data_controller.data_attributes['bnd'] = 8
     assert engine._interior is None
-    engine._ensure_window()
-    assert engine._interior == (-3.0, 3.0)
-    assert engine._kT_margin == 0.1 and engine._smear_margin == 0.5
-    assert engine._window is None
+    window = engine._resolve_window((), 'test')
+    assert engine._interior == (-3.0, 3.0) == window.interior
+    assert window.nev is None
     assert p.data_controller.data_attributes['bnd'] == 8  # nev comes from the window count
+
+
+def test_an_automatic_interior_window_needs_a_property_range(tmp_path):
+    p = PAOFLOW(
+        workpath=str(tmp_path),
+        outputdir='a',
+        restart=True,
+        sparse=True,
+        sparse_config={'interior_window': {}},
+    )
+    p.sparse.H = _WindowH()
+    p.data_controller.data_attributes['bnd'] = 8
+    with pytest.raises(ValueError, match='no property of this pass has one'):
+        p.sparse._resolve_window((), 'test')
 
 
 def test_the_engine_has_no_window_methods(sparse):
@@ -476,7 +469,7 @@ def test_the_engine_has_no_window_methods(sparse):
             getattr(sparse.sparse, name)
 
 
-def test_to_dense_warns_that_a_window_is_dropped(windowed, monkeypatch, capsys):
+def test_to_dense_warns_that_a_window_option_is_dropped(windowed, monkeypatch, capsys):
     import numpy as np
 
     from PAOFLOW.sparse import bridge
@@ -493,13 +486,5 @@ def test_to_dense_warns_that_a_window_is_dropped(windowed, monkeypatch, capsys):
     attr['nk1'] = attr['nk2'] = attr['nk3'] = 2
     windowed.sparse.H = _BaseCellH()
     windowed.to_dense()
-    assert 'energy_window of sparse_config does not apply' in capsys.readouterr().out
+    assert "'nev' option of sparse_config does not apply" in capsys.readouterr().out
     assert windowed._engine is None
-
-
-def test_no_window_option_leaves_bnd_alone(sparse):
-    sparse.sparse.H = _WindowH()
-    sparse.data_controller.data_attributes['bnd'] = 8
-    sparse.sparse._ensure_window()
-    assert sparse.sparse._window is None
-    assert sparse.data_controller.data_attributes['bnd'] == 8

@@ -33,10 +33,7 @@ class _Texture(MeshProperty):
     key = ''
     result = ''
     builder = ''
-    interior = (
-        'it selects bands by index, and under an interior window the number of states '
-        'in the window varies across the BZ, so a band index has no meaning'
-    )
+    interior = 'needs absolute band indices'
 
     def __init__(self, engine: SparseEngine, fermi_up: float = 1.0, fermi_dw: float = -1.0) -> None:
         super().__init__(engine)
@@ -45,7 +42,16 @@ class _Texture(MeshProperty):
         attr['fermi_up'] = fermi_up
         attr['fermi_dw'] = fermi_dw
         self.fermi_up = fermi_up
+        self.fermi_dw = fermi_dw
         self._values: dict[tuple[int, int], np.ndarray] = {}
+
+    def energy_range(self):
+        return self.fermi_dw, self.fermi_up, 'none', None
+
+    def apply_range(self, emin: float, emax: float) -> None:
+        attr = self.data_controller.data_attributes
+        self.fermi_dw, self.fermi_up = emin, emax
+        attr['fermi_dw'], attr['fermi_up'] = emin, emax
 
     def prepare(self) -> bool:
         attr = self.data_controller.data_attributes

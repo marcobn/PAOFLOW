@@ -1,12 +1,18 @@
 """Dedicated log file for the sparse backend.
 
-Sparse diagnostics — bond-list statistics, truncation bounds, solver
-dispatch (including whether a k-point solve is routed to the dense
-branch), memory projections and progress — are written to ``sparse.log``
-in the PAOFLOW output directory rather than to stdout.  That keeps the
-standard output of a sparse run identical in kind to a dense one (module
-timings and warnings only), while giving the sparse-specific numbers more
-room than a single line each.
+The physical parameters and the memory figures of a sparse run (the
+truncation, the bond list, the doubling projection, the solve window, the
+mesh and path passes) are written to ``sparse.log`` in the PAOFLOW output
+directory rather than to stdout.  That keeps the standard output of a
+sparse run identical in kind to a dense one (module timings and warnings
+only).
+
+Format: short section titles, each followed by indented ``key  value``
+lines (:meth:`SparseLog.field`), and one-line ``WARNING: ...`` entries that
+name the remedy (:meth:`SparseLog.warning`, also printed on stdout).  The log
+states what was done, never why; the reasons live in the docstrings of the
+functions that write each line.  A key appears only when it applies to the
+run.
 
 Only rank 0 writes; every other rank gets a no-op object, so call sites
 need no rank guard.
@@ -47,6 +53,12 @@ class _NullLog:
     def field(self, key: str, value: Any) -> None:
         """Discard a key/value line."""
 
+    def rows(self, pairs: Iterable[tuple[str, Any]]) -> None:
+        """Discard key/value lines."""
+
+    def warning(self, text: str) -> None:
+        """Discard a warning (only rank 0 prints one)."""
+
 
 class SparseLog:
     """Append-only text log for one sparse run.
@@ -85,16 +97,16 @@ class SparseLog:
             fh.write(text)
 
     def header(self, title: str, fields: Iterable[tuple[str, Any]] = ()) -> None:
-        """Write a rule-delimited section header followed by ``fields``.
+        """Write a section title followed by ``fields``.
 
         Parameters
         ----------
         title : str
-            Heading text, framed above and below by a line of ``=``.
+            Heading text (see :meth:`section`).
         fields : iterable of (str, object)
             Key/value pairs emitted through :meth:`field`.
         """
-        self._emit('\n' + '=' * 72 + '\n' + title + '\n' + '=' * 72 + '\n')
+        self.section(title)
         for key, value in fields:
             self.field(key, value)
 
@@ -107,8 +119,22 @@ class SparseLog:
         self._emit(f'{text}\n')
 
     def field(self, key: str, value: Any) -> None:
-        """Write one indented ``key value`` line on a fixed 22-column key."""
-        self._emit(f'  {key!s:<22} {value}\n')
+        """Write one indented ``key value`` line on a fixed 22-column key
+        (a longer key is followed by two spaces)."""
+        key = str(key)
+        pad = f'{key:<22} ' if len(key) <= 22 else key + '  '
+        self._emit(f'  {pad}{value}\n')
+
+    def rows(self, pairs: Iterable[tuple[str, Any]]) -> None:
+        """Write one :meth:`field` per ``(key, value)`` pair."""
+        for key, value in pairs:
+            self.field(key, value)
+
+    def warning(self, text: str) -> None:
+        """Print ``WARNING: text`` on stdout and append it to the log."""
+        message = 'WARNING: ' + text
+        print(message, flush=True)
+        self._emit(f'  {message}\n')
 
 
 def get_sparse_log(

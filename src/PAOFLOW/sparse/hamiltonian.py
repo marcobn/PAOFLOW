@@ -1292,23 +1292,38 @@ class SparseHamiltonian:
             'dense_hk_bytes': 16 * nawf_final * nawf_final,
         }
 
-    def stats_line(self) -> str:
-        """One-line summary of size, sparsity and truncation quality.
+    def stats(self) -> dict:
+        """Size, sparsity and truncation quality of the bond list.
 
         Returns
         -------
-        str
-            Orbital count, number of lattice vectors, bond count, density,
-            memory, the dense-array equivalent, and the rigorous bound on
-            the eigenvalue shift caused by thresholding.
+        dict
+            ``nawf``, ``nR`` (lattice vectors), ``nnz`` (stored elements),
+            ``total`` (elements of the dense ``H(R)``), ``density``,
+            ``mbytes`` (bond list), ``dense_mbytes`` (dense ``H(R)``) and
+            ``eig_bound``, the rigorous bound (eV) on the eigenvalue shift
+            the truncation can cause at any k-point.
         """
-        mbytes = self.nnz * (4 + 4 + 4 + 16 * self.nspin + 24) / 1024**2
-        dense_mbytes = (self.nawf**2 * np.prod(self.nk_grid) * self.nspin * 16) / 1024**2
+        nR = len(self.R_int)
+        return {
+            'nawf': self.nawf,
+            'nR': nR,
+            'nnz': self.nnz,
+            'total': self.nawf**2 * nR,
+            'density': self.density(),
+            'mbytes': self.nnz * (4 + 4 + 4 + 16 * self.nspin + 24) / 1024**2,
+            'dense_mbytes': (self.nawf**2 * np.prod(self.nk_grid) * self.nspin * 16) / 1024**2,
+            'eig_bound': float(self.drop_report.get('eig_bound', 0.0)),
+        }
+
+    def stats_line(self) -> str:
+        """One-line summary of :meth:`stats`."""
+        st = self.stats()
         return (
-            f'Sparse H(R): nawf={self.nawf}, nR={len(self.R_int)}, nnz={self.nnz / 1e6:.3g}M, '
-            f'density={self.density():.2e}, mem={mbytes:.1f} MB '
-            f'(dense equivalent {dense_mbytes:.1f} MB), '
-            f'truncation eig-shift bound={self.drop_report.get("eig_bound", 0.0):.2e} eV'
+            f'Sparse H(R): nawf={st["nawf"]}, nR={st["nR"]}, nnz={st["nnz"] / 1e6:.3g}M, '
+            f'density={st["density"]:.2e}, mem={st["mbytes"]:.1f} MB '
+            f'(dense equivalent {st["dense_mbytes"]:.1f} MB), '
+            f'truncation eig-shift bound={st["eig_bound"]:.2e} eV'
         )
 
 

@@ -172,16 +172,18 @@ def select_hk_solver(
             f'iterative regime (> {100.0 * dense_ratio:.1f}%), but n exceeds dense_n_max = '
             f'{dense_n_max}, where the per-k (n,n) scratch matrix would be '
             f'{16.0 * n * n / 1024**3:.2f} GB.\n'
-            "Two exits: (a) reduce nev with the 'energy_window' of sparse_config so the solve "
-            "returns to the hk_solver='sparse' regime, or (b) move to a distributed "
-            'eigensolver (ELPA/SLEPc) with a distributed bond list. There is no silent '
-            'dense fallback.'
+            "Two exits: (a) reduce nev (narrower property ranges, 'nev' or 'interior_window' in "
+            "sparse_config) so the solve returns to the hk_solver='sparse' regime, or (b) move "
+            'to a distributed eigensolver (ELPA/SLEPc) with a distributed bond list. There is '
+            'no silent dense fallback.'
         )
     return 'sparse', f'nev+guard={k} is {100.0 * k / n:.1f}% of n={n}'
 
 
-def describe_hk_solver(n: int, nev: int, guard: int = 4, hk_solver: str = 'auto', **kw: Any) -> str:
-    """Multi-line report of the dispatch, for printing once per k-loop.
+def hk_solver_fields(
+    n: int, nev: int, guard: int = 4, hk_solver: str = 'auto', **kw: Any
+) -> list[tuple[str, str]]:
+    """Log fields of the per-k dispatch, written once per k-loop.
 
     Parameters
     ----------
@@ -199,47 +201,46 @@ def describe_hk_solver(n: int, nev: int, guard: int = 4, hk_solver: str = 'auto'
 
     Returns
     -------
-    str
-        Two or three lines naming the chosen kernel, its memory
-        consequence, and the reason for the choice.
+    list of (str, str)
+        The chosen kernel, the solved fraction ``nev/n`` and, for the dense
+        kernel, the size of its per-k scratch matrix.
 
     Notes
     -----
-    The report states what the choice does *and does not* change: 'dense'
-    names the per-k-point kernel, never the storage model, and the line
-    says so explicitly because the word 'dense' in a log emitted by the
-    sparse backend otherwise reads as "this run fell back to dense
-    PAOFLOW".
-
-    It also carries the ``nev`` creep warning that the ``nev + guard >=
-    n - 1`` hard stop used to enforce.  The dense kernel removes the error,
-    so the intent has to survive as a warning: past ``nev`` of about half
-    the spectrum the eigenvector block alone is quadratic in ``n`` and the
-    run has left the regime this backend exists to serve, even though it
-    still completes.
+    ``'dense'`` names the per-k-point kernel, never the storage model:
+    H(R) stays a bond list and the one ``(n, n)`` scratch matrix is freed
+    before the next k-point, so no ``O(nk n^2)`` tensor is formed.  The
+    ``'sparse'`` kernel never densifies H(k); it stores only the Krylov
+    basis.
     """
-    chosen, reason = select_hk_solver(n, nev, guard=guard, hk_solver=hk_solver, **kw)
+    chosen, _ = select_hk_solver(n, nev, guard=guard, hk_solver=hk_solver, **kw)
     if chosen == 'dense':
-        line = (
-            'H(k) solver: dense (LAPACK zheevr)\n'
-            f'  H(R) stays a bond list; one ({n},{n}) scratch = '
-            f'{16.0 * n * n / 1024**2:.1f} MB per k-point,\n'
-            '  freed before the next. No O(nk*n^2) tensor is formed.\n'
-            f'  n={n}, nev={nev}; {reason}'
-        )
+        fields = [
+            ('H(k) solver', f'dense (LAPACK, one {n} x {n} matrix per k-point)'),
+            ('per-k scratch (MB)', f'{16.0 * n * n / 1024**2:.1f}'),
+        ]
     else:
-        line = (
-            'H(k) solver: sparse (ARPACK shift-invert Lanczos)\n'
-            '  H(k) is never densified; only the Krylov basis is stored.\n'
-            f'  n={n}, nev={nev}; {reason}'
-        )
-    if nev > 0.5 * n:
-        line += (
-            f'\n  WARNING: nev/n = {nev / n:.2f}. The eigenvector block is O(n^2/2) and this '
-            'run is past the size where an iterative solve helps. Size nev from an energy '
-            "window ('energy_window' in sparse_config) before growing the cell further."
-        )
-    return line
+        fields = [('H(k) solver', 'sparse (ARPACK shift-invert)')]
+    fields.append(('solved fraction nev/n', f'{nev / n:.2f}'))
+    return fields
+
+
+def creep_warning(n: int, nev: int) -> str | None:
+    """One-line warning when a from-the-bottom solve covers more than half
+    of the spectrum, or ``None``.
+
+    Notes
+    -----
+    Past ``nev`` of about half the spectrum the eigenvector block alone is
+    quadratic in ``n`` and the run has left the regime this backend exists
+    to serve, even though the dense kernel still completes it.
+    """
+    if nev <= 0.5 * n:
+        return None
+    return (
+        f'nev/n = {nev / n:.2f}: an iterative solve brings nothing here; narrow the property '
+        "ranges, give 'nev', or use 'interior_window' in sparse_config before growing the cell"
+    )
 
 
 def _orthonormalize_degenerate(E: np.ndarray, V: np.ndarray, decimals: int = 5) -> np.ndarray:
@@ -784,18 +785,19 @@ def count_below(H: spmatrix, ehi: float, dense_n_max: int = DENSE_N_MAX) -> int:
 
     Notes
     -----
-    This is the probe used to size an energy window: it answers how many
-    bands a from-the-bottom solve must compute to reach a given energy at a
-    given k-point.  One tridiagonal reduction with ``zheevr``'s
+    It answers how many bands a from-the-bottom solve must compute to reach
+    a given energy at a given k-point (the engine's window probe,
+    :func:`~PAOFLOW.sparse.mesh.probe_k`, also needs the velocities and so
+    solves for the eigenvectors).  One tridiagonal reduction with ``zheevr``'s
     ``subset_by_value`` and no eigenvectors — cheap, but it densifies, so it
     carries the same size guard as the ``'dense'`` kernel.
     """
     n = H.shape[0]
     if n > dense_n_max:
         raise NotImplementedError(
-            f'count_below: the energy-window probe densifies H(k), which at n = {n} would need '
+            f'count_below: counting the states densifies H(k), which at n = {n} would need '
             f'{16.0 * n * n / 1024**3:.2f} GB (dense_n_max = {dense_n_max}). Pass an explicit '
-            "nev to the 'energy_window' of sparse_config to skip the probe, or move to a "
+            "'nev' in sparse_config to skip the probe, or move to a "
             'distributed eigensolver.'
         )
     A = H.toarray()

@@ -373,6 +373,7 @@ def run_mesh(
     ptop: float | None = None,
     dense_ratio: float = DENSE_RATIO,
     dense_n_max: int = DENSE_N_MAX,
+    label: str = 'Mesh pass',
 ) -> None:
     """Walk the local share of the BZ mesh, producing all band-diagonal data.
 
@@ -429,6 +430,8 @@ def run_mesh(
         :func:`~PAOFLOW.sparse.solver.select_hk_solver`; ``dense_n_max`` also
         caps the full-spectrum solve.  The engine passes the values of
         ``sparse_config``.
+    label : str, optional
+        Section title in ``sparse.log``.
 
     Returns
     -------
@@ -497,13 +500,13 @@ def run_mesh(
     guarantees completeness inside the window or raises, so the ``ehi``
     deficit counter does not apply there and is skipped.
 
-    An interior solve also records ``attr['sparse_interior_dmax']``, the
-    largest *real* adaptive width over the whole mesh with padding excluded.
-    Consumers need it to know how far a smearing tail reaches past the
-    window edge: a state just below ``elo`` still contributes inside the
-    window, so a DOS plotted too close to the edge is contaminated by states
-    that were never computed.  It is recorded here because only the mesh
-    pass knows the widths.
+    Every pass also records ``attr['sparse_dmax']``, the largest *real*
+    adaptive width over the whole mesh with padding excluded.  The engine
+    needs it to know how far a smearing tail reaches past the window edge:
+    a state just outside the window still contributes inside it, so a DOS
+    plotted too close to the edge is missing states that were never
+    computed.  It is recorded here because only the mesh pass knows the
+    widths.
 
     Progress logging uses an interval of one tenth of this rank's k-points,
     capped at 100.  A fixed interval of 100 would print nothing at all on a
@@ -516,7 +519,7 @@ def run_mesh(
     from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
     from .kpoint import DenseOnDemand, KPoint
     from .log import get_sparse_log
-    from .solver import describe_hk_solver, solve_interior, solve_lowest
+    from .solver import creep_warning, hk_solver_fields, solve_interior, solve_lowest
 
     arrays, attr = data_controller.data_dicts()
     nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
@@ -566,22 +569,21 @@ def run_mesh(
 
     extras = sorted({c.method for c in consumers}) + (['band curvature'] if curvature else [])
     log = get_sparse_log(data_controller)
-    log.section('Mesh pass (eigenvalues + velocities%s)' % ''.join(' + ' + name for name in extras))
-    log.field('mesh', f'{nk1} x {nk2} x {nk3}  ({nkpnts} k-points)')
+    log.section(label)
+    log.field('k-mesh', f'{nk1} x {nk2} x {nk3}  ({nkpnts} k-points)')
+    log.field('computed per k-point', ', '.join(['eigenvalues', 'velocities'] + extras))
     if interior is None:
-        log.field('bands per k (nev)', nev)
+        log.field('bands per k-point', nev)
     else:
-        log.field('interior window (eV)', f'[{interior[0]:.3f}, {interior[1]:.3f}]')
-        log.field('bands per k', 'k-dependent (interior solve); padded after the loop')
-    log.field('smearing', f'{smearing}, afac = {afac:.3f}')
-    log.field('window top ehi (eV)', 'none' if ehi is None else f'{ehi:.3f}')
+        log.field('bands per k-point', 'varies with k (interior solve)')
     if full:
-        log.field(
-            'full spectrum',
-            f'all {nawf} states per k-point for {", ".join(wanting)}; window keeps {nev}',
-        )
+        log.field('full spectrum', f'all {nawf} states per k-point for {", ".join(wanting)}')
+    log.field('smearing', f'{smearing}, afac {afac:.3f}')
     limits = {'dense_ratio': dense_ratio, 'dense_n_max': dense_n_max}
-    log.write(describe_hk_solver(nawf, nsolve, hk_solver=solver, **limits))
+    log.rows(hk_solver_fields(nawf, nsolve, hk_solver=solver, **limits))
+    warning = None if (full or interior is not None) else creep_warning(nawf, nsolve)
+    if warning:
+        log.write('  WARNING: ' + warning)
 
     if interior is None:
         # the states dropped above ptop take the interior padding values
@@ -608,11 +610,8 @@ def run_mesh(
         nawf, len(sparse_h.plan['indices']), dense_n_max
     )
     if dense_ops:
-        log.write(
-            '  dH/dk handed to the per-k kernels as dense arrays (fill >= %g): up to 3 + 1 '
-            '(%d, %d) scratch = %.1f GB per k-point'
-            % (OPERATOR_DENSE_FILL, nawf, nawf, 4 * 16.0 * nawf * nawf / 1024**3)
-        )
+        log.field('dH/dk scratch per k-point (GB)', '%.2f' % (4 * 16.0 * nawf * nawf / 1024**3))
+    dmax = 0.0
 
     for ispin in range(nspin):
         v0 = None
@@ -655,6 +654,8 @@ def run_mesh(
             for D, R, _ in resolved:
                 V[:, D] = V[:, D] @ R
             delta = adaptive_widths(vel, afac, dk)
+            if len(delta):
+                dmax = max(dmax, float(np.max(delta)))
             kp = KPoint(
                 sparse_h,
                 ik,
@@ -697,19 +698,19 @@ def run_mesh(
             kp = None
 
             if verbose and (ik + 1) % step == 0:
-                log.write(f'  progress: {ik + 1}/{nk_local} local k-points')
+                log.field('progress', f'{ik + 1}/{nk_local} local k-points')
 
     dropped = comm.allreduce(dropped, op=MPI.SUM)
-    if dropped:
-        log.write(
-            '  %.2f solved states per k-point lay at the PAO shift (above %.3f eV) and were '
-            'dropped' % (dropped / float(comm.allreduce(nk_local * nspin, op=MPI.SUM)), ptop)
+    if ptop is not None:
+        log.field(
+            'states dropped at the PAO shift',
+            '%.2f per k-point' % (dropped / float(comm.allreduce(nk_local * nspin, op=MPI.SUM))),
         )
     if interior is not None:
         E_k, velkp, deltakp = _pad_interior(acc, nk_local, nspin, interior[1], log)
         attr['bnd'] = E_k.shape[1]
-        local = max((float(d.max()) for (_, _, d) in acc.values() if len(d)), default=0.0)
-        attr['sparse_interior_dmax'] = float(comm.allreduce(local, op=MPI.MAX))
+    attr['sparse_dmax'] = float(comm.allreduce(dmax, op=MPI.MAX))
+    log.field('max adaptive width (eV)', '%.3f' % attr['sparse_dmax'])
 
     arrays['E_k'] = E_k
     arrays['velkp'] = velkp
@@ -773,9 +774,8 @@ def _pad_interior(
     local_max = max((len(E) for (E, _, _) in acc.values()), default=0)
     m = int(comm.allreduce(int(local_max), op=MPI.MAX))
     local_min = min((len(E) for (E, _, _) in acc.values()), default=0)
-    log.write(
-        f'  interior window: {local_min}-{local_max} states per k locally, '
-        f'padded to {m} (global max)'
+    log.field(
+        'interior states per k-point', f'{local_min} to {local_max} on this rank; padded to {m}'
     )
     if m == 0:
         raise RuntimeError(
@@ -840,7 +840,89 @@ def check_window_coverage(deficit: int, nev: int, ehi: float | None, tag: str) -
         suggested = nev + max(8, int(0.1 * nev) + 1)
         raise RuntimeError(
             f'sparse {tag}: {total} k-point(s) had their highest computed band below the '
-            f'requested window top ehi = {ehi:.3f} eV, so the {nev}-band solve does not cover '
-            f"it. Re-run with a larger nev ('nev': {suggested} or a wider 'margin' in the "
-            "'energy_window' of sparse_config). No results were truncated silently."
+            f'window top {ehi:.3f} eV, so the {nev}-band solve does not cover it. Re-run with '
+            f"'nev': {suggested} in sparse_config. No results were truncated silently."
         )
+
+
+def probe_k(
+    sparse_h: SparseHamiltonian,
+    kfrac: np.ndarray,
+    ispin: int,
+    ehi: float | None,
+    interior: tuple[float, float] | None = None,
+    hk_solver: str = 'auto',
+    dense_n_max: int = DENSE_N_MAX,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Eigenvalues and band-velocity norms at one probe k-point.
+
+    Parameters
+    ----------
+    sparse_h : SparseHamiltonian
+        The bond list.
+    kfrac : np.ndarray, shape (3,)
+        Crystal coordinates of the k-point (mesh convention, ``sign=-1``).
+    ispin : int
+        Spin channel.
+    ehi : float or None
+        Solve every state below this energy (eV); ``None`` solves all of
+        them.  Ignored with ``interior``.
+    interior : (float, float) or None, optional
+        Solve only the states inside this window instead.
+    hk_solver, dense_n_max : optional
+        As :func:`run_mesh`.
+
+    Returns
+    -------
+    (E, vnorm) : (np.ndarray, np.ndarray)
+        Ascending eigenvalues (eV) and ``|v_n|`` of each state, the norm the
+        adaptive widths are proportional to.
+
+    Raises
+    ------
+    NotImplementedError
+        From the bottom above ``dense_n_max``, where the probe would
+        densify H(k).
+
+    Notes
+    -----
+    Used by the engine to place the window of a pass before the pass runs:
+    the eigenvalues give the number of states below the window top, and the
+    largest ``|v_n|`` the largest adaptive width ``afac * dk * |v_n|``
+    (:func:`~PAOFLOW.spectrum.do_adaptive_smearing.adaptive_widths`), whose
+    reach fixes the smearing margin.  The velocities are the
+    Hellmann-Feynman ones of :func:`_band_diagonal_velocities`, as in the
+    pass itself.
+    """
+    import scipy.linalg
+
+    from .solver import solve_interior
+
+    hk, dhk = sparse_h.assemble_derivatives(kfrac, ispin=ispin, sign=-1, order=1)[:2]
+    if interior is not None:
+        E, V = solve_interior(
+            hk, interior[0], interior[1], hk_solver=hk_solver, dense_n_max=dense_n_max
+        )
+    else:
+        n = hk.shape[0]
+        if n > dense_n_max:
+            raise NotImplementedError(
+                f'sparse window probe: counting the states below the window top densifies '
+                f'H(k), which at n = {n} would need {16.0 * n * n / 1024**3:.2f} GB '
+                f"(dense_n_max = {dense_n_max}). Give 'nev' in sparse_config to skip the probe."
+            )
+        A = hk.toarray()
+        if ehi is None:
+            E, V = scipy.linalg.eigh(A, driver='evr', check_finite=False, overwrite_a=True)
+        else:
+            E, V = scipy.linalg.eigh(
+                A,
+                subset_by_value=(-np.inf, float(ehi)),
+                driver='evr',
+                check_finite=False,
+                overwrite_a=True,
+            )
+    if len(E) == 0:
+        return np.asarray(E, dtype=float), np.zeros(0)
+    vel, _ = _band_diagonal_velocities(E, V, dhk, dense_n_max=dense_n_max)
+    return np.asarray(E, dtype=float), np.linalg.norm(np.real(vel), axis=0)

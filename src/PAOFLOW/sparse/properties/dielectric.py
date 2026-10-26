@@ -45,10 +45,7 @@ class DielectricTensor(MeshProperty):
 
     method = 'dielectric_tensor'
     label = 'Dielectric Tensor'
-    interior = (
-        'interband transitions start from occupied states below the window, which an '
-        'interior window never computes'
-    )
+    interior = 'needs the occupied states below the window (interband transitions)'
 
     def __init__(
         self,
@@ -92,6 +89,11 @@ class DielectricTensor(MeshProperty):
         if self.ene[0] == 0.0:
             self.ene[0] = 0.00001
         self.emax = emax
+
+    def energy_range(self):
+        # photon energies: transitions from the occupied states reach about
+        # emax above E_F
+        return -np.inf, self.emax, 'none', None
 
     def prepare(self) -> bool:
         from ...response.do_epsilon import eps_settings, report_dielectric_smearing
@@ -149,11 +151,10 @@ class DielectricTensor(MeshProperty):
             write_dielectric(data_controller, self.ene, ipol, jpol, per_spin)
 
     def _warn_if_truncated(self, data_controller: DataController) -> None:
-        """Warn when photon energies reach past the window top.
+        """Warn when photon energies reach past the top of the solved bands.
 
         The dense kernel truncates at ``bnd`` bands in the same way, without
-        a message; here the window may have been narrowed by
-        ``energy_window``, so say so.
+        a message; here the window may hold fewer bands, so say so.
         """
         from mpi4py import MPI
 
@@ -167,13 +168,9 @@ class DielectricTensor(MeshProperty):
         if ptop is not None:
             top = min(top, ptop)
         if self.emax > top:
-            message = (
-                'WARNING: sparse dielectric_tensor: transitions up to emax=%.3f eV reach past '
-                'the lowest top band of the %d-band window (%.3f eV above E_F); the spectrum '
-                'misses transitions into the bands above it, as the dense kernel does at bnd. '
-                "Widen the 'energy_window' of sparse_config if they matter."
-                % (self.emax, arrays['E_k'].shape[1], top)
+            engine.log.warning(
+                'sparse dielectric_tensor: transitions up to emax = %.3f eV reach past the '
+                'lowest top band of the %d solved bands (%.3f eV); transitions into the bands '
+                "above are missing, as in the dense kernel at bnd; give a larger 'nev' if they "
+                'matter' % (self.emax, arrays['E_k'].shape[1], top)
             )
-            if engine.rank == 0:
-                print(message, flush=True)
-            engine.log.write('\n' + message)

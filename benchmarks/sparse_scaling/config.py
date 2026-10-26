@@ -91,8 +91,9 @@ CONFIG = {
         # band-diagonal sigma_ij(E): xx, and xy, which cubic symmetry zeroes
         'conductivity': {'emin': -2.0, 'emax': 2.0, 'ne': 500, 'cond_tensor': [[0, 0], [0, 1]]},
         # Kubo-Greenwood epsilon(omega).  The sparse sum runs over the window
-        # bands only, so epsilon'' is complete up to about the window top
-        # (energy_window emax + margin = 3.2 eV here), epsilon' is not
+        # bands only; the window top follows the highest property emax (this
+        # emax, unless capped at the well-projected top), so epsilon'' is
+        # complete up to it and epsilon' is not
         'dielectric_tensor': {'emin': 0.0, 'emax': 6.0, 'ne': 301, 'd_tensor': 'diag'},
         'transport': {
             'emin': -2.0,
@@ -126,11 +127,8 @@ CONFIG = {
             'sparse': True,
             # the cap is lifted, so the per-k dense LAPACK kernel runs until it
             # really runs out of memory or time: that is the limit to measure
-            'sparse_config': {
-                'bond_order': 36,
-                'energy_window': {'emax': 2.2},
-                'dense_n_max': 10**9,
-            },
+            # the window of the fused pass follows the property ranges
+            'sparse_config': {'bond_order': 36, 'dense_n_max': 10**9},
             'properties': WINDOW_PROPERTIES,
             'max_doublings': 8,
             'slurm': {'ntasks': 4, 'cpus_per_task': 4, 'npool': 4, 'mem': '0', 'time': '24:00:00'},
@@ -143,11 +141,7 @@ CONFIG = {
             'enabled': True,
             'sparse': True,
             'band_curvature': True,
-            'sparse_config': {
-                'bond_order': 36,
-                'energy_window': {'emax': 2.2},
-                'dense_n_max': 10**9,
-            },
+            'sparse_config': {'bond_order': 36, 'dense_n_max': 10**9},
             'properties': CURVATURE_PROPERTIES,
             'property_args': {'transport': {'do_hall': True}},
             'max_doublings': 8,
@@ -164,8 +158,9 @@ CONFIG = {
             # doping and dielectric_tensor need the states below the window
             # and are skipped (with a warning) by the engine
             'properties': WINDOW_PROPERTIES,
-            # the DoS is clamped to the window by the engine; the transport and
-            # conductivity scans have to sit inside [elo + 0.26, ehi - 0.26]
+            # explicit bounds: the engine clamps the DoS and conductivity ranges
+            # to the window, and the transport scan to 10 kT inside it
+            # (0.26 eV at 300 K)
             'property_args': {
                 'transport': {'emin': -1.2, 'emax': 1.7},
                 'conductivity': {'emin': -1.2, 'emax': 1.7},

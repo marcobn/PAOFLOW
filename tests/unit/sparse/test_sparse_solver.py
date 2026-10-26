@@ -122,7 +122,7 @@ def test_select_hk_solver_rule():
     # no Krylov room at all
     assert select_hk_solver(100, 97)[0] == 'dense'
     # past the ratio and past dense_n_max: loud, naming both exits
-    with pytest.raises(NotImplementedError, match='energy_window'):
+    with pytest.raises(NotImplementedError, match="'nev'"):
         select_hk_solver(9216, 4608)
     # explicit choices are honoured verbatim, including ones auto would refuse
     assert select_hk_solver(9216, 4608, hk_solver='dense')[0] == 'dense'

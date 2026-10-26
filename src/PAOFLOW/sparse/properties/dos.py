@@ -26,9 +26,16 @@ class Dos(MeshProperty):
 
     Notes
     -----
-    The total DOS is the dense ``do_dos_adaptive`` reading the stored ``E_k``/``deltakp``.  The PDOS needs the eigenvector weights, so it is accumulated per k-point by :class:`~PAOFLOW.sparse.properties.pdos.PdosAccumulator`
-    and makes the property streaming; with ``do_pdos=False`` none is needed.
-    Under an energy window, ``emax`` above the lowest computed top band raises; under an interior window the range is clamped to the window minus ``smear_margin_eV`` and checked against the measured widths afterwards.
+    The total DOS is the dense ``do_dos_adaptive`` reading the stored
+    ``E_k``/``deltakp``.  The PDOS needs the eigenvector weights, so it is
+    accumulated per k-point by
+    :class:`~PAOFLOW.sparse.properties.pdos.PdosAccumulator` and makes the
+    property streaming; with ``do_pdos=False`` none is needed.  The window
+    of the pass covers ``[emin, emax]`` plus a smearing margin (see
+    :mod:`PAOFLOW.sparse.window`).  A later call that reuses the pass with
+    ``emax`` above its lowest computed top band raises; under explicit
+    interior bounds the range is clamped to the window.  The widths measured
+    on the mesh are checked against the window edges afterwards.
     """
 
     method = 'dos'
@@ -51,16 +58,14 @@ class Dos(MeshProperty):
         self.streaming = bool(do_pdos)
         self._pdos = None
 
+    def energy_range(self):
+        return self.emin, self.emax, 'smearing', None
+
+    def apply_range(self, emin: float, emax: float) -> None:
+        self.emin, self.emax = emin, emax
+
     def prepare(self) -> bool:
-        engine = self.engine
-        if engine._interior is not None:
-            clamped = engine._clamp_to_window(
-                'dos', self.emin, self.emax, margin=engine._smear_margin
-            )
-            if clamped is None:
-                return False
-            self.emin, self.emax = clamped
-        self.emin, self.emax = engine._clamp_to_projectable('dos', self.emin, self.emax)
+        self.emin, self.emax = self.engine._clamp_to_projectable('dos', self.emin, self.emax)
         if self.do_pdos:
             from .pdos import PdosAccumulator
 
@@ -74,8 +79,6 @@ class Dos(MeshProperty):
         from ...spectrum.do_dos import do_dos_adaptive
 
         self.engine._check_window_covers('dos', self.emax)
-        if self.engine._interior is not None:
-            self.engine._check_smearing_margin('dos', self.emin, self.emax)
         if self._pdos is not None:
             self._pdos.finalize(data_controller)
         if self.do_dos:

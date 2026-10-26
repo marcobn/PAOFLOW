@@ -68,7 +68,7 @@ eigenvalues, not the PAO Hamiltonian. Section 9 of `observables.ipynb` has the f
 | name | what runs | expected limit |
 |---|---|---|
 | `reference` | dense, primitive cell, no doubling, every property below | d = 0 only |
-| `sparse` | sparse, from the bottom of the spectrum (`energy_window`), with `dense_n_max` lifted: `doping`, `conductivity`, `dielectric_tensor`, `transport`, `dos` | per-k LAPACK scratch, O(nawf²) per k, or time |
+| `sparse` | sparse, from the bottom of the spectrum (window from the property ranges), with `dense_n_max` lifted: `doping`, `conductivity`, `dielectric_tensor`, `transport`, `dos` | per-k LAPACK scratch, O(nawf²) per k, or time |
 | `sparse_curvature` | the same window, but the full spectrum at every k-point for the band curvature and the interband sums: `transport(do_hall=True)`, `effective_mass`, `linear_response` (`'cond'`, `'ahc'`) | a full (nawf, nawf) eigh and a few nawf³ products per k; on 4 × 4 threads d = 8 needed roughly 30 h before `band_curvature_k` made the curvature 5–8× cheaper (estimate from one d = 7 k-point) |
 | `sparse_interior` | sparse, `interior_window` around E_F, `bond_order=36`; `doping` and `dielectric_tensor` are skipped (they need the states below the window) | ARPACK shift-invert cost and fill-in |
 | `sparse_interior_bo8` | the same with `bond_order=8` | the truly sparse regime (see below) |

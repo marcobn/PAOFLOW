@@ -22,10 +22,7 @@ if TYPE_CHECKING:
     from ..engine import SparseEngine
     from ..kpoint import KPoint
 
-_BAND_INDICES = (
-    'it selects bands by index, and under an interior window the number of states '
-    'in the window varies across the BZ, so a band index has no meaning'
-)
+_BAND_INDICES = 'needs absolute band indices'
 
 
 @register
@@ -41,10 +38,7 @@ class EffectiveMass(DenseBody):
 
     method = 'effective_mass'
     products = frozenset({'d2Ed2k'})
-    interior = (
-        'it needs the band curvature, whose interband sum runs over every state, and an '
-        'interior window computes none outside it'
-    )
+    interior = 'needs the band curvature (interband sum over every state)'
 
 
 @register
@@ -60,10 +54,7 @@ class Doping(DenseBody):
     """
 
     method = 'doping'
-    interior = (
-        'the chemical potential at a doping level is fixed by the total electron count, '
-        'which needs every occupied state; an interior window has none below elo'
-    )
+    interior = 'needs the electron count below the window'
 
     def __init__(
         self,
@@ -93,6 +84,13 @@ class Doping(DenseBody):
             fname=fname,
         )
 
+    def energy_range(self):
+        kw = self.kwargs
+        return kw['emin'], kw['emax'], 'thermal', kw['tmax']
+
+    def apply_range(self, emin: float, emax: float) -> None:
+        self.kwargs['emin'], self.kwargs['emax'] = emin, emax
+
     def prepare(self) -> bool:
         kw = self.kwargs
         kw['emin'], kw['emax'] = self.engine._clamp_to_projectable('doping', kw['emin'], kw['emax'])
@@ -112,6 +110,12 @@ class FermiSurface(DenseBody):
 
     def __init__(self, engine: SparseEngine, fermi_up: float = 1.0, fermi_dw: float = -1.0) -> None:
         super().__init__(engine, fermi_up=fermi_up, fermi_dw=fermi_dw)
+
+    def energy_range(self):
+        return self.kwargs['fermi_dw'], self.kwargs['fermi_up'], 'none', None
+
+    def apply_range(self, emin: float, emax: float) -> None:
+        self.kwargs['fermi_dw'], self.kwargs['fermi_up'] = emin, emax
 
     def prepare(self) -> bool:
         kw = self.kwargs
@@ -142,9 +146,10 @@ class Conductivity(MeshProperty):
     ``velkp``; after the pass the dense
     :func:`~PAOFLOW.response.do_conductivity.conductivity_from_products`
     smears, reduces and writes them.  The dense kernel sums over all
-    ``nawf`` bands; here the sum is over the window, as for the DOS, so
-    ``emax`` must lie inside it.  Under an interior window the range is
-    clamped like the DOS, and padding states carry zero weight.
+    ``nawf`` bands; here the sum is over the window, which covers
+    ``[emin, emax]`` plus a smearing margin, as for the DOS.  Under explicit
+    interior bounds the range is clamped like the DOS, and padding states
+    carry zero weight.
     """
 
     method = 'conductivity'
@@ -167,16 +172,16 @@ class Conductivity(MeshProperty):
         self.delta, self.emin, self.emax, self.ne = delta, emin, emax, ne
         self._products: dict[tuple[int, int], np.ndarray] = {}
 
+    def energy_range(self):
+        return self.emin, self.emax, 'smearing', None
+
+    def apply_range(self, emin: float, emax: float) -> None:
+        self.emin, self.emax = emin, emax
+
     def prepare(self) -> bool:
-        engine = self.engine
-        if engine._interior is not None:
-            clamped = engine._clamp_to_window(
-                'conductivity', self.emin, self.emax, margin=engine._smear_margin
-            )
-            if clamped is None:
-                return False
-            self.emin, self.emax = clamped
-        self.emin, self.emax = engine._clamp_to_projectable('conductivity', self.emin, self.emax)
+        self.emin, self.emax = self.engine._clamp_to_projectable(
+            'conductivity', self.emin, self.emax
+        )
         return True
 
     def on_k(self, kp: KPoint) -> None:

@@ -55,6 +55,7 @@ class _BerryHall(MeshProperty):
         """Mirror the attributes the dense method sets before its kernel."""
         arrays, attr = self.data_controller.data_dicts()
         attr['eminH'], attr['emaxH'] = emin, emax
+        self.emin, self.emax = emin, emax
         attr['deltaH'] = delta
         attr['esizeH'] = ne
         if tensor is not None:
@@ -66,6 +67,9 @@ class _BerryHall(MeshProperty):
         self.twoD = twoD
         self.do_ac = do_ac
         self.components = [tuple(int(x) for x in row) for row in arrays[self.tensor_key]]
+
+    def energy_range(self):
+        return self.emin, self.emax, 'none', None
 
     def prepare(self) -> bool:
         from ...response.do_Hall import ac_frequency_grid, berry_energy_grid

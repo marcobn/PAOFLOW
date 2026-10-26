@@ -73,30 +73,28 @@ class Transport(DenseBody):
         )
         self.products = frozenset({'d2Ed2k'}) if do_hall else frozenset()
 
+    def energy_range(self):
+        kw = self.kwargs
+        return kw['emin'], kw['emax'], 'thermal', kw['tmax']
+
+    def apply_range(self, emin: float, emax: float) -> None:
+        self.kwargs['emin'], self.kwargs['emax'] = emin, emax
+
     def prepare(self) -> bool:
+        from ..window import kt_margin
+
         engine = self.engine
         kwargs = self.kwargs
         # the occupation derivative needs states within ~10 kT of every mu
         # on the scan, so the real states have to reach past the scan
-        kT = 10.0 * 8.617333e-5 * float(kwargs['tmax'])
         kwargs['emin'], kwargs['emax'] = engine._clamp_to_projectable(
-            'transport', kwargs['emin'], kwargs['emax'], margin=kT
+            'transport', kwargs['emin'], kwargs['emax'], margin=kt_margin(kwargs['tmax'])
         )
-        if engine._interior is None:
-            return True
-        margin = max(engine._kT_margin, kT)
-        clamped = engine._clamp_to_window(
-            'transport', kwargs['emin'], kwargs['emax'], margin=margin
-        )
-        if clamped is None:
-            return False
-        kwargs['emin'], kwargs['emax'] = clamped
-        if kwargs['do_hall']:
+        if engine.config.interior_window is not None and kwargs['do_hall']:
             engine._skip(
                 'transport Hall term',
-                'the Hall and Nernst tensors need the band curvature, whose interband sum '
-                'runs over every state, and an interior window computes none outside it. '
-                'The rest of the transport tensor is still computed',
+                'needs the band curvature (interband sum over every state); the rest of the '
+                'transport tensor is computed',
             )
             kwargs['do_hall'] = False
             self.products = frozenset()

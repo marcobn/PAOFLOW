@@ -22,9 +22,7 @@ if TYPE_CHECKING:
     from ..engine import SparseEngine
     from ..kpoint import KPoint
 
-_PATH_INTERIOR = (
-    'its interband sums run over states outside the window, and an interior window has none of them'
-)
+_PATH_INTERIOR = 'needs every state (interband sum)'
 
 
 @register
@@ -189,10 +187,7 @@ class Topology(MeshProperty):
     label = 'Band Topology'
     path = True
     with_dnm = True
-    interior = (
-        'its sums run over the occupied window bands by index, which an interior '
-        'window does not provide'
-    )
+    interior = 'needs the occupied bands by index'
 
     def __init__(
         self,
@@ -458,9 +453,7 @@ class BerryPhase(MeshProperty):
     streaming = False
     uses_mesh = False
     label = 'Berry phase'
-    interior = (
-        'its Wilson loop runs over the occupied states, which an interior window does not provide'
-    )
+    interior = 'needs the occupied states (Wilson loop)'
 
     def __init__(self, engine: SparseEngine, *args, **kwargs) -> None:
         import inspect

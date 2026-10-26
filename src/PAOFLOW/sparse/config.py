@@ -9,6 +9,10 @@ itself is internal and never constructed by users.  Every knob of the sparse
 backend is a field here, so a new one never widens the
 :class:`PAOFLOW.PAOFLOW` constructor or the signature of a method shared
 with the dense pipeline.
+
+There is no option for the energy window of a solve: it follows the energy
+ranges of the properties (:mod:`PAOFLOW.sparse.window`).  ``nev`` fixes the
+band count instead, and ``interior_window`` switches to an interior solve.
 """
 
 from __future__ import annotations
@@ -98,117 +102,14 @@ def _reject_unknown_keys(value: dict, names: list, what: str) -> None:
 
 
 @dataclass(frozen=True)
-class EnergyWindow:
-    """The ``'energy_window'`` option: size the per-k solve from the
-    property energy range instead of from ``attr['bnd']``.
-
-    Given as a dict, ``sparse_config={'energy_window': {'emax': 2.2}}``;
-    each attribute below is a key of that dict.  The
-    engine applies it once, right before the first solve (``bands`` or the
-    first property), so it always acts after ``doubling_Hamiltonian``.  It
-    sets ``attr['bnd']``, which every downstream band-diagonal consumer
-    reads, so the band path and the mesh both pick the new width up.
-
-    Attributes
-    ----------
-    emax : float
-        Highest energy (eV) the properties will ask for.  The window top is
-        ``ehi = emax + margin``.  There is no lower bound: the solve always
-        starts at the bottom of the spectrum, so every state below ``ehi``
-        is computed.
-    margin : float, default 1.0
-        Extra range (eV) above ``emax``.  It has to cover the adaptive
-        smearing tail (Yates widths here are <~ 0.22 eV, so 4 sigma is
-        <~ 0.9 eV) and the transport occupation derivative at 300 K
-        (~0.1 eV); 1.0 eV covers both.
-    nprobe : int, default 16
-        Number of k-points at which the eigenvalues below ``ehi`` are
-        counted to size ``nev``: Gamma, the supercell-BZ corners, then
-        strided mesh points.  The count is padded by ``max(8, 2%)``.
-    nev : int or None
-        Give the number of bands to solve explicitly and skip the probe.
-
-    Notes
-    -----
-    This narrows the solve but does not make the workload iterative
-    again: the fraction of the spectrum below a fixed ``emax`` is scale
-    invariant under folding, so ``nev/nawf`` stays put as the cell grows.
-    Only an *interior* window (:class:`InteriorWindow`) changes that, and
-    the two are mutually exclusive.
-
-    ``attr['bnd']`` changes meaning under a window, from "bands with
-    projectability > pthr, times the cell multiplier" to "bands inside the
-    property window".  The downstream normalizations are unaffected, but
-    ``bands_*.dat`` gains or loses columns, so band files are not
-    column-comparable across runs with and without a window.
-    """
-
-    emax: float
-    margin: float = 1.0
-    nprobe: int = 16
-    nev: int | None = None
-
-    def __post_init__(self):
-        # frozen: normalize types through object.__setattr__
-        object.__setattr__(self, 'emax', float(self.emax))
-        object.__setattr__(self, 'margin', float(self.margin))
-        object.__setattr__(self, 'nprobe', int(self.nprobe))
-        if self.margin < 0.0:
-            raise ValueError(
-                "sparse_config=: 'energy_window' margin must be >= 0 eV, got %g." % self.margin
-            )
-        if self.nprobe < 1:
-            raise ValueError(
-                "sparse_config=: 'energy_window' nprobe must be >= 1, got %d." % self.nprobe
-            )
-        if self.nev is not None:
-            object.__setattr__(self, 'nev', int(self.nev))
-            if self.nev < 1:
-                raise ValueError(
-                    "sparse_config=: 'energy_window' nev must be >= 1, got %d." % self.nev
-                )
-
-    @property
-    def ehi(self) -> float:
-        """The window top, ``emax + margin`` (eV)."""
-        return self.emax + self.margin
-
-    @classmethod
-    def parse(cls, value) -> EnergyWindow:
-        """The ``'energy_window'`` value as an :class:`EnergyWindow`.
-
-        Parameters
-        ----------
-        value : dict or EnergyWindow
-            A dict with ``'emax'`` (eV) and optionally ``'margin'``,
-            ``'nprobe'`` and ``'nev'``.
-
-        Raises
-        ------
-        TypeError
-            If ``value`` is not a dict.
-        ValueError
-            If a key is not an option (``'emin'`` included), ``emax`` is
-            missing, or the values are inconsistent.
-        """
-        if isinstance(value, dict) and 'emin' in value:
-            raise ValueError(
-                "sparse_config=: 'energy_window' takes no 'emin'. The solve always starts at "
-                "the bottom of the spectrum, so only the top matters: give {'emax': ...}."
-            )
-        return _parse_window(cls, value, 'energy_window', ('emax',))
-
-
-@dataclass(frozen=True)
 class InteriorWindow:
-    """The ``'interior_window'`` option: solve only the states *inside*
-    ``[elo, ehi]`` instead of from the bottom of the spectrum.
+    """The ``'interior_window'`` option: solve only the states *inside* an
+    energy window instead of from the bottom of the spectrum.
 
-    Given as a dict, ``sparse_config={'interior_window': {'elo': -3.0,
-    'ehi': 3.0}}``; each attribute below is a key of that dict.  The
-    engine applies it once, right before the first solve (``bands`` or the
-    first property), so it always acts after ``doubling_Hamiltonian``.
-    Mutually exclusive with ``'energy_window'``.
+    Given as a dict: ``sparse_config={'interior_window': {}}`` places the
+    window automatically around the property ranges of each pass (see
+    :mod:`PAOFLOW.sparse.window`), ``{'elo': -3.0, 'ehi': 3.0}`` fixes it
+    (eV).  Mutually exclusive with ``nev``.
 
     This is the mode that makes the iterative kernel pay: the count in a
     narrow interior window is a small fraction of the spectrum, whereas a
@@ -230,42 +131,33 @@ class InteriorWindow:
 
     Attributes
     ----------
-    elo, ehi : float
-        The window (eV).
-    kT_margin_eV : float, default 0.26
-        Margin the transport occupation derivative needs on each side of
-        the chemical-potential scan; 0.26 eV is 10 kT at 300 K.  Raise it
-        for higher temperatures.
-    smear_margin_eV : float, default 0.5
-        The analogous margin for DoS/PDoS.  Adaptive smearing gives every
-        state a finite width, so a state just below ``elo`` (one this mode
-        never computes) would still contribute inside the window.  Plotted
-        ranges are therefore clamped this far inside each edge.  0.5 eV
-        covers the <~0.22 eV Yates widths of a converged mesh at 4 sigma;
-        coarse meshes smear wider, so after the mesh runs the *measured*
-        maximum width is checked against this value and a warning is
-        issued if it was too small.
+    elo, ehi : float or None
+        Fixed bounds (eV), or both ``None`` for automatic bounds.
     """
 
-    elo: float
-    ehi: float
-    kT_margin_eV: float = 0.26
-    smear_margin_eV: float = 0.5
+    elo: float | None = None
+    ehi: float | None = None
 
     def __post_init__(self):
-        for name in ('elo', 'ehi', 'kT_margin_eV', 'smear_margin_eV'):
+        if (self.elo is None) != (self.ehi is None):
+            raise ValueError(
+                "sparse_config=: 'interior_window' takes both 'elo' and 'ehi' (eV), or neither "
+                'for automatic bounds.'
+            )
+        if self.elo is None:
+            return
+        for name in ('elo', 'ehi'):
             object.__setattr__(self, name, float(getattr(self, name)))
         if not self.ehi > self.elo:
             raise ValueError(
                 "sparse_config=: 'interior_window' needs ehi > elo, got [%g, %g]."
                 % (self.elo, self.ehi)
             )
-        for name in ('kT_margin_eV', 'smear_margin_eV'):
-            if getattr(self, name) < 0.0:
-                raise ValueError(
-                    "sparse_config=: 'interior_window' %s must be >= 0 eV, got %g."
-                    % (name, getattr(self, name))
-                )
+
+    @property
+    def auto(self) -> bool:
+        """Whether the bounds come from the property ranges."""
+        return self.elo is None
 
     @classmethod
     def parse(cls, value) -> InteriorWindow:
@@ -274,35 +166,29 @@ class InteriorWindow:
         Parameters
         ----------
         value : dict or InteriorWindow
-            A dict with ``'elo'`` and ``'ehi'`` (eV) and optionally
-            ``'kT_margin_eV'`` and ``'smear_margin_eV'``.
+            ``{}`` for automatic bounds, or ``{'elo': ..., 'ehi': ...}``.
 
         Raises
         ------
         TypeError
             If ``value`` is not a dict.
         ValueError
-            If a key is not an option, ``elo``/``ehi`` are missing, or the
-            values are inconsistent.
+            If a key is not an option, only one bound is given, or
+            ``ehi <= elo``.
         """
-        return _parse_window(cls, value, 'interior_window', ('elo', 'ehi'))
+        return _parse_window(cls, value, 'interior_window', ())
 
 
 def _parse_window(cls, value, key: str, required: tuple):
-    """Shared parser of the window options (a dict of the fields of ``cls``)."""
+    """Parser of the window option (a dict of the fields of ``cls``)."""
     if isinstance(value, cls):
         return value
     if not isinstance(value, dict):
         raise TypeError(
-            "sparse_config=: '%s' takes a dict {%s}; got %r."
-            % (key, ', '.join("'%s': ..." % k for k in required), type(value).__name__)
+            "sparse_config=: '%s' takes a dict, {} for automatic bounds or "
+            "{'elo': ..., 'ehi': ...}; got %r." % (key, type(value).__name__)
         )
     _reject_unknown_keys(value, [f.name for f in fields(cls)], "sparse_config= '%s'" % key)
-    missing = [k for k in required if k not in value]
-    if missing:
-        raise ValueError(
-            "sparse_config=: '%s' needs %s (eV)." % (key, ' and '.join("'%s'" % k for k in missing))
-        )
     return cls(**value)
 
 
@@ -348,20 +234,24 @@ class SparseConfig:
         matrix, and H(R) stays a bond list either way.  ``'auto'``
         dispatches on ``(nawf, nev)``; see
         :func:`PAOFLOW.sparse.solver.select_hk_solver`.
-    energy_window : EnergyWindow or None
-        Size the per-k solve from the property energy range, given as a
-        dict ``{'emax': ..., 'margin': 1.0, 'nprobe': 16, 'nev': None}``; see :class:`EnergyWindow`.  Applied by the engine
-        right before the first solve, after any doubling.  ``None`` solves
-        the ``attr['bnd']`` projectable bands (times the cell multiplier).
+    nev : int or None
+        Number of bands solved per k-point, from the bottom of the
+        spectrum.  ``None`` (the default) derives it before every pass:
+        the window top is the highest property ``emax`` plus its margin
+        (see :mod:`PAOFLOW.sparse.window`), capped at the well-projected
+        top, and the bands below it are counted at a few probe k-points.
+        Give it to skip that probe (on a large cell each probe k-point is a
+        dense eigensolve) or to fix the band count across runs.  Mutually
+        exclusive with ``interior_window``.
     interior_window : InteriorWindow or None
-        Solve only inside an energy window, given as a dict ``{'elo': ...,
-        'ehi': ..., 'kT_margin_eV': 0.26, 'smear_margin_eV': 0.5}``; see
-        :class:`InteriorWindow`.  Applied like ``energy_window``, and
-        mutually exclusive with it.
+        Solve only inside an energy window: ``{}`` places it around the
+        property ranges of each pass, ``{'elo': ..., 'ehi': ...}`` fixes
+        it (eV); see :class:`InteriorWindow`.  ``None`` (the default)
+        solves from the bottom of the spectrum.
     dense_n_max : int, default :data:`~PAOFLOW.sparse.solver.DENSE_N_MAX`
         Largest ``nawf`` for which a per-k ``(n, n)`` dense scratch matrix
         is admitted: the dense ``hk_solver`` branch, the full-spectrum
-        properties and the ``energy_window`` probe.  Above it those refuse
+        properties and the window probe.  Above it those refuse
         with ``NotImplementedError`` rather than allocate.  The default is
         a policy value, not a LAPACK limit; raise it to run the dense
         per-k kernel where the memory allows.
@@ -385,7 +275,7 @@ class SparseConfig:
     rcut: float | None = None
     bond_order: int | None = None
     hk_solver: str = 'auto'
-    energy_window: EnergyWindow | None = None
+    nev: int | None = None
     interior_window: InteriorWindow | None = None
     dense_n_max: int = DENSE_N_MAX
     dense_ratio: float = DENSE_RATIO
@@ -424,16 +314,17 @@ class SparseConfig:
             object.__setattr__(self, 'rcut', float(self.rcut))
         if self.bond_order is not None:
             object.__setattr__(self, 'bond_order', int(self.bond_order))
-        if self.energy_window is not None:
-            object.__setattr__(self, 'energy_window', EnergyWindow.parse(self.energy_window))
+        if self.nev is not None:
+            if isinstance(self.nev, bool) or int(self.nev) != self.nev or self.nev < 1:
+                raise ValueError('sparse_config=: nev must be an integer >= 1, got %r.' % self.nev)
+            object.__setattr__(self, 'nev', int(self.nev))
         if self.interior_window is not None:
             object.__setattr__(self, 'interior_window', InteriorWindow.parse(self.interior_window))
-        if self.energy_window is not None and self.interior_window is not None:
+        if self.nev is not None and self.interior_window is not None:
             raise ValueError(
-                "sparse_config=: give either 'energy_window' or 'interior_window', not both. "
-                'The two window modes are mutually exclusive: one sizes the solve from the '
-                'bottom of the spectrum, the other solves inside a window and never computes '
-                'the states below it.'
+                "sparse_config=: give either 'nev' or 'interior_window', not both: an interior "
+                'solve finds every state inside the window, however many there are at each '
+                'k-point.'
             )
 
     @property

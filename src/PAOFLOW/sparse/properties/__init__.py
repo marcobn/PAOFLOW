@@ -22,6 +22,13 @@ A property with ``path = True`` sees the band path instead
 (:func:`~PAOFLOW.sparse.bands.run_path`, the ``bands()`` convention), which
 is solved afresh for every call; there are no stored arrays on a path.
 
+``energy_range()`` returns the energy range the property needs solved and
+which margin it needs around it (``'smearing'``, ``'thermal'`` or
+``'none'``); the engine builds the window of each pass from the ranges of
+its properties (:mod:`~PAOFLOW.sparse.window`) and hands a range clipped to
+an interior window back through ``apply_range``.  ``prepare()`` runs after
+that, right before the pass.
+
 ``needs`` names per-k requirements: ``'full_spectrum'`` makes the pass solve
 every state (interband sums run over all of them; admitted only while
 ``nawf <= DENSE_N_MAX``).  ``products`` names extra band-diagonal arrays the
@@ -42,7 +49,9 @@ Adding a property
    dense outputs byte-identical; diff them before and after.
 2. Write a ``MeshProperty`` subclass in ``sparse/properties/<name>.py`` whose
    ``__init__`` takes the engine and then the dense method's signature, and
-   decorate it with :func:`register`.  ``on_k`` calls the per-k function on
+   decorate it with :func:`register`.  If the dense method takes an energy
+   range, return it from ``energy_range`` (and write a clipped one back in
+   ``apply_range``), so the window covers it.  ``on_k`` calls the per-k function on
    the ``KPoint`` members; ``finalize`` calls the reduce/write function.
    Import the module in :func:`_load` below.
 3. Mark the PAOFLOW method ``@sparse_override``.
@@ -126,8 +135,26 @@ class MeshProperty:
         self.data_controller = engine.data_controller
 
     def prepare(self) -> bool:
-        """Last checks before the pass; ``False`` means the property skipped itself."""
+        """Last checks before the pass, after the window of the pass is
+        known; ``False`` means the property skipped itself."""
         return True
+
+    def energy_range(self) -> tuple[float, float, str, float | None] | None:
+        """The energy range the pass must solve for this property.
+
+        Returns
+        -------
+        (emin, emax, kind, tmax) or None
+            The range in eV (``emin`` may be ``-inf``), the margin it needs
+            (``'smearing'``, ``'thermal'`` or ``'none'``, see
+            :mod:`PAOFLOW.sparse.window`) and the highest temperature (K)
+            of a ``'thermal'`` range.  ``None`` for a property without an
+            energy range.
+        """
+        return None
+
+    def apply_range(self, emin: float, emax: float) -> None:
+        """Take a range clipped to an interior window (eV)."""
 
     _context: tuple[dict, dict] | None = None
 
@@ -143,6 +170,21 @@ class MeshProperty:
             },
             {k: v for k, v in data_arrays.items() if k not in arrays or arrays[k] is not v},
         )
+
+    def merge_context(self, attributes: dict, arrays: dict) -> None:
+        """Add the run data written since the snapshot ``attributes`` /
+        ``arrays`` (by :meth:`prepare`) to what :meth:`activate` restores."""
+        data_arrays, data_attributes = self.data_controller.data_dicts()
+        new_attributes = {
+            k: v
+            for k, v in data_attributes.items()
+            if k not in attributes or attributes[k] is not v
+        }
+        new_arrays = {k: v for k, v in data_arrays.items() if k not in arrays or arrays[k] is not v}
+        if self._context is None:
+            self._context = ({}, {})
+        self._context[0].update(new_attributes)
+        self._context[1].update(new_arrays)
 
     def activate(self) -> None:
         """Restore the run data of this property's set-up.
@@ -171,10 +213,7 @@ class MeshProperty:
         if isinstance(self.interior, str):
             return self.interior
         if 'full_spectrum' in self.needs:
-            return (
-                'it sums over interband pairs that include every state, and an interior '
-                'window computes none outside [elo, ehi]'
-            )
+            return 'needs every state (interband sum)'
         return None
 
 

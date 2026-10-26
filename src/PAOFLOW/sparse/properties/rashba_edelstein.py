@@ -81,10 +81,13 @@ class RashbaEdelstein(MeshProperty):
         self.ree_tensor = ree_tensor
         self.ree_proj = ree_proj
         if not intra_band:
-            self.interior = (
-                'it selects bands by index (through the texture), and under an interior '
-                'window the number of states in the window varies across the BZ'
-            )
+            self.interior = 'needs absolute band indices (through the texture)'
+
+    def energy_range(self):
+        return self.emin, self.emax, 'smearing' if self.intra_band else 'none', None
+
+    def apply_range(self, emin: float, emax: float) -> None:
+        self.emin, self.emax = emin, emax
 
     def prepare(self) -> bool:
         from .texture import OrbitalTexture, SpinTexture
@@ -92,13 +95,6 @@ class RashbaEdelstein(MeshProperty):
         engine = self.engine
         arrays, attr = self.data_controller.data_dicts()
         if self.intra_band:
-            if engine._interior is not None:
-                clamped = engine._clamp_to_window(
-                    'rashba_edelstein', self.emin, self.emax, margin=engine._smear_margin
-                )
-                if clamped is None:
-                    return False
-                self.emin, self.emax = clamped
             self.emin, self.emax = engine._clamp_to_projectable(
                 'rashba_edelstein', self.emin, self.emax
             )

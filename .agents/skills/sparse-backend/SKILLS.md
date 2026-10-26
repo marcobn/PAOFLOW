@@ -355,40 +355,59 @@ an array of per-k `(nawf, nawf)` matrices is not.
   whether this backend scales. The old enforcement — `solve_lowest`
   raising at `nev + guard >= n-1` — is now a *dispatch trigger* rather
   than an error, so the mechanism no longer punishes creep. The intent
-  survives as a loud warning from `describe_method` whenever
-  `nev/nawf > 0.5`, and as `energy_window()` pushing in the other
-  direction. Neither is automatic: **sizing `nev` is still the caller's
-  job.**
+  survives as a log warning (`solver.creep_warning`) whenever
+  `nev/nawf > 0.5`, and the automatic window (below) pushes in the other
+  direction by sizing `nev` from the property ranges. A new property with
+  an energy range must declare it (`MeshProperty.energy_range`), or the
+  window cannot cover it.
 - **Don't name new test modules with basenames that exist elsewhere**
   (`test_hamiltonian.py` collides with the transport suite — pytest
   imports break). Prefix with `test_sparse_`.
 
 ## Known limits and the intended next steps
 
-- **`nev = bnd = nawf/2` is a milestone choice, not the destiny.**
-  The `'energy_window'` option of `sparse_config` (`EnergyWindow` in
-  `sparse/config.py`, applied by `SparseEngine._ensure_window()` right
-  before the first solve) now sizes `nev` from
-  the property range instead: it probes `count_below(ehi)` (zheevr
-  `subset_by_value`, eigenvalues only) at 16 deterministic k-points, pads
-  by `max(8, 2%)`, and sets `attr['bnd'] = nev`. Coverage is guarded per
-  k-point and reduced once after the loop, so a short window raises with
-  the exact `nev` to re-run at rather than truncating silently.
-  **It must apply after `doubling_Hamiltonian()`** — `doubling_attr_arry`
-  doubles `attr['bnd']` on every call. Lazy application guarantees that
-  unless a solve precedes the doubling, and the driver raises if the order
-  is wrong.
-  Two honest caveats. `attr['bnd']` **changes meaning** (from "projectable
-  bands × cell multiplier" to "bands inside the window"), so `bands_*.dat`
-  gains or loses columns and is not column-comparable across runs with and
-  without a window; the downstream math is unaffected (`do_dos_adaptive`'s
-  two `bnd` factors cancel, transport slices are `bnd`-independent). And
-  the window is **not** a route back to "strictly sparse": the fraction of
+- **The solve window is derived per pass, never configured.**
+  `SparseEngine._resolve_window(props)` runs before every mesh, path and
+  band pass (`sparse/window.py` holds the arithmetic). Each property
+  declares `energy_range() -> (emin, emax, kind, tmax)`; the margin kinds
+  are `'smearing'` (4 x the largest adaptive width, estimated from the
+  steepest band at the probe points), `'thermal'` (10 kB tmax) and
+  `'none'`. From the bottom: `ehi = min(ptop, max(emax + margin))`; `nev`
+  is the projectable count when `ehi` reaches `ptop` (no probe), the given
+  `sparse_config['nev']`, or the probe count below `ehi` padded by
+  `max(8, 2%)` and **capped at the projectable count** (no k-point has more
+  real states; placeholders sit above `ptop`). `interior_window={}` wraps
+  the ranges with the same margins; explicit bounds clamp the ranges to the
+  window with the thermal margin only.
+  Rules that keep it correct:
+  - **Only a pass writes `attr['bnd']`** (`_ensure_mesh`, `_run_path`);
+    `_resolve_window` never does, and `_execute` restores the mesh pass's
+    `bnd` (`_mesh_bnd`) after a path pass with a different count.
+  - **`prepare()` runs after the window is known** (`_execute`), because an
+    interior clamp needs it; `merge_context` keeps what `prepare()` wrote
+    restorable by `activate()` inside `fused()`.
+  - **A new window with another `nev` invalidates stored products**
+    (`d2Ed2k` of pass 1 no longer matches `E_k` of pass 2).
+  - **The probe is collective and cached** until the Hamiltonian changes
+    (`run_base_cell` resets it). Probe points are Γ, the zone corners
+    (band extrema, for the count) and R3-sequence generic points (band
+    velocities vanish on symmetry points; strided mesh points
+    underestimated the steepest band by 34% on example01). It densifies
+    H(k), so from the bottom above `dense_n_max` it is skipped and `nev`
+    falls back to the projectable count.
+  - **Doubling after any pass raises**: `doubling_attr_arry` doubles
+    `attr['bnd']`, and a pass already sized it for the smaller cell.
+  The window is **not** a route back to "strictly sparse": the fraction of
   the spectrum below a fixed `emax` is scale-invariant under folding
   (43/144 = 344/1152 ≈ 0.30), so `nev/nawf` stays put as the cell grows and
-  stays above the 1/8 dispatch threshold. For a DOS-from-`emin` run the
-  dense branch is permanent. Only an *interior* window (shift-invert near
-  E_F, transport only) would change that, and that is a different solver.
+  stays above the 1/8 dispatch threshold. Only an interior window changes
+  that, and that is a different solver.
+- **`sparse.log` is key/value only.** Section titles, `log.field(key,
+  value)` lines and one-line `log.warning(...)` (stdout and log, rank 0). No
+  sentence explaining the algorithm goes in the log; put the reason in the
+  docstring of the function that writes the line. A key appears only when
+  it applies to the run. `test_sparse_log.py` enforces the format and a
+  list of banned prose phrases.
 - **The bond list is replicated per rank** (167 MB at 1e-4 here — fine).
   For very large systems, distribute bonds by rows and turn `assemble_hk`
   into a distributed operator for a distributed-memory solver. That is a

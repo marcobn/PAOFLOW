@@ -6,7 +6,7 @@ Two kinds of case come out of :func:`ladder.build_cases`:
     The example01 workflow on a doubled cell: QE projections ->
     ``pao_hamiltonian`` -> ``doubling_Hamiltonian`` -> property mesh ->
     the case's properties (``case['properties']``), on the dense pipeline or
-    the sparse one (from-the-bottom ``energy_window`` or ``interior_window``).
+    the sparse one (from the bottom of the spectrum, or ``interior_window``).
     The sparse pipeline runs them in one fused mesh pass.
 ``'solver_sweep'``
     The doubled sparse H(k) at a few k-points, solved with LAPACK and with
@@ -194,25 +194,28 @@ def _solver_info(pao, case):
 
     eng = pao.sparse
     cfg = eng.config
-    attr = pao.data_controller.data_attributes
+    window = eng._mesh_window
     n = eng.H.nawf
-    if eng._interior is not None:
+    if window is None:
+        return {'mode': 'none'}
+    if window.mode == 'interior':
         small = cfg.hk_solver == 'auto' and n <= INTERIOR_DENSE_N
         kernel = 'dense' if cfg.hk_solver == 'dense' or small else 'sparse'
         return {
             'mode': 'interior',
-            'window': list(eng._interior),
+            'window': [window.elo, window.ehi],
             'kernel': kernel,
             'reason': 'interior: dense below INTERIOR_DENSE_N = %d' % INTERIOR_DENSE_N,
         }
-    nev = int(attr['bnd'])
+    nev = int(window.nev)
     try:
         kernel, reason = select_hk_solver(n, nev, hk_solver=cfg.hk_solver, **cfg.limits)
     except NotImplementedError as exc:
         kernel, reason = 'refused', str(exc)[:500]
     return {
-        'mode': 'energy_window' if eng._window is not None else 'bnd',
-        'ehi': None if eng._window is None else float(eng._window.ehi),
+        'mode': 'bottom',
+        'nev_source': window.nev_source,
+        'ehi': None if window.ehi is None else float(window.ehi),
         'full_spectrum': bool(case['band_curvature']),
         'nev': nev,
         'nev_fraction': nev / float(n),
@@ -255,9 +258,6 @@ def _run_pipeline(case, outdir, rec):
     )
 
     if case['sparse']:
-        with rec.stage('window', arrays):
-            pao.sparse._ensure_window()
-        rec.set('solver', **_solver_info(pao, case))
         # the same calls as the dense branch; on the sparse engine these
         # three only record what the fused pass has to produce
         pao.pao_eigh()
@@ -267,6 +267,8 @@ def _run_pipeline(case, outdir, rec):
             with pao.sparse.fused():
                 for name, kwargs in properties:
                     getattr(pao, _method(name))(**kwargs)
+        # the window is resolved inside the fused pass, from the property ranges
+        rec.set('solver', **_solver_info(pao, case))
         if pao.sparse._interior is not None:
             rec.set('solver', bands_max=int(attr['bnd']))
         rec.set('solver', skipped=[list(s) for s in pao.sparse._skipped])

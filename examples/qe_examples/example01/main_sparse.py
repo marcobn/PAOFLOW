@@ -9,12 +9,9 @@ def main():
         npool=1,
         verbose=True,
         sparse=True,
-        sparse_config={
-            'hopping_threshold': 1.0e-4,
-            # solve only the bands up to the property range (plus a 1 eV margin);
-            # applied before the first solve, after any doubling
-            'energy_window': {'emax': 2.2},
-        },
+        # the bands solved per k-point follow the property ranges below, so
+        # only the truncation of H(R) is set here
+        sparse_config={'hopping_threshold': 1.0e-4},
     )
     paoflow.read_atomic_proj_QE()
     paoflow.projectability()
@@ -25,8 +22,9 @@ def main():
     paoflow.bands(ibrav=2, nk=2000)
     paoflow.interpolated_hamiltonian(nfft1=12, nfft2=12, nfft3=12)
     # eigenvalues, velocities, smearing widths, PDOS and the band curvature
-    # of the Hall term are one mesh pass for the whole block; the curvature's
-    # interband sum makes it solve every state per k-point
+    # of the Hall term are one mesh pass for the whole block, whose energy
+    # window covers both ranges; the curvature's interband sum makes it solve
+    # every state per k-point
     with paoflow.sparse.fused():
         paoflow.dos(emin=-12.0, emax=2.2, ne=1000)
         paoflow.transport(emin=-12.0, emax=2.2, do_hall=True)

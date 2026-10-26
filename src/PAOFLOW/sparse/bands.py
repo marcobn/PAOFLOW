@@ -120,7 +120,7 @@ def do_bands_sparse(
     """
     from .log import get_sparse_log
     from .mesh import check_window_coverage
-    from .solver import describe_hk_solver, solve_interior, solve_lowest
+    from .solver import creep_warning, hk_solver_fields, solve_interior, solve_lowest
 
     arrays, attr = data_controller.data_dicts()
 
@@ -129,16 +129,17 @@ def do_bands_sparse(
     nspin = sparse_h.nspin
 
     log = get_sparse_log(data_controller)
-    log.section('Bands (path solve)')
+    log.section('Path pass (bands)')
     log.field('k-points on path', nkpi)
-    if interior is None:
-        log.field('bands requested', nsel)
-    else:
-        log.field('interior window (eV)', f'[{interior[0]:.3f}, {interior[1]:.3f}]')
-        log.field('bands requested', 'k-dependent (interior solve); NaN-padded')
-    log.field('window top ehi (eV)', 'none' if ehi is None else f'{ehi:.3f}')
     limits = {'dense_ratio': dense_ratio, 'dense_n_max': dense_n_max}
-    log.write(describe_hk_solver(sparse_h.nawf, nsel, hk_solver=hk_solver, **limits))
+    if interior is None:
+        log.field('bands per k-point', nsel)
+        log.rows(hk_solver_fields(sparse_h.nawf, nsel, hk_solver=hk_solver, **limits))
+        warning = creep_warning(sparse_h.nawf, nsel)
+        if warning:
+            log.write('  WARNING: ' + warning)
+    else:
+        log.field('bands per k-point', 'varies with k (interior solve); missing states as NaN')
 
     if interior is None:
         E_k = np.zeros((nk_local, nsel, nspin), dtype=float)
@@ -169,23 +170,22 @@ def do_bands_sparse(
                 acc[(ispin, ik)] = E
                 k0 = max(8, 2 * len(E))
             if verbose and (ik + 1) % step == 0:
-                log.write(f'  progress: {ik + 1}/{nk_local} local k-points')
+                log.field('progress', f'{ik + 1}/{nk_local} local k-points')
 
     if interior is not None:
         local_max = max((len(E) for E in acc.values()), default=0)
         m = int(comm.allreduce(int(local_max), op=MPI.MAX))
-        log.write(
-            f'  interior window: up to {local_max} states per k locally (padded to {m} with NaN)'
+        log.field(
+            'interior states per k-point', f'up to {local_max} on this rank; padded to {m} with NaN'
         )
         E_k = np.full((nk_local, max(m, 1), nspin), np.nan, dtype=float)
         for (ispin, ik), E in acc.items():
             E_k[ik, : len(E), ispin] = E
     if ptop is not None:
         placeholders = E_k >= ptop
-        if comm.allreduce(int(placeholders.sum()), op=MPI.SUM):
-            log.write(
-                '  states at the PAO shift (above %.3f eV) are not bands: written as NaN' % ptop
-            )
+        count = comm.allreduce(int(placeholders.sum()), op=MPI.SUM)
+        if count:
+            log.field('states dropped at the PAO shift', f'{count} (written as NaN)')
         E_k[placeholders] = np.nan
 
     arrays['E_k'] = E_k
@@ -287,7 +287,7 @@ def run_path(
     from ..utils.communication import scatter_full
     from .kpoint import KPoint
     from .log import get_sparse_log
-    from .solver import describe_hk_solver, solve_lowest
+    from .solver import hk_solver_fields, solve_lowest
 
     attr = data_controller.data_attributes
     kq_aux, nkpi = prepare_path(data_controller)
@@ -298,9 +298,9 @@ def run_path(
     log = get_sparse_log(data_controller)
     log.section('Path pass (%s)' % ', '.join(sorted({c.method for c in consumers})))
     log.field('k-points on path', nkpi)
-    log.field('states per k', '%d of nawf = %d' % (nsolve, nawf))
+    log.field('states per k-point', '%d of %d' % (nsolve, nawf))
     limits = {'dense_ratio': dense_ratio, 'dense_n_max': dense_n_max}
-    log.write(describe_hk_solver(nawf, nsolve, hk_solver=solver, **limits))
+    log.rows(hk_solver_fields(nawf, nsolve, hk_solver=solver, **limits))
 
     bnd = min(int(attr['bnd']), nsolve)
     step = max(1, min(100, kq_aux.shape[0] // 10))
@@ -337,4 +337,4 @@ def run_path(
                 c.on_k(kp)
             kp = None
             if verbose and (ik + 1) % step == 0:
-                log.write(f'  progress: {ik + 1}/{kq_aux.shape[0]} local path points')
+                log.field('progress', f'{ik + 1}/{kq_aux.shape[0]} local path points')
