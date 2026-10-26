@@ -40,5 +40,19 @@ np.savez_compressed(os.path.join(out, 'reference', 'epmatq_subset.npz'), q_cryst
                     tolerance=np.array(tol), qgrid=np.array([3, 3, 3]), hermiticity_tolerance=np.array(1e-5))
 print('wrote reference for q =', [np.round(q, 3).tolist() for q in qs])
 PYEOF
-tar -C "$OUT" -czf "$OUT/elphon_test_assets.tar.gz" si
+# Optional: the 3C-SiC polar case (tests/integration/elphon/test_long_range_sic.py): SIC=<dir> produced by
+# sic_run.sh (scf 6^3 at 40 Ry, ph.x 3^3 with epsil, nscf 3^3 with 8 bands for PAOFLOW and 4 for EPW,
+# epw.x lpolar + sp3 Wannier, epw.x prtgkk with fsthick = 100 on epw/kpts.txt and epw/qpts.txt), with
+# BASIS_PS/ from paoflow-genbasis-ps (--preset standard, Si and C) and epw_gkk_reference.npz written by
+# `python sic_reference.py --standard --save-reference` inside that directory.
+if [ -n "${SIC:-}" ]; then
+  mkdir -p "$OUT/sic/reference" "$OUT/sic/save/sic.phsave" "$OUT/sic/BASIS_PS"
+  cp -r "$SIC/paoflow/sic.save" "$OUT/sic/sic.save"; rm -f "$OUT"/sic/sic.save/*.hdf5 "$OUT"/sic/sic.save/charge-density.dat 2>/dev/null || true
+  cp "$SIC"/phonon/save/sic.dvscf_q* "$SIC"/phonon/save/sic.dyn_q* "$OUT/sic/save/"
+  cp "$SIC"/phonon/save/sic.phsave/patterns.*.xml "$OUT/sic/save/sic.phsave/"
+  cp -r "$SIC"/BASIS_PS/Si "$SIC"/BASIS_PS/C "$OUT/sic/BASIS_PS/"
+  cp "$SIC"/epw_gkk_reference.npz "$OUT/sic/reference/epw_gkk.npz"
+  cp "$SIC"/epw/kpts.txt "$SIC"/epw/qpts.txt "$OUT/sic/reference/"
+fi
+tar -C "$OUT" -czf "$OUT/elphon_test_assets.tar.gz" si $([ -n "${SIC:-}" ] && echo sic)
 shasum -a 256 "$OUT/elphon_test_assets.tar.gz"

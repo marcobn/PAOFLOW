@@ -69,6 +69,7 @@ nonlocal-velocity
 position-dipoles
 scattering-channels
 dfpt-coupling-port
+long-range-elphon-plan
 thermo-optics
 sk-edtb
 cli-generators

@@ -406,6 +406,7 @@ def phonon_interpolator(
     at: NDArray[np.float64],
     atom_positions: NDArray[np.float64] | None = None,
     acoustic_sum_rule: bool = True,
+    long_range: Callable | None = None,
 ) -> Callable[[NDArray[np.float64]], tuple[NDArray[np.float64], NDArray[np.complex128]]]:
     """Wigner-Seitz interpolator of the dynamical matrix (``matdyn.x``).
 
@@ -425,6 +426,11 @@ def phonon_interpolator(
         atoms.  ``None`` uses single-site images.
     acoustic_sum_rule : bool, optional
         Apply :func:`apply_acoustic_sum_rule` first (``asr = 'simple'``).
+    long_range : callable, optional
+        ``q_cryst -> (3 nat, 3 nat)`` force constants (Ry/bohr^2) added to the interpolated
+        ``C(q)`` before the mass weighting: the analytic dipole/quadrupole term of a polar
+        crystal (:meth:`~PAOFLOW.elphon.long_range.LongRangeModel.dynamical_matrix`), which
+        must have been subtracted from ``force_constants_r`` on the coarse grid.
 
     Returns
     -------
@@ -459,17 +465,22 @@ def phonon_interpolator(
         if q_cryst.ndim == 1:
             phase = W_p * np.exp(2j * np.pi * (q_cryst @ Nint_p.T))
             C = np.tensordot(phase, cells, axes=([0], [0]))  # (nmode, nmode)
+            if long_range is not None:
+                C = C + long_range(q_cryst)
             D = 0.5 * (C + C.conj().T) * mass_weight  # mass-weighted -> eig = omega^2 (Ry^2)
             w2, ev = np.linalg.eigh(D)
             freq_thz = np.sign(w2) * np.sqrt(np.abs(w2)) * RY_TO_THZ
             return freq_thz, ev.T  # (nmode,), (nmode, ncart)
         phase = W_p[None, :] * np.exp(2j * np.pi * (q_cryst @ Nint_p.T))  # (nq, nws)
         C = (phase @ cells.reshape(cells.shape[0], -1)).reshape(-1, nmode, nmode)
+        if long_range is not None:
+            C = C + np.array([long_range(q) for q in q_cryst])
         D = 0.5 * (C + np.conj(np.transpose(C, (0, 2, 1)))) * mass_weight
         w2, ev = np.linalg.eigh(D)
         freq_thz = np.sign(w2) * np.sqrt(np.abs(w2)) * RY_TO_THZ
         return freq_thz, np.transpose(ev, (0, 2, 1))
 
+    phonon_at_q.long_range = long_range
     return phonon_at_q
 
 

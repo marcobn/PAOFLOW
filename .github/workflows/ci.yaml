@@ -194,7 +194,7 @@ jobs:
     env:
       PAOFLOW_ELPHON_ASSET_VERSION: integration-assets-v1
       PAOFLOW_ELPHON_ASSET_URL: https://github.com/marcobn/PAOFLOW/releases/download/integration-assets-v1/elphon_test_assets.tar.gz
-      PAOFLOW_ELPHON_ASSET_SHA256: "1943aa61c61fb9d8025773966941f5538525b760759e44b1cac499d2b13346e0"
+      PAOFLOW_ELPHON_ASSET_SHA256: "2a09dbbcad7af08411d61381e608b922072ba464022fc989a69336260d6ff34b"
 
     steps:
       - uses: actions/checkout@v4

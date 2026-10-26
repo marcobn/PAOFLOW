@@ -222,7 +222,7 @@ def vertex_phonon_ws_weights(
 # --------------------------------------------------------------------------- #
 # 3. Phonon modes at a dense q (frequencies + Cartesian eigenvectors)
 # --------------------------------------------------------------------------- #
-def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at, atom_positions=None):
+def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at, atom_positions=None, long_range=None):
     """Dense-q phonon interpolator built from the coarse ``*.dyn`` files.
 
     Reconstructs the mass-weighted dynamical matrix ``D(q)`` on the full coarse
@@ -253,6 +253,11 @@ def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at, atom_positions=None):
         Atomic positions (crystal coordinates) for atom-pair Wigner-Seitz images
         (as ``matdyn.x``; recommended with several atoms per cell).  ``None``
         keeps the single-site images.
+    long_range : LongRangeModel, optional
+        Polar crystals: the dipole (and quadrupole) force constants
+        (:meth:`~PAOFLOW.elphon.long_range.LongRangeModel.dynamical_matrix`) are subtracted
+        from the coarse ``C(q)`` before the ``q -> R_p`` transform and added back at every
+        dense q (LO-TO splitting); the returned callable records it as ``phonon_at_q.long_range``.
 
     Returns
     -------
@@ -287,7 +292,9 @@ def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at, atom_positions=None):
                 filled[lab] = True
     if not filled.all():
         raise ValueError('dyn files cover only %d/%d q of the grid.' % (filled.sum(), nq))
-    return _phonon_interp_from_force_constants(Cgrid, masses_ry, qgrid, at, atom_positions)
+    return _phonon_interp_from_force_constants(
+        Cgrid, masses_ry, qgrid, at, atom_positions, long_range=long_range
+    )
 
 
 def phonon_interp_from_epw(
@@ -297,6 +304,7 @@ def phonon_interp_from_epw(
     qgrid: tuple[int, int, int],
     at: NDArray[np.float64],
     atom_positions: NDArray[np.float64] | None = None,
+    long_range=None,
 ) -> Callable[[NDArray[np.float64]], tuple[NDArray[np.float64], NDArray[np.complex128]]]:
     """Dense-q phonon interpolator from EPW's coarse force constants.
 
@@ -344,7 +352,9 @@ def phonon_interp_from_epw(
             'EPW q-points cover only %d/%d q of the grid.' % (filled.sum(), filled.size)
         )
     masses_ry = np.asarray(masses_amu, dtype=float) * AMU_RY
-    return _phonon_interp_from_force_constants(Cgrid, masses_ry, qgrid, at, atom_positions)
+    return _phonon_interp_from_force_constants(
+        Cgrid, masses_ry, qgrid, at, atom_positions, long_range=long_range
+    )
 
 
 def _phonon_interp_from_force_constants(
@@ -353,6 +363,7 @@ def _phonon_interp_from_force_constants(
     qgrid: tuple[int, int, int],
     at: NDArray[np.float64],
     atom_positions: NDArray[np.float64] | None = None,
+    long_range=None,
 ) -> Callable[[NDArray[np.float64]], tuple[NDArray[np.float64], NDArray[np.complex128]]]:
     """Wigner-Seitz phonon interpolator from force constants on the full coarse grid.
 
@@ -369,6 +380,9 @@ def _phonon_interp_from_force_constants(
     atom_positions : NDArray[np.float64], shape ``(nat, 3)``, optional
         Atomic positions (crystal coordinates) for atom-pair Wigner-Seitz
         images; ``None`` uses single-site images.
+    long_range : LongRangeModel, optional
+        Subtract its force constants on the grid and restore them at every q
+        (:func:`phonon_interp_from_dyn`).
 
     Returns
     -------
@@ -378,9 +392,18 @@ def _phonon_interp_from_force_constants(
     # q -> R_p (same 1/N, sign convention as build_g_ReRp), simple acoustic sum
     # rule and Wigner-Seitz interpolation: the q2r/matdyn chain of
     # PAOFLOW.phonon.qe_force_constants.
-    return phonon_interpolator(
-        real_space_force_constants(Cgrid), masses_ry, qgrid, at, atom_positions
+    restore = None
+    if long_range is not None:
+        Cgrid = np.array(Cgrid, dtype=complex)  # private copy: the short-range remainder
+        ng_q = np.asarray(qgrid)
+        for lab in np.ndindex(*qgrid):
+            Cgrid[lab] -= long_range.dynamical_matrix(np.asarray(lab, dtype=float) / ng_q)
+        restore = long_range.dynamical_matrix
+    phonon_at_q = phonon_interpolator(
+        real_space_force_constants(Cgrid), masses_ry, qgrid, at, atom_positions, long_range=restore
     )
+    phonon_at_q.long_range = long_range
+    return phonon_at_q
 
 
 def _read_dyn_matrices(path):
@@ -583,6 +606,7 @@ def eliashberg_dense_q(
     unfold_tol=1e-6,
     cache_dir=None,
     cache_tag=None,
+    long_range=None,
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
 
@@ -706,6 +730,7 @@ def eliashberg_dense_q(
         allow_missing_long_range=allow_missing_long_range,
         save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
         basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
+        long_range=long_range,
     )  # fmt: skip
     g_ReRp, win, phonon_at_q = vertex['g_ReRp'], vertex['window'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']
@@ -794,10 +819,13 @@ def eliashberg_dense_q(
             pair_weights = np.where(freq_thz < min_freq_thz, 0.0, q_weight)
             if is_gamma:
                 pair_weights[:] = 0.0
+        lr_q = None
+        if long_range is not None:
+            lr_q = long_range.vertex_pao(q_cryst, A.shape[1], orbital_positions)
         res = lambda_q_dense_ws_fast(
             gR, electrons, q_cryst, zmass, freq_thz,
             pair_coupling=pair_coupling, pair_weights=pair_weights, pair_q_weight=q_weight,
-            transport=transport,
+            transport=transport, long_range=lr_q,
         )  # fmt: skip
         lam = res['lambda_qnu'][isig].copy()
         lam[freq_thz < min_freq_thz] = 0.0  # drop spurious soft/imaginary modes
@@ -871,6 +899,7 @@ def prepare_dense_vertex(
     cache_dir: str | None = None,
     cache_tag: str | None = None,
     bands=None,
+    long_range=None,
 ) -> dict:
     """Coarse couplings -> shared ``g(R_e, R_p)`` and the phonon interpolator.
 
@@ -941,6 +970,11 @@ def prepare_dense_vertex(
         Directory of the ``g(R_e, R_p)`` disk cache (:mod:`PAOFLOW.elphon.coupling_cache`);
         the array is read from there when an entry with the same key exists, and written
         after the build otherwise.
+    long_range : LongRangeModel, optional
+        Polar crystals: subtract the analytic dipole/quadrupole coupling on the coarse grid
+        and restore it at every dense q (:class:`~PAOFLOW.elphon.long_range.LongRangeModel`);
+        the phonons must be built with the same model (``phonon_at_q=None`` or
+        :func:`phonon_interp_from_dyn` with ``long_range``).
     cache_tag : str, optional
         Identity of the PAO basis for the cache key (:func:`~PAOFLOW.elphon.coupling_cache.basis_tag`).
     bands : sequence of int, optional
@@ -986,7 +1020,9 @@ def prepare_dense_vertex(
             save_dir, coupling_dir, qgrid_coarse, prefix=prefix, pseudo_dir=pseudo_dir
         )
         small['epsi'], small['zstar'] = dfpt.long_range_tensors()
-        check_long_range_terms(small['zstar'], small['epsi'], allow_missing_long_range)
+        check_long_range_terms(
+            small['zstar'], small['epsi'], allow_missing_long_range, long_range=long_range
+        )
         if q_cryst_coarse is None:
             q_cryst_coarse = dfpt.coarse_q()
         if phonon_at_q is None:
@@ -996,7 +1032,7 @@ def prepare_dense_vertex(
                     raise ValueError('orbital_positions requires tau_cryst (atom-pair phonon WS).')
                 atom_positions = tau_cryst
             phonon_at_q = phonon_interp_from_dyn(
-                list(dfpt.files.dyn), qgrid_coarse, bg, at, atom_positions
+                list(dfpt.files.dyn), qgrid_coarse, bg, at, atom_positions, long_range=long_range
             )
     if source == 'epw':
         # EPW provides the full coarse q-grid (unfolded from the irreducible ph.x
@@ -1011,7 +1047,9 @@ def prepare_dense_vertex(
             else None,
             root=0,
         )
-        check_long_range_terms(small['zstar'], small['epsi'], allow_missing_long_range)
+        check_long_range_terms(
+            small['zstar'], small['epsi'], allow_missing_long_range, long_range=long_range
+        )
         if q_cryst_coarse is None:
             q_cryst_coarse = small['q_cryst']
         if phonon_at_q is None:
@@ -1021,8 +1059,15 @@ def prepare_dense_vertex(
                     raise ValueError('orbital_positions requires tau_cryst (atom-pair phonon WS).')
                 atom_positions = tau_cryst
             phonon_at_q = phonon_interp_from_epw(
-                small['dynq'], small['q_cryst'], masses_amu, qgrid_coarse, at, atom_positions
-            )
+                small['dynq'], small['q_cryst'], masses_amu, qgrid_coarse, at, atom_positions,
+                long_range=long_range,
+            )  # fmt: skip
+    if long_range is not None and getattr(phonon_at_q, 'long_range', None) is not long_range:
+        raise ValueError(
+            'long_range is set but phonon_at_q was built without it: pass the same model to '
+            'phonon_interp_from_dyn / phonon_interp_from_epw (LO-TO splitting), or let the '
+            'driver build the phonons (phonon_at_q=None).'
+        )
     q_cryst_coarse = np.asarray(q_cryst_coarse, dtype=float)
     nawf = int(A.shape[1])
     qg = qgrid_coarse
@@ -1041,8 +1086,9 @@ def prepare_dense_vertex(
     if cache_dir is not None:
         from .coupling_cache import dense_vertex_cache_key, load_dense_vertex
 
+        tag = cache_tag if long_range is None else '%s|lr=%s' % (cache_tag, long_range.signature())
         cache_key = dense_vertex_cache_key(
-            coupling_dir, source, qgrid_coarse, ng, masses_amu, A.shape, cache_tag
+            coupling_dir, source, qgrid_coarse, ng, masses_amu, A.shape, tag
         )
         if node_rank == 0:
             cached = load_dense_vertex(cache_dir, cache_key, g_ReRp)
@@ -1101,12 +1147,18 @@ def prepare_dense_vertex(
                 dfpt, A, kpts_cryst, tuple(ng), ops, mine, basis, check_member=True, tol=unfold_tol
             ):
                 lab = np.round(member.q_cryst * np.asarray(qg)).astype(int) % np.asarray(qg)
+                if long_range is not None:
+                    gk = gk - long_range.vertex_pao(member.q_cryst, nawf, orbital_positions)[None]
                 g_ReRp[..., lab[0], lab[1], lab[2]] = pao_vertex_to_cells(gk, kidx, tuple(ng))
         elif unfold == 'full':
+            from .elph_bloch import pao_vertex_to_cells
+
             for iq in range(node_rank, nq_coarse, node_size):
-                gR = dfpt.pao_vertex_at_q(
-                    member_of[tuple(labels[iq])], A, kidx, tuple(ng), basis, bands
-                )
+                member = member_of[tuple(labels[iq])]
+                gk = dfpt.pao_vertex_k(member, A, tuple(ng), basis, bands)
+                if long_range is not None:
+                    gk = gk - long_range.vertex_pao(member.q_cryst, nawf, orbital_positions)[None]
+                gR = pao_vertex_to_cells(gk, kidx, tuple(ng))
                 g_ReRp[..., labels[iq, 0], labels[iq, 1], labels[iq, 2]] = gR
         else:
             raise ValueError("unfold must be 'full' or 'irreducible', got %r" % (unfold,))
@@ -1124,17 +1176,20 @@ def prepare_dense_vertex(
             )
         g_ReRp[...] = 0.0
         for iq, q_cryst in enumerate(q_cryst_coarse):
+            lr_q = None
+            if long_range is not None:
+                lr_q = long_range.vertex_pao(q_cryst, nawf, orbital_positions)
             if source == 'epw':
                 gR = vertex_from_epw(
-                    epw['epmatq'][..., iq], A, kpts_cryst, q_cryst, ng, epw['ibndkept']
+                    epw['epmatq'][..., iq], A, kpts_cryst, q_cryst, ng, epw['ibndkept'], lr_q
                 )
             elif source == 'ahc':
                 gR = vertex_from_qe_ahc(
-                    coupling_dir, iq + 1, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
+                    coupling_dir, iq + 1, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk, lr_q
                 )
             else:
                 path = '%s/elphmat.%d.dat' % (coupling_dir, iq + 1)
-                gR, _q = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng)
+                gR, _q = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng, long_range=lr_q)
             g_ReRp[..., labels[iq, 0], labels[iq, 1], labels[iq, 2]] = gR
         if epw is not None:
             del epw['epmatq']  # only the shared g(R_e, R_p) is needed from here on

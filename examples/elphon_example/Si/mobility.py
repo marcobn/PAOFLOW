@@ -93,6 +93,7 @@ from PAOFLOW.elphon.pao_electrons import (
     format_hubbard_info,
     pao_hamiltonian_from_save,
 )
+from PAOFLOW.elphon.long_range import LongRangeModel
 from PAOFLOW.elphon.wavefunction_symmetry import stores_irreducible_wedge
 from PAOFLOW.elphon.phonon_assisted_absorption import varshni_gap, varshni_shift
 
@@ -139,6 +140,12 @@ SCREENING_EPS = None  # target static dielectric constant, e.g. 11.94 (Si, measu
 SCREENING_EPS_DFT = (
     None  # dielectric constant of the DFPT coupling; None = the tensor in the .epb files
 )
+# Long-range (polar) treatment: the analytic dipole (Frohlich) vertex and force constants are
+# subtracted on the coarse grid and restored at every dense q (EPW lpolar).  Si is non-polar
+# (Z* = 0), so the dipole model vanishes; a dynamical-quadrupole file (EPW quadrupole.fmt,
+# Brunin et al. 2020) adds the next-order term at small q.
+LONG_RANGE = True  # build the model when the crystal is polar or QUADRUPOLES is given
+QUADRUPOLES = None  # path of an EPW quadrupole.fmt, or None
 
 
 def pao_electronic_structure(electrons_save=None):
@@ -220,6 +227,17 @@ def scissor_settings(args):
     return None, None, 'none'
 
 
+
+def long_range_model():
+    """Dipole/quadrupole model of the coupling for polar crystals (or with a quadrupole file)."""
+    if not LONG_RANGE:
+        return None
+    try:
+        model = LongRangeModel.from_coupling(PHONON_DIR, SAVEDIR, quadrupoles=QUADRUPOLES)
+    except ValueError:  # ph.x without epsil: no dielectric tensor, no long-range model
+        return None
+    return model if (model.is_polar() or model.has_quadrupoles) else None
+
 def carrier_scattering(projections, HRs, nscf, args, scissor_ev=None, target_gap_ev=None):
     """SERTA/MRTA rates of the window states on the dense grids."""
     return carrier_scattering_dense_q(
@@ -235,6 +253,7 @@ def carrier_scattering(projections, HRs, nscf, args, scissor_ev=None, target_gap
         COARSE_GRID,
         coupling_source=COUPLING_SOURCE,
         save_dir=SAVEDIR,
+        long_range=long_range_model(),
         masses_amu=atom_masses(MASSES_AMU, nscf['species'], nscf['atom_names']),
         nelec=NELEC,
         nk_dense=args.nk,

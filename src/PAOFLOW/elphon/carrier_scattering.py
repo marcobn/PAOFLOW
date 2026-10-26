@@ -347,6 +347,7 @@ def carrier_scattering_dense_q(
     unfold_tol: float = 1e-6,
     cache_dir: str | None = None,
     cache_tag: str | None = None,
+    long_range=None,
 ) -> dict:
     """State-resolved electron-phonon scattering rates on the dense PAO grid.
 
@@ -407,6 +408,11 @@ def carrier_scattering_dense_q(
     save_dir, pseudo_dir, prefix, basis, unfold, basis_shells, unfold_tol, cache_dir, cache_tag
         ``coupling_source='dfpt'`` and cache options of
         :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`.
+    long_range : LongRangeModel, optional
+        Polar crystals: subtract the analytic dipole/quadrupole coupling on the coarse grid and
+        restore it at every dense q (:class:`~PAOFLOW.elphon.long_range.LongRangeModel`); the
+        phonons must be built with the same model (``phonon_at_q=None`` or
+        :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.phonon_interp_from_dyn` with ``long_range``).
 
     Returns
     -------
@@ -463,6 +469,7 @@ def carrier_scattering_dense_q(
         source=coupling_source, masses_amu=masses_amu, tau_cryst=tau_cryst,
         orbital_positions=orbital_positions, comm=comm,
         allow_missing_long_range=allow_missing_long_range,
+        long_range=long_range,
         save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
         basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
     )  # fmt: skip
@@ -587,6 +594,7 @@ def carrier_scattering_dense_q(
             reach = max(float(omega_ry.max()) * RY_TO_EV, 0.0) + DELTA_CUTOFF * smearing_ev
             shift = np.round(q_cryst * nk_dense).astype(int)
             gn_flat = None  # built on the first block with reachable final states
+            lr_q = None
         kk = kblocks[ib]
         kq = np.ravel_multi_index(((grid_index[kk] + shift) % nk_dense).T, (nk_dense,) * 3)
         reachable = closest[kq] < reach
@@ -601,8 +609,11 @@ def carrier_scattering_dense_q(
             gn_flat = vertex_ws_coefficients(
                 g_Re_at_q(g_ReRp, q_cryst, Nint_p, W_p, Midx_p), electrons
             )
+            lr_q = None
+            if long_range is not None:
+                lr_q = long_range.vertex_pao(q_cryst, V.shape[1], orbital_positions)
         coupling = band_vertex(
-            gn_flat, vertex_phases(electrons, kk), V[kq], V[kk], zmass
+            gn_flat, vertex_phases(electrons, kk), V[kq], V[kk], zmass, lr_q
         )  # (nb, nu, m, n)
         g2 = np.abs(coupling) ** 2 / (2.0 * safe)[None, :, None, None] * RY_TO_EV**2
         g2[:, omega_ry <= 1.0e-8] = 0.0

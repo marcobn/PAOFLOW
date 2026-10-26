@@ -240,7 +240,7 @@ def kq_index_map(kpts_cryst, q_cryst, nkgrid, tol=1.0e-5):
 # --------------------------------------------------------------------------- #
 
 
-def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
+def vertex_pao_R(d, A, ikq, kgrid_idx, ng, long_range=None):
     """PAO-gauge vertex in real space ``g(R_e)`` for one q (EPW electron transform).
 
     Rotates the band-basis deformation potentials to the PAO gauge,
@@ -266,6 +266,10 @@ def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
         Integer grid labels ``round(k_cryst * ng) % ng`` of each k-point.
     ng : tuple(int, int, int)
         Coarse k-grid dimensions.
+    long_range : ndarray ``(nawf, nawf, ncart)``, optional
+        Analytic long-range vertex of this q (:class:`~PAOFLOW.elphon.long_range.LongRangeModel`),
+        subtracted from the PAO-gauge vertex at every k so that only the short-range part is
+        Fourier-interpolated; the dense drivers add it back (:func:`band_vertex`).
 
     Returns
     -------
@@ -295,6 +299,10 @@ def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
     Ak = np.transpose(A, (2, 0, 1))  # (nk, nbnd, nawf)
     Akq = np.transpose(A[:, :, ikq], (2, 0, 1))  # (nk, nbnd, nawf)
     gk_b = np.einsum('kmi,kmnc,knj->kijc', Akq, d, Ak.conj(), optimize=True)  # (nk,nawf,nawf,ncart)
+    if (
+        long_range is not None
+    ):  # subtract the analytic long-range part before the k -> R_e transform
+        gk_b = gk_b - np.asarray(long_range)[None]
     return pao_vertex_to_cells(gk_b, kgrid_idx, ng)
 
 
@@ -1106,6 +1114,7 @@ def band_vertex(
     Vkq: NDArray[np.complex128],
     Vk: NDArray[np.complex128],
     zmass: NDArray[np.float64],
+    long_range: NDArray[np.complex128] | None = None,
 ) -> NDArray[np.complex128]:
     """Band- and mode-resolved coupling ``g_{mn,nu}(k, q)`` for a block of dense k.
 
@@ -1120,6 +1129,10 @@ def band_vertex(
         subset may be passed as column slices.
     zmass : ndarray, shape ``(nmode, ncart)``
         Mass-scaled phonon eigenvectors ``z / sqrt(M)`` (Rydberg mass units).
+    long_range : ndarray, shape ``(nawf, nawf, ncart)``, optional
+        Analytic long-range vertex of this q in the PAO gauge
+        (:meth:`~PAOFLOW.elphon.long_range.LongRangeModel.vertex_pao`), added back to the
+        interpolated short-range part at every k of the block.
 
     Returns
     -------
@@ -1129,6 +1142,8 @@ def band_vertex(
     """
     nawf = Vk.shape[1]
     gk = (phkg @ gn_flat).reshape(phkg.shape[0], nawf, nawf, -1)
+    if long_range is not None:
+        gk = gk + np.asarray(long_range)[None]
     # Modes first, then V_{k+q}^dagger g V_k as batched matrix products (BLAS).
     gk = np.ascontiguousarray(np.moveaxis(gk @ np.asarray(zmass).T, 3, 1))  # (nb, nmode, i, j)
     left = np.matmul(np.conj(np.swapaxes(Vkq, 1, 2))[:, None], gk)  # (nb, nmode, m, j)
@@ -1146,6 +1161,7 @@ def lambda_q_dense_ws_fast(
     pair_weights=None,
     pair_q_weight=None,
     transport: bool = False,
+    long_range=None,
 ):
     """``lambda_{q nu}`` for one q, reusing a :func:`precompute_dense_electrons` cache.
 
@@ -1176,6 +1192,8 @@ def lambda_q_dense_ws_fast(
     pair_q_weight : float, optional
         q-star multiplicity over the number of q (Coulomb pairs); required with
         ``pair_coupling``.
+    long_range : ndarray ``(nawf, nawf, ncart)``, optional
+        Long-range vertex of this q added at every k (:func:`band_vertex`).
     transport : bool, optional
         Also return the transport coupling ``lambda_tr_qnu`` (needs
         ``precompute_dense_electrons(..., velocities=True)``): the same double
@@ -1245,7 +1263,9 @@ def lambda_q_dense_ws_fast(
         num_tr = np.zeros((nsig, nmode))
     for s0 in range(0, idx.size, kblock):
         ii = idx[s0 : s0 + kblock]
-        gnu = band_vertex(gn_flat, vertex_phases(electrons, ii), Vk[kq_index[ii]], Vk[ii], zmass)
+        gnu = band_vertex(
+            gn_flat, vertex_phases(electrons, ii), Vk[kq_index[ii]], Vk[ii], zmass, long_range
+        )
         absg2 = np.abs(gnu) ** 2
         for isig in range(nsig):
             num[isig] += np.einsum(

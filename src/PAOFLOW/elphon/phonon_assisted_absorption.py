@@ -894,6 +894,7 @@ def phonon_assisted_absorption_dense_q(
     unfold_tol: float = 1e-6,
     cache_dir: str | None = None,
     cache_tag: str | None = None,
+    long_range=None,
 ) -> dict:
     """Phonon-assisted and direct optical absorption with dense k and q interpolation.
 
@@ -1028,6 +1029,11 @@ def phonon_assisted_absorption_dense_q(
     save_dir, pseudo_dir, prefix, basis, unfold, basis_shells, unfold_tol, cache_dir, cache_tag
         ``coupling_source='dfpt'`` and cache options of
         :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`.
+    long_range : LongRangeModel, optional
+        Polar crystals: subtract the analytic dipole/quadrupole coupling on the coarse grid and
+        restore it at every dense q (:class:`~PAOFLOW.elphon.long_range.LongRangeModel`); the
+        phonons must be built with the same model (``phonon_at_q=None`` or
+        :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.phonon_interp_from_dyn` with ``long_range``).
 
     Returns
     -------
@@ -1098,6 +1104,7 @@ def phonon_assisted_absorption_dense_q(
         source=coupling_source, masses_amu=masses_amu, tau_cryst=tau_cryst,
         orbital_positions=orbital_positions, comm=comm,
         allow_missing_long_range=allow_missing_long_range,
+        long_range=long_range,
         save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
         basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
     )  # fmt: skip
@@ -1248,14 +1255,18 @@ def phonon_assisted_absorption_dense_q(
             gn_flat = vertex_ws_coefficients(
                 g_Re_at_q(g_ReRp, q_cryst, Nint_p, W_p, Midx_p), electrons
             )
+            lr_q = None
+            if long_range is not None:
+                lr_q = long_range.vertex_pao(q_cryst, V.shape[1], orbital_positions)
             shift = np.round(np.asarray(q_cryst) * nk_dense).astype(int)
             ikq = _kq_flat_index(nk_dense, shift)
             weight = qweights[iq] / (nkd * cell_volume)
         kk = kblocks[ib]
         kq = ikq[kk]
         coupling = band_vertex(
-            gn_flat, vertex_phases(electrons, kk), V[kq][:, :, bands], V[kk][:, :, bands], zmass
-        )
+            gn_flat, vertex_phases(electrons, kk), V[kq][:, :, bands], V[kk][:, :, bands], zmass,
+            lr_q,
+        )  # fmt: skip
         for (delta, tidx), energy_g in zip(groups, group_energy):
             v_k = scissor_velocities(
                 velocities[kk], energies[kk][:, bands], delta, conduction, scissor_velocity

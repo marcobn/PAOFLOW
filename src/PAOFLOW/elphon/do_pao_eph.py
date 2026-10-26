@@ -73,7 +73,7 @@ def _k_permutation(kpts_cryst, xk_cart, bg, ng):
     return perm
 
 
-def vertex_from_qe_elphmat(elphmat_path, A, kpts_cryst, bg, ng):
+def vertex_from_qe_elphmat(elphmat_path, A, kpts_cryst, bg, ng, long_range=None):
     """PAO-gauge real-space vertex ``g(R_e)`` from one QE ``el_ph_mat`` dump.
 
     Parameters
@@ -106,11 +106,11 @@ def vertex_from_qe_elphmat(elphmat_path, A, kpts_cryst, bg, ng):
     q_cryst = np.linalg.solve(bg.T, qe['xq'])
     ikq, _ = kq_index_map(kpts_cryst, q_cryst, ng)
     kidx = np.round(kpts_cryst * np.asarray(ng)).astype(int) % np.asarray(ng)
-    gR = vertex_pao_R(d, A, ikq, kidx, ng)
+    gR = vertex_pao_R(d, A, ikq, kidx, ng, long_range=long_range)
     return gR, q_cryst
 
 
-def vertex_from_qe_ahc(ahc_dir, iq, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk):
+def vertex_from_qe_ahc(ahc_dir, iq, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk, long_range=None):
     """PAO-gauge real-space vertex ``g(R_e)`` from one unpatched QE AHC dump.
 
     Like :func:`vertex_from_qe_elphmat`, but reads the Cartesian ``ahc_gkk``
@@ -143,7 +143,7 @@ def vertex_from_qe_ahc(ahc_dir, iq, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
     d = np.transpose(ahc['el_cart'], (2, 0, 1, 3))  # (k, m, n, c), identity order
     ikq, _ = kq_index_map(kpts_cryst, q_cryst, ng)
     kidx = np.round(kpts_cryst * np.asarray(ng)).astype(int) % np.asarray(ng)
-    return vertex_pao_R(d, A, ikq, kidx, ng)
+    return vertex_pao_R(d, A, ikq, kidx, ng, long_range=long_range)
 
 
 def vertex_from_epw(
@@ -153,6 +153,7 @@ def vertex_from_epw(
     q_cryst: NDArray[np.float64],
     ng: tuple[int, int, int],
     ibndkept: NDArray[np.integer],
+    long_range: NDArray[np.complex128] | None = None,
 ) -> NDArray[np.complex128]:
     """PAO-gauge real-space vertex ``g(R_e)`` for one q from EPW's coarse coupling.
 
@@ -174,6 +175,9 @@ def vertex_from_epw(
     ibndkept : NDArray[np.integer], shape ``(nbndep,)``
         0-based nscf index of each band kept by EPW
         (:func:`~PAOFLOW.elphon.qe_elph_io.read_epw_ukk` ``['ibndkept']``).
+    long_range : NDArray[np.complex128], shape ``(nawf, nawf, 3 nat)``, optional
+        Long-range vertex of this q to subtract in the PAO gauge
+        (:func:`~PAOFLOW.elphon.elph_bloch.vertex_pao_R`).
 
     Returns
     -------
@@ -200,7 +204,7 @@ def vertex_from_epw(
     d = np.transpose(epmatq_q, (2, 0, 1, 3))  # (k, m, n, c)
     ikq, _ = kq_index_map(kpts_cryst, q_cryst, ng)
     kidx = np.round(kpts_cryst * ng_arr).astype(int) % ng_arr
-    return vertex_pao_R(d, A[np.asarray(ibndkept)], ikq, kidx, ng)
+    return vertex_pao_R(d, A[np.asarray(ibndkept)], ikq, kidx, ng, long_range=long_range)
 
 
 def load_epw_coupling(
@@ -306,6 +310,7 @@ def check_long_range_terms(
     epsi: NDArray[np.float64],
     allow_missing_long_range: bool = False,
     zstar_tol: float = 0.1,
+    long_range=None,
 ) -> None:
     """Refuse couplings whose long-range part the interpolation does not treat.
 
@@ -324,6 +329,10 @@ def check_long_range_terms(
         Only warn instead of raising for polar materials (default ``False``).
     zstar_tol : float, optional
         Born charges below this magnitude are DFPT noise (default 0.1).
+    long_range : LongRangeModel, optional
+        The analytic model that the drivers subtract and restore
+        (:class:`~PAOFLOW.elphon.long_range.LongRangeModel`): with it a polar material is
+        accepted, and only a non-polar insulator without quadrupoles still warns.
 
     Raises
     ------
@@ -340,12 +349,20 @@ def check_long_range_terms(
 
     Notes
     -----
-    See the wiki page *Long-range electron-phonon interpolation (plan)* for the
-    planned dipole and quadrupole treatment.  Under MPI the warnings are issued
+    See ``docs/internals/long-range-elphon-plan.md`` for the planned dipole and
+    quadrupole treatment.  Under MPI the warnings are issued
     by rank 0 only (every rank still raises).
     """
     max_zstar = float(np.abs(np.asarray(zstar)).max()) if np.size(zstar) else 0.0
     has_dielectric = bool(np.any(np.asarray(epsi) != 0.0))
+    if long_range is not None:
+        if max_zstar <= zstar_tol and not long_range.has_quadrupoles and _is_root_rank():
+            warnings.warn(
+                'Non-polar insulator (Z* = 0) with a dipole-only long-range model: the dynamical '
+                'quadrupoles are not included (pass quadrupoles= to the model).',
+                stacklevel=2,
+            )
+        return
     if max_zstar > zstar_tol:
         message = (
             'Polar material (max |Z*| = %.2f): the long-range dipole (Frohlich) part of the '

@@ -1389,18 +1389,21 @@ remains a convergence statement, not a code defect.
 
 ## Practical notes and pitfalls
 
-- **Long-range (polar) terms are not treated yet.** The interpolation
-  Fourier-transforms the full coupling and force constants. There is no dipole
-  (Fröhlich) or quadrupole subtract-and-restore step (EPW `lpolar`). That is
-  exact for metals, whose `.epb` files carry $Z^* = \varepsilon^\infty = 0$
-  (MgB₂, Pb). For EPW couplings, `check_long_range_terms` (`do_pao_eph.py`):
+- **Long-range (polar) terms.** Pass `long_range=LongRangeModel.from_coupling(coupling_dir,
+  save_dir, quadrupoles=...)` (`PAOFLOW.elphon.long_range`) to the dense drivers: the
+  analytic dipole (Fröhlich) and, with a `quadrupole.fmt`, quadrupole vertex is subtracted
+  from the coarse PAO-gauge vertex and added back at every dense q, and the dipole force
+  constants likewise (LO-TO splitting). The phonons must be built with the same model
+  (`phonon_at_q=None`, or `phonon_interp_from_dyn(..., long_range=model)`); the driver
+  raises otherwise. The model follows EPW's `rgd_blk_epw`/`rgd_blk` term by term
+  (`docs/internals/long-range-elphon-plan.md`). Without a model the interpolation
+  Fourier-transforms the full coupling and force constants, which is exact for metals
+  ($Z^* = \varepsilon^\infty = 0$, MgB₂, Pb) but not for insulators:
+  `check_long_range_terms` (`do_pao_eph.py`) then
   - raises `NotImplementedError` for polar materials ($|Z^*| > 0.1$), unless
     `allow_missing_long_range=True`;
   - warns for non-polar insulators such as Si ($\varepsilon^\infty$ present),
-    whose quadrupole term is missing.
-
-  The implementation plan is the wiki page *Long-range electron–phonon
-  interpolation (plan)*.
+    whose quadrupole term is missing (also with a dipole-only model).
 - **Explicit k lists.** PAOFLOW reads nscf saves without a `monkhorst_pack`
   element by recovering the grid from the list (`uniform_grid_from_kpoints`).
   The list must be the complete grid in `K_POINTS automatic` order (third index
