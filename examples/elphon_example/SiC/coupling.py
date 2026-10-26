@@ -94,6 +94,7 @@ def main():
         q = np.rint(x_dir * n / (args.nk // 2) * args.nk) / args.nk  # on the dense grid
         q_norm = np.linalg.norm(q @ nscf['bg'])
         line = [q_norm]
+        quad_line = []
         for name in ('model', 'plain') + (('quadrupole',) if 'quadrupole' in vertex else ()):
             g_ReRp, phonon_at_q = vertex[name]['g_ReRp'], vertex[name]['phonon_at_q']
             Nint_p, W_p, Midx_p = vertex[name]['phonon_ws']
@@ -109,7 +110,10 @@ def main():
             g2 = (np.abs(g) ** 2).sum(axis=(1, 2)) * (RY_TO_EV * 1e3) ** 2  # meV^2 per mode
             order = np.argsort(omega_ry)
             acoustic, to, lo = g2[order[:3]].sum(), g2[order[3:5]].sum(), g2[order[5]]
-            line += [lo, to, acoustic]
+            if name == 'quadrupole':
+                quad_line = [lo, to, acoustic]
+            else:
+                line += [lo, to, acoustic]
             if name == 'model':
                 omega_lo = omega_ry[order[5]]
                 if n == 1:
@@ -121,7 +125,7 @@ def main():
         c_lo = (zmass @ coeff)[np.argmax(np.abs(freq_thz))]
         frohlich = 4.0 * abs(c_lo) ** 2 / (2.0 * omega_lo) * (RY_TO_EV * 1e3) ** 2
         line.append(frohlich)
-        rows.append(line)
+        rows.append(line + quad_line)
     rows = np.array(rows)
     if rank == 0:
         header = ('|q| (2pi/a)   LO_model  TO_model  ac_model  LO_plain  TO_plain  ac_plain  LO_dipole_only'

@@ -110,7 +110,15 @@ coupling depends on (EPW's `coeff_delta = facq (i q·Z* + ½ q·Q·q)`). The val
 `quadrupole.fmt`; `--quadrupoles quadrupole.fmt` adds them to the long-range model of
 `coupling.py` and `mobility.py`.
 
-<!-- QUADRUPOLE_COUPLING -->
+**Effect on the coupling at k = Γ** (`coupling.py --quadrupoles quadrupole.fmt`, the
+valence-band sum of section 4, q along Γ-X, 24³ dense grid): the quadrupole term changes
+|g_LO|² by −0.7 % at |q| = 1/12 and −1.0 % at 1/6, |g_TO|² by less than 0.1 % and the acoustic
+sum by −1.4 % and −0.7 %; at the coarse q = 1/3 the three variants coincide, as they must.
+For the valence states at Γ the dipole term dominates (q·Q/Z* ≈ 0.18 at |q| = 1/12) and the
+dipole–quadrupole interference is small; the mobility, which samples the X-valley electrons
+and larger |q|, is more sensitive (next section). The figure `figures/g_frohlich.png` carries
+the dipole + quadrupole curve.
+
 
 ## 6. Carrier mobility (`mobility.py`)
 
@@ -185,6 +193,32 @@ expected for the logarithmic divergence of the acoustic long-range term discusse
 smearing choice cannot cure it. The 36³ adaptive row is off because its widths (up to 450 meV)
 exceed the LO energy and the window.
 
+**Dipole + quadrupole model** (`--quadrupoles quadrupole.fmt`, section 5). The same series with
+the complete long-range model; the dipole-only values of the tables above are repeated in
+parentheses:
+
+| dense grids | smearing | μ_e SERTA (cm²/Vs) | μ_e MRTA | μ_h SERTA | μ_h MRTA |
+|---|---|---|---|---|---|
+| 48³ / 48³ | fixed 10 meV | 1062 (858) | 1367 (1046) | 122 (95) | 154 (120) |
+| 60³ / 60³ | fixed 10 meV | 749 (585) | 1147 (820) | 96 (79) | 140 (113) |
+| 72³ / 72³ | fixed 10 meV | 489 (416) | 1091 (822) | 78 (66) | 131 (108) |
+| 48³ / 48³ | adaptive a = 0.7 | 678 (572) | 1182 (956) | 116 (94) | 150 (123) |
+| 60³ / 60³ | adaptive a = 0.7 | 603 (503) | 1301 (993) | 97 (81) | 145 (119) |
+| 72³ / 72³ | adaptive a = 0.7 | 474 (409) | 1200 (942) | 81 (69) | 139 (115) |
+
+The quadrupoles raise the MRTA electron mobility by 24–40 % and the hole mobility by 20–28 %
+at every grid and with either smearing: the dipole–quadrupole interference weakens the long-range coupling of the
+X-valley electrons at the intravalley q that dominate the polar scattering (q·Q/Z* grows
+linearly with q and is of order one at |q| ≈ 0.3), and of the acoustic branches whose
+piezoelectric-type coupling is only complete with the quadrupoles. Poncé et al. (2021) report
+that neglecting the quadrupoles underestimates the mobility of 3C-SiC by up to 45 %, the
+largest effect among their ten semiconductors, in line with this. With the complete model the
+MRTA electron mobility settles at 1100 (fixed width, 72³) to 1200–1300 cm²/Vs (adaptive,
+60³–72³), now slightly above the measured 900–1000, and the holes at 130–140 against
+≈ 40 cm²/Vs (PBE masses, no spin–orbit coupling, as before). The 10–20 % spread between the
+two smearing treatments is the same as for the dipole model and is the remaining resolution
+uncertainty at these grids. The SERTA drift with the grid remains, as it must.
+
 Temperature dependence at 84³ / 84³ (cm²/Vs):
 
 | T (K) | μ_e SERTA | μ_e MRTA | μ_h SERTA | μ_h MRTA |
@@ -206,6 +240,9 @@ The electron MRTA mobility falls as T^-1.25 between 200 and 400 K; the measured 
 | `coupling.py` (two 6³/6³ coarse vertices, 24³ dense electrons) | 9 min |
 | `mobility.py` 24³, 36³, 48³, 60³, 72³, 84³ (dense k = dense q) | 4, 5, 6, 8, 12, 21 min |
 | `mobility.py --adaptive-smearing 0.7` 36³, 48³, 60³, 72³ | 6, 9, 17, 34 min (the last two shared the cores with other jobs) |
+| `quadrupoles.py`: twelve single-q `ph.x` runs + extraction | 2 min |
+| `mobility.py --quadrupoles` 48³, 60³, 72³, fixed / adaptive | 7, 9, 17 / 9, 16, 27 min (two series sharing the cores) |
+| `coupling.py --quadrupoles` (three 6³/6³ coarse vertices) | 14 min |
 
 [2] Properties of Silicon Carbide (G. L. Harris, ed., INSPEC 1995): 3C-SiC electron mobility
 ≈ 1000 cm²/Vs and hole mobility ≈ 40 cm²/Vs at 300 K.

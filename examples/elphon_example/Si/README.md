@@ -490,7 +490,7 @@ Phonon-assisted Im ε and α (direct + indirect, constant n_r = 3.4 here; with
   interference. It has no multiphonon lattice absorption (the two-phonon bands
   of Si at 0.07–0.17 eV), no doping, and no band-gap change with temperature.
 - **Long-range terms.** Si is non-polar (Z* ≈ 0), so the Fröhlich (dipole) term
-  vanishes, but the dynamical quadrupoles (Q_{x,yz} = ∓14.4 e bohr² on the two
+  vanishes, but the dynamical quadrupoles (Q_{x,yz} = ∓14.4 e bohr on the two
   atoms with this pseudopotential, 13.66 in Brunin *et al.* 2020) give a
   q-independent long-range piece that the interpolation of the short-range
   vertex alone misses at small q. The drivers build the model with

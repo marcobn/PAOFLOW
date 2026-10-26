@@ -14,7 +14,7 @@ induced electron density per unit displacement (``ph.x`` ``fildrho``), :math:`-i
 ion}` the point-ion charge moved with the atom (no higher multipoles), :math:`\\varepsilon_L =
 \\hat q\\cdot\\varepsilon^\\infty\\cdot\\hat q` removes the screening of the macroscopic field,
 which a finite-q DFPT run applies to the total (ion plus electron) charge, :math:`Z^*` the Born
-charge and :math:`Q^\\kappa_{\\beta\\alpha\\gamma}` the dynamical quadrupole (second moment of
+charge and :math:`Q^\\kappa_{\\beta\\alpha\\gamma}` the dynamical quadrupole in e bohr (second moment of
 the induced charge about the displaced atom, EPW's ``Qmat(kappa, beta, alpha, gamma)``).  The
 response is real in real space, so the odd orders are imaginary and the even ones real: the
 quadrupole is the real part at order :math:`q^2`, uncontaminated by the :math:`q^2` dependence of
@@ -222,7 +222,7 @@ def fit_multipoles(
     -------
     dict
         ``zstar`` ``(nat, 3, 3)`` ``[atom, field, displacement]`` from the imaginary part;
-        ``quadrupoles`` ``(nat, 3, 3, 3)`` ``[atom, displacement, alpha, gamma]`` (symmetric in
+        ``quadrupoles`` ``(nat, 3, 3, 3)`` ``[atom, displacement, alpha, gamma]`` in e bohr (symmetric in
         the last two) extrapolated from the two smallest magnitudes (Richardson, O(q^2)
         corrections), ``quadrupoles_by_magnitude`` ``{|q|: Q}``, ``residual_zstar`` and
         ``residual_quadrupole`` (relative least-squares residuals).

@@ -70,6 +70,7 @@ position-dipoles
 scattering-channels
 dfpt-coupling-port
 long-range-elphon-plan
+arpes-chinook-plan
 thermo-optics
 sk-edtb
 cli-generators

@@ -9,7 +9,7 @@ The electronic charge induced by a monochromatic displacement has the expansion
 -Omega <n~> e^{iq.tau} eps_L(q) = -i q.Z_el - 1/2 q.Q.q + O(q^3): the imaginary part is the
 electronic Born charge (a check against the Gamma-point DFPT, Z* - Z_ion), the real part at
 order q^2 the dynamical quadrupole (Royo and Stengel, PRX 9, 021050 (2019); for Si Brunin et
-al., PRL 125, 136601 (2020) give |Q_{x,yz}| = 13.66 e bohr^2; in zincblende SiC the Si and C
+al., PRL 125, 136601 (2020) give |Q_{x,yz}| = 13.66 e bohr; in zincblende SiC the Si and C
 quadrupoles differ in magnitude and sign).  Six directions and two
 magnitudes determine the 18 components per atom and the q -> 0 extrapolation.  Set
 QUADRUPOLES = 'quadrupole.fmt' in mobility.py / coupling.py to include the term in the coupling.
@@ -86,9 +86,9 @@ def extract():
           % (np.abs(fit['zstar'] - gamma['born_charges']).max(), fit['sign']))
     quad = fit['quadrupoles']
     for mag, q in sorted(fit['quadrupoles_by_magnitude'].items()):
-        print('  |q| = %.3f: Q[Si]_{x,yz} = %.3f, Q[C]_{x,yz} = %.3f e bohr^2; largest other component %.3f'
+        print('  |q| = %.3f: Q[Si]_{x,yz} = %.3f, Q[C]_{x,yz} = %.3f e bohr; largest other component %.3f'
               % (mag, q[0, 0, 1, 2], q[1, 0, 1, 2], np.abs(q - np.where(np.abs(q) > 0.5 * np.abs(q).max(), q, 0.0)).max()))
-    print('extrapolated q -> 0: Q[Si]_{x,yz} = %.3f, Q[C]_{x,yz} = %.3f e bohr^2'
+    print('extrapolated q -> 0: Q[Si]_{x,yz} = %.3f, Q[C]_{x,yz} = %.3f e bohr'
           % (quad[0, 0, 1, 2], quad[1, 0, 1, 2]))
     path = write_quadrupole_fmt(os.path.join(HERE, 'quadrupole.fmt'), quad)
     print('wrote %s (set QUADRUPOLES = %r in mobility.py / coupling.py)' % (path, os.path.basename(path)))

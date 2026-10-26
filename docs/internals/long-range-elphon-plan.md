@@ -188,14 +188,14 @@ Local scripts in `Workspace/PAOFLOW/dfpt_port/sic{,6,40}/` (QE 7.5 / EPW 6.0, PA
   Validation on Si (`Workspace/PAOFLOW/quadrupoles/si`: scf 12³ k, 38 Ry, PBE `Si.upf`, Γ run
   with `epsil` ε∞ = 13.11, twelve single-q runs with |q| = 0.02 and 0.04 (2π/a), 45 s each):
   the only non-zero components are $Q_{x,yz}$ and its permutations, $Q^{\rm Si_1}_{x,yz} = -14.37$
-  (|q| = 0.02), $-14.21$ (0.04), extrapolated $-14.42$ e bohr², atom 2 opposite in sign, against
-  13.66 e bohr² of Brunin et al., PRL 125, 136601 (2020) (ABINIT long-wave DFPT, different
+  (|q| = 0.02), $-14.21$ (0.04), extrapolated $-14.42$ e bohr, atom 2 opposite in sign, against
+  13.66 e bohr of Brunin et al., PRL 125, 136601 (2020) (ABINIT long-wave DFPT, different
   pseudopotential and cutoff); the fitted Born charges agree with the Γ run to 0.03 e (Z* ≈ 0 for
   Si, the residual is the $q^3$ term of the $|q| = 0.04$ samples amplified by ε∞). A charge-density
   file convention would have given $Z^*_{\rm el} - Z_{\rm ion}$ with the wrong sign and is
   detected by `calibrate_sign`. On the polar 3C-SiC (`examples/elphon_example/SiC/quadrupoles.py`,
   6³ k, 60 Ry, PBE, |q| = 0.02 and 0.04, 10 s per run): $Q^{\rm Si}_{x,yz} = +7.49$ and
-  $Q^{\rm C}_{x,yz} = -3.01$ e bohr² (Si at the origin), against 7.41 and −2.63 fitted from small-q
+  $Q^{\rm C}_{x,yz} = -3.01$ e bohr (Si at the origin), against 7.41 and −2.63 fitted from small-q
   DFPT by Poncé et al., Phys. Rev. Research 3, 043022 (2021), Table IV (Abinit LDA: 7.03 / −1.42);
   the fitted Born charges reproduce the Γ-point $Z^* = +2.65 / -2.83$ to 0.05 e, which checks the
   screening bookkeeping and the relative sign of the dipole and quadrupole terms (EPW's

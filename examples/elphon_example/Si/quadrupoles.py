@@ -9,7 +9,7 @@ The electronic charge induced by a monochromatic displacement has the expansion
 -Omega <n~> e^{iq.tau} eps_L(q) = -i q.Z_el - 1/2 q.Q.q + O(q^3): the imaginary part is the
 electronic Born charge (a check against the Gamma-point DFPT, Z* - Z_ion), the real part at
 order q^2 the dynamical quadrupole (Royo and Stengel, PRX 9, 021050 (2019); for Si Brunin et
-al., PRL 125, 136601 (2020) give |Q_{x,yz}| = 13.66 e bohr^2).  Six directions and two
+al., PRL 125, 136601 (2020) give |Q_{x,yz}| = 13.66 e bohr).  Six directions and two
 magnitudes determine the 18 components per atom and the q -> 0 extrapolation.  Set
 QUADRUPOLES = 'quadrupole.fmt' in main.py / mobility.py to include the term in the coupling.
 Needs phonon/ph.in with epsil = .true. (dielectric tensor) and the scf save of phonon/.
@@ -85,8 +85,8 @@ def extract():
           % (np.abs(fit['zstar'] - gamma['born_charges']).max(), fit['sign']))
     quad = fit['quadrupoles']
     for mag, q in sorted(fit['quadrupoles_by_magnitude'].items()):
-        print('  |q| = %.3f: Q[atom 1]_{x,yz} = %.3f e bohr^2' % (mag, q[0, 0, 1, 2]))
-    print('extrapolated q -> 0: Q[atom 1]_{x,yz} = %.3f, Q[atom 2]_{x,yz} = %.3f e bohr^2 (Brunin et al.: 13.66)'
+        print('  |q| = %.3f: Q[atom 1]_{x,yz} = %.3f e bohr' % (mag, q[0, 0, 1, 2]))
+    print('extrapolated q -> 0: Q[atom 1]_{x,yz} = %.3f, Q[atom 2]_{x,yz} = %.3f e bohr (Brunin et al.: 13.66)'
           % (quad[0, 0, 1, 2], quad[1, 0, 1, 2]))
     path = write_quadrupole_fmt(os.path.join(HERE, 'quadrupole.fmt'), quad)
     print('wrote %s (set QUADRUPOLES = %r in main.py / mobility.py)' % (path, os.path.basename(path)))

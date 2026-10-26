@@ -25,7 +25,7 @@ the irreducible wedge (`K_POINTS automatic`) and unfolded by symmetry.
 | `coupling.py` | the band-resolved coupling at k = Γ along Γ-X with and without the model: the Fröhlich 1/|q| divergence of the LO mode |
 | `mobility.py` | SERTA/MRTA electron and hole mobilities with the polar coupling (`--no-long-range` for the plain interpolation; `--quadrupoles quadrupole.fmt` adds the dynamical quadrupoles; `--adaptive-smearing A` for velocity-dependent delta widths, see REPORT.md) |
 | `quadrupoles.py` | dynamical quadrupoles from twelve single-q `ph.x` density responses (`--write-inputs`, `--extract` → `quadrupole.fmt`), no ABINIT needed |
-| `quadrupole.fmt` | the quadrupoles of this run (Q_Si = 7.49, Q_C = −3.01 e·bohr², EPW's format), so the quadrupole runs can be skipped |
+| `quadrupole.fmt` | the quadrupoles of this run (Q_Si = 7.49, Q_C = −3.01 e·bohr, EPW's format), so the quadrupole runs can be skipped |
 | `REPORT.md` | results of the reference run (phonons vs `matdyn.x`, coupling vs EPW, mobilities) |
 
 **Pseudopotentials:** copy `Si.upf` and `C.upf` (PseudoDojo nc-sr-05 PBE standard,
@@ -74,6 +74,10 @@ the same model, which the library enforces.
 
 ## What to look at
 
+- `quadrupoles.py` / `--quadrupoles quadrupole.fmt`: the dynamical quadrupoles (Q_Si = 7.49,
+  Q_C = −3.01 e·bohr, against 7.41 / −2.63 of Poncé et al. 2021) raise the MRTA electron
+  mobility by 25–40 % and the hole mobility by 20–30 %; the valence-band coupling at Γ moves
+  by only ~1 % (see REPORT.md, sections 5 and 6).
 - `phonons.py` prints ε∞ (7.51), the sum-rule-corrected Z* (±2.74) and the Γ frequencies in
   the limit along the first path segment: TO 790 and LO 952 cm⁻¹ with the model (experiment
   796 and 972), degenerate at 790 with the plain interpolation. `output/phonons/sic.fc` is a
