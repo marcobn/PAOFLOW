@@ -13,8 +13,7 @@ Status (October 27 2026): **implemented** as alternative A (the thin drivers ove
   `paoflow_driver.py` (2.7k lines) are gone, as are the `ahc`/`elphmat` menu entries.
 - `examples/elphon/{Si,Pb,MgB2,SiC}`: `system.py` (rendered by the generator), `qe/`
   (phonon, nscf, optics inputs, `run_qe.sh`, `kmesh.py`), the workflow folders with copies of
-  the templates, READMEs with references, the SiC report. `examples/elphon_example/` is a
-  pointer README.
+  the templates, READMEs with references, the SiC report. `examples/elphon_example/` is gone.
 - Tests: `tests/unit/elphon/test_workflows.py`, `tests/unit/gen/test_elphon_system.py` (the
   examples must equal the templates; every driver parses `--help`; the ME, resistivity and
   k-mesh templates run on synthetic data), `tests/integration/elphon/test_example_workflows.py`
