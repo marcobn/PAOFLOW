@@ -1,0 +1,7 @@
+# <Author et al., Journal Vol, page (year)>, <Fig./Table N>: <quantity, sample (doping, purity), method>.
+# <Provenance and method: measured | transcribed | vector-extracted | digitised (file, dpi, calibration residuals)>.
+# <Assumptions (axis reading, label inference, sample assignment) and the overlay check file>.
+dataset,quantity,x,x_unit,y,y_unit,temperature_k,conditions,provenance,source,locator,y_rel_uncertainty,note
+Author1977_mu_e_drift,mobility_drift_e,200,K,2800,cm2/Vs,,doping_cm3=1e13; carrier=e; method=tof,digitised,"Author et al., J. 1, 2 (1977)",Fig. 2,0.05,marker centre
+Author1977_mu_e_drift,mobility_drift_e,300,K,1450,cm2/Vs,,doping_cm3=1e13; carrier=e; method=tof,digitised,"Author et al., J. 1, 2 (1977)",Fig. 2,0.05,marker centre
+Author1965_rho_Pb,resistivity,300,K,21.0,uOhm cm,,rho0_uohm_cm=0.02; rrr=1000; sample=single crystal; geometry=bulk,transcribed,"Author et al., J. 3, 4 (1965)",Table I,0.02,handbook value

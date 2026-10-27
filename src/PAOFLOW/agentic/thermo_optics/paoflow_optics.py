@@ -1,8 +1,12 @@
 """Adapter: PAOFLOW optical-absorption and thermal-emissivity outputs as model curves.
 
-Reads the ``absorption.npz`` and ``emissivity.npz`` written by the phonon-assisted
-absorption driver (:mod:`PAOFLOW.elphon.phonon_assisted_absorption`) and evaluates
-the observables at experimental conditions:
+Reads the ``absorption.npz`` and ``emissivity.npz`` written by the optics workflow of an
+electron-phonon system folder (``examples/elphon/<System>``: ``optics/absorption.py``, with
+``--emissivity`` and the extended-basis dielectric function of ``optics/dielectric.py``;
+``optics/emissivity.py`` recomputes the emissivity of a finished run; backend
+:mod:`PAOFLOW.elphon.phonon_assisted_absorption`) and evaluates the observables at
+experimental conditions.  :meth:`OpticsModel.from_system` opens the ``optics/output`` of a
+system folder and records its ``system.py`` configuration for the report:
 
 * :meth:`OpticsModel.absorption_coefficient` -- ``alpha(E)`` from the full complex
   dielectric function, :math:`\\alpha = 2\\omega\\kappa/c` with
@@ -50,8 +54,11 @@ class OpticsModel:
         Run parameters (grids, gaps, scissor, thickness, ...), for the report.
     """
 
-    def __init__(self, output_dir: str | Path, eta_index: int | None = None) -> None:
+    def __init__(
+        self, output_dir: str | Path, eta_index: int | None = None, system: dict | None = None
+    ) -> None:
         self.output_dir = Path(output_dir)
+        self.system = dict(system or {})
         with np.load(self.output_dir / 'absorption.npz', allow_pickle=True) as data:
             self.absorption = {key: np.asarray(data[key]) for key in data.files}
         emissivity_file = self.output_dir / 'emissivity.npz'
@@ -67,11 +74,60 @@ class OpticsModel:
         self.eta_index = eta_index
         self.metadata = self._metadata()
 
+    @classmethod
+    def from_system(
+        cls,
+        system_dir: str | Path,
+        output: str = 'output',
+        workflow: str = 'optics',
+        eta_index: int | None = None,
+    ) -> 'OpticsModel':
+        """Open the optics output of an electron-phonon system folder.
+
+        Parameters
+        ----------
+        system_dir : str or Path
+            A folder holding ``system.py`` (``examples/elphon/<System>`` layout).
+        output : str, optional
+            Output directory of the optics driver, relative to the workflow folder
+            (``optics/absorption.py --tag`` / ``optics/emissivity.py --outdir`` runs use
+            other names).
+        workflow : str, optional
+            Workflow folder name.
+        eta_index : int, optional
+            As :class:`OpticsModel`.
+
+        Returns
+        -------
+        OpticsModel
+            With ``system`` filled from ``system.py`` (prefix, coupling source, coarse grids,
+            basis, long-range model, the ``OPTICS`` defaults), which :meth:`describe` reports.
+        """
+        from ...elphon.workflows import load_system
+
+        config = load_system(str(system_dir))
+        system = config.SYSTEM
+        info = {
+            'system_dir': str(Path(system_dir).resolve()),
+            'name': getattr(config, 'NAME', system.prefix),
+            'prefix': system.prefix,
+            'coupling_source': system.coupling_source,
+            'coarse_grid': 'x'.join(str(n) for n in system.coarse_grid),
+            'qgrid': 'x'.join(str(n) for n in system.qgrid),
+            'basis': '%s (%s, pthr %g)'
+            % (system.basis_dir or 'BASIS', system.configuration, system.pthr),
+            'long_range': 'on' if system.long_range else 'off',
+            'quadrupoles': system.quadrupoles or 'none',
+            'optics_defaults': dict(getattr(config, 'OPTICS', {}) or {}),
+        }
+        return cls(Path(system_dir) / workflow / output, eta_index=eta_index, system=info)
+
     def _metadata(self) -> dict:
         a = self.absorption
         keys = ('nk_dense', 'nq_dense', 'refractive_index', 'indirect_gap_dft_ev', 'direct_gap_dft_ev',
-                'scissor_velocity', 'cell_volume_bohr3', 'nelec', 'coupling_save', 'electrons_save',
-                'electrons_dft', 'electrons_hubbard')  # fmt: skip
+                'scissor_velocity', 'scissor_mode', 'scissor_0k_ev', 'position_dipoles',
+                'adaptive_smearing', 'degauss_ev', 'cell_volume_bohr3', 'nelec', 'spin_degeneracy',
+                'coupling_save', 'electrons_save', 'electrons_dft', 'electrons_hubbard')  # fmt: skip
         out = {key: a[key].item() if np.ndim(a[key]) == 0 else a[key] for key in keys if key in a}
         if np.ndim(out.get('refractive_index', 0.0)) > 0:  # n(omega) of the direct dielectric run
             n = np.asarray(out['refractive_index'], dtype=float)
@@ -205,10 +261,15 @@ class OpticsModel:
         """Markdown summary of the run parameters (for the report)."""
         m = self.metadata
         lines = ['| parameter | value |', '|---|---|']
+        for key in ('system_dir', 'name', 'prefix', 'coupling_source', 'coarse_grid', 'qgrid', 'basis',
+                    'long_range', 'quadrupoles'):  # fmt: skip
+            if key in self.system:
+                lines.append('| %s | %s |' % (key, self.system[key]))
         lines.append('| temperatures (K) | %s |' % ', '.join('%g' % t for t in self.temperatures))
         lines.append('| photon grid (eV) | %.3f-%.3f, step %.3f |' % m['omega_grid_ev'])
         for key in ('nk_dense', 'nq_dense', 'indirect_gap_dft_ev', 'direct_gap_dft_ev', 'refractive_index',
-                    'scissor_velocity', 'eta_ev', 'emissivity_thickness_m', 'direct_source',
+                    'scissor_velocity', 'scissor_mode', 'scissor_0k_ev', 'position_dipoles',
+                    'adaptive_smearing', 'eta_ev', 'emissivity_thickness_m', 'direct_source',
                     'electrons_dft', 'electrons_hubbard', 'electrons_save',
                     'coupling_screening'):  # fmt: skip
             if key in m:

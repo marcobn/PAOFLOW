@@ -88,6 +88,30 @@ def test_optics_model_reports_electrons_provenance(tmp_path):
     assert '| coupling_screening | ponce-resta (eps 12.97 -> 11.94) |' in text
 
 
+def test_optics_model_from_system_folder(tmp_path):
+    (tmp_path / 'system.py').write_text(
+        'from PAOFLOW.elphon.workflows import ElphonSystem\n'
+        "SYSTEM = ElphonSystem(prefix='Si2', root='.', masses_amu=[28.085], nelec=8, qgrid=(3, 3, 3))\n"
+        "NAME = 'Si'\nOPTICS = dict(nk=12, nq=6)\n"
+    )
+    out = tmp_path / 'optics' / 'output'
+    out.mkdir(parents=True)
+    synthetic_optics(out)
+    with np.load(out / 'absorption.npz') as data:
+        arrays = dict(data)
+    arrays.update(position_dipoles='full', scissor_mode='target', scissor_0k_ev=0.56)
+    np.savez(out / 'absorption.npz', **arrays)
+    model = OpticsModel.from_system(tmp_path)
+    assert model.system['prefix'] == 'Si2' and model.system['optics_defaults'] == {
+        'nk': 12,
+        'nq': 6,
+    }
+    assert model.metadata['position_dipoles'] == 'full' and model.metadata['scissor_0k_ev'] == 0.56
+    text = model.describe()
+    assert '| coupling_source | dfpt |' in text and '| scissor_mode | target |' in text
+    assert model.bracket(693.0) == (600.0, 750.0)
+
+
 def test_temperature_colors_and_save(tmp_path):
     matplotlib = pytest.importorskip('matplotlib')
     matplotlib.use('Agg')

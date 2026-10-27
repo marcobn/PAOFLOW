@@ -3,8 +3,10 @@
 **When:** a new output folder (finer grid, other parameters, new temperatures).
 
 ```
-A new run is in <path> (changes: <...>). Do not overwrite the previous comparison: copy tables/ and figures/ to
-tables_<old label>/ and figures_<old label>/, point analysis.py to the new run, re-run analysis.py and plot_figures.py,
+A new run is in <system folder>/optics/<outdir> (changes: <...>). Do not overwrite the
+previous comparison: copy tables/ and figures/ to tables_<old label>/ and figures_<old label>/, point analysis.py to
+the new run (OpticsModel.from_system(folder, output='<outdir>')),
+re-run analysis.py and plot_figures.py,
 and report the change of every metric (old -> new, with the baseline), which discrepancies the run was meant to settle
 and whether it did.
 ```

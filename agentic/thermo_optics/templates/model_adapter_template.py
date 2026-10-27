@@ -3,8 +3,14 @@
 Copy into the study (or propose it for ``PAOFLOW.agentic.thermo_optics`` with a test
 when it is reusable).  The adapter only *reads* the calculation output; every method
 returns the observable on the model abscissa, at one condition, so that
-``metrics.curve_deviation`` can interpolate it to the experimental points.  For PAOFLOW
-optics use ``PAOFLOW.agentic.thermo_optics.paoflow_optics.OpticsModel`` instead.
+``metrics.curve_deviation`` can interpolate it to the experimental points.  The built-in
+adapter is ``paoflow_optics.OpticsModel`` (absorption, refractive index, emissivity); the
+sibling workflows have ``PAOFLOW.agentic.transport.MobilityModel`` / ``ResistivityModel``,
+``PAOFLOW.agentic.superconductivity.EliashbergModel`` / ``GapModel`` and
+``PAOFLOW.agentic.arpes.ArpesModel``.  All offer ``from_system(folder)``, which reads
+``system.py`` of an electron-phonon system folder with
+``PAOFLOW.elphon.workflows.load_system`` and records it for ``describe()`` -- copy that
+pattern for a new workflow output (``<workflow>/<output>/<results>.npz``).
 """
 
 from pathlib import Path

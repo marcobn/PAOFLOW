@@ -18,9 +18,9 @@ the PBE one; the coupling stays the DFPT one), the Poncé screening correction o
 (--screening-eps) and the thermal emissivity of a free-standing slab (--emissivity, with the
 direct dielectric function of dielectric.py on the extended basis).
 
-Outputs (output/): epsilon2_indabs_<T>K.dat, epsilon2_dirabs_<T>K.dat, alpha_<T>K.dat in EPW's
-layout, absorption.npz and, with --emissivity, emish_<T>K.dat, emis_th<deg>_<T>K.dat,
-eps_<T>K.dat, emist.dat, emissivity.npz.
+Outputs (output/, or --outdir NAME to keep earlier runs side by side): epsilon2_indabs_<T>K.dat,
+epsilon2_dirabs_<T>K.dat, alpha_<T>K.dat in EPW's layout, absorption.npz and, with --emissivity,
+emish_<T>K.dat, emis_th<deg>_<T>K.dat, eps_<T>K.dat, emist.dat, emissivity.npz.
 """
 
 import argparse
@@ -151,9 +151,14 @@ def main():
         '--screening-eps-dft', type=float, default=DEFAULTS.get('screening_eps_dft'),
         help='DFT dielectric constant of the coupling (default: the DFPT tensor)',
     )  # fmt: skip
+    parser.add_argument(
+        '--outdir', default=OUTPUT,
+        help='output directory (default output/; use another name to keep earlier runs)',
+    )  # fmt: skip
     args = parser.parse_args()
+    outdir = args.outdir if os.path.isabs(args.outdir) else os.path.join(HERE, args.outdir)
     SYSTEM.check_inputs()
-    electrons = SYSTEM.electrons(args.electrons_save, outputdir=OUTPUT)
+    electrons = SYSTEM.electrons(args.electrons_save, outputdir=outdir)
     scissor_ev, target_gap_ev, mode = scissor_settings(
         SYSTEM, electrons, nk=args.nk, target_gap_ev=args.target_gap_ev,
         gap_reference_save=args.gap_reference_save, varshni=args.varshni,
@@ -176,10 +181,10 @@ def main():
         args.nk, args.nq, args.degauss_ev, args.adaptive_smearing, args.position_dipoles,
         args.position_dipole_level,
     )  # fmt: skip
-    write_absorption(out, OUTPUT, label=label)
+    write_absorption(out, outdir, label=label)
     if args.emissivity:
         slab_emissivity(
-            out, OUTPUT, thickness_um=args.thickness_um, angles_deg=args.angles,
+            out, outdir, thickness_um=args.thickness_um, angles_deg=args.angles,
             direct_dielectric=direct, direct_dielectric_label=args.direct_dielectric,
             direct_scissor=args.direct_scissor,
         )  # fmt: skip

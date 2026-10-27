@@ -1,6 +1,6 @@
 # Thermo-optics workflow: playbook for the agent
 
-This is the operating manual for an AI agent (or a person) comparing PAOFLOW's **temperature-dependent optical response** (absorption, free carriers, refractive index, emissivity) with **experimental data of any form** for **any material**. The stages are not specific to optics: another observable needs only a new model adapter (Stage 4). It distils a complete study into stages, decision rules and checks: Si phonon-assisted absorption and thermal emissivity against five figures from three papers (October 2026).
+This is the operating manual for an AI agent (or a person) comparing PAOFLOW's **temperature-dependent optical response** (absorption, free carriers, refractive index, emissivity) with **experimental data of any form** for **any material**. The model is an electron-phonon *system folder* (`examples/elphon/<System>` layout; see "The model pipeline" below). The stages are not specific to these observables: the sibling workflows (`agentic/transport/`, `agentic/superconductivity/`, `agentic/arpes/`) reuse them with their own adapters, and another observable needs only a new model adapter (Stage 4). It distils a complete study into stages, decision rules and checks: Si phonon-assisted absorption and thermal emissivity against five figures from three papers (October 2026).
 
 The tooling is `PAOFLOW.agentic.thermo_optics`. A study has three scripts, each started from `templates/`:
 
@@ -15,10 +15,31 @@ The split matters. Digitisation is reproducible and inspectable on its own. The 
 ```python
 from PAOFLOW.agentic.thermo_optics import digitize as dg, ingest, metrics as mt
 from PAOFLOW.agentic.thermo_optics.datasets import make_dataset, write_dataset, read_dataset
-from PAOFLOW.agentic.thermo_optics.paoflow_optics import OpticsModel     # or your adapter
+from PAOFLOW.agentic.thermo_optics.paoflow_optics import OpticsModel         # optics
 ```
 
 Read `LESSONS_LEARNED.md` once before starting.
+
+## The model pipeline (electron-phonon system folder)
+
+The calculation is a folder of the `examples/elphon/<System>` layout (`paoflow-gen elphon`, or a copy of an
+example with `system.py` pointing at the QE data): `system.py` holds the configuration (prefix, coupling
+source, coarse grids, PAO basis, long-range model, cache) and the per-workflow defaults; each workflow folder
+holds thin drivers over `PAOFLOW.elphon.workflows` and writes its own `output/`. The coarse vertex is cached
+in `cache/`, so reruns pay only the dense step.
+
+| driver (from the system folder) | output | what it gives | cost (Si example) |
+|---|---|---|---|
+| `optics/absorption.py [--nk --nq --temps --degauss-ev --adaptive-smearing --target-gap-ev --varshni --gap-reference-save --electrons-save --screening-eps --no-position-dipoles --outdir NAME]` | `optics/<outdir>/absorption.npz`, EPW-layout `.dat` | phonon-assisted + direct α, Im ε, gaps, scissor per T | 13 s at 12³/6³, 35 s at 24³/12³ (8 cores) |
+| `... --emissivity --direct-dielectric ../qe/optics/output [--thickness-um --angles --direct-scissor same|thermal|none]` | `emissivity.npz`, `eps_<T>K.dat`, `emish_<T>K.dat`, `emist.dat` | charge-neutral E_F(T), free carriers, ε₁ + iε₂, slab and opaque emissivity | 2 min for 8 T at 24³/12³ |
+| `optics/dielectric.py [--savedir --outdir --nfft]` | `qe/optics/output/epsr_*.dat, epsi_*.dat` | extended-basis direct ε (needs the optics nscf) | minutes |
+| `optics/emissivity.py --source <outdir> --direct-dielectric DIR --direct-scissor thermal --thickness-um D --angles ... --outdir NEW` | a new folder with `emissivity.npz` + a copy of `absorption.npz` | the emissivity at another geometry / direct ε / scissor **without a kernel run** | seconds |
+
+`OpticsModel.from_system(folder, output='<outdir>')` opens these outputs (the `transport/` workflow of the same
+folder is the subject of `agentic/transport/`); `describe()` prints the `system.py` configuration and the run metadata (grids, gaps,
+scissor mode and 0 K scissor, position dipoles, adaptive smearing, electrons provenance, screening) for the
+report. Proposed runs are written as these commands, with their flags and cost. Never run them into an
+existing `output/`: give an `--outdir`.
 
 ---
 
@@ -66,7 +87,7 @@ Read `LESSONS_LEARNED.md` once before starting.
 
 ## Stage 0: intake
 
-1. **Model.** Find the driver and its parameters: grids, temperatures, energy grid, scissor, smearing, approximations. Read the output files and their units. For PAOFLOW optics, `OpticsModel(output).describe()` gives the table, including the `electrons` provenance when the run recorded it (PBE or eACBN0 Hamiltonian, Hubbard parameters). Note what the model *cannot* contain: missing physics, energy-grid limits, absent temperatures.
+1. **Model.** Open the system folder: `OpticsModel.from_system(folder, output=...)`; `describe()` gives the configuration (`system.py`: prefix, coupling source, coarse grids, basis, long-range model) and the run parameters (dense grids, temperatures, energy grid, gaps, scissor mode and 0 K scissor, position dipoles, smearing, the `electrons` provenance — PBE or eACBN0 Hamiltonian, Hubbard parameters — and the coupling screening). Read `system.py` for the defaults the run inherited and the driver log for the flags used. Note what the model *cannot* contain: missing physics, energy-grid limits, absent temperatures.
 2. **Sources.** For each file, record its form:
    - text-PDF vs scanned PDF: `ingest.pdf_inventory`, which lists words, images and vector paths per page;
    - embedded bitmap vs vector figure: `ingest.image_placements`, `ingest.pdf_drawing_summary`;
@@ -172,9 +193,12 @@ Cheap checks on existing output come before any new run:
 - parameter sensitivity already stored (e.g. α vs η in `absorption.npz`);
 - component split (indirect vs direct ε₂);
 - the bracketing temperatures;
-- the constant-n vs n(ω) α.
+- the constant-n vs n(ω) α;
 
-Then propose runs, each with its expected effect and cost. See the decision tree below.
+Then recomputations that need no kernel run (`optics/emissivity.py`: another thickness, angle, direct
+dielectric function or direct scissor, seconds). Then propose runs as exact driver commands of the system
+folder (pipeline table above), each with `--outdir`/`--tag`, its expected effect and its cost. See the decision
+tree below.
 
 ## Stage 7: publication figures
 
@@ -217,7 +241,7 @@ model - experiment discrepancy
 
 ## Ask the user at the start
 
-1. The calculation folder(s) (read-only), the driver, and older runs.
+1. The system folder(s) (read-only) and which `optics/<outdir>` runs to compare, including older ones.
 2. The sources, with their figures or tables and their provenance. Is any of them a replot?
 3. The experimental conditions: sample, thickness, doping, geometry, temperatures.
 4. The deliverable and its audience.
@@ -225,7 +249,7 @@ model - experiment discrepancy
 
 ## Worked example (Si, October 2026)
 
-Study folder `EPW_Si_large/EPW_Si/thermo_optics/`, on the user's workstation and not in the repository. Model: PAOFLOW phonon-assisted + direct absorption and slab emissivity, 48³ k/q, scissor to Varshni E_g(T).
+Study folder `Workspace/PAOFLOW/production/Si_optics_emissivity/study/thermo_optics/`, on the user's workstation and not in the repository (the eACBN0 phase of the study is in `../../coarse_data/thermo_optics/`). Model: PAOFLOW phonon-assisted + direct absorption and slab emissivity, 60³ k / 30³ q, scissor to Varshni E_g(T), position dipoles, Poncé screening to ε = 11.94, 26 temperatures (`runs/production`; convergence and sensitivity runs next to it). The drivers of that study predate the system-folder layout; a new study opens the folder with `OpticsModel.from_system`.
 
 | Source | Form | Tools |
 |---|---|---|

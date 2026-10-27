@@ -13,7 +13,8 @@ You are running the thermo-optics workflow: comparing PAOFLOW's temperature-depe
    - `units`;
    - `metrics`;
    - `plotting`;
-   - a model adapter, e.g. `paoflow_optics.OpticsModel`, or a new one written from `templates/model_adapter_template.py`.
+   - a model adapter: `paoflow_optics.OpticsModel` (absorption, refractive index, emissivity), opened with `.from_system(<system folder>)`, or a new one written from `templates/model_adapter_template.py`. Carrier transport, resistivity, superconductivity and ARPES have their own workflows (`agentic/transport/`, `agentic/superconductivity/`, `agentic/arpes/`) and adapters (`PAOFLOW.agentic.transport`, `.superconductivity`, `.arpes`).
+   - The model is an electron-phonon **system folder** (`examples/elphon/<System>` layout: `system.py`, `optics/`, `cache/`). New runs are driver commands of that folder (`optics/absorption.py ...`, `optics/emissivity.py ...`, `optics/dielectric.py`), always with `--outdir` so earlier outputs are kept; `optics/emissivity.py` recomputes the emissivity for another thickness, angle, direct dielectric function or direct scissor in seconds, without a kernel run (see the pipeline table in `AGENT_WORKFLOW.md`).
 
    Every study has three scripts, started from `templates/`: `digitize_sources.py` (sources → `data/*.csv`), `analysis.py` (model at experimental conditions → `data/model_curves.csv`, `tables/`) and `plot_figures.py` (CSV only → `figures/`). Inputs are Python arguments; do not use config files. The worked example is the Si optics study in `AGENT_WORKFLOW.md` §Worked example.
 3. **Where to write:**

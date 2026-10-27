@@ -6,8 +6,8 @@
 Read AGENT_WORKFLOW.md and LESSONS_LEARNED.md in PAOFLOW's agentic/thermo_optics/ folder, then start the
 thermo-optics workflow for <SYSTEM / PROPERTY> (e.g. "optical absorption and emissivity of Si vs T").
 
-Model (read-only):
-- output folder: <path>; driver script: <path>; older runs: <paths or "none">
+Model (read-only): an electron-phonon system folder (examples/elphon/<System> layout)
+- system folder: <path>; runs to compare: optics/<outdir>; older runs: <names or "none">
 - what it computes and its known limits: <e.g. phonon-assisted + direct absorption, no excitons, 0.05 eV grid>
 Experiment:
 - sources: <paths: PDFs, images, tables, decks>; the figures / tables that matter: <e.g. "Sato Fig. 3, 5, 8, 9">

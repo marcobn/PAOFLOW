@@ -47,6 +47,14 @@ Each entry: **symptom → cause → what to do**, with the Si instance. These ar
 | 27 | A quantity that should be monotonic in a model parameter is not | A numerical artifact in the transformation the parameter enters, not physics | Scan the parameter on the stored output before interpreting; find the term that breaks monotonicity | ε₁(0.05 eV, 1073 K) fell from 14 to 11 as the KS scissor grew more negative: ((ω−Δ)/ω)² blew up the broadening tail of the external ε₂ (fixed; 6–15 μm emissivity 0.01–0.02 lower). |
 | 28 | dn/dT too high or too low depending on a convention | The scissor velocity convention scales ε₂ by ((ω−Δ)/ω)² (KS) or not (Levine–Allan), and the T-dependent Δ then sets dn/dT | Recompute n(T) with both conventions on the stored output; quote the experiment as bracketed | Thermal shift of the eACBN0 direct ε: KS ×1.1–1.8, renormalized ×0.65–0.9 of Sato's dn/dT. |
 
+## Model pipeline
+
+| # | Symptom | Cause | What to do | Si instance |
+|---|---|---|---|---|
+| 34 | A kernel rerun proposed to change the slab thickness, the emission angle, the external ε or the direct scissor | Those enter only the emissivity assembly | `optics/emissivity.py --source <run> --outdir <new> ...` recomputes it in seconds from `absorption.npz`; a kernel run is needed only for new grids, temperatures, scissors of the bands, screening or electrons | `direct_scissor='thermal'` and the 1.77 mm Sato slab were recomputed this way. |
+| 35 | Two runs that should differ give identical numbers | A copied driver carried a stale constant; the run never used the intended parameter | Read `describe()` (grids, scissor, dipoles, screening, quadrupoles) against the plan before comparing; with the system-folder layout the configuration lives only in `system.py`, so check that file and the driver log | The Si "quadrupole" mobility series (60–84³, 8 h) duplicated the dipole-only one: its `mobility.py` copy still had `QUADRUPOLES = None`. |
+| 36 | A rerun with other dense grids costs as much as the first run | The coarse vertex g(R_e, R_p) was rebuilt | The system folder caches it in `cache/` (tag = basis, pthr, bands); reruns pay only the dense step. Keep the cache; it is regenerable | 41 min to build at 12³/6³, 22 s to read. |
+
 ## Figures
 
 | # | Symptom | Cause | What to do |

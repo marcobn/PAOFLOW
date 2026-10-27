@@ -55,7 +55,11 @@ user-invocable: true
       agentic/            Library code of the agentic workflows (agentic/ folder below): qo_analysis/ (pyskeaf
                           orbits vs quantum oscillations; PAOFLOW.qo_analysis is a back-compat shim),
                           thermo_optics/ (T-dependent optics vs experimental data of any form: datasets with
-                          provenance, PDF/raster digitising, metrics, plots)
+                          provenance, PDF/raster digitising, metrics, plots: the shared toolkit),
+                          transport/ (MobilityModel, ResistivityModel, Bloch-Gruneisen/Matthiessen baselines,
+                          Boltzmann channel bridge), superconductivity/ (EliashbergModel, GapModel,
+                          AnisotropicGapModel, Allen-Dynes/BCS baselines), arpes/ (ArpesModel, MDC curve
+                          analysis, band-map images); all adapters open a system folder via from_system
       basis_gen/          Generates atomic-orbital basis from pseudopotentials (paoflow-genbasis-ps)
       gen/                Generators: QE input from AFLOW/C2DB (paoflow-gen-qe), main.py driver (paoflow-gen),
                           elphon_system.py + elphon_templates/ (paoflow-gen elphon writes a system folder; the
@@ -77,6 +81,8 @@ user-invocable: true
     agentic/              Agentic workflows run on top of the library (not installed). skeaf/: playbook,
                           prompts, templates, git-ignored projects/; has its own AGENTS.md / CLAUDE.md
                           thermo_optics/: same layout, optics-vs-experiment playbook (PAOFLOW.agentic.*)
+                          transport/, superconductivity/, arpes/: same layout, one playbook each over the
+                          elphon system folders (mobility/resistivity, alpha2F/Tc/gaps, band maps/kinks)
     docs/                 Sphinx + MyST site (Read the Docs); docs/internals/ holds developer notes
     .github/              CI workflows and asset_generation scripts for integration-test tarballs
     ```

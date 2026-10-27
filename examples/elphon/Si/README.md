@@ -112,6 +112,7 @@ mpirun -np 8 python absorption.py --nk 24 --nq 12        # denser grids (35 s on
 mpirun -np 8 python absorption.py --no-position-dipoles  # PAO dH/dk velocity only
 mpirun -np 8 python absorption.py --adaptive-smearing 0.7 --degauss-ev 0.001
                                                          # adaptive delta widths per transition (floor 1 meV)
+mpirun -np 8 python absorption.py --nk 24 --nq 12 --outdir output_24_12   # keep runs side by side
 python plot_absorption.py --temp 300                     # figure -> output/absorption.png
 ```
 

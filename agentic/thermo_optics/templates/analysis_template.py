@@ -22,9 +22,10 @@ from PAOFLOW.agentic.thermo_optics.paoflow_optics import (
 from PAOFLOW.agentic.thermo_optics.units import convert_photon
 
 HERE = Path(__file__).resolve().parent
-MODEL_DIR = Path('<calculation output folder>')  # read-only
+SYSTEM_DIR = Path('<electron-phonon system folder>')  # read-only (system.py, optics/)
+OUTPUT = 'output'  # the optics/<outdir> run compared
 DATA, TABLES = HERE / 'data', HERE / 'tables'
-SOURCE_MODEL = 'PAOFLOW <method> (this work), %s' % MODEL_DIR.name
+SOURCE_MODEL = 'PAOFLOW <method> (this work), %s/%s' % (SYSTEM_DIR.name, OUTPUT)
 TOLERANCE_K = 40.0  # largest |T_exp - T_model| used without interpolation
 WINDOWS = {
     '<physics window 1>': (0.0, 1.0),
@@ -38,7 +39,7 @@ def load_experiments():
 
 
 def main():
-    model = OpticsModel(MODEL_DIR)
+    model = OpticsModel.from_system(SYSTEM_DIR, output=OUTPUT)
     exp = load_experiments()
     TABLES.mkdir(exist_ok=True)
     curves, rows = [], []
@@ -66,7 +67,7 @@ def main():
                          **{k: stats.get(k, np.nan) for k in ('n', 'bias', 'rms', 'max_abs')},
                          'baseline': '<reference name>' if base else '', 'baseline_rms': base['rms'] if base else np.nan})  # fmt: skip
     write_dataset(DATA / 'model_curves.csv', pd.concat(curves, ignore_index=True),
-                  ['Model curves of %s at the experimental conditions (analysis.py).' % MODEL_DIR])  # fmt: skip
+                  ['Model curves of %s at the experimental conditions (analysis.py).' % SOURCE_MODEL])  # fmt: skip
     metrics = pd.DataFrame(rows)
     metrics.to_csv(TABLES / 'metrics.csv', index=False)
     (TABLES / 'summary.md').write_text(

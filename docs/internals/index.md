@@ -74,6 +74,9 @@ arpes-chinook-plan
 arpes
 elphon-examples-layout-plan
 thermo-optics
+agentic-transport
+agentic-superconductivity
+agentic-arpes
 sk-edtb
 cli-generators
 
