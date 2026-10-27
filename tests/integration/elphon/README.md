@@ -24,6 +24,11 @@ same DFPT data (6³ dense q), checks its sign and the valence-band linewidth, an
 the ARPES map of the path with `PAOFLOW.arpes` (photoemission matrix elements from the
 internal PAO basis of `BASIS/Si`) with and without that self-energy.
 
+`test_example_workflows.py` builds a system folder in the layout of `examples/elphon/<System>`
+(`PAOFLOW.gen.elphon_system.write_system_folder`, the drivers of `PAOFLOW/gen/elphon_templates`)
+whose `system.py` points at the Si asset, and runs the superconductivity, optics, transport,
+ARPES and coupling drivers end to end on tiny dense grids (shared vertex cache, output files).
+
 The asset tarball (`elphon_test_assets.tar.gz`, ~33 MB: `si/si.save` with the
 wavefunctions, `si/si_ibz.save`, `si/save` with the `ph.x` outputs, `si/reference/epmatq_subset.npz`,
 and the `sic/` tree)

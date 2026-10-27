@@ -72,6 +72,7 @@ dfpt-coupling-port
 long-range-elphon-plan
 arpes-chinook-plan
 arpes
+elphon-examples-layout-plan
 thermo-optics
 sk-edtb
 cli-generators

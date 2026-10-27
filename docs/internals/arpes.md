@@ -103,11 +103,15 @@ or a callable `f(w, energies, kpoints, bands)` evaluated per k-block. Sources:
 
 ## Examples
 
-`examples/elphon_example/Pb/arpes.py` (metal: the kink from the isotropic α²F, the
-state-resolved form with adaptive widths), `examples/elphon_example/MgB2/arpes.py` (the
-σ-band E₂g kink from the anisotropic Fermi-surface coupling, one self-energy per irreducible
-state), `examples/elphon_example/Si/arpes.py` (semiconductor: band-resolved Fan–Migdal
-linewidths versus temperature and the dressed band maps); each README has the numbers.
+One generic driver, `arpes/arpes.py` of every system folder (`examples/elphon/<System>`, a
+copy of `src/PAOFLOW/gen/elphon_templates/arpes/arpes.py` built on
+`PAOFLOW.elphon.workflows.arpes`), with the per-system settings in the `ARPES` dictionary of
+`system.py` and `--self-energy {isotropic, anisotropic, fan-migdal}`: Pb (metal: the kink from
+the isotropic α²F of the superconductivity workflow, optionally the state-resolved form with
+adaptive widths), MgB₂ (the σ-band E₂g kink from the anisotropic Fermi-surface coupling, one
+self-energy per irreducible state) and Si (semiconductor: band-resolved Fan–Migdal linewidths
+versus temperature along the full Γ-X line and the dressed band maps); each README has the
+numbers.
 
 ## Slabs
 

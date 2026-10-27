@@ -210,3 +210,13 @@ examples/**/*.log
 SHA*
 **/_assets
 
+examples/elphon/*/cache/*
+!examples/elphon/*/cache/.gitkeep
+examples/elphon/*/*/output*/
+examples/elphon/*/qe/*/*.save/
+examples/elphon/*/qe/*/_ph0/
+examples/elphon/*/qe/*/*.dyn*
+examples/elphon/*/qe/*/*.out
+examples/elphon/*/qe/*.upf
+examples/elphon/*/qe/*.UPF
+examples/elphon/*/BASIS_PS/

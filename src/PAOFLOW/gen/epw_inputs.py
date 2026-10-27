@@ -11,7 +11,7 @@ save.  This module writes what such a run needs beyond the usual QE inputs:
   when no Wannier functions are wanted (only the ``.epb`` files are used);
 * a minimal ``epw.in``;
 * the ``pw.x`` scf / nscf and ``ph.x`` inputs of the two run directories
-  (``phonon/`` and ``epw/``, as in ``examples/elphon_epw_example``), derived
+  (``qe/phonon/`` and ``qe/nscf/``, as in ``examples/elphon/<System>``), derived
   from a ``pw.x`` input of the system.
 """
 
@@ -446,9 +446,14 @@ def scf_input(template: str, prefix: str, pseudo_dir: str | None = None) -> str:
 
 
 def nscf_input(
-    template: str, prefix: str, nk: tuple[int, int, int], nbnd: int, pseudo_dir: str | None = None
+    template: str,
+    prefix: str,
+    nk: tuple[int, int, int],
+    nbnd: int,
+    pseudo_dir: str | None = None,
+    explicit: bool = True,
 ) -> str:
-    """``pw.x`` nscf of the ``epw/`` run directory: the full grid as an explicit list.
+    """``pw.x`` nscf of the coarse-grid run directory: the full grid as an explicit list.
 
     Parameters
     ----------
@@ -462,6 +467,10 @@ def nscf_input(
         Number of bands.
     pseudo_dir : str, optional
         ``pseudo_dir`` for the run directory (unchanged if ``None``).
+    explicit : bool, optional
+        The full grid as an explicit ``K_POINTS crystal`` list (EPW needs it); ``False``
+        writes ``K_POINTS automatic`` (the irreducible wedge, which PAOFLOW's native coupling
+        unfolds by symmetry).
 
     Returns
     -------
@@ -476,12 +485,29 @@ def nscf_input(
     }
     if pseudo_dir is not None:
         control['pseudo_dir'] = "'%s'" % pseudo_dir
+    card = kpoints_card(nk) if explicit else automatic_kpoints_card(nk)
     return edit_pw_input(
         template,
         {'control': control, 'system': {'nbnd': str(int(nbnd))}},
         remove=('tprnfor', 'tstress', 'nosym', 'noinv', 'nosym_evc'),
-        kpoints=kpoints_card(nk),
+        kpoints=card,
     )
+
+
+def automatic_kpoints_card(nk: tuple[int, int, int]) -> str:
+    """``K_POINTS automatic`` card of a Gamma-centred grid (the irreducible wedge).
+
+    Parameters
+    ----------
+    nk : tuple of int
+        Grid dimensions.
+
+    Returns
+    -------
+    str
+        The card.
+    """
+    return 'K_POINTS automatic\n  %d %d %d 0 0 0\n' % tuple(int(n) for n in nk)
 
 
 def hubbard_nscf_input(
@@ -565,8 +591,14 @@ def _has_card(text: str, card: str) -> bool:
     )
 
 
-def ph_input(prefix: str, nq: tuple[int, int, int], title: str | None = None) -> str:
-    """``ph.x`` DFPT input on the coarse q-grid (irreducible q, ``fildvscf`` for EPW).
+def ph_input(
+    prefix: str,
+    nq: tuple[int, int, int],
+    title: str | None = None,
+    epsil: bool = False,
+    tr2_ph: float = 1.0e-14,
+) -> str:
+    """``ph.x`` DFPT input on the coarse q-grid (irreducible q, ``fildvscf`` for the coupling).
 
     Parameters
     ----------
@@ -576,6 +608,12 @@ def ph_input(prefix: str, nq: tuple[int, int, int], title: str | None = None) ->
         Coarse q-grid (EPW ``nq1..3``).
     title : str, optional
         Title line (defaults to ``prefix``).
+    epsil : bool, optional
+        Dielectric tensor and Born effective charges at Gamma (insulators and
+        semiconductors: the long-range dipole model and the quadrupoles need them;
+        ``ph.x`` refuses it for metals).
+    tr2_ph : float, optional
+        Self-consistency threshold.
 
     Returns
     -------
@@ -591,8 +629,15 @@ def ph_input(prefix: str, nq: tuple[int, int, int], title: str | None = None) ->
         '  reduce_io = .true.',
         "  fildyn    = '%s.dyn'," % prefix,
         "  fildvscf  = 'dvscf'",
-        '  ldisp     = .true.,',
     ]
+    if epsil:
+        lines.append('  epsil     = .true.')
+    lines.append('  ldisp     = .true.,')
     lines += ['  nq%d = %d,' % (i + 1, n) for i, n in enumerate(nq)]
-    lines += ['  tr2_ph    = 1.0d-14,', '  alpha_mix(1)  = 0.1', '  alpha_mix(10) = 0.3', '/']
+    lines += [
+        '  tr2_ph    = %s,' % ('%.1e' % tr2_ph).replace('e', 'd'),
+        '  alpha_mix(1)  = 0.1',
+        '  alpha_mix(10) = 0.3',
+        '/',
+    ]
     return '\n'.join(lines) + '\n'

@@ -155,8 +155,8 @@ rows across node ranks (independent rows, identical result to the serial loop); 
 `eliashberg_dense_q`, `phonon_assisted_absorption_dense_q` (`phonon_assisted_absorption.py:1067` hard-codes
 `'epw'`), `carrier_scattering_dense_q` (`carrier_scattering.py:444`) get `coupling_source` + the keywords;
 `eliashberg_from_qe_coupling` (`do_pao_eph.py:379`) gets a per-q `vertex_from_dfpt` generator. Examples
-(`examples/elphon_example/{Si,Pb,MgB2}/main.py`, `Si/mobility.py`) switch to `COUPLING_SOURCE='dfpt'`,
-`PHONON_DIR` instead of `EPW_DIR`, with EPW kept as the documented alternative. No `PAOFLOW.py` method
+(`examples/elphon/{Si,Pb,MgB2,SiC}`, `coupling_source='dfpt'` in their `system.py`) use the native
+source, with EPW kept as the documented alternative. No `PAOFLOW.py` method
 (the e-ph workflows are scripts; `PAOFLOW.electron_phonon` is the finite-difference route).
 
 ## Minimal algorithm (conventions)

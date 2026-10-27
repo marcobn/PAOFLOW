@@ -184,7 +184,7 @@ Local scripts in `Workspace/PAOFLOW/dfpt_port/sic{,6,40}/` (QE 7.5 / EPW 6.0, PA
   ionic term (imaginary, orders $q^3$ and $q$). Six directions × two magnitudes
   (`single_q_phonon_inputs`), least squares on the symmetric quadratic forms, Richardson
   extrapolation in $|q|$, `write_quadrupole_fmt` for EPW's format and `LongRangeModel(quadrupoles=...)`.
-  Driver: `examples/elphon_example/Si/quadrupoles.py`.
+  Driver: `coupling/quadrupoles.py` of every example (`PAOFLOW.elphon.workflows.quadrupoles`).
   Validation on Si (`Workspace/PAOFLOW/quadrupoles/si`: scf 12³ k, 38 Ry, PBE `Si.upf`, Γ run
   with `epsil` ε∞ = 13.11, twelve single-q runs with |q| = 0.02 and 0.04 (2π/a), 45 s each):
   the only non-zero components are $Q_{x,yz}$ and its permutations, $Q^{\rm Si_1}_{x,yz} = -14.37$
@@ -193,7 +193,7 @@ Local scripts in `Workspace/PAOFLOW/dfpt_port/sic{,6,40}/` (QE 7.5 / EPW 6.0, PA
   pseudopotential and cutoff); the fitted Born charges agree with the Γ run to 0.03 e (Z* ≈ 0 for
   Si, the residual is the $q^3$ term of the $|q| = 0.04$ samples amplified by ε∞). A charge-density
   file convention would have given $Z^*_{\rm el} - Z_{\rm ion}$ with the wrong sign and is
-  detected by `calibrate_sign`. On the polar 3C-SiC (`examples/elphon_example/SiC/quadrupoles.py`,
+  detected by `calibrate_sign`. On the polar 3C-SiC (`examples/elphon/SiC/coupling/quadrupoles.py`,
   6³ k, 60 Ry, PBE, |q| = 0.02 and 0.04, 10 s per run): $Q^{\rm Si}_{x,yz} = +7.49$ and
   $Q^{\rm C}_{x,yz} = -3.01$ e bohr (Si at the origin), against 7.41 and −2.63 fitted from small-q
   DFPT by Poncé et al., Phys. Rev. Research 3, 043022 (2021), Table IV (Abinit LDA: 7.03 / −1.42);

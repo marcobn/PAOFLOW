@@ -128,7 +128,7 @@ no commensurability with any grid), so an ARPES run reads as `PAOFLOW(...)` →
   arbitrary k, MPI over q), tests 5, EPW parity.
 - **Phase 2** (2–3 days): slabs, spin-ARPES, FR spinor rotation, `PAOFLOW`/`GPAO` methods,
   docs (`Electron-Phonon-Coupling.md` section "Spectral functions and ARPES", a user-guide page).
-- **Phase 3** (2 days + runs): examples `examples/elphon_example/{Pb,MgB2,Si}/arpes.py` with
+- **Phase 3** (2 days + runs): examples `examples/elphon/{Pb,MgB2,Si}/arpes/arpes.py` with
   reports (Pb FR grids on fedora), CI with the elphon asset.
 
 About three weeks. Decisions proposed: real-harmonic formulation with PAOFLOW's Gaunt

@@ -36,7 +36,7 @@ ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 - [Parallelisation and memory](#parallelisation-and-memory)
 - [Adaptive smearing of the deltas](#adaptive-smearing-of-the-deltas)
 - [Grid consistency rules](#grid-consistency-rules)
-- [The `paoflow-gen elphon` CLI workflow](#the-paoflow-gen-elphon-cli-workflow)
+- [The examples and the `paoflow-gen elphon` CLI workflow](#the-examples-and-the-paoflow-gen-elphon-cli-workflow)
 - [Validation](#validation)
 - [Practical notes and pitfalls](#practical-notes-and-pitfalls)
 - [API summary](#api-summary)
@@ -182,6 +182,8 @@ Paths relative to `src/PAOFLOW/`.
 | `elphon/pseudopotential_terms.py` | Bare terms: `LocalPotentialTable` (`vloc_of_g` tables), `bare_local_perturbation` (`compute_dvloc`), `KleinmanBylanderProjectors` (`init_us_2`, `average_pp`, spin-orbit `dvan_so`), `nonlocal_perturbation` (`dvqpsi_us_only`), `real_spherical_harmonics_qe` (`ylmr2`). |
 | `elphon/dfpt_vertex.py` | `CoarseVertexSetup` (tables, symmetries, star members, `potential_at`, `matrix_elements`, `pao_vertex_at_q`, `band_vertex_at_q`), `star_members`, `cartesian_perturbation_potentials` (dvscf rotation), `rotate_pao_vertex` / `unfolded_pao_vertices` (irreducible-q unfolding in the PAO basis with self-check). |
 | `elphon/coupling_cache.py` | Opt-in disk cache of $g(R_e, R_p)$ (`cache_dir`, `cache_tag`, `basis_tag`). |
+| `elphon/workflows/` | The workflow layer of the examples and of `paoflow-gen elphon`: `ElphonSystem` (one configuration per crystal: paths, grids, masses, `nelec`, basis, long-range model, cache; `electrons()`, `long_range_model()`, `coupling_arguments()`), `load_system` (the nearest `system.py`), and one physics-named function per property: `eliashberg`, `write_eliashberg`, `migdal_eliashberg`, `migdal_eliashberg_aniso`, `phonon_assisted_absorption`, `write_absorption`, `slab_emissivity`, `emissivity_from_absorption`, `direct_dielectric`, `carrier_mobility`, `write_mobility`, `metal_resistivity`, `phonon_dispersion`, `quadrupole_inputs`, `quadrupoles`, `long_range_path`, and the ARPES helpers (`workflows/arpes.py`: `photoemission`, `path_points`, `fermi_crossing`, `isotropic_self_energy`, `anisotropic_self_energies`, `fan_migdal`, `linewidth_table`). Wires inputs, caches and outputs only; the physics stays in the modules above. |
+| `gen/elphon_system.py`, `gen/elphon_templates/` | `paoflow-gen elphon`: prompts, `render_system_py`, `qe_inputs`, `write_system_folder`; the thin drivers of every workflow folder (copied into the examples and into generated folders). |
 | `adaptive_smearing.py` | Velocity-dependent widths of the energy-conserving deltas (grid spacing, state and pair widths, adaptive Fermi level); see [Adaptive smearing](#adaptive-smearing-of-the-deltas). |
 | `elphon_native/` | Bridge to the Rust kernel of `indirect_absorption_kernel` (`paoflow_rs.elphon_indirect_absorption`; `PAOFLOW_ELPHON_DISABLE` turns it off). |
 | `elphon/qe_elph_io.py` | Readers: `read_epw_epb` (EPW coarse Bloch coupling, multi-pool, gfortran subrecords), `read_epw_ukk` (EPW band bookkeeping: kept bands, window), `read_qe_ahc_gkk`, `read_qe_el_ph_mat`, `el_ph_mat_to_cartesian`, `read_qe_dyn`, plus the older `elph.inp_lambda`/`lambda.in` readers of the property-only route. |
@@ -241,8 +243,8 @@ potential on the FFT grid plus the cached plane-wave blocks (`cache_bytes`).
 
 ### EPW source (alternative)
 
-The example in `examples/elphon_epw_example` follows this sequence (EPW
-tutorial 04, Pb):
+The Pb example (`examples/elphon/Pb`, `coupling_source='epw'` in its `system.py`) follows
+this sequence (EPW tutorial 04):
 
 1. **`pw.x` scf**, with symmetry.
 2. **`ph.x` DFPT** on the coarse q-grid, **irreducible q only** (symmetry on),
@@ -381,7 +383,7 @@ Validation on Si (ph.x, 3³ q):
   whole path.
 
 Polar materials get a warning: the non-analytic LO–TO term is not included.
-See `examples/elphon_example/Si/phonon/q2r_matdyn.py`.
+See `phonons/phonons.py` of every example (`PAOFLOW.elphon.workflows.phonon_dispersion`).
 
 ---
 
@@ -493,14 +495,14 @@ $D_n = \pi T/(Z_n\omega_n)$, exceeds 1 below $T_c$ and crosses 1 at $T_c$
 linearised kernel, as in the tutorial. The `a2F` stored in `eliashberg.npz` uses
 5% of $\omega_{\max}$. The grid is EPW's: $\omega_j = j\,\omega_{\max}^{\rm ph}\cdot1.1/n_{\rm qstep}$.
 
-| EPW input | PAOFLOW (`me.py` / `me.elphon.py`) | default |
+| EPW input | PAOFLOW (`superconductivity/me.py`; `SUPERCONDUCTIVITY` of `system.py`) | default |
 |---|---|---|
-| `muc` | `MU_STAR`, `--mu-star` | 0.1 |
-| `wscut` | `WSCUT`, `--wscut` (eV) | 0.1 |
-| `degaussq` | `DEGAUSSQ`, `--degaussq` (meV) / `DEGAUSSQ_LINEAR` | 0.15 / 0.5 |
-| `npade` | `NPADE`, `--npade` (% of Matsubara points) | 90 |
+| `muc` | `mu_star`, `--mu-star` | 0.1 |
+| `wscut` | `wscut`, `--wscut` (eV) | 0.1 |
+| `degaussq` | `degaussq_mev`, `--degaussq` (meV) / `degaussq_linear_mev` | 0.15 / 0.5 |
+| `npade` | `npade`, `--npade` (% of Matsubara points) | 90 |
 | `nsiter`, `conv_thr_iaxis`, `conv_thr_racon` | `migdal_eliashberg_iso(nsiter=, conv_thr_iaxis=, conv_thr_racon=)` | 500, 1e-4, 1e-4 |
-| `temps`, `nstemp` | `TEMPS`, `--temps` | tutorial list (example); `auto` (generator) |
+| `temps`, `nstemp` | `me_temps`, `--temps`; `me_linear_temps`, `--linear-temps` | tutorial list (example); `Tmin, Tmax, nstemp` (generator) |
 | `lpade`, `lacon`, `tc_linear` | `--no-pade`, `--no-acon`, `--no-linear` | all on |
 
 **Output** (`write_me_outputs`, in `output/me/`, EPW formats and names, energies
@@ -513,7 +515,7 @@ in eV):
 - `max_eigenvalue.dat`: $T$, $\rho$
 - `migdal_eliashberg.npz`: all of the above
 
-`GPAO.plot_migdal_eliashberg` (used by `plot_me.py` and `plot.elphon.py`) draws
+`GPAO.plot_migdal_eliashberg` (used by `superconductivity/plot_me.py`) draws
 $\Delta(i\omega_n)$, $Z(i\omega_n)$, Re/Im $\Delta(\omega)$, the
 quasiparticle DOS, $\Delta(T)$ and $\rho(T)$.
 
@@ -622,7 +624,7 @@ $\lambda_{n\mathbf k}$ distribution and $\rho(T)$.
 | `laniso`, `fsthick` | `eliashberg_dense_q(fs_coupling=True, fsthick_ev=)` | off; `fs_window` smearings |
 | `degaussw` | `sigmas_ry` | |
 | `adapt_smearing` | `adaptive_smearing=` ([adaptive widths](#adaptive-smearing-of-the-deltas) of the Fermi-surface delta, floored at `sigmas_ry`) | off |
-| `muc`, `wscut`, `npade` | `migdal_eliashberg_aniso(mu_star=, wscut=, npade=)` | 0.1, 0.1 eV, 90 |
+| `muc`, `wscut`, `npade` | `migdal_eliashberg_aniso(mu_star=, wscut=, npade=)`; `superconductivity/me_aniso.py` (`wscut_aniso`, `me_aniso_temps`) | 0.1, 0.5 eV, 90 |
 | `nsiter`, `conv_thr_iaxis` | `nsiter=`, `conv_thr_iaxis=` | 500, 1e-4 |
 | `tc_linear` | `linearized_eigenvalues_aniso` | |
 
@@ -633,7 +635,7 @@ $\lambda_{n\mathbf k}$ distribution and $\rho(T)$.
 `PAOFLOW.elphon.phonon_assisted_absorption` reuses the dense-q interpolation for
 the second-order (photon + phonon) absorption of indirect-gap semiconductors,
 EPW's `lindabs` (`indabs.f90`; Noffsinger et al., PRL **108**, 167402 (2012);
-EPW tutorial 06). The worked example is `examples/elphon_example/Si`.
+EPW tutorial 06). The worked example is `examples/elphon/Si` (`optics/absorption.py`).
 
 For an initial state $i$ at $\mathbf{k}$, a final state $j$ at
 $\mathbf{k}+\mathbf{q}$ and a phonon $\nu$, the two time orderings give
@@ -877,7 +879,7 @@ of the same crystal can replace the PBE one altogether
   used to be an error); `--gap-reference-save` and `--electrons-save` are
   mutually exclusive.
 - **Direct dielectric function.** `DIRECT_DIELECTRIC_DIR` must then come from a
-  `dielectric_tensor` run on the eACBN0 optics save (`optics_eps.py --savedir`).
+  `dielectric_tensor` run on the eACBN0 optics save (`optics/dielectric.py --savedir`).
   `thermal_emissivity(..., direct_scissor=)` sets its shift: `'same'` (default)
   the run's Δ(T); `'thermal'` only Δ(T) − Δ(0) (`results['scissor_0k_ev']`),
   when the external spectrum already has the right 0 K direct gap and a scissor
@@ -889,7 +891,7 @@ of the same crystal can replace the PBE one altogether
   overestimates dn/dT (×1.1–1.8 for Si), with `'renormalized'` it
   underestimates it (×0.65–0.9). The taper below the direct gap stays at the run's
   scissor-corrected direct gap, where its phonon-assisted term diverges.
-  `examples/elphon_example/Si/emissivity_from_absorption.py` recomputes the
+  `optics/emissivity.py` of the Si example (`emissivity_from_absorption`) recomputes the
   emissivity of a finished run this way, without a new kernel pass;
   `thermal_emissivity` compares the onset of the external $\varepsilon_2$ (5 %
   of its maximum, which lands on the direct gap for PAOFLOW's Si spectrum)
@@ -1284,10 +1286,10 @@ of a converged $90^3$ reference where a fixed 0.1 meV smearing is off by more
 than 50 %. On real data (October 2026): the Pb isotropic λ with the native
 DFPT coupling and q = 24³ is 1.068, 1.069 and 1.069 on k = 24³, 48³ and 72³
 with a = 0.7 (1.054 and 1.100 for a = 0.35 and 0.2 at 48³), where the fixed
-50 meV width gives 1.018, 1.176 and 1.029 (`examples/elphon_example/Pb/README.md`);
+50 meV width gives 1.018, 1.176 and 1.029 (`examples/elphon/Pb/README.md`);
 the 3C-SiC MRTA electron mobility converges from 48³ on with a = 0.7 (956,
 993, 942 cm²/Vs at 48³–72³, experiment 900–1000) where the fixed 10 meV width
-was still moving at 60³ (`examples/elphon_example/SiC/REPORT.md`). The SERTA
+was still moving at 60³ (`examples/elphon/SiC/REPORT.md`). The SERTA
 rate of the polar acoustic term keeps drifting with either smearing (it
 diverges logarithmically without free-carrier screening). Mind that a
 Fermi-surface width of $a|\mathbf v_F|\Delta k$ is large in a metal (up to
@@ -1311,41 +1313,58 @@ $\lambda$ under dense-q interpolation, from Fourier overshoot near $\Gamma$.
 
 ---
 
-## The `paoflow-gen elphon` CLI workflow
+## The examples and the `paoflow-gen elphon` CLI workflow
+
+The electron-phonon examples (`examples/elphon/{Si,Pb,MgB2,SiC}`) and the generator share
+one layout, one system folder per crystal:
+
+```
+<System>/
+  system.py          ElphonSystem (prefix, coupling source, grids, masses, nelec, basis, long-range
+                     model, cache) + the per-workflow defaults (SUPERCONDUCTIVITY, OPTICS, TRANSPORT,
+                     ARPES, PHONONS, COUPLING)
+  qe/                phonon/ (scf.in, ph.in with fildvscf [and epsil]), nscf/ (nscf.in on the
+                     irreducible wedge [, epw.in, write_ukk.py]), optics/ (nscf with many bands),
+                     run_qe.sh, kmesh.py
+  cache/             g(R_e, R_p), built once and shared by every workflow
+  phonons/           phonons.py
+  coupling/          quadrupoles.py  long_range_check.py
+  superconductivity/ eliashberg.py  me.py  me_aniso.py  plot_me.py
+  optics/            absorption.py  emissivity.py  dielectric.py  plot_absorption.py
+  transport/         mobility.py  plot_mobility.py  |  resistivity.py  plot_resistivity.py (metals)
+  arpes/             arpes.py
+```
+
+Every driver is a thin script: it loads the nearest `system.py`
+(`PAOFLOW.elphon.workflows.load_system`), parses its options (defaults from the
+dictionaries of `system.py`), calls one function of `PAOFLOW.elphon.workflows` and writes
+`output/` next to itself. The drivers are copies of `src/PAOFLOW/gen/elphon_templates/`;
+`tests/unit/gen/test_elphon_system.py` keeps the examples and the templates identical, and
+`tests/integration/elphon/test_example_workflows.py` runs each workflow on the Si asset.
 
 `paoflow-gen` (see [Input and Script Generators (CLI)](Input-and-Script-Generators-CLI))
-writes `main.elphon.py`, `me.elphon.py` and `plot.elphon.py`, plus `me_aniso.elphon.py` for the EPW
-source with equal dense k- and q-grids. With the default EPW source it also
-writes the QE/EPW inputs in the layout of `examples/elphon_epw_example`, deriving
-the scf and nscf from a `pw.x` input of the system:
-
-```
-phonon/scf.in  phonon/ph.in                       # pw.x scf + ph.x (irreducible q, fildvscf)
-epw/nscf.in    epw/epw.in    epw/write_ukk.py     # nscf on the explicit full k list + epw.x
-```
+asks for a `pw.x` input, the prefix, the coupling source (`dfpt` default, `epw`), the
+coarse grids (re-prompted until q divides k), the nscf sampling (irreducible wedge or the
+explicit list EPW needs), `nbnd`, masses, `nelec`, whether the system is a metal, the PAO
+basis, a multi-select of workflows and their settings, and writes the folder above:
+`system.py`, `qe/` (`scf.in`, `ph.in` — with `epsil = .true.` for non-metals so that the
+long-range model and the quadrupoles have ε∞ and Z* —, `nscf.in`, `run_qe.sh`; `epw.in` and
+`write_ukk.py` for the EPW source; `optics/nscf.in` when the extended-basis dielectric
+function is wanted) and the selected workflow folders.
 
 ```bash
-cd phonon && pw.x -in scf.in && ph.x -in ph.in && python3 <q-e>/EPW/bin/pp.py
-cd ../epw && mkdir -p <prefix>.save
-cp ../phonon/<prefix>.save/{charge-density.dat,data-file-schema.xml} <prefix>.save/
-pw.x -in nscf.in && python3 write_ukk.py && mpirun -np N epw.x -nk N -in epw.in
-cd .. && mpirun -np N python main.elphon.py   # PAO interpolation of EPW's coupling -> alpha^2F, lambda, Tc
-python me.elphon.py                            # Migdal-Eliashberg gap vs T, linearised-kernel Tc
-python me_aniso.elphon.py                      # anisotropic gaps (dense q with nk = nq)
-python plot.elphon.py                          # overlays EPW's epw/<prefix>.a2f (dashed) when present
+paoflow-gen                       # workflow: elphon -> system.py, qe/, <workflow>/ folders
+cd qe && NP=8 bash run_qe.sh      # scf, ph.x, nscf [, pp.py + write_ukk.py + epw.x] [, optics nscf]
+paoflow-genbasis-ps --pseudo-dir qe --out BASIS_PS --preset standard
+mpirun -np N python superconductivity/eliashberg.py   # -> superconductivity/output/{alpha2F.dat, eliashberg.npz}
+python superconductivity/me.py; python superconductivity/me_aniso.py; python superconductivity/plot_me.py
+mpirun -np N python optics/absorption.py [--emissivity --direct-dielectric ../qe/optics/output]
+mpirun -np N python transport/mobility.py             # or transport/resistivity.py for a metal
+mpirun -np N python arpes/arpes.py
 ```
 
-The scf and the nscf run in separate directories, so the nscf does not
-overwrite the save that ph.x used. Without a `pw.x` input the generator writes
-`epw/nscf.kpoints` (the explicit k list) in place of `phonon/scf.in` and
-`epw/nscf.in`.
-
-The generator re-prompts until the q-grid divides the k-grid and
-`NK_DENSE % NQ_DENSE == 0`. `main.elphon.py` is the same analysis as
-`examples/elphon_epw_example/main.py` (options `--coarse-q`, `--nk`, `--nq`,
-`--sigma-ev`). Choosing `ahc (Gamma only)` produces the
-previous two-phase ph.x script (`inputs`, then `analyse`), with a warning about
-its gauge limitation. The `elphmat` choice is disabled in the menu.
+The `ahc` and `elphmat` ph.x sources are no longer offered by the generator (their library
+code paths remain, see the coupling-source table above).
 
 ---
 
@@ -1435,7 +1454,7 @@ plus 25 linearised-kernel temperatures) takes about 3 s.
 ### MgB₂: pair-resolved interpolation and anisotropic Migdal–Eliashberg (October 2026)
 
 EPW source, 6³ k / 3³ q coarse grids, σ = 0.05 eV, μ* = 0.1, ω_c = 0.5 eV,
-`fsthick` = 0.2 eV (`examples/elphon_example/MgB2`).
+`fsthick` = 0.2 eV (`examples/elphon/MgB2`).
 
 | | λ | ω_log | $T_c$ AD | $N_F$ | iso. $T_c$ (ME) | aniso. Δ(iω₀), 5 K | aniso. $T_c$ |
 |---|---|---|---|---|---|---|---|
@@ -1485,7 +1504,7 @@ remains a convergence statement, not a code defect.
   raises otherwise. The model follows EPW's `rgd_blk_epw`/`rgd_blk` term by term
   (`docs/internals/long-range-elphon-plan.md`); `q2r_matdyn` applies the same model to
   the phonon dispersion and DOS (QE's Ewald parameter, `matdyn.x` to 0.01 cm⁻¹). The
-  worked case is `examples/elphon_example/SiC` (phonons, the Fröhlich 1/|q| vertex,
+  worked case is `examples/elphon/SiC` (phonons, the Fröhlich 1/|q| vertex,
   carrier mobility). Without a model the interpolation
   Fourier-transforms the full coupling and force constants, which is exact for metals
   ($Z^* = \varepsilon^\infty = 0$, MgB₂, Pb) but not for insulators:

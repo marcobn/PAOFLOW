@@ -66,10 +66,10 @@ PAO Hamiltonian through the Kohn-Sham energies and projections, and
 for provenance.
 
 Two consumers in this repository: the direct dielectric function
-(`dielectric_tensor` on the eACBN0 save, `examples/elphon_example/Si/optics_eps.py
---savedir`) and the electron-phonon optics / mobility drivers, which take the
+(`dielectric_tensor` on the eACBN0 save, `optics/dielectric.py --savedir` of
+`examples/elphon/Si`) and the electron-phonon optics / mobility drivers, which take the
 band energies and eigenvectors from the eACBN0 PAO Hamiltonian while keeping
-the PBE coupling (`ELECTRONS_SAVE`; see
+the PBE coupling (`--electrons-save`; see
 [Electron-phonon coupling](Electron-Phonon-Coupling.md), "Beyond-PBE
-electrons"). `examples/elphon_example/Si/make_hubbard_nscf.py` writes the two
+electrons"). `examples/elphon/Si/qe/make_hubbard_nscf.py` writes the two
 nscf inputs from the converged card.

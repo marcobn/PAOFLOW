@@ -45,7 +45,9 @@ user-invocable: true
       elphon/             Electron–phonon coupling: native coarse vertex from ph.x dvscf (dfpt_io, plane_waves,
                           pseudopotential_terms, dfpt_vertex, coupling_cache; wavefunction_symmetry unfolds an
                           irreducible-wedge nscf to the full grid), EPW/QE elph I/O, dense-q drivers,
-                          Migdal–Eliashberg, absorption, mobility; finite-difference route (folding, symmetry)
+                          Migdal–Eliashberg, absorption, mobility, self-energies; finite-difference route;
+                          workflows/ = ElphonSystem + one function per property, the layer the example drivers
+                          and paoflow-gen elphon call (system.py per crystal)
       models/             Tight-binding models, Slater–Koster fitting, band unfolding, surface projection
       pyskeaf/            Python SKEAF: de Haas–van Alphen extremal Fermi-surface orbits (CLI + adapter)
       arpes/              ARPES simulation: photoemission matrix elements of the PAO states (chinook formalism,
@@ -56,7 +58,8 @@ user-invocable: true
                           provenance, PDF/raster digitising, metrics, plots)
       basis_gen/          Generates atomic-orbital basis from pseudopotentials (paoflow-genbasis-ps)
       gen/                Generators: QE input from AFLOW/C2DB (paoflow-gen-qe), main.py driver (paoflow-gen),
-                          fermi_plotter
+                          elphon_system.py + elphon_templates/ (paoflow-gen elphon writes a system folder; the
+                          templates are the thin drivers copied into examples/elphon), fermi_plotter
       graphics/           Color and plotting utilities
       writers/            BXSF / XSF / BoltzTraP2 writers
       utils/              Constants, MPI communication, FFT grids, smearing, pyints (Gaussian integrals)
@@ -66,7 +69,8 @@ user-invocable: true
                           kernel; one pool tied to the MPI core budget. Parity < 1e-12
     tests/unit/           Fast unit tests, organized by subpackage
     tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data
-    examples/             qe_examples, transport_examples, acbn0_examples, TBmodel_examples, elphon_example,
+    examples/             qe_examples, transport_examples, acbn0_examples, TBmodel_examples, elphon (one folder per
+                          system: system.py, qe/, phonons/ coupling/ superconductivity/ optics/ transport/ arpes/),
                           pyskeaf_examples, qo_analysis_examples, unfold_examples, plot_examples, new_examples, vasp_examples
     BASIS/                Per-element radial orbital tables (e.g. BASIS/Si/3P.dat) for internal projections
     PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard)
