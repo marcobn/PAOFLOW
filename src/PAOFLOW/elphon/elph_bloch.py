@@ -800,6 +800,8 @@ def precompute_dense_electrons(
         'Midxg': Midxg,
         'Nintg': Nintg,
         'windows': windows,
+        'Hn_flat': Hn_flat,  # Bloch terms, for states off the grid (bloch_states_at)
+        'NintH': NintH,
     }
     if velocities:
         cache['velocity'] = _velocity_operator_terms(
@@ -848,6 +850,81 @@ def precompute_dense_electrons(
             shell[isig] = np.min(np.abs(E - ef) / w, axis=1) < fs_window
     cache['ef_sig'], cache['dk'], cache['dos'], cache['shell'] = ef_sig, dk, dos, shell
     return cache
+
+
+def bloch_states_at(
+    electrons: dict, k_cryst: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.complex128]]:
+    """Energies (Ry) and eigenvectors of the cached PAO Hamiltonian at arbitrary k-points.
+
+    Parameters
+    ----------
+    electrons : dict
+        Output of :func:`precompute_dense_electrons`.
+    k_cryst : ndarray ``(nk, 3)``
+        Crystal coordinates (not restricted to the dense grid).
+
+    Returns
+    -------
+    energies : ndarray ``(nk, nawf)``
+        Same scale and convention as ``electrons['E']``.
+    vectors : ndarray ``(nk, nawf, nawf)``
+        Columns, in the gauge of ``electrons['V']`` (:func:`band_vertex` takes them).
+    """
+    k = np.atleast_2d(np.asarray(k_cryst, dtype=float))
+    nawf = electrons['nawf']
+    phk = np.exp(-2j * np.pi * (k @ electrons['NintH'].T))
+    Hk = (phk @ electrons['Hn_flat']).reshape(k.shape[0], nawf, nawf)
+    Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
+    e, v = np.linalg.eigh(Hk)
+    return e / RY_TO_EV, v
+
+
+def group_velocities_at(
+    electrons: dict,
+    k_cryst: NDArray[np.float64],
+    at: NDArray[np.float64],
+    alat: float,
+    step: float = 1.0e-4,
+) -> NDArray[np.float64]:
+    """``|v_nk|``-ready group velocities (Ry bohr) at arbitrary k by central differences.
+
+    Parameters
+    ----------
+    electrons : dict
+        Output of :func:`precompute_dense_electrons`.
+    k_cryst : ndarray ``(nk, 3)``
+    at : ndarray ``(3, 3)``
+        Lattice vectors (rows, alat units).
+    alat : float
+        Lattice parameter (bohr).
+    step : float, optional
+        Finite-difference step (2 pi / alat units) along each Cartesian direction.
+
+    Returns
+    -------
+    ndarray ``(nk, nawf, 3)``
+        ``d e_n / d k`` of the energy-ordered bands (Ry bohr); at band crossings the sorted
+        bands exchange character, which only matters for the ordering, not for the magnitudes
+        used by the adaptive widths.
+    """
+    k = np.atleast_2d(np.asarray(k_cryst, dtype=float))
+    at = np.asarray(at, dtype=float)
+    out = np.zeros((k.shape[0], electrons['nawf'], 3))
+    for a in range(3):
+        dk_cart = np.zeros(3)
+        dk_cart[a] = step
+        dk_cryst = dk_cart @ at.T  # crystal coordinates of the Cartesian step (2 pi / alat)
+        e_plus, _ = bloch_states_at(electrons, k + dk_cryst[None, :])
+        e_minus, _ = bloch_states_at(electrons, k - dk_cryst[None, :])
+        out[:, :, a] = (e_plus - e_minus) / (2.0 * step * 2.0 * np.pi / float(alat))  # Ry bohr
+    return out
+
+
+def vertex_phases_at(electrons: dict, k_cryst: NDArray[np.float64]) -> NDArray[np.complex128]:
+    """Vertex Wigner-Seitz phases ``e^{2 pi i k.n}`` ``(nk, nws)`` at arbitrary k-points."""
+    k = np.atleast_2d(np.asarray(k_cryst, dtype=float))
+    return np.exp(2j * np.pi * (k @ electrons['Nintg'].T))
 
 
 def vertex_phases(electrons: dict, k_indices: NDArray[np.int_]) -> NDArray[np.complex128]:

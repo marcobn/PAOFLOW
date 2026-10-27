@@ -18,6 +18,12 @@ the long-range model reproduces the DFPT vertex at a coarse point, the LO coupli
 diverges as $1/|q|$ only with the model, the interpolated vertex agrees with EPW, and
 the LO-TO splitting follows the dielectric data.
 
+`test_arpes_self_energy.py` evaluates the band-resolved Fan–Migdal self-energy
+(`PAOFLOW.elphon.self_energy.fan_migdal_self_energy`) of Si along Γ–X at 300 K from the
+same DFPT data (6³ dense q), checks its sign and the valence-band linewidth, and simulates
+the ARPES map of the path with `PAOFLOW.arpes` (photoemission matrix elements from the
+internal PAO basis of `BASIS/Si`) with and without that self-energy.
+
 The asset tarball (`elphon_test_assets.tar.gz`, ~33 MB: `si/si.save` with the
 wavefunctions, `si/si_ibz.save`, `si/save` with the `ph.x` outputs, `si/reference/epmatq_subset.npz`,
 and the `sic/` tree)

@@ -147,6 +147,86 @@ class GPAO:
                 sym_points = read_band_path_PAO(sym_points)
         plot_bands(bands_list, sym_points, title, label, y_lim, cols, labels, legend)
 
+    def plot_arpes(
+        self,
+        intensity_map,
+        fname=None,
+        cut='band_map',
+        value=0.0,
+        path_labels=None,
+        title=None,
+        cmap='Greys_r',
+        broadened=True,
+        ax=None,
+    ):
+        """Plot an ARPES simulation (``PAOFLOW.arpes.IntensityMap``).
+
+        Arguments:
+          intensity_map (IntensityMap): Result of ``PAOFLOW.arpes`` / ``PAOFLOW.arpes.simulate``.
+          fname (str): File name of the figure (``None`` shows it).
+          cut (str): ``'band_map'`` (energy vs the path index, or vs ``k_x`` at ``k_y = value``
+            for a mesh), ``'constant_energy'`` (``k_x``-``k_y`` map at the energy ``value``),
+            ``'edc'`` (energy distribution curve at k-point index ``value``).
+          value (float or int): Energy (eV), ``k_y`` (1/A) or k index of the cut.
+          path_labels (tuple): ``(indices, labels)`` of the high-symmetry points of a path.
+          title (str): A title.
+          cmap (str): Colour map.
+          broadened (bool): Resolution-broadened (``True``) or raw intensity.
+          ax (matplotlib axis): Draw into an existing axis.
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        own_figure = ax is None
+        if own_figure:
+            fig, ax = plt.subplots(figsize=(5.0, 4.0), constrained_layout=True)
+        data = intensity_map.intensity if broadened else intensity_map.raw
+        w = intensity_map.w
+        if cut == 'edc':
+            ax.plot(w, data[int(value)], color='k')
+            ax.set_xlabel('E - E$_F$ (eV)')
+            ax.set_ylabel('intensity (arb. units)')
+        elif cut == 'constant_energy':
+            if intensity_map.grid is None:
+                raise ValueError('a constant-energy map needs a momentum mesh')
+            iw = int(np.argmin(np.abs(w - value)))
+            cube = intensity_map.as_grid(broadened)
+            kx, ky = intensity_map.axes['kx'], intensity_map.axes['ky']
+            ax.pcolormesh(kx, ky, cube[:, :, iw].T, cmap=cmap, shading='auto')
+            ax.set_xlabel('k$_x$ (1/Å)')
+            ax.set_ylabel('k$_y$ (1/Å)')
+            ax.set_aspect('equal')
+        elif cut == 'band_map':
+            if intensity_map.grid is not None:
+                ky = intensity_map.axes['ky']
+                iy = int(np.argmin(np.abs(ky - value)))
+                image = intensity_map.as_grid(broadened)[:, iy, :]
+                x = intensity_map.axes['kx']
+                ax.set_xlabel('k$_x$ (1/Å)')
+            else:
+                image = data
+                x = np.arange(data.shape[0])
+                ax.set_xlabel('k-path')
+                if path_labels is not None:
+                    ax.set_xticks(path_labels[0])
+                    ax.set_xticklabels(path_labels[1])
+                    for idx in path_labels[0]:
+                        ax.axvline(idx, color='0.6', lw=0.6)
+            ax.pcolormesh(x, w, image.T, cmap=cmap, shading='auto')
+            ax.axhline(0.0, color='w', lw=0.5, ls='--')
+            ax.set_ylabel('E - E$_F$ (eV)')
+        else:
+            raise ValueError("cut must be 'band_map', 'constant_energy' or 'edc'")
+        if title is not None:
+            ax.set_title(title)
+        if own_figure:
+            if fname is None:
+                plt.show()
+            else:
+                fig.savefig(fname, dpi=200)
+                plt.close(fig)
+        return ax
+
     def plot_berry(
         self,
         fname,

@@ -42,6 +42,7 @@ mid-gap Fermi level.
 | `mobility.py` | phonon-limited carrier mobility: state-resolved SERTA/MRTA rates near the band edges, electron and hole mobilities, `scattering_rates.npz` for `pf.transport` |
 | `quadrupoles.py` | dynamical quadrupoles from twelve single-q `ph.x` density responses (`--write-inputs`, `--extract` → `quadrupole.fmt`), the long-range term that Si needs at small q (`QUADRUPOLES` in the drivers) |
 | `plot_mobility.py` | plots μ(T) and 1/τ against the energy from the band edge → `output/mobility/mobility.png` |
+| `arpes.py` | band-resolved Fan–Migdal self-energy Σ_nk(ω, T) along Γ-X, phonon linewidths versus temperature and the ARPES band maps with the photoemission matrix elements of the PAO orbitals (`PAOFLOW.arpes`) → `output/arpes/` |
 
 **Pseudopotential:** copy the PseudoDojo `Si.upf` (nc-sr-05, PBE standard;
 `PSEUDOS/nc-sr-05_pbe_standard_upf/` in this repository) into this directory.
@@ -397,6 +398,40 @@ an energy-only τ.
 takes the gap, the masses and the carrier statistics from the eACBN0 PAO
 Hamiltonian (see section 4); the rates keep the PBE coupling. The energies of
 `scattering_rates.npz` are then on the scale of that save.
+
+### 6. ARPES and phonon linewidths
+
+```bash
+mpirun -np 8 python arpes.py --nq 12 --temps 10 300 600   # Sigma_nk(w, T) on Gamma-X + ARPES maps, 15 min on 4 cores (12^3 nscf)
+```
+
+`arpes.py` computes the state-resolved Fan–Migdal self-energy of the six bands around the
+gap along Γ–X (41 points, 12³ dense q, 20 meV Lorentzian width) from the DFPT coupling
+(`PAOFLOW.elphon.self_energy.fan_migdal_self_energy`), the linewidths
+−Im Σ_nk(ε_nk) at every state, and the photoemission band maps of the path (He I, s + p
+light; `PAOFLOW.arpes`, see `docs/internals/arpes.md`) bare and dressed with Σ_nk(ω, T).
+
+![Si linewidths and ARPES](figures/arpes.png)
+
+Linewidths (meV) at 10 / 300 / 600 K of this run (12³ nscf, 6³ DFPT q):
+
+| state | E − E_F (eV) | 10 K | 300 K | 600 K |
+|---|---|---|---|---|
+| valence-band maximum, Γ | −0.30 | 1.3 | 2.7 | 5.4 |
+| second valence band, X | −3.10 | 23.5 | 39.2 | 71.6 |
+| lowest valence band, X | −8.06 | 9.6 | 14.8 | 22.1 |
+| lowest valence band, Γ | −12.13 | 0.6 | 1.3 | 2.5 |
+| conduction band, X (near the CBM) | +0.45 | 2.3 | 5.3 | 12.1 |
+| conduction band, Γ | +2.25 | 53.8 | 70.6 | 105.3 |
+
+The linewidths vanish at the band edges, where no final state is within a phonon energy,
+and grow with the distance from the edges and with temperature; the 20 meV width of the
+Lorentzian sets the floor of the smallest values. Only the Fan term enters: the band-edge
+shifts (zero-point renormalisation, temperature dependence of the gap) need the
+Debye–Waller term as well and are not reported. In the maps the lowest s-like band carries
+the largest matrix element at this photon energy, the p-like bands are 30 times weaker
+(hence the power scale), and the dressed map at 600 K shows the energy-dependent
+broadening of the valence bands.
 
 ## Method
 

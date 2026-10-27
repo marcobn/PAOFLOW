@@ -31,6 +31,7 @@ ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 - [Anisotropic Migdal–Eliashberg (Fermi-surface restricted)](#anisotropic-migdaleliashberg-fermi-surface-restricted)
 - [Phonon-assisted optical absorption](#phonon-assisted-optical-absorption)
 - [Carrier transport in semiconductors and insulators (SERTA / MRTA)](#carrier-transport-in-semiconductors-and-insulators-serta--mrta)
+- [Spectral functions and ARPES](#spectral-functions-and-arpes)
 - [Screening correction of the coupling (Poncé 2018)](#screening-correction-of-the-coupling-poncé-2018)
 - [Parallelisation and memory](#parallelisation-and-memory)
 - [Adaptive smearing of the deltas](#adaptive-smearing-of-the-deltas)
@@ -1086,6 +1087,26 @@ band edge.
 - **Adaptive smearing.**
 
 ---
+
+## Spectral functions and ARPES
+
+`elphon/self_energy.py` turns the coupling into electron self-energies for spectral functions
+and the ARPES module (`PAOFLOW.arpes`, see [arpes.md](arpes.md)):
+
+- `eliashberg_self_energy(omega, a2f, w, T)`: the isotropic Engelsberg–Schrieffer
+  $\Sigma(\omega, T)$ of $\alpha^2F$ (digamma closed form; $T = 0$ with the logarithmic kernel),
+  broadcast over per-state $\alpha^2F_{n\mathbf k}$ for the anisotropic case;
+  `mass_enhancement(w, sigma)` returns $\lambda = -\mathrm{Re}\,\Sigma'(0)$ and $Z$;
+- `fan_migdal_kernel`: the Fan–Migdal self-energy of a block of states at one q, with the
+  Lorentzian width (constant or per intermediate state); its on-shell imaginary part is the
+  SERTA sum of `carrier_scattering` with a Lorentzian delta;
+- `fan_migdal_self_energy(...)`: the dense-q driver at arbitrary k-points (an ARPES path or
+  mesh), sharing the vertex setup of `carrier_scattering_dense_q`; intermediate states
+  $\mathbf k+\mathbf q$ from `elph_bloch.bloch_states_at` (the Bloch terms are now kept in the
+  dense-electron cache), full dense q-grid split over the MPI ranks, carrier statistics as the
+  mobility driver; returns $\Sigma_{n\mathbf k}(\omega, T)$ ``(ntemp, nk, nband, nw)`` relative to
+  the Fermi level of each temperature;
+- `TabulatedSelfEnergy.from_result(result, kpoints)` feeds it to `PAOFLOW.arpes.simulate`.
 
 ## Screening correction of the coupling (Poncé 2018)
 

@@ -4845,6 +4845,37 @@ class PAOFLOW:
 
         self.report_module_time('Quasi-Harmonic')
 
+    def arpes(self, experiment, self_energy=None, ispin=0, basis=None):
+        """ARPES intensity map of the PAO Hamiltonian (:mod:`PAOFLOW.arpes`).
+
+        Photoemission matrix elements of the PAO Bloch states with a plane-wave final
+        state (chinook formalism, Day et al. 2019), the spectral function with an
+        optional band-resolved self-energy, the Fermi factor and the resolution.
+        Call after ``projections`` and ``pao_hamiltonian``.
+
+        Arguments:
+            experiment (PAOFLOW.arpes.ArpesExperiment): Photon energy, work function,
+                inner potential, temperature, polarisation, energy window, momentum
+                mesh or path, resolution, radial-function choice.
+            self_energy (optional): ``None`` (bare bands), a constant ``-i Gamma``, a
+                ``PAOFLOW.arpes.GridSelfEnergy``, an array ``(N, nb, nw)`` or a callable
+                ``f(w, energies, kpoints, bands)`` such as
+                ``PAOFLOW.elphon.self_energy.TabulatedSelfEnergy`` of a Fan-Migdal run.
+            ispin (int): Spin channel of ``HRs``.
+            basis (optional): A prepared ``PhotoemissionBasis`` (e.g. with slab depths or
+                cross sections); default built from the projection basis.
+
+        Returns:
+            PAOFLOW.arpes.IntensityMap: Raw and broadened intensities, the window bands
+            and their matrix-element weights; ``save`` writes an ``.npz`` file.
+        """
+        from .arpes import BlochHamiltonian, PhotoemissionBasis, simulate
+
+        if basis is None:
+            basis = PhotoemissionBasis.from_data_controller(self.data_controller)
+        bloch = BlochHamiltonian.from_data_controller(self.data_controller, ispin=ispin)
+        return simulate(experiment, basis, bloch, self_energy)
+
     def electron_phonon(
         self,
         supercell_matrix=None,

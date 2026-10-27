@@ -1,127 +1,138 @@
-# ARPES simulation with chinook: self-energy renormalisation and spectral functions (plan)
+# ARPES simulation in PAOFLOW: a native photoemission module with band-resolved self-energies (plan)
 
-Status (October 26 2026): assessment and design, nothing implemented. The aim is to simulate
-ARPES spectra from the PAO Hamiltonian with the electron-phonon self-energy of the dense-q
-machinery, using [chinook](https://github.com/qmlab-ubc-ca/chinook) (Day, Zwartsenberg,
-Elfimov and Damascelli, npj Quantum Materials 4, 54 (2019); MIT licence; PyPI `chinook`
-1.1.3; last commit February 2026) for everything photoemission-specific, in the way
-`phonon/do_phonopy.py` uses phonopy: PAOFLOW builds the chinook objects from its own data and
-drives them, chinook stays an optional dependency.
+Status (October 27 2026): **implemented** as `src/PAOFLOW/arpes/` and
+`src/PAOFLOW/elphon/self_energy.py`, see [arpes.md](arpes.md) for the user documentation.
+This note keeps the assessment of chinook and the design decisions. Decision taken with the
+user: do not depend on chinook at run time; port the photoemission core of
+[chinook](https://github.com/qmlab-ubc-ca/chinook) (R. P. Day, B. Zwartsenberg, I. S. Elfimov
+and A. Damascelli, npj Quantum Materials 4, 54 (2019); MIT licence, Copyright (c) 2018 Ryan
+Patrick Day) with attribution, built on PAOFLOW's own Hamiltonian, basis, spherical harmonics
+and Gaunt coefficients, and extend it to the band-resolved electron-phonon self-energy of the
+dense-q machinery. All items of the plan are implemented, including the spinor bases, the chinook parity
+fixture and the Pb, MgB₂ and Si examples; the Debye–Waller term is not planned.
 
-## What chinook does and where PAOFLOW plugs in
+## What chinook contains and what we take
 
-chinook is a pure-Python (numpy, scipy, matplotlib) tight-binding + ARPES code, 10.7k lines:
+chinook is 10.7k lines of pure Python. Its dependency graph splits cleanly:
 
-| chinook object | role | PAOFLOW injection |
+| chinook module (lines) | content | decision |
 |---|---|---|
-| `orbital(atom, index, label 'nlXX', pos [Å], Z, spin, lam, sigma)` (`orbital.py`) | basis state: real cubic harmonic `lXX` of principal number `n` on an atom; `projdict` maps the labels to $Y_l^m$ | one orbital per PAO basis function: atom, shell ($n$, $l$) from `arry['shells']`/the basis files, $m$ in QE's `ylmr2` order ($z, x, y$; $z^2, xz, yz, x^2-y^2, xy$), position `tau`, atomic number from the species |
-| `TB_model(basis, {'type': 'list', 'list': [[i, j, Rx, Ry, Rz, t_ij]], 'avec', 'cutoff', ...})` (`TB_lib.py`) | Hamiltonian as hopping list; $H_{ij}(\mathbf k) = \sum_n t^n_{ij} e^{i\mathbf k\cdot\mathbf R^n_{ij}}$ with $\mathbf R_{ij}$ the **full connecting vector in Å** (orbital positions included: atomic gauge, cf. `H_library.sk_build`), $\mathbf k$ in Å⁻¹, upper triangle $i \le j$ | `HRs` (nawf, nawf, R) with PAOFLOW's $H(\mathbf k) = \sum_R H(R) e^{-2\pi i \mathbf k\cdot R}$: hopping $t_{ij}(\mathbf R_{ij} = \boldsymbol\tau_j - \boldsymbol\tau_i - R\,a)$ $= H_{ij}(R)$, i.e. the sign flip already handled by `models/band_unfold.paoflow_to_model_dict` (`fourier_sign = -1`); drop $|t| <$ tol |
-| `ARPES_lib.experiment(TB, ARPES_dict)`: `datacube()` diagonalises on the (kx, ky) cube at $k_z(h\nu, V_0, W)$, computes the dipole matrix elements $M_{n\mathbf k}$ (plane-wave final state, radial integrals $B^{l'}_{nl}(k)$, Gaunt coefficients, polarisation, spin), `spectral()` assembles $I(\mathbf k,\omega) = \sum_n |M_{n\mathbf k}|^2 A_{n\mathbf k}(\omega) f(\omega)$ and convolves with the resolution | the experiment | keep as is; `experiment.spectral` only supports a self-energy that is **k-dependent but band-independent** (`SE_gen`: 'constant', 'poly', 'grid', 'func'(kx, ky, w)); the state-resolved $\Sigma_{n\mathbf k}(\omega)$ needs a small override (below) |
-| `radint_lib` radial integrals: 'slater', 'hydrogenic', '**grid**' (user radial functions $R_{nl}(r)$ on a grid per 'atom-n-l'), 'exec', 'fixed' | $B^{l'}_{nl}(k) = i^{l'}\int dr\, R_{nl}(r) r^3 j_{l'}(kr)$ | the PAO radial functions themselves: `BASIS/<El>/<nl>.dat` tables (`r`, $R(r)$) or the UPF `PP_PSWFC` read by `inputs/read_upf.py` → `rad_type='grid'`, so the matrix elements use the same orbitals as the Hamiltonian |
-| `slab.py` (`gen_TB(..., slab_dict={'miller', 'thick', 'vac', 'termination'})`), `mfp` depth attenuation | surface termination and escape depth | works directly on the injected bulk model |
-| spin: `basis` doubled (`spin_double`), SOC as on-site $\lambda\,\mathbf L\cdot\mathbf S$ (`H_library.SO`), spin-ARPES projectors | | PAOFLOW's FR Hamiltonian lives in the $|l\,j\,m_j\rangle$ spinor PAO basis; rotate to $|l\,m\rangle\otimes|\sigma\rangle$ with `projection/do_atwfc_proj.clebsch_jm_matrix` and pass the full spinor hopping list with `lam = 0` (SOC already inside); scalar-relativistic runs use `spin: {'bool': False}` |
-| `klib.kpath`, `TB_model.solve_H`, `dos.py`, `FS_tetra.py`, `matplotlib_plotter`, `intensity_map` | bands, DOS, Fermi surfaces, interactive explorer, map I/O | free with the injected model |
+| `ARPES_lib` (1293): `experiment` (datacube, `M_compute`, `spectral`, spin projectors, `all_Y`, `projection_map`, `Gmat_make`, `G_dic`, `pol_2_sph`, `gen_SE_KK`) | the photoemission physics: plane-wave final state, dipole matrix elements per state, intensity assembly, Gaussian resolution, Fermi factor, Kramers–Kronig helper | **re-implement, vectorised** (chinook loops over states in Python); keep the formalism and the conventions |
+| `radint_lib` (473) + `adaptive_int` (157) | radial integrals $B^{l'}_{nl}(k) = i^{l'}\int dr\,R_{nl}(r)\,r^3 j_{l'}(kr)$ with an adaptive integrator; 'slater', 'hydrogenic', 'grid', 'exec', 'fixed' radial functions; final-state phase shifts | **re-implement** on the PAO radial grids (Simpson on `basis[i]['r']`, as `radialfft_simpson`), tabulated on a kinetic-energy grid; keep phase shifts and 'fixed' |
+| `electron_configs` (260) + `electron_configs.txt`, `atomic_mass` (104) + txt | Slater $Z_{\rm eff}$ screening rules and hydrogenic radial functions | **port with attribution** (fallback when an orbital has no PAO radial function, e.g. user tight-binding models) |
+| `Ylm` (363): `Y(l, m)` up to $l = 4$, `gaunt`, `Yproj` | complex spherical harmonics and Gaunt coefficients | **not ported**: PAOFLOW has the QE real harmonics (`projection/do_atwfc_proj.calc_ylmg`, QE `ylmr2` order) and real Gaunt coefficients (`hamiltonian/_two_center.real_gaunt_coefficient`); the dipole operator components $x, y, z$ are real $l = 1$ harmonics, so the whole matrix element is formulated in the real basis of the PAO Hamiltonian |
+| `orbital` (341): `projdict`, `rot_projection`; `wigner` (187), `rotation_lib` (180) | cubic-harmonic labels as $Y_l^m$ projections; Wigner-D rotation of orbitals for sample tilt | **not ported**: real harmonics need no projection table; rotations from `hamiltonian/pao_sym` (Wigner-D, `get_wigner_so`) |
+| `klib` (401): `kz_kpt`, `kmesh`; `tilt` (184): `gen_kpoints` | $k_f$, $k_z(h\nu, k_\parallel, V_0, W)$, momentum and emission-angle meshes, azimuthal rotation | **port** (~100 lines, attributed) into `kinematics.py` |
+| `intensity_map` (185) | map container, writers | **re-implement** minimal (`IntensityMap` dataclass, npz + dat, GPAO plots) |
+| `TB_lib`, `H_library`, `SlaterKoster`, `build_lib` (1.7k) | tight-binding models | **not needed**: `HRs` is the model (`models/sk_fitting` exists for SK fits) |
+| `slab` (899), `surface_vector` (268) | finite slab from bulk hoppings along a Miller index | **native replacement** (~150 lines): slab $H$ from `HRs` with a vacuum gap, orbital depths; PAOFLOW's doubling/surface tools stay for the semi-infinite case |
+| `dos`, `FS_tetra`, `tetrahedra`, `operator_library`, `Tk_plot`, `matplotlib_plotter`, `orbital_plotting`, `lattice_lib`, `v3find`, `angle_expt` (3.5k) | DOS, Fermi surfaces, expectation values, GUIs | **not ported** (PAOFLOW has DOS, Fermi surfaces, spin textures and GPAO) |
 
-Caveats found in the code: chinook's dependency pins (`numpy<2`, `matplotlib<3.9` in
-`requirements.txt`) are incompatible with the `work` environment; the code uses nothing
-numpy-2-specific at a first grep, so the plan is to pin `chinook>=1.1.3` in an `arpes` extra
-and verify under numpy 2 (patch upstream if needed, the code base is small). Matrix elements
-are evaluated state by state in Python (`M_compute`); a 200×100 cube with 20 bands is
-4·10⁵ states, minutes, acceptable. The final state is a free-electron plane wave (no
-scattering phase shifts unless given as `phase_shifts`), the standard chinook limitation.
+Net: about 1.5k new lines, of which ~400 are adapted from chinook. Licensing: MIT code inside
+a GPL-3.0-or-later project is fine as long as the MIT notice travels with it; add
+`THIRD_PARTY_NOTICES.md` at the repository root (chinook's licence text, the commit ported,
+the list of adapted functions), a module docstring in `arpes/__init__.py` citing Day et al.
+and asking users to cite it, and a per-function "adapted from chinook `klib.kz_kpt`" line.
 
-## Self-energies that PAOFLOW can supply
+## Formalism (one-step model, plane-wave final state, dipole approximation)
 
-1. **Isotropic Eliashberg self-energy** from $\alpha^2F(\Omega)$ of `eliashberg_dense_q`
-   (Engelsberg–Schrieffer / Grimvall, constant-DOS form):
-   $\Sigma(\omega, T) = \int_0^\infty d\Omega\,\alpha^2F(\Omega)\Big[-2\pi i\,(n_\Omega + \tfrac12)
-   + \psi\big(\tfrac12 + i\tfrac{\Omega-\omega}{2\pi T}\big) - \psi\big(\tfrac12 - i\tfrac{\Omega+\omega}{2\pi T}\big)\Big]$
-   (digamma $\psi$; $\mathrm{Re}\,\Sigma'(0) = -\lambda$ at $T = 0$, $\mathrm{Im}\,\Sigma(\omega) = -\pi\int d\Omega\,\alpha^2F(\Omega)[2 n_\Omega + f_{\Omega-\omega} + f_{\Omega+\omega}]$).
-   Cheap, k-independent, the kink of metals (Pb, MgB₂ σ bands via the anisotropic
-   $\lambda_{n\mathbf k}$ of `fermi_surface_coupling`: $\alpha^2F_{n\mathbf k}$ per Fermi-surface
-   state is already accumulated there). Maps onto chinook's `'grid'` self-energy directly.
-2. **State-resolved Fan–Migdal self-energy** on arbitrary k (the ARPES cube, a k-path):
-   $\Sigma_{n\mathbf k}(\omega,T) = \sum_{m\nu}\int\frac{d^3q}{\Omega_{BZ}}\,|g_{mn\nu}(\mathbf k,\mathbf q)|^2
-   \Big[\frac{n_{\mathbf q\nu} + f_{m\mathbf k+\mathbf q}}{\omega - \varepsilon_{m\mathbf k+\mathbf q} + \omega_{\mathbf q\nu} + i\eta}
-   + \frac{n_{\mathbf q\nu} + 1 - f_{m\mathbf k+\mathbf q}}{\omega - \varepsilon_{m\mathbf k+\mathbf q} - \omega_{\mathbf q\nu} + i\eta}\Big]$,
-   EPW's `elecselfen`/`specfun_el` (no Debye–Waller term, as EPW). Everything exists in
-   `elphon/`: `prepare_dense_vertex` → $g(R_e, R_p)$, `g_Re_at_q`, `band_vertex` at any
-   (k, k+q) given eigenvectors, phonons from `phonon_at_q`, the long-range model, the
-   Bose/Fermi factors and the delta kernel of `carrier_scattering.scattering_rate_kernel`
-   (its on-shell imaginary part is exactly $-\mathrm{Im}\,\Sigma_{n\mathbf k}(\varepsilon_{n\mathbf k})$,
-   which gives the consistency test). What is missing is a frequency-resolved kernel with
-   complex denominators and the evaluation at k off the dense grid: `precompute_dense_electrons`
-   keeps `Hn_flat`/`NintH` in its velocity terms but diagonalises on the grid only; a
-   `bloch_states_at(electrons, k_cryst)` helper (eigh of $H(\mathbf k)$, phases
-   $e^{2\pi i\mathbf k\cdot n}$ for `vertex_phases`) makes k and k+q free, with q on the dense
-   grid and the irreducible-wedge folding of `irreducible_mesh` for the q sum. Cost: $N_k^{\rm path}
-   \times N_q$ diagonalisations of nawf×nawf and one `band_vertex` per (k, q): 200 k × 24³ q
-   is minutes on 8 ranks. Adaptive smearing (`adaptive_smearing.py`) applies to $\eta$.
-3. **Spectral function** $A_{n\mathbf k}(\omega) = -\frac1\pi\,\mathrm{Im}\,[\omega - \varepsilon_{n\mathbf k} - \Sigma_{n\mathbf k}(\omega) + i0^+]^{-1}$,
-   quasiparticle strength $Z_{n\mathbf k}$, the renormalised dispersion and the mass
-   enhancement $1 + \lambda_{n\mathbf k}$; temperature series (Debye-Waller-free thermal
-   broadening and the T-dependent kink).
+For a state $|n\mathbf k\rangle = \sum_i c_{i,n\mathbf k}\,|\phi_i,\mathbf k\rangle$ in the PAO
+Bloch basis (orbital $i$: atom $\kappa_i$ at $\boldsymbol\tau_i$, real harmonic $l_i m_i$,
+radial function $R_i(r)$ from `arry['basis'][i]['wfc']` on `['r']`) and a photoelectron
+$\mathbf k_f$ with $|\mathbf k_f|^2 = 2m(h\nu + \varepsilon_{n\mathbf k} - W)/\hbar^2$,
+$\mathbf k_{f\parallel} = \mathbf k_\parallel$ and $k_{f z}$ from the inner potential $V_0$
+(chinook `kz_kpt`), the dipole matrix element for polarisation component $\alpha \in \{x, y, z\}$ is
 
-## Architecture
+$$
+M^\alpha_{n\mathbf k} = \sum_i c_{i,n\mathbf k}\,\sigma_i\,e^{-d_i/2\lambda}\,e^{-i(\mathbf k_f - \mathbf k)\cdot\boldsymbol\tau_i}
+\sum_{l' = l_i \pm 1}\; B^{l'}_{i}(|\mathbf k_f|)\sum_{m'} G(l_i m_i;\,1\alpha;\,l' m')\,
+Y_{l' m'}(\hat{\mathbf k}_f),
+$$
 
-New subpackage `src/PAOFLOW/arpes/` (no `do_*` names), optional extra `arpes = ["chinook"]`:
+with $B^{l'}_i(k) = i^{l'}\!\int_0^\infty dr\,R_i(r)\,r^3 j_{l'}(kr)$ (the "$r^3$" is
+$r^2\,dr$ times the dipole $r$), $G$ the real Gaunt coefficients, $Y_{l'm'}$ the real
+harmonics (QE order), $\sigma_i$ an orbital cross-section factor and $d_i$ the depth below the
+surface with the escape depth $\lambda$ (`mfp`). The phase $e^{-i(\mathbf k_f-\mathbf k)\cdot\boldsymbol\tau_i}$
+is the gauge term that chinook absorbs into its atomic-gauge hopping vectors; PAOFLOW's
+cell-periodic gauge makes it explicit (it reduces to $e^{-i(k_{fz}-k_z)\tau_{iz}}$ for bulk
+calculations with $k_z = k_{fz}$, i.e. unity). Then
+
+$$
+I(\mathbf k, \omega) = \sum_n \Big|\sum_\alpha \epsilon_\alpha M^\alpha_{n\mathbf k}\Big|^2\,
+A_{n\mathbf k}(\omega)\,f(\omega, T)\;\otimes\;g_{\Delta E}\otimes g_{\Delta k},\qquad
+A_{n\mathbf k}(\omega) = -\frac1\pi\,\mathrm{Im}\,\frac{1}{\omega - \varepsilon_{n\mathbf k} - \Sigma_{n\mathbf k}(\omega) + i0^+},
+$$
+
+with the polarisation $\boldsymbol\epsilon$ in the sample frame (chinook: Cartesian, or
+spherical components $Y_{1,\pm1}, Y_{1,0}$) and Gaussian resolutions. Spin-ARPES: the spinor
+components of $M$ projected on the detector axis (chinook `sarpes_projector`), for
+fully-relativistic PAO bases after the $|l\,j\,m_j\rangle \to |l\,m\rangle\otimes|\sigma\rangle$
+rotation (`clebsch_jm_matrix`). Everything is an array over (k, band, α): one `einsum`
+chain per k-block, no per-state loop.
+
+The self-energy is the extension: chinook accepts $\Sigma(\mathbf k, \omega)$ shared by all
+bands; here $\Sigma_{n\mathbf k}(\omega, T)$ is band- and k-resolved, from
+
+1. the isotropic Eliashberg form from $\alpha^2F$ (`eliashberg_dense_q`), in the digamma
+   closed form (Engelsberg–Schrieffer; $\mathrm{Re}\,\Sigma'(0) = -\lambda$);
+2. the anisotropic Fermi-surface form from $\alpha^2F_{n\mathbf k}$ of `fermi_surface_coupling`;
+3. the full Fan–Migdal $\Sigma_{n\mathbf k}(\omega, T)$ at arbitrary k from the dense vertex
+   (EPW `specfun_el`): $\sum_{m\nu\mathbf q}|g_{mn\nu}|^2\big[\tfrac{n+f_m}{\omega-\varepsilon_m+\omega_\nu+i\eta}+\tfrac{n+1-f_m}{\omega-\varepsilon_m-\omega_\nu+i\eta}\big]$,
+   whose on-shell imaginary part is the rate of `carrier_scattering` (consistency test);
+   needs a frequency-resolved kernel and an off-grid `bloch_states_at` for k, k+q (q on the
+   dense grid, irreducible wedge);
+4. user models (constant, polynomial, Σ(ω) grid, Kramers–Kronig from Im Σ) for fits.
+
+## Package layout
 
 | module | content |
 |---|---|
-| `chinook_model.py` | `chinook_basis(data_controller)` → list of `orbital` (labels from `shells` + QE `ylmr2` order, positions in Å, $Z$, spin), `chinook_hoppings(data_controller, tol)` → hopping list in the atomic gauge, `chinook_model(data_controller, *, tol=1e-6, spin='auto', slab=None)` → `TB_model`; the FR spinor rotation (`clebsch_jm_matrix`); `assert_bands_match(model, data_controller, kpath)` (round trip: chinook eigenvalues == PAOFLOW's at 1e-8 eV) |
-| `radial.py` | `pao_radial_functions(data_controller)` → chinook `'grid'` `rad_args` from the basis tables / UPF pseudo-wavefunctions (`r` to the origin, one entry per 'atom-n-l') |
-| `experiment.py` | `PAOFLOWExperiment(experiment)`: thin subclass with `spectral_from_self_energy(sigma)` that takes $\Sigma_{n\mathbf k}(\omega)$ per state of `pks` (shape `(npks, nω)`) or per k, reusing `Mk`, the Fermi factor, the resolution convolution and the `intensity_map` output; `states(experiment)` → the (k, band, ε) list of the cube (for the self-energy evaluation) |
-| `elphon/self_energy.py` | `eliashberg_self_energy(omega, a2f, w, T)` (digamma form, numerical check), `fan_migdal_self_energy(coupling, electrons, k_cryst, w, temps, eta=..., adaptive_smearing=None, ...)` on arbitrary k from the dense vertex (driver analogous to `carrier_scattering_dense_q`: shared vertex window, q loop distributed over ranks, irreducible q), `spectral_function(e, sigma, w)`, `quasiparticle_renormalization(sigma, w)` |
-| `PAOFLOW.py` | `arpes_model(tol=...)` (stores nothing; returns the chinook model), `electron_self_energy(kpath | cube, ...)`, `arpes_spectrum(arpes_dict, self_energy=...)` returning the `intensity_map`; plots in `GPAO` (band map, EDC/MDC, kink) |
+| `arpes/basis.py` | `PhotoemissionBasis.from_data_controller(dc)`: per orbital atom, $Z$, position (Å), $(n, l, m)$, radial function, depth, $\sigma_i$; spinor rotation for FR runs; Slater/hydrogenic fallbacks (`arpes/atomic_radial.py`, ported) |
+| `arpes/radial.py` | `radial_integrals(basis, kinetic_ev, phase_shifts=None)` → $B^{l\pm1}_i$ tables + interpolation; 'fixed' values |
+| `arpes/kinematics.py` | $k_f$, $k_z(h\nu, k_\parallel, V_0, W)$, momentum cube / k-path / emission-angle mesh, azimuthal rotation, slit geometry (ported from `klib`/`tilt`) |
+| `arpes/matrix_elements.py` | `dipole_matrix_elements(basis, eigvecs, k, kf)` → `(nk, nband, 3)`; polarisation contraction; spin projection |
+| `arpes/spectral.py` | `spectral_function(e, sigma, w)`, self-energy adapters (constant / grid / k / nk), Fermi factor, resolution convolution, `intensity(...)` |
+| `arpes/slab.py` | finite slab Hamiltonian from `HRs` along a Miller index with vacuum, orbital depths; bulk-$\Sigma$ approximation for slab states |
+| `arpes/experiment.py` | `ArpesExperiment` (hv, W, V0, T, pol, resolution, kz mode, mfp, cube/path/angles, spin axis), `simulate(data_controller, self_energy=None)` → `IntensityMap`; `arpes/io.py` writers |
+| `elphon/self_energy.py` | items 1–3 above, `quasiparticle_renormalization` |
+| `PAOFLOW.py` / `GPAO.py` | `arpes_basis()`, `electron_self_energy(...)`, `arpes(experiment, self_energy=)`; `plot_arpes` (maps, EDC/MDC, kink) |
+| `pyproject.toml` | no new dependency (numpy, scipy); `THIRD_PARTY_NOTICES.md` |
 
-Data flow (metal with a kink): `PAOFLOW` → `pao_hamiltonian` → `arpes_model()` → chinook
-`experiment(model, ARPES_dict)` → `datacube()` (matrix elements) → `states()` gives the
-(k, band) list → `fan_migdal_self_energy(..., k_cryst=states.k, w)` with the vertex of
-`prepare_dense_vertex` (cached by `coupling_cache`) → `spectral_from_self_energy` → map.
-For the isotropic route the self-energy is `('grid', w, Σ(w))` and chinook's own `spectral`
-is enough. Slabs: no slab self-energy from the bulk dense-q machinery; use the bulk
-$\Sigma_{n\mathbf k}$ at the slab state's projected bulk $k_z$ (a "bulk self-energy" approximation,
-documented), or the isotropic $\Sigma(\omega)$.
-
-Grid consistency: the ARPES cube k-points are arbitrary (no commensurability with the dense
-q-grid needed, k+q is diagonalised); the kz of each cube point comes from chinook
-(`klib.kmesh(ang, X, Y, kz, Vo, hv, W)`), and the self-energy is evaluated at the 3D point.
+Bands and eigenvectors come from PAOFLOW's `HRs` at the cube points (own Bloch evaluation,
+no commensurability with any grid), so an ARPES run reads as `PAOFLOW(...)` →
+`projections` → `pao_hamiltonian` → `arpes(experiment)`; with e-ph,
+`electron_self_energy(k=experiment.kpoints, ...)` in between.
 
 ## Validation
 
-1. Round trip: chinook model from PAOFLOW reproduces the PAOFLOW bands on a path (Si, Pb FR
-   with the spinor rotation) to 1e-8 eV; chinook `dos_broad` vs PAOFLOW `dos`.
-2. Isotropic Σ: slope $-\lambda$ at $T \to 0$ against `eliashberg_dense_q`'s λ (Pb: 1.07 adaptive /
-   1.18 fixed, this run); Im Σ(ω → ∞) = $-\pi\lambda\langle\omega\rangle$ sum rule.
-3. State-resolved Σ: $-\mathrm{Im}\,\Sigma_{n\mathbf k}(\varepsilon_{n\mathbf k}, T)$ equals
-   $\hbar/2\tau_{n\mathbf k}$ of `carrier_scattering_dense_q` on grid k (same vertex, same
-   smearing: identity to 1e-10); Kramers–Kronig between Re and Im; EPW `specfun_el` parity on
-   the Si and Pb data sets of the DFPT port (same nscf, same coarse grids).
-4. Physics: Pb kink at ω ≈ 5–10 meV with $1 + \lambda$ mass enhancement (Reinert et al.
-   2003 ARPES on Pb(111)); MgB₂ σ-band kink at the $E_{2g}$ energy (~70 meV) with the anisotropic
-   coupling (Uchiyama et al. 2002); Si valence band thermal broadening and the 300 K band
-   shift against the zero-point-free dispersion (temperature series of the examples).
-5. Matrix elements: chinook's own tutorial (graphene/Sr₂IrO₄) rebuilt from PAOFLOW's model
-   with Slater radial functions vs PAO radial functions: polarisation dependence changes,
-   the dispersion does not.
+1. Parity with chinook on its own tutorial models (graphene, Sr₂IrO₄ from the chinook docs)
+   using Slater radial functions: identical $|M|^2$ maps to 1e-8 (chinook run once in a
+   throwaway environment with numpy < 2; the maps become test fixtures).
+2. Gauge: a two-site chain with one $s$ orbital per site gives the known $e^{i\mathbf k\cdot\boldsymbol\tau}$
+   interference; bulk $k_z$ path reproduces the expected $h\nu$ periodicity.
+3. Real-harmonic formulation: $\sum_\alpha|M^\alpha|^2$ summed over a closed shell is
+   rotation-invariant; selection rules $l' = l\pm1$, $\Delta m$ by polarisation.
+4. Radial integrals: PAO vs Slater functions for Si $3p$ (shape, magnitude); 'fixed' round trip.
+5. Self-energy: $-\mathrm{Im}\,\Sigma_{n\mathbf k}(\varepsilon_{n\mathbf k})$ equals
+   $\hbar/2\tau_{n\mathbf k}$ of `carrier_scattering_dense_q` on grid k (1e-10); slope
+   $-\lambda$ against `eliashberg_dense_q`; Kramers–Kronig; EPW `specfun_el` parity on the
+   Si/Pb data of the DFPT port.
+6. Physics: Pb(111) kink and $1+\lambda$ (Reinert et al. 2003); MgB₂ σ-band kink at the
+   $E_{2g}$ energy (Uchiyama et al. 2002); Si valence-band thermal broadening and shift.
 
 ## Phases and effort
 
-- **Phase 0** (1–2 days): `arpes` extra, `chinook_model.py`, `radial.py`, round-trip tests,
-  `PAOFLOW.arpes_model()`; check chinook under numpy 2 (fork/pin if needed).
-- **Phase 1** (3–4 days): `elphon/self_energy.py`: isotropic form (digamma + numerical
-  quadrature cross-check), `bloch_states_at`, frequency-resolved Fan–Migdal kernel (numpy;
-  Rust later if profiling asks), arbitrary-k driver with MPI over q, tests 2–3, EPW parity.
-- **Phase 2** (2–3 days): `arpes/experiment.py` (state-resolved injection, kz handling,
-  slabs with the bulk-Σ approximation), `PAOFLOW.electron_self_energy` /
-  `arpes_spectrum`, `GPAO` plots, docs section in `Electron-Phonon-Coupling.md`
-  ("Spectral functions and ARPES") and a `docs/user_guide` page.
+- **Phase 0** (4–5 days): `arpes/` with basis, radial, kinematics, matrix elements, spectral,
+  experiment, io; `THIRD_PARTY_NOTICES.md`; unit tests 2–4; chinook parity fixtures (1).
+- **Phase 1** (3–4 days): `elphon/self_energy.py` (isotropic, anisotropic, Fan–Migdal at
+  arbitrary k, MPI over q), tests 5, EPW parity.
+- **Phase 2** (2–3 days): slabs, spin-ARPES, FR spinor rotation, `PAOFLOW`/`GPAO` methods,
+  docs (`Electron-Phonon-Coupling.md` section "Spectral functions and ARPES", a user-guide page).
 - **Phase 3** (2 days + runs): examples `examples/elphon_example/{Pb,MgB2,Si}/arpes.py` with
-  REPORTs (fedora for the Pb FR dense grids), unit tests on synthetic models, CI job with the
-  elphon asset (Si).
+  reports (Pb FR grids on fedora), CI with the elphon asset.
 
-Decisions proposed: chinook kept external (optional extra, not vendored) unless the numpy-2
-pin forces a fork; the self-energy lives in `elphon/` (physics), the chinook glue in
-`arpes/` (I/O), mirroring `phonon/do_phonopy.py`; no Debye–Waller term (EPW parity first);
-the FR spinor rotation is required for Pb-type cases (chinook's own $\lambda\,\mathbf L\cdot\mathbf S$
-is not used); the isotropic route ships first because it needs no new dense-q code.
+About three weeks. Decisions proposed: real-harmonic formulation with PAOFLOW's Gaunt
+coefficients (no complex-$Y$ projection tables); PAO radial functions by default, Slater
+fallback; cell-periodic gauge with the explicit $\boldsymbol\tau$ phase; no GUI; chinook
+cited in the docs and the module docstring; the self-energy API takes arrays `(nk, nband, nw)`
+so any source (e-ph, impurity, user fit) plugs in.

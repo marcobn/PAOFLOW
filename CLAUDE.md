@@ -48,6 +48,8 @@ user-invocable: true
                           Migdal–Eliashberg, absorption, mobility; finite-difference route (folding, symmetry)
       models/             Tight-binding models, Slater–Koster fitting, band unfolding, surface projection
       pyskeaf/            Python SKEAF: de Haas–van Alphen extremal Fermi-surface orbits (CLI + adapter)
+      arpes/              ARPES simulation: photoemission matrix elements of the PAO states (chinook formalism,
+                          re-implemented), spectral functions with band-resolved self-energies (elphon/self_energy)
       agentic/            Library code of the agentic workflows (agentic/ folder below): qo_analysis/ (pyskeaf
                           orbits vs quantum oscillations; PAOFLOW.qo_analysis is a back-compat shim),
                           thermo_optics/ (T-dependent optics vs experimental data of any form: datasets with

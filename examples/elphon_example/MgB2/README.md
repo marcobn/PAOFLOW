@@ -34,6 +34,7 @@ The QE steps follow the MgB₂ exercise of EPW tutorial 04
 | `nscf/write_ukk.py` | writes `mgb2.ukk` (band bookkeeping EPW reads when `wannierize = .false.`) and empty `mgb2.bvec`/`mgb2.mmn` stubs |
 | `main.py` | PAOFLOW analysis: PAO electronic structure, Eliashberg on EPW's coupling, Fermi-surface coupling |
 | `me.py` | isotropic Migdal–Eliashberg on the α²F of `main.py`: gap vs T, real axis, linearised-kernel Tc |
+| `arpes.py` | ARPES band map across the σ-band crossing on Γ-M with the anisotropic self-energy of every Fermi-surface state (from `fs_coupling.npz`): the E₂g kink (`PAOFLOW.arpes`) |
 | `plot_me.py` | plots the `me.py` results |
 | `me_aniso.py` | anisotropic Migdal–Eliashberg on the Fermi-surface coupling of `main.py`: Δ_nk(T), gap distributions, quasiparticle DOS, Tc |
 | `plot_me_aniso.py` | plots the `me_aniso.py` results (with the isotropic gap for comparison) |
@@ -162,6 +163,29 @@ It writes `output/me_aniso/` in EPW's formats:
 - `gap_vs_T_aniso.dat`, `max_eigenvalue_aniso.dat`, `migdal_eliashberg_aniso.npz`
 
 ---
+
+## ARPES and the σ-band kink (`arpes.py`)
+
+```bash
+python arpes.py --direction M     # needs output/fs_coupling.npz of main.py (seconds)
+```
+
+From the Fermi-surface pair coupling Λ_ab(ω) of the anisotropic run, every irreducible state
+gets its own Eliashberg function α²F_a(ω) = (ω/2) Σ_b Λ_ab(ω) and its Engelsberg–Schrieffer
+self-energy Σ_a(ω, T) (`PAOFLOW.elphon.self_energy.eliashberg_self_energy`); the ARPES
+simulation of a segment of Γ–M in the k_z = 0 plane across the σ-band crossing (band 6 at
+0.128 of Γ–M; hν = 28 eV, s + p light, 20 K, 5 meV resolution) takes the self-energy of the
+nearest irreducible state of each band and k-point.
+
+![MgB2 kink](figures/kink.png)
+
+With the 40³/40³ coupling of this run (λ = 0.58 isotropic, N_F = 0.37 states/eV/spin): the
+σ state at the crossing has λ_nk = 0.81 and a plateau −Im Σ = 87 meV above the E₂g energy,
+the π states λ_nk ≈ 0.40 and 39 meV; the slope of Re Σ at E_F reproduces λ_nk to 1 %. In the
+band map the σ band flattens below E_F and broadens abruptly at ≈ 70 meV, the E₂g kink of
+the ARPES experiments (Uchiyama et al. 2002), much weaker with the isotropic self-energy.
+The σ-band λ is below the ≈ 1.0–1.2 of converged calculations because of the coarse DFPT
+q-grid of this example.
 
 ## Reference results (MgB₂, μ* = 0.1, σ = 0.05 eV)
 

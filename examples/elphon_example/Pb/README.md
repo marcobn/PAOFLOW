@@ -30,6 +30,7 @@ matrix elements, and PAOFLOW does all the interpolation.
 | `me.py` | isotropic Migdal–Eliashberg on the α²F of `main.py`: gap vs T, real axis, linearised-kernel Tc |
 | `plot_me.py` | plots the `me.py` results |
 | `transport.py` | metal resistivity ρ(T), extended-Drude optics and thermal emissivity from α²F_tr (`main.py --transport`) |
+| `arpes.py` | ARPES band map along Γ-X with the band-resolved Fan–Migdal self-energy (the phonon kink), the isotropic Σ from α²F for comparison, photoemission matrix elements of the PAO orbitals (`PAOFLOW.arpes`) |
 | `plot_transport.py` | plots α²F vs α²F_tr, ρ(T) (optional measured overlay) and the emissivity |
 | `optics/nscf.in`, `optics_eps.py` | optional: interband dielectric function on the extended basis (`dielectric_tensor(intraband=False)`) |
 
@@ -138,6 +139,7 @@ It writes `output/me/` in EPW's formats:
 
 ```bash
 mpirun -np 8 python main.py --transport   # adds alpha^2F_tr, lambda_tr, plasma frequency (2 min)
+mpirun -np 8 python arpes.py --nq 24      # Sigma_nk(w) along Gamma-X at 10 K + ARPES maps -> output/arpes (see below)
 python transport.py                       # rho(T), extended-Drude eps(omega, T), emissivity
 python plot_transport.py [--experiment rho.dat]   # -> output/transport/{metal_transport,emissivity}.png
 # optional interband part on the extended basis (separate nscf with nbnd = 40):
@@ -211,6 +213,29 @@ velocity change, giving the transport Eliashberg function α²F_tr and λ_tr
   adaptive widths against 4.2–5.2 K for the fixed ones.
 
 ---
+
+## ARPES and the phonon kink (`arpes.py`)
+
+`arpes.py` (`PAOFLOW.arpes`, see `docs/internals/arpes.md`) simulates the photoemission band
+map of a short segment of Γ–X across the Fermi crossing of band 6 (at 0.575 of Γ–X, He I
+light with s + p polarisation, 10 K, 2 meV energy resolution) with the photoemission matrix
+elements of the PAO orbitals, bare and dressed with the electron-phonon self-energy:
+
+![Pb kink](figures/kink.png)
+
+- **Isotropic self-energy** from α²F of `main.py` (λ = 1.03, the 72³/24³ run): the
+  Engelsberg–Schrieffer form at 10 K has Im Σ rising to a plateau of 8.7 meV beyond the
+  phonon energies (≈ 11 meV) and the dispersive Re Σ with extrema at ±7 meV; its slope at
+  E_F gives λ = 1.11 and Z = 0.48. In the band map the dispersion flattens by 1/(1 + λ)
+  within the phonon energies and the line broadens beyond them: the kink.
+- **State-resolved Fan–Migdal self-energy** (`--fan-migdal`, 18³ q): with a fixed width of
+  5 meV it is noisy, because the level spacing |v_F| Δq of the q-grid is ≈ 0.3 eV; with the
+  adaptive widths (`--adaptive-smearing 0.7`) it is smooth but structureless, Im Σ ≈ −7.3 meV
+  and Re Σ ≈ −6.5 meV over the window, since the widths exceed the phonon energies. The
+  plateau value agrees with the isotropic 8.7 meV to the anisotropy of this k-point. The kink
+  of a metal is therefore resolved by the Eliashberg form, the state-resolved form being the
+  tool for semiconductors (see the Si example) and for wide energy windows.
+- Cost: the isotropic path takes seconds; the Fan–Migdal run 13 min on 8 cores.
 
 ## Reference results (Pb, μ* = 0.1, σ = 0.05 eV)
 
