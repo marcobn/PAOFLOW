@@ -89,7 +89,7 @@ commutator: `dielectric_tensor`, EELS, optical conductivity, anomalous and spin 
 Hall conductivities, Rashba–Edelstein. Checks: on Si the pipeline reproduces the
 electron–phonon implementation (∫ε₂ ×0.957 / ×0.993 over 2.5–5 / 2.5–10 eV against ×0.953 /
 ×0.995) and ε₁(0) 13.54 against the exact 13.62; Fe AHC and Pt SHC (12³ scf, 32³ interpolation,
-`Workspace/PAOFLOW/dipole_hall/`): σ_xy(E_F) 494 → 490 S/cm and σ^z_xy(E_F) 2045 → 2117
+`Workspace/PAOFLOW/validation/position_dipoles_hall/`): σ_xy(E_F) 494 → 490 S/cm and σ^z_xy(E_F) 2045 → 2117
 (ħ/e) S/cm, i.e. −1 % and +3.5 %, with the curves unchanged in shape — the few-per-cent effect
 expected from the Kubo structure (the dipole cross term carries one power of 1/Δε, the main
 term two). The former non-local term (repaired, before its removal) on the same runs moved them by +10 % / −7 % at E_F

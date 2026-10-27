@@ -3,7 +3,7 @@
 Run on October 26 2026 with QE 7.5 and PAOFLOW `develop-marco` (the DFPT coupling source and the
 long-range model of `docs/internals/long-range-elphon-plan.md`). The example directory holds the
 inputs and drivers; the numbers below come from running them as the README describes, plus the
-EPW and `matdyn.x` reference runs kept in the workspace (`Workspace/PAOFLOW/dfpt_port/sic*` and
+EPW and `matdyn.x` reference runs kept in the workspace (`Workspace/PAOFLOW/validation/dfpt_vertex_parity/sic*` and
 `SiC_example_run`).
 
 ## 1. System and settings

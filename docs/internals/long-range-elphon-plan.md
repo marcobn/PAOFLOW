@@ -140,7 +140,7 @@ asset (2 days, needs the EPW build already used for the DFPT port). 4. Quadrupol
 
 ## Validation (Oct 25-26 2026)
 
-Local scripts in `Workspace/PAOFLOW/dfpt_port/sic{,6,40}/` (QE 7.5 / EPW 6.0, PAOFLOW PBE pseudopotentials,
+Local scripts in `Workspace/PAOFLOW/validation/dfpt_vertex_parity/sic{,6,40}/` (QE 7.5 / EPW 6.0, PAOFLOW PBE pseudopotentials,
 3C-SiC at a = 8.237 bohr: ε∞ = 7.51, Z* = +2.65 (Si) / −2.83 (C)).
 
 - EPW's `prtgkk` output needs a wide `fsthick` (with 10 eV the deep valence band is dropped from the
@@ -185,7 +185,7 @@ Local scripts in `Workspace/PAOFLOW/dfpt_port/sic{,6,40}/` (QE 7.5 / EPW 6.0, PA
   (`single_q_phonon_inputs`), least squares on the symmetric quadratic forms, Richardson
   extrapolation in $|q|$, `write_quadrupole_fmt` for EPW's format and `LongRangeModel(quadrupoles=...)`.
   Driver: `coupling/quadrupoles.py` of every example (`PAOFLOW.elphon.workflows.quadrupoles`).
-  Validation on Si (`Workspace/PAOFLOW/quadrupoles/si`: scf 12³ k, 38 Ry, PBE `Si.upf`, Γ run
+  Validation on Si (`Workspace/PAOFLOW/production/Si_mobility_quadrupoles/quadrupoles_si`: scf 12³ k, 38 Ry, PBE `Si.upf`, Γ run
   with `epsil` ε∞ = 13.11, twelve single-q runs with |q| = 0.02 and 0.04 (2π/a), 45 s each):
   the only non-zero components are $Q_{x,yz}$ and its permutations, $Q^{\rm Si_1}_{x,yz} = -14.37$
   (|q| = 0.02), $-14.21$ (0.04), extrapolated $-14.42$ e bohr, atom 2 opposite in sign, against

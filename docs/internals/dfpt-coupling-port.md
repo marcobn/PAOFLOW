@@ -97,8 +97,8 @@ Measured `elphon_wrap` wall (EPW): Pb 6³/6³ 11 bands 94.5 s on 20 pools; Si 6�
 - The drop-in contract: `elph_bloch.py:225 vertex_pao_R` takes any Cartesian band-basis `d(k)`
   from the same nscf as `A` and returns g_q(R_e) = N⁻¹Σ_k e^{−2πik·R} (A_k+q^T d A_k^*);
   `prepare_dense_vertex` writes that into the shared window per q. Everything downstream is untouched.
-- Validation data on disk: Si tutorial (`/Users/marco/Workspace/PAOFLOW/EPW_opt_audit/qe/{save,si.save,si.phsave}`,
-  23 MB; reference `epw_pbe/si.epb*`), Pb SR (`/Users/marco/Workspace/PAOFLOW/EPW_Pb/phonon/_ph0`
+- Validation data on disk: Si tutorial (`/Users/marco/Workspace/PAOFLOW/validation/EPW_tutorial06_audit/qe/{save,si.save,si.phsave}`,
+  23 MB; reference `epw_pbe/si.epb*`), Pb SR (`/Users/marco/Workspace/PAOFLOW/validation/Pb_EPW_tutorial04/phonon/_ph0`
   per-q dvscf + patterns, `pb.dyn0..16`, `epw/pb.epb1..20`, `exclude_bands 1:5`), Pb FR `.epb`
   forthcoming on fedora (`/home/marco/Workspace/Pb_elphon/fr`).
 
@@ -339,7 +339,7 @@ $-k$ $3.3\times10^{-12}$.  Tests: `tests/unit/elphon/test_wavefunction_symmetry.
 homomorphism and Pauli covariance, map coverage, QE first-of-star rule, real-space identity
 $(O_g\psi)(x)=U\psi(g^{-1}x)$ with umklapp, spinor and time reversal) and
 `tests/integration/elphon/test_irreducible_wedge.py` on the asset's `si_ibz.save`.  Scripts:
-`Workspace/PAOFLOW/dfpt_port/ibz_*.py`, saves `dfpt_port/{si_ibz,pb_fr_ibz}`.
+`Workspace/PAOFLOW/validation/dfpt_vertex_parity/ibz_*.py`, saves `dfpt_port/{si_ibz,pb_fr_ibz}`.
 
 **Formula** (QE convention, operation {R_P|t} on positions `x → R_P x − t` as in `SpaceGroup`; W = R_P^{−T}
 acts on crystal k and Miller indices):

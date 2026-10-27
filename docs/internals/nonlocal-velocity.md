@@ -26,7 +26,7 @@ Measured against the exact plane-wave velocity of the Kohn–Sham states of Si
 | + position dipoles | 0.99 / 1.01 | 13.60 |
 | + position dipoles + Δp repaired | 0.87 / 0.87 | 11.95 |
 
-On bcc Fe and fcc Pt (`Workspace/PAOFLOW/dipole_hall/`) the repaired Δp moved the AHC / SHC at
+On bcc Fe and fcc Pt (`Workspace/PAOFLOW/validation/position_dipoles_hall/`) the repaired Δp moved the AHC / SHC at
 E_F by +10 % / −7 % and doubled the Fe peak at −1.35 eV (the double counting amplified by the
 1/Δε² of the Kubo formula at the d-band near-degeneracies); the dipoles move them by −1 % /
 +3.5 % with unchanged curves.
