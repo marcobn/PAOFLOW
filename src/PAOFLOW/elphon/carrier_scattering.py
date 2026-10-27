@@ -506,7 +506,11 @@ def carrier_scattering_dense_q(
         metal = e[:, nocc].min() <= e[:, nocc - 1].max()
         level = None
         if metal:
-            level = float(fermi_levels_for_doping(e, [temps_k.min()], nelec, 0.0, cell_volume)[0])
+            level = float(
+                fermi_levels_for_doping(
+                    e, [temps_k.min()], nelec, 0.0, cell_volume, spin_degeneracy
+                )[0]
+            )
         return _window_bands(energies_ry, nocc, window_ev, level)
 
     electrons = precompute_dense_electrons(
@@ -528,7 +532,9 @@ def carrier_scattering_dense_q(
     smearing_info = {'smearing_ev': float(smearing_ev), 'adaptive_smearing': None}
     if adaptive_smearing is not None:
         widths = state_widths(
-            velocity_ry * RY_TO_EV, grid_spacing(cell_volume, nq_dense), adaptive_smearing,
+            velocity_ry * RY_TO_EV,
+            grid_spacing(cell_volume, nq_dense),
+            adaptive_smearing,
             min_smearing_ev,
         )  # (nkd, nband), eV
         width_max = float(widths.max())
@@ -583,6 +589,11 @@ def carrier_scattering_dense_q(
     # Irreducible q (star weights) against every k with window states, then the
     # star average over k, exact for the scalar rates (see Notes).
     window_k = np.nonzero(has_state)[0]
+    if window_k.size == 0:
+        raise ValueError(
+            'no state within %.3f eV of %s: check nelec and spin_degeneracy (%g)'
+            % (window_ev, 'the Fermi level' if metal else 'the band edges', spin_degeneracy)
+        )
     if sym_rots is not None:
         rots = sym_rots
         if tau_cryst is not None and species is not None:
