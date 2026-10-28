@@ -20,6 +20,19 @@ second-order optical responses).
 The projectors :math:`\\beta^{a}_i(\\mathbf k+\\mathbf G)` and the integrated augmentation charges
 :math:`q^{a}_{ij}` (``PP_Q`` of the UPF) come from
 :class:`PAOFLOW.elphon.pseudopotential_terms.KleinmanBylanderProjectors`.
+
+With spin-orbit coupling (fully relativistic ultrasoft / PAW pseudopotentials, ``npol = 2``) the
+charges are rotated into the spinor basis, QE's ``qq_so``,
+
+.. math::
+
+    S = 1 + \\sum_{a}\\sum_{kl}\\sum_{s_1 s_2} q^{a,s_1 s_2}_{kl}\\,
+    |\\beta^{a}_k s_1\\rangle\\langle\\beta^{a}_l s_2|,
+    \\qquad
+    q^{s_1 s_2}_{kl} = \\sum_{ij}\\sum_{s} q_{ij}\\, f^{s_1 s}_{ki}\\, f^{s s_2}_{jl},
+
+with :math:`f` the rotation from the real-harmonic projectors to the :math:`|l\\,j\\,m_j\\rangle`
+spinors (QE ``fcoef``), and the inner products run over both spinor components.
 """
 
 from __future__ import annotations
@@ -61,7 +74,8 @@ class AugmentedOverlap:
     Parameters
     ----------
     kb : KleinmanBylanderProjectors
-        Built with ``require_norm_conserving=False``; its :attr:`Q` is the block matrix of the
+        Built with ``require_norm_conserving=False``; its :attr:`Q` (scalar relativistic) or
+        :attr:`Q_so` (spin-orbit coupling, ``spin_orbit=True``) holds the block matrix of the
         integrated augmentation charges.
     tau_alat : ndarray ``(nat, 3)``
         Atomic positions (Cartesian, alat units).
@@ -70,10 +84,18 @@ class AugmentedOverlap:
     """
 
     def __init__(self, kb: KleinmanBylanderProjectors, tau_alat: NDArray[np.float64], tpiba: float):
-        if kb.Q is None:
-            raise ValueError('the projectors carry no augmentation charges')
+        self.spin_orbit = bool(getattr(kb, 'spin_orbit', False))
+        if self.spin_orbit:
+            if getattr(kb, 'Q_so', None) is None:
+                raise ValueError('the projectors carry no spinor augmentation charges')
+            self.Q = None
+            self.Q_so = np.asarray(kb.Q_so, dtype=np.complex128)
+        else:
+            if kb.Q is None:
+                raise ValueError('the projectors carry no augmentation charges')
+            self.Q = np.asarray(kb.Q, dtype=float)
+            self.Q_so = None
         self.kb = kb
-        self.Q = np.asarray(kb.Q, dtype=float)
         self.tau_alat = np.asarray(tau_alat, dtype=float)
         self.tpiba = float(tpiba)
 
@@ -96,6 +118,34 @@ class AugmentedOverlap:
         """
         return self.kb.at(np.asarray(k_plus_g, dtype=float) / self.tpiba, self.tau_alat, self.tpiba)
 
+    def becp(
+        self, beta: NDArray[np.complex128], functions: NDArray[np.complex128]
+    ) -> NDArray[np.complex128]:
+        """``<beta_p|f_i>`` of a set of functions on one sphere.
+
+        Parameters
+        ----------
+        beta : ndarray ``(nproj, npw)``
+            :meth:`beta` of the sphere.
+        functions : ndarray ``(nf, npw)`` or ``(nf, 2 npw)``
+            Plane-wave coefficients (rows = functions); with spin-orbit coupling the two
+            spinor components are concatenated (upper then lower, as QE stores them).
+
+        Returns
+        -------
+        ndarray ``(nproj, nf)``, or ``(2, nproj, nf)`` with spin-orbit coupling (one block per
+        spinor component), complex
+        """
+        npw = beta.shape[1]
+        if not self.spin_orbit:
+            return beta.conj() @ functions.T
+        if functions.shape[1] != 2 * npw:
+            raise ValueError(
+                'spin-orbit coupling: expected spinor functions with 2 x %d coefficients, got %d'
+                % (npw, functions.shape[1])
+            )
+        return np.stack([beta.conj() @ functions[:, :npw].T, beta.conj() @ functions[:, npw:].T])
+
     def overlap(
         self,
         a: NDArray[np.complex128],
@@ -109,22 +159,29 @@ class AugmentedOverlap:
         Parameters
         ----------
         a, b : ndarray ``(na, npw)``, ``(nb, npw)``
-            Plane-wave coefficients (rows = functions).
+            Plane-wave coefficients (rows = functions); ``(na, 2 npw)`` spinors with spin-orbit
+            coupling.
         beta : ndarray ``(nproj, npw)``
             :meth:`beta` on the same sphere.
         becp_a, becp_b : ndarray, optional
-            ``<beta_p|a_i>`` ``(nproj, na)`` and ``<beta_p|b_j>`` ``(nproj, nb)`` when already
-            available.
+            :meth:`becp` of ``a`` and ``b`` when already available.
 
         Returns
         -------
         ndarray ``(na, nb)``, complex
         """
         if becp_a is None:
-            becp_a = beta.conj() @ a.T
+            becp_a = self.becp(beta, a)
         if becp_b is None:
-            becp_b = beta.conj() @ b.T
-        return a.conj() @ b.T + becp_a.conj().T @ self.Q @ becp_b
+            becp_b = self.becp(beta, b)
+        plain = a.conj() @ b.T
+        if not self.spin_orbit:
+            return plain + becp_a.conj().T @ self.Q @ becp_b
+        return plain + sum(
+            becp_a[s1].conj().T @ self.Q_so[s1, s2] @ becp_b[s2]
+            for s1 in range(2)
+            for s2 in range(2)
+        )
 
 
 def build_augmentation(data_controller) -> AugmentedOverlap | None:
@@ -139,9 +196,10 @@ def build_augmentation(data_controller) -> AugmentedOverlap | None:
     Returns
     -------
     AugmentedOverlap or None
-        ``None`` for VASP input, when every species is norm-conserving, or with spin-orbit
-        coupling (the spinor augmentation is not implemented: the plain-overlap path with the
-        band re-orthonormalisation is kept there, with a warning).
+        ``None`` for VASP input or when every species is norm-conserving. With spin-orbit
+        coupling the charges of the fully relativistic pseudopotentials are rotated into the
+        spinor basis (``kb.Q_so``); a scalar-relativistic species in such a run couples the
+        spins diagonally, as in QE.
     """
     arry, attr = data_controller.data_dicts()
     if attr.get('dft', 'QE') != 'QE':
@@ -151,22 +209,13 @@ def build_augmentation(data_controller) -> AugmentedOverlap | None:
     }
     if not any(is_augmented(upf) for upf in upf_by_species.values()):
         return None
-    if attr.get('dftSO', False):
-        if getattr(data_controller, 'rank', 0) == 0:
-            print(
-                'WARNING: ultrasoft / PAW pseudopotentials with spin-orbit coupling: the '
-                'augmented overlap of the projections is not implemented, the bands are '
-                're-orthonormalised with the plain overlap (approximate, breaks the point '
-                'symmetry at some k-points). Use projwfc.x projections (read_atomic_proj_QE) '
-                'or norm-conserving pseudopotentials.'
-            )
-        return None
     qmax = np.sqrt(float(attr['ecutwfc'])) + 1.0
     kb = KleinmanBylanderProjectors(
         upf_by_species,
         list(arry['atoms']),
         float(attr['omega']),
         qmax,
+        spin_orbit=bool(attr.get('dftSO', False)),
         require_norm_conserving=False,
     )
     alat = float(attr['alat'])

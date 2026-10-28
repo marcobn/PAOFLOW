@@ -62,7 +62,7 @@ From the interpolated PAO Hamiltonian, PAOFLOW evaluates derivatives and matrix 
 | **Spin & magnetism** | Spin Hall conductivity, spin texture, non-collinear and fully-relativistic (SOC) Hamiltonians |
 | **Model Hamiltonians** | Slater–Koster tight-binding models, Kane–Mele, custom lattice models |
 | **ACBN0** | Self-consistent Hubbard U and U+V via the extended ACBN0 functional |
-| **PAO basis** | Internal projections without `projwfc.x`; basis presets, basis tables generated from the pseudopotentials, ultrasoft/PAW pseudopotentials projected in the augmented metric |
+| **PAO basis** | Internal projections without `projwfc.x`; basis presets, basis tables generated from the pseudopotentials, ultrasoft/PAW pseudopotentials projected in the augmented metric, with and without spin-orbit coupling |
 | **Band unfolding and sparse Hamiltonians** | Supercell band structures unfolded to the primitive cell; a sparse bond-list backend for the large doubled cells |
 | **pyskeaf** | Fermi surface extremal orbit analysis (de Haas–van Alphen, Shubnikov–de Haas) |
 | **Landauer transport** | Quantum transport via Green's function/Landauer–Büttiker formalism |

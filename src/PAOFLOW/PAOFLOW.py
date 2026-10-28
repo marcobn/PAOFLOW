@@ -626,8 +626,9 @@ class PAOFLOW:
         arry['augmentation'] = build_augmentation(self.data_controller)
         if arry['augmentation'] is not None and self.rank == 0 and attr.get('verbose'):
             print(
-                'Ultrasoft / PAW pseudopotentials: projections in the augmented metric '
-                '(%d projectors)' % arry['augmentation'].nproj
+                'Ultrasoft / PAW pseudopotentials: projections in the augmented %smetric '
+                '(%d projectors)'
+                % ('spinor ' if arry['augmentation'].spin_orbit else '', arry['augmentation'].nproj)
             )
 
         nkpnts = len(arry['kpnts'])

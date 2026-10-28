@@ -518,7 +518,9 @@ def build_basis_from_sources(data_controller, pseudo_labels):
     """
     arry, attr = data_controller.data_dicts()
     if attr.get('dftSO'):
-        raise NotImplementedError('a basis mixing UPF pseudo-orbitals and tables needs a scalar-relativistic run')
+        raise NotImplementedError(
+            'a basis mixing UPF pseudo-orbitals and tables needs a scalar-relativistic run'
+        )
     verbose = attr['verbose']
     qmesh = np.arange(0, np.sqrt(attr['ecutrho']) + 4, 0.01)
     volume = attr['omega']
@@ -536,7 +538,9 @@ def build_basis_from_sources(data_controller, pseudo_labels):
         table_mesh = None
         for label in wanted:  # the common mesh of the species: that of its tables, if any
             if label.upper() not in from_upf:
-                table_mesh = np.loadtxt(os.path.join(attr['basispath'], elem, '%s.dat' % label))[:, 0]
+                table_mesh = np.loadtxt(os.path.join(attr['basispath'], elem, '%s.dat' % label))[
+                    :, 0
+                ]
                 break
         records = []
         for label in wanted:
@@ -1410,8 +1414,8 @@ def augmented_proj_k(data_controller, augmentation, basis, ik, ispin):
     gkspace, wfc = read_QE_wfc(data_controller, ik, ispin, orthonormalize=False)
     atwfc_k = calc_atwfc_k(basis, gkspace, attr['dftSO'])
     beta = augmentation.beta(k_plus_g_vectors(gkspace))
-    becp_phi = beta.conj() @ atwfc_k.T  # <beta_p|phi_i>   (nproj, natwfc)
-    becp_psi = beta.conj() @ wfc['wfc'].T  # <beta_p|psi_n>   (nproj, nbnd)
+    becp_phi = augmentation.becp(beta, atwfc_k)  # <beta_p|phi_i>   (nproj, natwfc)
+    becp_psi = augmentation.becp(beta, wfc['wfc'])  # <beta_p|psi_n>   (nproj, nbnd)
     Sk = augmentation.overlap(atwfc_k, atwfc_k, beta, becp_phi, becp_phi)
     X = loewdin_factor(Sk)
     raw = augmentation.overlap(atwfc_k, wfc['wfc'], beta, becp_phi, becp_psi)  # <phi|S|psi>

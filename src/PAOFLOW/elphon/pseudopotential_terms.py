@@ -430,10 +430,9 @@ class KleinmanBylanderProjectors:
     require_norm_conserving : bool, optional
         Raise on ultrasoft / PAW pseudopotentials (default, the electron-phonon vertex needs
         the norm-conserving form of the non-local potential). With ``False`` the projectors of
-        augmented pseudopotentials are tabulated too and :attr:`Q` holds the integrated
-        augmentation charges, which is what the overlap operator
-        ``S = 1 + sum_ij q_ij |beta_i><beta_j|`` of the projections needs (scalar-relativistic
-        only).
+        augmented pseudopotentials are tabulated too and :attr:`Q` (or :attr:`Q_so` with
+        ``spin_orbit=True``) holds the integrated augmentation charges, which is what the
+        overlap operator ``S = 1 + sum_ij q_ij |beta_i><beta_j|`` of the projections needs.
 
     Attributes
     ----------
@@ -448,6 +447,10 @@ class KleinmanBylanderProjectors:
         spin-orbit coupling.
     D_so : ndarray ``(2, 2, nproj, nproj)`` complex or None
         Spinor coupling ``D^{s1 s2}_{ij} = dion_{nb_i nb_j} fcoef(i, j, s1, s2)`` (Ry).
+    Q_so : ndarray ``(2, 2, nproj, nproj)`` complex or None
+        Augmentation charges in the spinor basis (QE ``qq_so``) for ultrasoft / PAW
+        projectors with spin-orbit coupling, see :meth:`_spinor_augmentation`; ``None`` for
+        norm-conserving sets and without spin-orbit coupling (then :attr:`Q`).
     """
 
     def __init__(
@@ -479,17 +482,13 @@ class KleinmanBylanderProjectors:
                 raise NotImplementedError(
                     '%s: only norm-conserving pseudopotentials are supported' % name
                 )
-            if augmented and self.spin_orbit:
-                raise NotImplementedError(
-                    '%s: augmentation (ultrasoft / PAW) with spin-orbit projectors is not '
-                    'implemented' % name
-                )
             self.qqq[name] = (
                 np.asarray(upf.qqq, dtype=float)
                 if augmented and getattr(upf, 'qqq', None) is not None
                 else None
             )
-            proj = relativistic_projectors(upf) if self.spin_orbit else scalar_projectors(upf)
+            relativistic = self.spin_orbit and getattr(upf, 'has_spinorbit', False)
+            proj = relativistic_projectors(upf) if relativistic else scalar_projectors(upf)
             self.jjj[name] = list(proj.get('jjj', [None] * len(proj['lll'])))
             r = np.asarray(upf.r, dtype=float)
             rab = np.asarray(upf.rab, dtype=float)
@@ -534,15 +533,17 @@ class KleinmanBylanderProjectors:
                     dion = self.dion[name][self._nb[i], self._nb[j]]
                     if dion == 0.0:
                         continue
-                    l = int(self.l_of_projector[i])
-                    mi, mk = int(self._lm[i] - l * l), int(self._lm[j] - l * l)
                     for s1 in (1, 2):
                         for s2 in (1, 2):
-                            D[s1 - 1, s2 - 1, i, j] = dion * spin_orbit_coefficient(
-                                l, float(self.j_of_projector[i]), mi, mk, s1, s2, rot
-                            )
+                            D[s1 - 1, s2 - 1, i, j] = dion * self._fcoef(i, j, s1, s2, rot)
             self.D_so = D
             self.D = None
+            self.Q = None
+            self.Q_so = (
+                self._spinor_augmentation(rot)
+                if any(q is not None for q in self.qqq.values())
+                else None
+            )
         else:
             D = np.zeros((nproj, nproj))
             Q = np.zeros((nproj, nproj))
@@ -559,13 +560,70 @@ class KleinmanBylanderProjectors:
             self.D = D
             self.D_so = None
             self.Q = Q if any(q is not None for q in self.qqq.values()) else None
-        if self.spin_orbit:
-            self.Q = None
+            self.Q_so = None
 
     @property
     def nproj(self) -> int:
         """Number of projectors (all atoms, all ``m``)."""
         return int(self.atom_of_projector.size)
+
+    def _fcoef(self, i: int, k: int, s1: int, s2: int, rot: NDArray[np.complex128]) -> complex:
+        """QE ``fcoef(ih, kh, is1, is2)`` of two projectors of the same atom, ``l`` and ``j``.
+
+        A scalar-relativistic species in a spin-orbit run has no ``j``: its projectors couple
+        the spins diagonally, ``fcoef = delta_{s1 s2} delta_{m_i m_k}`` (QE ``init_us_1`` for
+        ``.not. upf%has_so``).
+        """
+        l = int(self.l_of_projector[i])
+        mi, mk = int(self._lm[i] - l * l), int(self._lm[k] - l * l)
+        j = float(self.j_of_projector[i])
+        if j < 0.0:
+            return 1.0 + 0.0j if (s1 == s2 and mi == mk) else 0.0j
+        return spin_orbit_coefficient(l, j, mi, mk, s1, s2, rot)
+
+    def _spinor_augmentation(self, rot: NDArray[np.complex128]) -> NDArray[np.complex128]:
+        """The augmentation charges in the spinor basis, QE ``qq_so`` of ``init_us_1``.
+
+        Parameters
+        ----------
+        rot : ndarray
+            :func:`real_to_complex_harmonics` of the run.
+
+        Returns
+        -------
+        ndarray ``(2, 2, nproj, nproj)``, complex
+            :math:`q^{s_1 s_2}_{kl} = \\sum_{ij}\\sum_{s} q_{ij}\\,f_{ki}^{s_1 s}\\,f_{jl}^{s s_2}`
+            with :math:`q_{ij}` the integrated charges of two projectors of the same atom and
+            real harmonic (any channel, any ``j``) and :math:`f` the spinor rotation
+            :meth:`_fcoef` restricted to the projectors of one channel (QE zeroes ``fcoef``
+            between different channels before building ``qq_so``); the metric of a spinor state
+            is then
+            :math:`S = 1 + \\sum_{kl}\\sum_{s_1 s_2} q^{s_1 s_2}_{kl}
+            |\\beta_k s_1\\rangle\\langle\\beta_l s_2|`.
+        """
+        nproj = self.nproj
+        q = np.zeros((nproj, nproj))
+        f = np.zeros((2, 2, nproj, nproj), dtype=np.complex128)
+        for i in range(nproj):
+            name = self.species_of_atom[self.atom_of_projector[i]]
+            qqq = self.qqq[name]
+            for k in range(nproj):
+                if self.atom_of_projector[i] != self.atom_of_projector[k]:
+                    continue
+                if qqq is not None and self._lm[i] == self._lm[k]:
+                    q[i, k] = qqq[self._nb[i], self._nb[k]]
+                # the rotation stays inside one channel: QE zeroes fcoef between different
+                # channels (``if (vi.ne.vj) fcoef = 0``) before building qq_so
+                if self._nb[i] != self._nb[k]:
+                    continue
+                for s1 in (1, 2):
+                    for s2 in (1, 2):
+                        f[s1 - 1, s2 - 1, i, k] = self._fcoef(i, k, s1, s2, rot)
+        out = np.zeros((2, 2, nproj, nproj), dtype=np.complex128)
+        for s1 in range(2):
+            for s2 in range(2):
+                out[s1, s2] = sum(f[s1, s] @ q @ f[s, s2] for s in range(2))
+        return out
 
     def at(
         self, kpg_cart: NDArray[np.float64], tau_alat: NDArray[np.float64], tpiba: float

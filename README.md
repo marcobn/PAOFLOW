@@ -22,7 +22,7 @@ PAOFLOW is an open-source Python framework for constructing and operating on **a
 
 | Domain | What PAOFLOW computes |
 |---|---|
-| **PAO basis and projections** | Projections of the Kohn–Sham states on atomic orbitals computed internally (no `projwfc.x`), basis presets (`minimal`, `standard`, `extended`), basis tables generated from the pseudopotentials (`paoflow-genbasis-ps`); ultrasoft and PAW pseudopotentials projected in the augmented metric, with the valence shells taken from the UPF pseudo-orbitals |
+| **PAO basis and projections** | Projections of the Kohn–Sham states on atomic orbitals computed internally (no `projwfc.x`), basis presets (`minimal`, `standard`, `extended`), basis tables generated from the pseudopotentials (`paoflow-genbasis-ps`); ultrasoft and PAW pseudopotentials projected in the augmented metric (scalar-relativistic and spin-orbit), with the valence shells taken from the UPF pseudo-orbitals |
 | **Electronic structure** | Band structures, density of states (total & projected), Fermi surfaces, effective masses, band unfolding of supercells to the primitive cell; a sparse bond-list backend for large doubled cells |
 | **Self-consistent Hubbard correction** | The ACBN0 and eACBN0 pseudohybrid density functionals for the U and V parameters of DFT+U and DFT+U+V |
 | **Spin & magnetism** | Spin texture, non-collinear and fully-relativistic (SOC) Hamiltonians, ad-hoc spin–orbit coupling |
@@ -48,7 +48,7 @@ PAOFLOW is an open-source Python framework for constructing and operating on **a
 - **Non-linear optics.** `PAOFLOW.nonlinear_optics()` computes shift and injection currents and the second-harmonic susceptibility; examples and a validation report in [`examples/nlo_examples/`](examples/nlo_examples/). See [docs/internals/nonlinear-optics.md](docs/internals/nonlinear-optics.md).
 - **ARPES simulation.** `PAOFLOW.arpes` with the photoemission matrix elements of the PAO states and electron–phonon self-energies. See [docs/internals/arpes.md](docs/internals/arpes.md).
 - **Position dipoles in the velocity operator.** The Löwdin dipoles of the PAO basis complete the tight-binding velocity for optics, Hall conductivities and non-linear optics; the former non-local velocity term is superseded. See [docs/internals/position-dipoles.md](docs/internals/position-dipoles.md).
-- **Projections for ultrasoft and PAW pseudopotentials** in the augmented metric, with the valence shells from the UPF pseudo-orbitals, and a basis generator from the pseudopotentials. See [docs/internals/internal-basis.md](docs/internals/internal-basis.md).
+- **Projections for ultrasoft and PAW pseudopotentials** in the augmented metric, also with spin-orbit coupling (the spinor charges of the fully relativistic pseudopotentials), with the valence shells from the UPF pseudo-orbitals, and a basis generator from the pseudopotentials. See [docs/internals/internal-basis.md](docs/internals/internal-basis.md).
 - **Scattering channels** shared by Boltzmann transport and the intraband optics of metals. See [docs/internals/scattering-channels.md](docs/internals/scattering-channels.md).
 - **Agentic workflows** for the comparison with experiment, and the `paoflow-gen` generators for every workflow. See [`agentic/README.md`](agentic/README.md) and [docs/internals/cli-generators.md](docs/internals/cli-generators.md).
 - **Sparse backend**, band unfolding, Slater–Koster/EDTB fitting, `pyskeaf` and the quantum-oscillation analysis, and the optional Rust kernels.

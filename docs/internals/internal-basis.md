@@ -119,10 +119,35 @@ Norm-conserving tables are unchanged within 0.01 (GeS: same 26 bands above 0.95)
 `tests/unit/test_basis_gen_uspp_paw.py` (Ga PAW: pseudo-orbitals returned, ghosts excluded,
 core rule) and `tests/unit/projection/test_basis_from_sources.py`.
 
-Not covered: spin-orbit runs with ultrasoft / PAW pseudopotentials (the spinor augmentation
-$q^{so}_{ij}$ is not implemented; the old plain-overlap path is kept there with a warning, use
-`read_atomic_proj_QE()` or norm-conserving pseudopotentials) and VASP input (PAW projectors of
-the POTCAR are not read).
+### Spin-orbit coupling: the spinor augmentation
+
+With fully relativistic ultrasoft / PAW pseudopotentials (`lspinorb`, `npol = 2`) the charges
+are rotated into the spinor basis exactly as in QE's `init_us_1` (`qq_so`):
+
+$$
+S = 1 + \sum_a \sum_{kl} \sum_{s_1 s_2} q^{a, s_1 s_2}_{kl}\,
+|\beta^a_k s_1\rangle\langle \beta^a_l s_2|, \qquad
+q^{s_1 s_2}_{kl} = \sum_{ij}\sum_s q_{ij}\, f^{s_1 s}_{ki}\, f^{s s_2}_{jl},
+$$
+
+where $q_{ij}$ are the `PP_Q` charges of two projectors of the same atom and real harmonic (any
+channel and $j$) and $f$ is the rotation from the real-harmonic projectors of one channel to its
+$|l\,j\,m_j\rangle$ spinors (QE `fcoef`, restricted to one channel: QE zeroes it between
+different channels before building `qq_so`). A scalar-relativistic species in a spin-orbit run
+couples the spins diagonally. `KleinmanBylanderProjectors(spin_orbit=True,
+require_norm_conserving=False)` stores the result as `Q_so` `(2, 2, nproj, nproj)`;
+`AugmentedOverlap.becp` returns one block per spinor component and `overlap` contracts both,
+so `augmented_proj_k` and the `<psi|S|psi>` check work unchanged on the spinor arrays (upper
+component first, as QE stores them). Validation on the SnTe monolayer of example17 (Sn/Te
+`rel-pbe-dn-kjpaw`, 68 projectors): the stored bands are orthonormal in the spinor metric to
+$6\times10^{-6}$ (0.73 with the plain overlap), 32 of 38 bands project above 0.95 on the
+minimal basis, and the symmetry of the Hamiltonian on the scf grid is exact ($10^{-13}$ eV).
+Tests: `tests/unit/projection/test_spinor_augmentation.py` (the $f$ matrices are projectors on
+the $j$ subspaces that sum to the identity; `Q_so` against the QE loop; the spinor overlap; the
+SnTe metric, skipped without `examples/qe_examples/example17/SnTe.save`).
+
+Not covered: VASP input (PAW projectors of the POTCAR are not read) and the PAW augmentation
+of the position dipoles with spin-orbit coupling (scalar-relativistic only).
 
 ## Files
 
