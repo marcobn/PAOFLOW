@@ -1257,7 +1257,10 @@ $$
 
 with $a \simeq 0.7$ for Gaussians and a floor that keeps the width finite at the
 band extrema (EPW's `adapt_smearing` uses the standard deviation of a uniform
-distribution over the cell and a 1 meV floor). Coarse grids then get broad,
+distribution over the cell and a 1 meV floor; the dense pipeline's
+`adaptive_smearing(min_width=, max_width=)` can floor and cap its `deltakp`/`deltakp2`
+the same way, off by default, since a state narrower than the energy grid of a later
+DOS or transport call drops out of the sums). Coarse grids then get broad,
 smooth deltas and fine grids sharp ones without retuning the smearing, so the
 grid is converged alone instead of jointly with the smearing. The helpers are in
 `PAOFLOW.elphon.adaptive_smearing`; the drivers take `adaptive_smearing=a`

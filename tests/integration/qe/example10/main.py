@@ -7,10 +7,10 @@ from PAOFLOW.boltzmann.TauModel import TauModel
 def main():
     # Start PAOFLOW, interpolate Hamiltonian, compute gradient an momenta
     # smearing=None: the DOS of the doping step uses a fixed 0.01 eV Gaussian and the transport
-    # integrates the Fermi-Dirac derivative directly. The adaptive (Yates) widths a|v|dk vanish at
-    # the band extrema and are ~3 meV on the flat Ga 3d bands, so on this mesh the adaptive DOS
-    # misses 0.14 of the 18 valence electrons and would put the chemical potential in the wrong
-    # place for a doping of 1.6e-5 electrons per cell.
+    # integrates the Fermi-Dirac derivative directly. The adaptive (Yates) widths a|v|dk of the
+    # dispersive bands are 0.3-0.7 eV on this mesh, and their tails fill the gap (5e-4 states/eV
+    # at mid-gap), far above the doping of 1.6e-5 electrons per cell that fixes the chemical
+    # potential; the floored adaptive DOS counts the electrons but cannot resolve the doping.
     paoflow = PAOFLOW.PAOFLOW(savedir='GaAs.save', smearing=None, npool=1, verbose=True)
     arry, attr = paoflow.data_controller.data_dicts()
     # Internal basis

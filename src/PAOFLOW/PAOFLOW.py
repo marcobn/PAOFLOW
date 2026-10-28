@@ -107,8 +107,8 @@ class PAOFLOW:
     gradient_and_momenta(band_curvature)
         Compute ∇_k H (``dHksp``) and the momentum matrix ``pksp``.  Optionally
         compute the band-curvature tensor.
-    adaptive_smearing(smearing, afac)
-        Compute adaptive smearing widths ``deltakp`` for BZ integration.
+    adaptive_smearing(smearing, afac, min_width, max_width)
+        Compute adaptive smearing widths ``deltakp`` for BZ integration (optional floor and cap).
     effective_mass(emin, emax, ne)
         Calculate effective mass tensor components along kx, ky, kz.
 
@@ -460,7 +460,9 @@ class PAOFLOW:
                 print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / to_gb))
                 print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / to_gb))
 
-    def projections(self, configuration=None, basispath=None, internal=None, pseudo_orbitals='auto'):
+    def projections(
+        self, configuration=None, basispath=None, internal=None, pseudo_orbitals='auto'
+    ):
         """
         Calculate the projections on the atomic basis provided by the pseudopotential or
         on the all-electron internal basis sets.
@@ -590,7 +592,9 @@ class PAOFLOW:
 
                 pseudo_labels = {}
                 for elem in arry['configuration']:
-                    available = {lbl.upper() for lbl in minimal_shells_from_upf(self.data_controller, elem)}
+                    available = {
+                        lbl.upper() for lbl in minimal_shells_from_upf(self.data_controller, elem)
+                    }
                     pseudo_labels[elem] = [
                         lbl for lbl in arry['configuration'][elem] if lbl.upper() in available
                     ]
@@ -600,7 +604,9 @@ class PAOFLOW:
                             elem, ', '.join(labels) or 'nothing',
                             ', '.join(l for l in arry['configuration'][elem] if l not in labels) or 'nothing',
                             attr.get('basispath')))  # fmt: skip
-                basis, arry['shells'] = build_basis_from_sources(self.data_controller, pseudo_labels)
+                basis, arry['shells'] = build_basis_from_sources(
+                    self.data_controller, pseudo_labels
+                )
             else:
                 basis, arry['shells'] = build_aewfc_basis(self.data_controller)
 
@@ -682,7 +688,9 @@ class PAOFLOW:
             from .projection.augmentation import k_plus_g_vectors
             from .projection.do_atwfc_proj import read_QE_wfc
 
-            gkspace, wfc = read_QE_wfc(self.data_controller, int(k_local[0]), 0, orthonormalize=False)
+            gkspace, wfc = read_QE_wfc(
+                self.data_controller, int(k_local[0]), 0, orthonormalize=False
+            )
             beta = arry['augmentation'].beta(k_plus_g_vectors(gkspace))
             ovp = arry['augmentation'].overlap(wfc['wfc'], wfc['wfc'], beta)
             deviation = float(np.abs(ovp - np.eye(ovp.shape[0])).max())
@@ -2092,7 +2100,13 @@ class PAOFLOW:
 
         self.report_module_time('Position dipoles')
 
-    def adaptive_smearing(self, smearing='gauss', afac=None):
+    def adaptive_smearing(
+        self,
+        smearing: str = 'gauss',
+        afac: float | None = None,
+        min_width: float | None = None,
+        max_width: float | None = None,
+    ) -> None:
         """
         Calculate the Adaptive Smearing parameters
         Populates DataController with 'deltakp' and 'deltakp2'
@@ -2100,6 +2114,11 @@ class PAOFLOW:
         Arguments:
             smearing (str): Smearing type (m-p and gauss)
             afac   (float): Smearing control. Small values (<0.01) are equivalent to no smearing
+            min_width (float): Lower bound of the widths in eV (None, the default: no floor). The
+                Yates widths vanish at the band extrema and are tiny on flat bands; a state
+                narrower than the energy grid of a later dos(), doping() or transport() call drops
+                out of the sums, so a floor at or above that grid spacing restores the count
+            max_width (float): Upper bound of the widths in eV (None, the default: no cap)
 
         Returns:
             None
@@ -2115,7 +2134,9 @@ class PAOFLOW:
                 % str(smearing)
             )
         try:
-            do_adaptive_smearing(self.data_controller, smearing, afac)
+            do_adaptive_smearing(
+                self.data_controller, smearing, afac, min_width=min_width, max_width=max_width
+            )
         except Exception as e:
             self.report_exception('adaptive_smearing')
             if attr['abort_on_exception']:

@@ -72,7 +72,8 @@ def main():
     # Compute momentum matrix elements (needed for transport/optics)
     paoflow.gradient_and_momenta()
 
-    # Apply adaptive Gaussian smearing for BZ integration
+    # Apply adaptive Gaussian smearing for BZ integration (Yates widths; pass min_width= to floor
+    # them at or above the energy grid spacing of the later dos()/transport() calls)
     paoflow.adaptive_smearing()
 
     # Compute DOS and transport tensors
