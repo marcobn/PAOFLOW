@@ -30,11 +30,13 @@ does not help). Fixed in October 2026 (augmented metric of the projections, see 
 section 3.2): the Hamiltonian is now symmetric (interpolation spread 3e-3 meV between equivalent
 k-points instead of 5-25 meV), the shift current obeys the T_d relations to 1e-10; the
 projectability vector changed (12 instead of 18 bands above 0.95; use pthr = 0.90 to keep 21).
-Reference run with the current code (PAW, augmented projections, pthr 0.90, 40^3, 68 min on
-8 ranks shared with other jobs): |chi_xyz| = 120 pm/V at 0 eV, 416 at 1.5 eV, peak 725 pm/V at
-2.63 eV; sigma_xyz = -32 uA/V^2 at 3.9 eV; chi_yzx = chi_xyz within 1.7 % and sigma_yzx = sigma_xyz
-to 3e-8, forbidden components < 1e-4 of the peak. With the PseudoDojo norm-conserving Ga/As set
+Reference runs with the current code (PAW, augmented projections, pthr 0.90, 40^3, 13 min on
+8 ranks): |chi_xyz| = 120 pm/V at 0 eV, 416 at 1.5 eV, peak 725 pm/V at 2.63 eV, sigma_xyz =
+-32 uA/V^2 at 3.9 eV; with position_dipoles=True (20 min): 156 pm/V, 572, 855, -38 uA/V^2.
+Every T_d relation holds to 1e-8 of the peak (covariant kernels, October 28 2026). With the PseudoDojo norm-conserving Ga/As set
 (PSEUDOS/nc-sr-05_pbe_standard_upf, 90 Ry, As 3d in valence; nelec 28) the same basis gives
-|chi_xyz(0)| = 103 pm/V, peak 492 pm/V at 2.54 eV, sigma_xyz -28 uA/V^2 at 3.9 eV at 40^3. The remaining 2-10 % difference between chi_xyz and
+|chi_xyz(0)| = 103 pm/V, peak 492 pm/V at 2.54 eV, sigma_xyz -28 uA/V^2 at 3.9 eV at 40^3, and
+178 pm/V, 677 pm/V, -41 uA/V^2 with the position dipoles: the dipoles bring the static chi_xyz
+into the measured 166-180 pm/V (../REPORT.md section 3.2). The remaining 2-10 % difference between chi_xyz and
 chi_yzx (SHG only) is the gauge of exactly degenerate bands on the Lambda lines of the grid (the
 U(N)-covariant treatment of the phase-2 plan).

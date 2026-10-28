@@ -32,6 +32,17 @@ average it, not remove it.)
 
 ## C1. Position dipoles in r and r_{;a}
 
+**Status: implemented on October 28 2026** (`band_geometry(..., dipole_orb, dipole_gradient_orb)`,
+`dipole_gradient_by_differences`, `nonlinear_optical_spectra(position_dipoles=callable)`,
+`PAOFLOW.nonlinear_optics(position_dipoles=True | 'intra-atomic')`; tests
+`test_generalized_derivative_with_dipoles_matches_covariant_finite_differences`,
+`test_spectra_with_dipoles_are_gauge_invariant_and_differ_from_the_tight_binding_ones`,
+`test_dipole_kernels_are_invariant_under_rotations_inside_exact_doublets`). One term was missing
+from the formula below: the gradient that enters is the atomic-gauge derivative in the lattice
+basis, $\partial_a d + i(\tau_j - \tau_i)_a d_{ij}$, and the diagonal-dipole term is the
+intra-cluster commutator $-i[D^a_{\rm intra}, r^b]$ in the U(N) form. The analytic gradient
+(pass 2) is not implemented; the finite differences are accurate to $3\times10^{-5}$ relative.
+
 **Physics.** In the Löwdin-orthonormal PAO Bloch basis the position operator is
 $\hat r = \boldsymbol\tau + \mathbf d(\mathbf k)$, with $\mathbf d(\mathbf k)$ the Hermitian
 dipole matrix of `position_dipole_operator` (lattice gauge, bohr, `(nb, 3, nawf, nawf)`). Two
@@ -95,7 +106,16 @@ docs tables gain a "dipoles" column.
 
 ## C2. U(N)-covariant treatment of degenerate bands
 
-**Finding.** Repeating the phase-1 derivation with degenerate clusters $S_n \ni n$, $S_m \ni m$
+**Status: implemented on October 28 2026** (`degenerate_clusters`, `velocity_intra`,
+`position_delta` in `response/nonlinear_optics.py`; tests `test_kernels_are_invariant_under_rotations_inside_exact_doublets`,
+`test_supercell_folding_is_exact_with_degenerate_doublets`). The derivation below was extended:
+the intra-cluster connections cancel in the sum rule, but the band velocities $\Delta^a_{nm}$ of
+the sum rule, of the injection current and of the SHG terms $x_3$ and $t_5$ had to be replaced by
+the intra-cluster velocity blocks, $[v^a_{\rm intra}, v^b]$ and $v^a_{\rm intra} r^b - r^b v^a_{\rm intra}$;
+the "cluster mean" energies were not needed (individual energies inside a cluster differ by less
+than the tolerance, an $O(\text{tol}/\omega)$ effect). The shift-current kernel was already covariant.
+
+**Finding (original).** Repeating the phase-1 derivation with degenerate clusters $S_n \ni n$, $S_m \ni m$
 and the U(N)-covariant derivative of Chen *et al.* (2022),
 $D^a[r^b]_{nm} = \partial_a r^b_{nm} - i\sum_{\lambda\in S_n} A^a_{n\lambda} r^b_{\lambda m}
 + i\sum_{\lambda\in S_m} r^b_{n\lambda}A^a_{\lambda m}$, the intra-cluster connections cancel
@@ -125,6 +145,14 @@ components versus tol = 1, 5, 10, 30, 100 meV (table in the docs; the phase-1 nu
 33 % at 0.1 meV and 0.8 % at 10 meV).
 
 ## C3. Symmetry reduction of the k-grid and symmetrisation of the tensors
+
+**Status: implemented on October 28 2026** (`utils/point_groups.py` with the former
+`agentic/nlo/symmetry.py` content plus `reduce_k_grid`, `component_closure`,
+`symmetrize_components`, `cartesian_from_fractional_k`; `nonlinear_optical_spectra(symmetry_ops_cryst=...)`,
+`PAOFLOW.nonlinear_optics(symmetry=True)` default; tests in `tests/unit/utils/test_point_groups.py`
+and `test_irreducible_wedge_reproduces_the_full_grid`). Time reversal is not used for the
+reduction (the T-odd kinds would need their own histograms); the printed "symmetry error" of a
+full-grid run was not added, since the covariant kernels make it zero by construction.
 
 **Design.** A third-rank polar tensor obeys $T^{abc} = \sum R_{aa'}R_{bb'}R_{cc'}T^{a'b'c'}$ for
 every point-group operation. The full-grid sum equals the symmetrised sum over the irreducible

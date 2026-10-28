@@ -21,10 +21,10 @@ below; the figures are produced by `make_report_figures.py` from the same files.
 | system | quantity | PAOFLOW | literature | status |
 |---|---|---|---|---|
 | gapped graphene (TB) | D3h relations σ^{yyy} = −σ^{yxx} = −σ^{xxy}, σ^{xxx} = 0; same for χ | exact (relative deviations 1e-15, forbidden 4e-16 of the peak) | analytic | pass |
-| GaAs | \|χ_xyz\| at the lowest photon energy (scissor 0.86 eV) | 120 pm/V (PAW, augmented projections, 40³); 103 pm/V (norm-conserving, 40³); 110 pm/V (first PAW runs, 40³ and 60³) | 166–180 pm/V measured at 0.12 eV; 207–245 pm/V TDDFT + scissor (0.7–0.9 eV) | 35–50 % low (see §3.2) |
-| GaAs | \|χ_xyz\| at 1.5 eV; at 3 eV; peak | PAW (augmented) 416; 397; 725 pm/V at 2.63 eV; norm-conserving 320; 206; 492 pm/V at 2.54 eV; first PAW runs 337–341; 348 (40³) → 390 (60³); 610 (40³) → 480 (60³) | hundreds of pm/V between 1.5 and 3 eV (E1 region) | order of magnitude and shape plausible; the resonance region is not converged at 60³ |
-| GaAs | σ_xyz shift current | −32 µA/V² at 3.9 eV, −3.6 at 2.0 eV (PAW, augmented, 40³); −28 and −2.3 (norm-conserving 40³); −27 (60³) to −30 (40³) in the first PAW runs | tens of µA/V² (Nastos–Sipe 2006, Ibañez-Azpiroz 2018) | order of magnitude |
-| GaAs | symmetry audit (current code) | PAW 40³: σ_xyz = σ_yzx and σ_xxx = 0 to 3e-8 of the peak, T-odd files 1e-9, χ_yzx/χ_xyz within 1.7 % (1–2 eV) and 1 % (2–4 eV), χ_xxx 6e-5 of the peak; norm-conserving 40³: shift current exact to 1e-10, χ_yzx/χ_xyz within 10 % / 2 %, χ_xxx 1.2 % (degenerate-gauge error of the SHG kernel, §3.2). First PAW runs (projection defect, fixed): 2–5 % | — | shift current exact; SHG error bar 1–10 % until the U(N)-covariant treatment (plan C2) |
+| GaAs | \|χ_xyz\| at the lowest photon energy (scissor 0.86 eV, 40³) | **178 pm/V (norm-conserving, with position dipoles)**, 156 pm/V (PAW with dipoles); tight-binding position operator: 103 (norm-conserving), 120 (PAW) | 166–180 pm/V measured at 0.12 eV; 207–245 pm/V TDDFT + scissor (0.7–0.9 eV) | within the measured range with the dipoles; 35–45 % low without (§3.2) |
+| GaAs | \|χ_xyz\| at 1.5 eV; at 3 eV; peak | norm-conserving with dipoles 628; 393; 677 pm/V at 2.54 eV (tight binding 305; 206; 492); PAW with dipoles 572; 526; 855 at 2.63 eV (tight binding 416; 397; 725) | hundreds of pm/V between 1.5 and 3 eV (E1 region) | order of magnitude and shape plausible; the resonance region is not converged at 60³ |
+| GaAs | σ_xyz shift current | norm-conserving with dipoles −41 µA/V² at 3.9 eV, −3.5 at 2.0 eV (tight binding −28, −2.3); PAW with dipoles −38 and −4.5 (tight binding −32, −3.6) | tens of µA/V² (Nastos–Sipe 2006, Ibañez-Azpiroz 2018) | order of magnitude |
+| GaAs | symmetry audit (current code) | norm-conserving 40³: every T_d relation to 1e-10 of the peak (χ_yzx = χ_xyz, σ_yzx = σ_xyz, forbidden χ_xxx and σ_xxx, T-odd files), circular injection 1e-5 of its scale; wedge-reduced run identical to the full grid to 1e-10. Before October 28: SHG 1–10 % (degenerate gauge), first PAW runs 2–5 % (projections) | — | exact |
 | monolayer GeS | sheet shift current peaks σ^{xxx}, σ^{xyy}, σ^{yxy} | 46, 48, 26 nm µA/V² (2.84, 2.83, 2.05 eV) | 100–150 µA/V² quoted per layer thickness (Rangel 2017, later works) → ≈ 75 µA/V² here for 0.6 nm | order of magnitude |
 | monolayer GeS | mirror-forbidden σ^{yyy}, σ^{xxy}; T-odd files | < 3e-8 nm µA/V²; identically 0 | symmetry | pass (nosym nscf) |
 
@@ -68,11 +68,11 @@ same relations are enforced in the unit tests at 18² k.
 
 ![gaas](figures/fig2_gaas.png)
 
-*Fig. 2. (a) |χ_xyz|, Re χ_xyz, Im χ_xyz of GaAs (PAW, augmented projections, 40³, scissor
-0.86 eV, η 0.05 eV) with χ_yzx on top of it, |χ_xyz| of the norm-conserving run (40³), the
-measured low-frequency values (166–180 pm/V at 0.12 eV) and the static range of a TDDFT +
-scissor calculation; (b) the shift current σ_xyz, σ_yzx and the forbidden σ_xxx of the PAW
-run, and σ_xyz of the norm-conserving run.*
+*Fig. 2. (a) |χ_xyz|, Re χ_xyz, Im χ_xyz of GaAs (norm-conserving, 40³, scissor 0.86 eV,
+η 0.05 eV, tight-binding position operator) with χ_yzx on top of it, |χ_xyz| of the same run
+with the Löwdin position dipoles, the measured low-frequency values (166–180 pm/V at 0.12 eV)
+and the static range of a TDDFT + scissor calculation; (b) the shift current σ_xyz, σ_yzx and
+the forbidden σ_xxx without, and σ_xyz with the dipoles. Current code (covariant kernels).*
 
 | photon energy (eV) | run | 0 | 1.0 | 1.5 | 2.0 | 3.0 | peak |
 |---|---|---|---|---|---|---|---|
@@ -156,29 +156,56 @@ an off-grid k from 5–25 meV to 3e-8 meV, and the real-space Hamiltonian beyond
 15 times smaller (median 1.9e-4 instead of 2.9e-3 eV), i.e. the PAW asymmetry was also the
 reason for the slow real-space decay.
 
-**Norm-conserving GaAs, 40³** (`paoflow_nc/output_nk40`; nelec 28 with the As 3d in valence,
-14 occupied bands, PBE gap 0.519 eV, scissor 0.86 eV, η 0.05 eV, 14 min on 8 ranks):
+**Norm-conserving GaAs, 40³** (`paoflow_nc/output_nk40_c2`; nelec 28 with the As 3d in valence,
+14 occupied bands, PBE gap 0.519 eV, scissor 0.86 eV, η 0.05 eV, 13 min on 8 ranks; current
+code, i.e. with the U(N)-covariant kernels of October 28):
 
 | photon energy (eV) | 0 | 1.0 | 1.5 | 2.0 | 3.0 | peak |
 |---|---|---|---|---|---|---|
-| \|χ_xyz\| (pm/V) | 103 | 143 | 320 | 242 | 206 | 492 at 2.54 |
-| \|χ_yzx\| (pm/V) | 103 | 142 | 294 | 241 | 207 | 492 at 2.54 |
-| \|χ_xxx\| (forbidden, pm/V) | 0.004 | 0.6 | 0.8 | 0.2 | 0.1 | 6 at 1.25 |
+| \|χ_xyz\| = \|χ_yzx\| (pm/V) | 103 | 142 | 305 | 241 | 206 | 492 at 2.54 |
+| \|χ_xxx\| (forbidden, pm/V) | < 1e-8 | | | | | |
 | σ_xyz = σ_yzx (µA/V²) | 0 | 0 | −0.16 | −2.3 | −14.4 | −28.0 at 3.88 |
 | σ_xxx (forbidden, µA/V²) | < 1e-9 | | | | | |
 
-The shift current is now symmetric to 1e-10 (σ_yzx − σ_xyz and σ_xxx below 1e-10 of the peak,
-the T-odd files 1e-10 as well), the static χ_xyz (103 pm/V) and the shape of the spectra agree
-with the PAW run, and the forbidden χ_xxx is 1.2 % of the peak. **A residual χ_yzx/χ_xyz
-difference of up to 10 % (1–2 eV) and 2 % (2–4 eV) survives in the SHG only**, and so does a
-non-zero circular injection current (which T_d forbids): both come from the k-points on the
-Λ lines of the grid, where bands are exactly degenerate and the eigenvector gauge returned by
-`eigh` is arbitrary. The k-resolved test (`paoflow_nc/diag_cov2.py`) shows the shift-current
-kernel covariant to 1e-11 at every tested k, the SHG histograms covariant to 1e-10 at general,
-Δ and Σ points but different by 2.5 % and 18 % at a Λ point, and the injection kernel
-gauge-dependent there. This is the U(N)-covariant treatment of degenerate bands of the phase-2
-plan (C2), not a Hamiltonian problem; its weight decreases with the grid density (170 % at
-8³, 10 % at 40³ in the 1–2 eV window).
+Every T_d relation now holds to 1e-10 of the peak (χ_yzx = χ_xyz, σ_yzx = σ_xyz, the forbidden
+χ_xxx and σ_xxx, the T-odd files) and the circular injection current, which T_d forbids, is
+1e-5 of its natural scale. Before the covariant kernels the SHG of this run violated
+χ_yzx = χ_xyz by 10 % (1–2 eV) and 2 % (2–4 eV) and the circular injection current was not
+zero, although the shift current was already exact: the SHG and injection kernels were
+gauge-dependent on the Λ lines of the grid, where bands are exactly degenerate and the
+eigenvector basis returned by `eigh` is arbitrary (k-resolved test `paoflow_nc/diag_cov2.py`:
+18 % at a Λ point, 1e-10 elsewhere; after the fix 1e-10 everywhere). The error had changed
+|χ_xyz| at 1.5 eV by 5 % (320 → 305 pm/V).
+
+**Phase 2 of the engine** (October 28 2026, `docs/internals/nonlinear-optics.md`): (i) the
+U(N)-covariant treatment of degenerate clusters above; (ii) the Löwdin position dipoles in r
+and r_{;a} (`position_dipoles=True`); (iii) the reduction of the dense grid to its irreducible
+wedge with the Quantum ESPRESSO point-group operations and the symmetrisation of the tensors
+(`symmetry=True`, the default): the GaAs 40³ wedge has 3091 of 64000 k-points, and its spectra
+equal the full-grid ones to 1e-10 at a cost of 764 s on one core instead of 797 s on eight
+(`paoflow_nc/output_nk40_sym`).
+
+**Position dipoles** (40³, scissor 0.86 eV, η 0.05 eV; `paoflow_nc/output_nk40_dip`,
+`paoflow/output_nk40_c2`, `paoflow/output_nk40_dip`; the dipole runs cost 1.5–1.6 times the
+tight-binding ones):
+
+| run | \|χ_xyz\| 0 / 1.0 / 1.5 / 2.0 / 3.0 eV (pm/V) | peak | σ_xyz 2.0 / 3.0 eV, peak (µA/V²) |
+|---|---|---|---|
+| norm-conserving, tight-binding r | 103 / 142 / 305 / 241 / 206 | 492 at 2.54 | −2.3 / −14.4, −28.0 at 3.88 |
+| norm-conserving, with dipoles | 178 / 248 / 628 / 437 / 393 | 677 at 2.54 | −3.5 / −24.7, −41.4 at 3.87 |
+| PAW (pthr 0.90), tight-binding r | 120 / 175 / 416 / 302 / 397 | 725 at 2.63 | −3.6 / −17.7, −32.2 at 3.90 |
+| PAW (pthr 0.90), with dipoles | 156 / 231 / 572 / 410 / 526 | 855 at 2.63 | −4.5 / −23.7, −38.1 at 3.90 |
+
+The position dipoles raise every response: the static χ_xyz by 73 % (norm-conserving) and
+30 % (PAW), the shift current by 20–70 %. With the dipoles the static χ_xyz of the
+norm-conserving run, 178 pm/V, falls inside the measured 166–180 pm/V, and the PAW value,
+156 pm/V, just below it; the tight-binding position operator is therefore the main reason the
+first runs were 35–45 % low. Every T_d relation still holds to 1e-8 or better with the dipoles.
+Two cautions: the dipole matrix elements of the PAW run are taken between the all-electron
+basis functions while the projections live in the augmented metric (the PAW dipoles would need
+the augmentation correction of the position operator, not implemented), so the norm-conserving
+number is the consistent one; and the spread between the two pseudopotentials (156 vs 178 pm/V)
+is of the size of the remaining disagreement with experiment.
 
 **PAW GaAs with the augmented projections, 40³** (`paoflow/output_nk40_aug`; example10
 inputs, `pthr = 0.90` → 21 bands, scissor 0.86 eV, η 0.05 eV; this is what the example in
@@ -245,12 +272,10 @@ values because a free 2D `vc-relax` converged to a cell 8 % too small.
   3 eV are converged between 40³ and 60³ (≤ 10 %); the resonance region 2.3–3.5 eV is not (peak
   610 → 480 pm/V) and needs 100³ or a larger η before it is quoted.
 - **GaAs symmetry.** The 2–5 % spread between equivalent components of the first runs came
-  from the internal projections of the PAW pseudo-wavefunctions (§3.2), not from the symmetry
-  expansion; the augmented metric implemented the same day removes it (Hamiltonian symmetric
-  to 1e-9 eV, shift current symmetric to 1e-10). What survives is the gauge of exactly
-  degenerate bands on the Λ lines in the SHG and injection kernels (10 % / 2 % between
-  equivalent χ components at 40³): the U(N)-covariant degenerate treatment of the phase-2 plan
-  (C2).
+  from the internal projections of the PAW pseudo-wavefunctions (§3.2), fixed with the
+  augmented metric; the remaining 1–10 % of the SHG came from the gauge of exactly degenerate
+  bands on the Λ lines, fixed with the U(N)-covariant kernels. With the current code every
+  point-group relation holds to 1e-10 and the wedge-reduced run equals the full grid.
 - **Scissor for GeS** to the GW gap, and the thickness convention of the literature, before
   quoting percentages.
 - **Beyond the tight-binding position operator** (Löwdin position dipoles in r and r_{;a}),

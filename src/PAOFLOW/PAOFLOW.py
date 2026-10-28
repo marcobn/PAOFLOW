@@ -3463,6 +3463,8 @@ class PAOFLOW:
         kblock=128,
         hopping_cutoff=None,
         shg_bin=None,
+        position_dipoles=False,
+        symmetry=True,
     ):
         r"""Second-order optical responses: shift and injection currents, second-harmonic generation.
 
@@ -3540,6 +3542,19 @@ class PAOFLOW:
             Drop real-space cells with ``max |H(n)|`` below it (eV).
         shg_bin : float, optional
             Bin of the SHG transition-energy histograms (eV; default ``eta / 5``).
+        position_dipoles : bool or {'full', 'intra-atomic'}, optional
+            Go beyond the tight-binding position operator: the Löwdin position dipoles of
+            the PAO basis (:func:`~PAOFLOW.hamiltonian.position_dipoles.position_dipole_operator`,
+            internal projections, scalar-relativistic) enter :math:`r` and :math:`r_{;a}`.
+            ``True`` is the ``'full'`` level. Default ``False`` (tight-binding approximation).
+        symmetry : bool or array_like, optional
+            Reduce the dense grid to its irreducible wedge with the point-group operations of
+            the crystal and symmetrise the tensors once at the end (exact for the covariant
+            integrands; GaAs: 24 times fewer k-points). ``True`` uses the operations read from
+            Quantum ESPRESSO (``arrays['sym_rot']``, the time-reversal-combined ones excluded)
+            and does nothing when they are absent (models, VASP); an array ``(nops, 3, 3)`` of
+            Cartesian matrices is accepted instead (they must be lattice symmetries). ``False``
+            runs the full grid.
 
         Returns
         -------
@@ -3601,6 +3616,35 @@ class PAOFLOW:
             slab = None
             if twoD:
                 slab = float(slab_height) if slab_height else alat * float(np.linalg.norm(at[2]))
+            ops_cryst = None
+            if symmetry is not False and symmetry is not None:
+                from .utils.point_groups import fractional_k_from_cartesian
+
+                if symmetry is True:
+                    if 'sym_rot' in arrays and arrays['sym_rot'] is not None:
+                        rot = np.asarray(arrays['sym_rot'], dtype=float)
+                        keep = np.ones(rot.shape[0], dtype=bool)
+                        if 'sym_TR' in arrays and arrays['sym_TR'] is not None:
+                            keep = ~np.asarray(arrays['sym_TR'], dtype=bool)
+                        ops_cryst = rot[keep]
+                    elif self.rank == 0 and attr.get('verbose', False):
+                        print('Nonlinear optics: no symmetry operations found, full grid')
+                else:
+                    cart = np.asarray(symmetry, dtype=float).reshape(-1, 3, 3)
+                    ops_cryst = fractional_k_from_cartesian(
+                        cart, np.asarray(arrays['b_vectors'], dtype=float)
+                    )
+            dipoles = None
+            if position_dipoles:
+                from .hamiltonian.position_dipoles import position_dipole_operator
+
+                level = position_dipoles if isinstance(position_dipoles, str) else 'full'
+                dipoles = position_dipole_operator(
+                    self.data_controller, np.asarray(arrays['b_vectors'], dtype=float), alat,
+                    level=level,
+                )  # fmt: skip
+                if self.rank == 0 and attr.get('verbose', False):
+                    print('Nonlinear optics: position dipoles (%s) in r and r_{;a}' % level)
             per_spin = []
             for ispin in range(nspin):
                 per_spin.append(
@@ -3627,6 +3671,8 @@ class PAOFLOW:
                         want=want,
                         shg_bin=shg_bin,
                         hopping_cutoff=hopping_cutoff,
+                        position_dipoles=dipoles,
+                        symmetry_ops_cryst=ops_cryst,
                         comm=self.comm,
                         progress=bool(attr.get('verbose', False)),
                     )  # fmt: skip
@@ -3645,13 +3691,19 @@ class PAOFLOW:
                 'nk': tuple(int(n) for n in nk), 'eta_ev': float(eta), 'scissor_ev': float(scissor),
                 'components': list(total['components']), 'nocc': int(total['nocc']),
                 'gap_ev': float(total['gap_ev']), 'twoD': bool(twoD), 'slab_height_bohr': slab,
+                'position_dipoles': (level if position_dipoles else False),
+                'symmetry': total.get('symmetry'),
             }  # fmt: skip
             if self.rank == 0:
+                sym = total.get('symmetry')
                 print(
                     'Nonlinear optics: %d occupied bands, gap %.3f eV (direct %.3f eV), '
-                    'scissor %.3f eV, %d k-points, %s; wrote %d files'
+                    'scissor %.3f eV, %d k-points%s, %s; wrote %d files'
                     % (total['nocc'], total['gap_ev'], total['direct_gap_ev'], scissor,
-                       int(np.prod(nk)), ', '.join(want), len(written))
+                       int(np.prod(nk)),
+                       (' (%d irreducible, %d operations)' % (sym['k_irreducible'], sym['operations'])
+                        if sym else ''),
+                       ', '.join(want), len(written))
                 )  # fmt: skip
         except Exception as e:
             self.report_exception('nonlinear_optics')

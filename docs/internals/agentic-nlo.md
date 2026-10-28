@@ -31,3 +31,5 @@ and templates live in `agentic/nlo/`.
 and relations of T_d, 3m and mm2, symmetrisation and the Kleinman error, the adapter on a synthetic
 output (spectra, tensors, static values, peaks, onsets, symmetry and Kleinman checks, unit
 conversions, 2D sheet units, spin-channel files ignored).
+
+Since October 28 2026 the point-group code lives in `src/PAOFLOW/utils/point_groups.py` (also used by the engine's k-grid reduction); `PAOFLOW.agentic.nlo.symmetry` re-exports it.

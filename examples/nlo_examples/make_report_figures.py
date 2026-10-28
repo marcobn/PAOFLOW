@@ -139,7 +139,7 @@ def gaas(model, conv, out, label='40$^3$', conv_label='60$^3$', note=None):
             label='TDDFT+scissor static (Luppi 2010)',
         )
         a.set(xlabel='photon energy (eV)', ylabel='$\\chi^{(2)}$ (pm/V)', xlim=(0, 4))
-        a.legend(fontsize=6, loc='upper left', ncol=2, framealpha=0.9)
+        a.legend(fontsize=6, loc='lower center', bbox_to_anchor=(0.5, 1.01), ncol=3, frameon=False)
         panel_label(a, '(a)')
         b.plot(
             e,

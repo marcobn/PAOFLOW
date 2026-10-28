@@ -552,6 +552,10 @@ def build_run_script(cfg):
         lines.append('NLO_ETA = {}'.format(cfg.get('nlo_eta', 0.05)))
         lines.append('NLO_SCISSOR = {}'.format(cfg.get('nlo_scissor', 0.0)))
         lines.append(
+            'NLO_DIPOLES = False   # True: Löwdin position dipoles in r and r_{;a} (beyond tight binding)'
+        )
+        lines.append('NLO_SYMMETRY = True   # irreducible wedge of the dense grid (QE symmetries)')
+        lines.append(
             "NLO_COMPONENTS = {!r}   # 'all', 'diag' or a list such as ['xyz', 'yyy']".format(
                 cfg.get('nlo_components', 'all')
             )
@@ -669,7 +673,8 @@ def build_run_script(cfg):
         lines.append('    p.projectability(pthr=PTHR)')
         lines.append('    p.pao_hamiltonian()')
         lines.append('    p.nonlinear_optics(nk=NLO_NK, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA,')
-        lines.append('                       scissor=NLO_SCISSOR, components=NLO_COMPONENTS)')
+        lines.append('                       scissor=NLO_SCISSOR, components=NLO_COMPONENTS,')
+        lines.append('                       position_dipoles=NLO_DIPOLES, symmetry=NLO_SYMMETRY)')
         lines.append('')
         lines.append('    p.finish_execution()')
         lines.append('')

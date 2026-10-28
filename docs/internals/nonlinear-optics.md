@@ -111,9 +111,57 @@ $1/\omega_{mn}$ factors, while $r$, $r_{;a}$ and $\Delta$ keep the DFT eigenvect
 **Occupations.** 0 K: a step by band index (`nelec`/$g_s$ bands) or by energy if `fermi_energy` is
 given; finite `temperature`: Fermi–Dirac at `fermi_energy` (default the mid-gap).
 
-**Degeneracies.** Pairs with $|\omega_{nm}| <$ `degeneracy_tol` are dropped from $r$ and from the band
-sums (the U(1)-covariant formulation); the U(N)-covariant derivative of Chen *et al.* for degenerate
-subspaces is not implemented.
+**Degeneracies (U(N)-covariant since October 28 2026).** Bands are grouped in clusters by the
+transitive closure of consecutive gaps below `degeneracy_tol` (`degenerate_clusters`); $r$, $G$
+and the band sums are restricted to pairs in different clusters, and every quantity is invariant
+under a change of basis inside a cluster. The band velocities enter only through the intra-cluster
+blocks $v^a_{\rm intra}$ of $v^a$: the sum rule reads
+$r^b_{nm;a} = (i/\omega_{nm})\big[[v^a_{\rm intra}, v^b]_{nm}/\omega_{nm} - w^{ab}_{nm} + [v^b, G^a]_{nm}\big]$
+(from $(\omega r^b)_{;a} = v^a_{NN} r^b - r^b v^a_{MM} + \omega_{NM} r^b_{;a}$ for the clusters
+$N \ni n$, $M \ni m$), and $\Delta^a_{mn} r^b_{mn}$ of the injection current and of the SHG terms
+$x_3$, $t_5$ is replaced by $(v^a_{\rm intra} r^b - r^b v^a_{\rm intra})_{mn}$
+(`BandGeometry.position_delta`). The diagonal form $v^a_{nn} - v^a_{mm}$ is recovered when every
+cluster has one band. Tests: random U(2) rotations inside the exact doublets of a folded supercell
+leave the shift, injection and SHG weights of a k-point unchanged ($10^{-10}$), and the
+x-supercell on a 4³ grid reproduces the primitive cell on an (8, 4, 4) grid, doublets included.
+GaAs (norm-conserving, k-resolved test at a Λ point): the SHG histograms went from 2.5 % / 18 %
+differences between symmetry-equivalent k to $10^{-10}$.
+
+**Position dipoles (since October 28 2026).** `position_dipoles=True` (or `'intra-atomic'`) goes
+beyond the tight-binding position operator: with the Löwdin dipoles $d(\mathbf k)$ of
+`hamiltonian/position_dipoles.py` the position operator is $\tau + d$, the velocity gains
+$i[H, d]$ (so $r = r^{TB} + D$ between clusters, $D = U^\dagger d U$) and the covariant derivative
+becomes
+
+$$
+r^b_{nm;a} = r^{TB,b}_{nm;a} + (U^\dagger \tilde\partial_a d^b U)_{nm} + [G^{TB,a}, D^b]_{nm}
+- i[D^a_{\rm intra}, r^b]_{nm},
+$$
+
+with $\tilde\partial_a d = \partial_a d + i(\tau_j - \tau_i)_a d_{ij}$ the atomic-gauge derivative
+of the dipoles in the lattice basis (the same gauge term as in the velocity), $G^{TB}$ from the
+tight-binding velocity and $D_{\rm intra}$ the intra-cluster blocks of $D$ (the diagonal dipole
+shifts the Berry connection). The gradient is taken by central differences of the dipole
+callable (step $10^{-4}$ bohr$^{-1}$; Richardson check on GaAs $3\times10^{-5}$ of a gradient
+of 15 bohr²; the dipoles are periodic in k to $10^{-11}$ and continuous across the fold), which
+costs six extra dipole evaluations per k-block. Tests: the finite-difference derivative of
+$r^{TB} + D$ in a parallel-transport gauge (with the Berry-connection shift of the diagonal
+dipoles), invariance under orbital unitaries applied to $H$ and $d$ together, and the U(N)
+covariance inside exact doublets with dipoles.
+
+**Symmetry reduction (since October 28 2026).** `symmetry=True` (default) reduces the dense
+grid to its irreducible wedge under the point-group operations read from Quantum ESPRESSO
+(`arrays['sym_rot']`, integer matrices acting on fractional k, the time-reversal-combined ones
+excluded; a list of Cartesian matrices can be given for models) and symmetrises the spectra
+once at the end: since the symmetrisation $\mathrm{Sym}_G T = |G|^{-1}\sum_R R\otimes R\otimes R\, T$
+is linear, $\sum_{BZ} T(\mathbf k) = \mathrm{Sym}_G[\sum_{IBZ} w_{\mathbf k} T(\mathbf k)]$ exactly
+for the covariant integrands, with $w_{\mathbf k}$ the orbit sizes. The wedge accumulates the
+closure of the requested components under the group (`utils/point_groups.py`:
+`reduce_k_grid`, `component_closure`, `symmetrize_components`); GaAs with `xyz, yzx, xxx`
+needs 9 of 27 components on 1/24 of the grid. The operations are checked on the coarse grid
+(band energies invariant to $10^{-5}$ eV, else an error). Time reversal is not used for the
+reduction. Test: gapped graphene (D3h, 12 operations), wedge vs full 18² grid identical to
+$10^{-9}$ of the scale for every kind; GaAs 8³: identical to $10^{-10}$.
 
 **Spin.** $g_s = 2$ for `nspin = 1` without spin–orbit, 1 otherwise; with `nspin = 2` the two channels
 are computed separately (`_0`, `_1` files) and summed.
@@ -191,7 +239,11 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   480 (60³) pm/V near 2.6 eV (the resonance region is not converged at 60³), against
   100–170 pm/V and 400–600 pm/V in the literature (Nastos 2005, Wang 2017, experiment
   $2d_{14} \approx 170$ pm/V); $\sigma_{xyz}$ reaches $-30$ (40³) / $-27$ (60³) µA/V² at 3.9–4 eV.
-  The T-odd responses and the circular injection are $10^{-5}$ of their natural scale.
+  The T-odd responses and the circular injection are $10^{-5}$ of their natural scale. With the
+  current code (augmented projections, covariant kernels) and the position dipoles the static
+  $\chi_{xyz}$ is 178 pm/V (norm-conserving) / 156 pm/V (PAW) against 103 / 120 pm/V with the
+  tight-binding position operator: the dipoles close most of the gap to the measured 166–180 pm/V
+  (`examples/nlo_examples/REPORT.md` §3.2).
 - **GeS numbers** (monolayer, nosym 18×18×1 nscf, 200² dense grid, η = 0.05 eV, PBE gap 1.68 eV,
   sheet units with the 18 Å cell): shift-current peaks $\sigma^{xxx} = 46$, $\sigma^{xyy} = 48$,
   $\sigma^{yxy} = 26$ nm µA/V² (about 75 µA/V² for a 0.6 nm layer, the order of magnitude of Rangel

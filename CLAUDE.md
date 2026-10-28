@@ -70,7 +70,8 @@ user-invocable: true
                           templates are the thin drivers copied into examples/elphon), fermi_plotter
       graphics/           Color and plotting utilities
       writers/            BXSF / XSF / BoltzTraP2 writers
-      utils/              Constants, MPI communication, FFT grids, smearing, pyints (Gaussian integrals)
+      utils/              Constants, MPI communication, FFT grids, smearing, pyints (Gaussian integrals),
+                          point_groups (crystal classes, rank-3 tensor symmetrisation, k-grid reduction)
       acbn0_native/, epsilon_native/, elphon_native/   Optional bridges to the Rust extension, with pure-Python fallback
       defs/               Back-compat shim that aliases legacy PAOFLOW.defs.* imports and emits FutureWarning
     rust/paoflow_rs/      Optional Rust (PyO3 + rayon) kernels for ACBN0 ERIs, epsilon/JDOS and the e-ph absorption

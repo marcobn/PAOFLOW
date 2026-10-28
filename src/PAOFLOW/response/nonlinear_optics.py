@@ -53,7 +53,7 @@ closer than ``degeneracy_tol`` are excluded from :math:`r` and from the band sum
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -65,6 +65,13 @@ from ..hamiltonian.bloch_derivatives import (
     velocity_and_curvature_operators,
 )
 from ..utils.constants import ELECTRON_CHARGE_SI, EPSILON0_SI, HBAR_SI
+from ..utils.point_groups import (
+    cartesian_from_fractional_k,
+    component_closure,
+    grid_indices,
+    reduce_k_grid,
+    symmetrize_components,
+)
 
 KELVIN_TO_EV = 8.617333262e-5
 #: shift current per unit of the dimensionless k-sum: pi e^2 / hbar (A/V^2)
@@ -116,29 +123,62 @@ class BandGeometry:
     eigenvectors : ndarray ``(nb, n, n)``
     omega : ndarray ``(nb, n, n)``
         :math:`\\omega_{nm} = E_n - E_m`.
+    cluster : ndarray ``(nb, n)``, int
+        Index of the degenerate cluster of every band (transitive closure of the pairs closer
+        than the degeneracy tolerance, bands sorted by energy).
     pair_mask : ndarray ``(nb, n, n)``, bool
-        Pairs with :math:`|\\omega_{nm}|` above the degeneracy tolerance (diagonal excluded).
+        Pairs of bands in different clusters (the diagonal and the intra-cluster pairs excluded).
     inv_omega : ndarray ``(nb, n, n)``
         :math:`1/\\omega_{nm}` on the mask, 0 elsewhere.
     velocity : ndarray ``(nb, 3, n, n)``
         :math:`v^a_{nm}` (eV bohr).
+    velocity_intra : ndarray ``(nb, 3, n, n)``
+        The intra-cluster blocks of :math:`v^a` (zero between clusters): the U(N)-covariant
+        replacement of the band velocities :math:`v^a_{nn}` of a degenerate cluster.
     delta_velocity : ndarray ``(nb, 3, n, n)``
-        :math:`\\Delta^a_{nm} = v^a_{nn} - v^a_{mm}` (real).
+        :math:`\\Delta^a_{nm} = v^a_{nn} - v^a_{mm}` (real, gauge-dependent inside clusters;
+        used for the adaptive widths only).
     position : ndarray ``(nb, 3, n, n)``
-        :math:`r^a_{nm}` (bohr), zero on the diagonal and inside degenerate pairs.
+        :math:`r^a_{nm}` (bohr), zero on the diagonal and inside the clusters.
+    position_delta : ndarray ``(nb, 3, 3, n, n)``
+        ``[b, a]`` -> :math:`(v^a_{\\rm intra} r^b - r^b v^a_{\\rm intra})_{nm}`, the covariant
+        form of :math:`r^b_{nm}\\Delta^a_{nm}` (bohr eV bohr).
     position_derivative : ndarray ``(nb, 3, 3, n, n)``
-        ``[a, b]`` -> :math:`r^b_{nm;a}` (bohr^2).
+        ``[a, b]`` -> :math:`r^b_{nm;a}` (bohr^2), the U(N)-covariant derivative.
     """
 
     energies: NDArray[np.float64]
     eigenvectors: NDArray[np.complex128]
     omega: NDArray[np.float64]
+    cluster: NDArray[np.int_]
     pair_mask: NDArray[np.bool_]
     inv_omega: NDArray[np.float64]
     velocity: NDArray[np.complex128]
+    velocity_intra: NDArray[np.complex128]
     delta_velocity: NDArray[np.float64]
     position: NDArray[np.complex128]
+    position_delta: NDArray[np.complex128]
     position_derivative: NDArray[np.complex128]
+
+
+def degenerate_clusters(energies: NDArray[np.float64], degeneracy_tol: float) -> NDArray[np.int_]:
+    """Cluster index of every band: consecutive bands closer than the tolerance share a cluster.
+
+    Parameters
+    ----------
+    energies : ndarray ``(nb, n)``
+        Sorted ascending along the last axis (as returned by ``eigh``).
+    degeneracy_tol : float
+        Gap below which two consecutive bands belong to the same cluster (eV).
+
+    Returns
+    -------
+    ndarray ``(nb, n)``, int
+        Transitive closure: a chain of close bands is one cluster whatever its total width.
+    """
+    e = np.asarray(energies, dtype=float)
+    split = (np.diff(e, axis=-1) >= float(degeneracy_tol)).astype(int)
+    return np.concatenate([np.zeros(e.shape[:-1] + (1,), dtype=int), np.cumsum(split, axis=-1)], axis=-1)
 
 
 def band_geometry(
@@ -147,6 +187,8 @@ def band_geometry(
     velocity_orb: NDArray[np.complex128],
     curvature_orb: NDArray[np.complex128],
     degeneracy_tol: float = 1.0e-4,
+    dipole_orb: NDArray[np.complex128] | None = None,
+    dipole_gradient_orb: NDArray[np.complex128] | None = None,
 ) -> BandGeometry:
     """Rotate the orbital operators to the band basis and build :math:`r` and :math:`r_{;a}`.
 
@@ -156,44 +198,144 @@ def band_geometry(
     eigenvectors : ndarray ``(nb, n, n)``
         Columns.
     velocity_orb : ndarray ``(nb, 3, n, n)``
-        :math:`v_a` of :func:`~PAOFLOW.hamiltonian.bloch_derivatives.velocity_and_curvature_operators`.
+        :math:`v_a` of :func:`~PAOFLOW.hamiltonian.bloch_derivatives.velocity_and_curvature_operators`
+        (the tight-binding part, without the dipole term).
     curvature_orb : ndarray ``(nb, 3, 3, n, n)``
         :math:`w_{ab}`.
     degeneracy_tol : float, optional
-        Pairs with :math:`|\\omega_{nm}|` below it are treated as degenerate (eV).
+        Consecutive bands closer than it belong to the same degenerate cluster (eV).
+    dipole_orb : ndarray ``(nb, 3, n, n)``, optional
+        Position dipoles :math:`d^b(\\mathbf k)` of the orbital basis (bohr, lattice gauge, Hermitian):
+        the position operator beyond the tight-binding approximation is :math:`\\tau + d`.
+    dipole_gradient_orb : ndarray ``(nb, 3, 3, n, n)``, optional
+        ``[a, b]`` -> :math:`\\partial_a d^b(\\mathbf k)` (bohr^2); required with ``dipole_orb``.
 
     Returns
     -------
     BandGeometry
+
+    Notes
+    -----
+    Bands are grouped in degenerate clusters (:func:`degenerate_clusters`); every quantity is
+    U(N)-covariant, i.e. invariant under a change of basis inside a cluster. With
+    :math:`G^a_{pq} = v^a_{pq}/\\omega_{pq}` between clusters (zero inside) and
+    :math:`v^a_{\\rm intra}` the intra-cluster blocks of the velocity,
+
+    .. math::
+
+        r^b_{nm;a} = \\frac{i}{\\omega_{nm}}\\Big[\\frac{[v^a_{\\rm intra}, v^b]_{nm}}{\\omega_{nm}}
+        - w^{ab}_{nm} + [v^b, G^a]_{nm}\\Big],
+
+    which reduces to the non-degenerate sum rule (:math:`[v^a_{\\rm intra}, v^b]_{nm} =
+    v^b_{nm}\\Delta^a_{nm}`) when every cluster has one band. The product rule behind it is
+    :math:`(\\omega r^b)_{;a} = v^a_{NN} r^b - r^b v^a_{MM} + \\omega_{NM} r^b_{;a}` for the
+    clusters :math:`N \\ni n`, :math:`M \\ni m`, the generalisation of
+    :math:`\\partial_a\\omega_{nm} = \\Delta^a_{nm}`.
+
+    With position dipoles the position operator is :math:`\\tau + d(\\mathbf k)`: in the band
+    basis :math:`D = U^\\dagger d U` adds to the velocity (:math:`v \\to v + i\\omega D`, i.e.
+    :math:`r = r^{TB} + D` between clusters) and the covariant derivative becomes
+
+    .. math::
+
+        r^b_{nm;a} = r^{TB,b}_{nm;a} + (U^\\dagger \\partial_a d^b U)_{nm}
+        + [G^{TB,a}, D^b]_{nm} - i\\,[D^a_{\\rm intra}, r^b]_{nm},
+
+    with :math:`G^{TB}` built from the tight-binding velocity and :math:`D_{\\rm intra}` the
+    intra-cluster blocks of :math:`D` (the diagonal dipole shifts the Berry connection).
     """
     U = eigenvectors
-    v = np.einsum('kim,kaij,kjn->kamn', U.conj(), velocity_orb, U, optimize=True)
+    v_tb = np.einsum('kim,kaij,kjn->kamn', U.conj(), velocity_orb, U, optimize=True)
     w = np.einsum('kim,kabij,kjn->kabmn', U.conj(), curvature_orb, U, optimize=True)
     omega = energies[:, :, None] - energies[:, None, :]
-    mask = np.abs(omega) > float(degeneracy_tol)
+    cluster = degenerate_clusters(energies, degeneracy_tol)
+    mask = cluster[:, :, None] != cluster[:, None, :]
     inv = np.where(mask, 1.0 / np.where(mask, omega, 1.0), 0.0)
-    r = -1j * v * inv[:, None]
-    diag = np.real(np.diagonal(v, axis1=2, axis2=3))  # (nb, 3, n)
+    if dipole_orb is not None:
+        if dipole_gradient_orb is None:
+            raise ValueError('dipole_orb needs dipole_gradient_orb')
+        D = np.einsum('kim,kaij,kjn->kamn', U.conj(), dipole_orb, U, optimize=True)
+        Dg = np.einsum('kim,kabij,kjn->kabmn', U.conj(), dipole_gradient_orb, U, optimize=True)
+        v = v_tb + 1j * omega[:, None] * D
+    else:
+        D = Dg = None
+        v = v_tb
+    r = -1j * v * inv[:, None]  # r^TB + D between clusters
+    diag = np.real(np.diagonal(v_tb, axis1=2, axis2=3))  # (nb, 3, n): band velocities
     delta = diag[:, :, :, None] - diag[:, :, None, :]
-    G = v * inv[:, None]  # G^a_pm = v^a_pm / omega_pm (0 on degenerate pairs)
+    v_intra = v_tb * (~mask)[:, None]
+    G = v_tb * inv[:, None]  # G^a_pm = v^a_pm / omega_pm (0 inside the clusters), tight-binding
     nb, n = energies.shape
     rd = np.empty((nb, 3, 3, n, n), dtype=complex)
+    pd = np.empty((nb, 3, 3, n, n), dtype=complex)
+    if D is not None:
+        D_intra = D * (~mask)[:, None]
     for a in range(3):
         for b in range(3):
-            commutator = v[:, b] @ G[:, a] - G[:, a] @ v[:, b]
-            rd[:, a, b] = 1j * inv * (v[:, b] * delta[:, a] * inv - w[:, a, b] + commutator)
+            commutator = v_tb[:, b] @ G[:, a] - G[:, a] @ v_tb[:, b]
+            vd = v_intra[:, a] @ v_tb[:, b] - v_tb[:, b] @ v_intra[:, a]  # v^b_nm Delta^a_nm
+            rd[:, a, b] = 1j * inv * (vd * inv - w[:, a, b] + commutator)
+            if D is not None:
+                rd[:, a, b] += (
+                    Dg[:, a, b]
+                    + (G[:, a] @ D[:, b] - D[:, b] @ G[:, a])
+                    - 1j * (D_intra[:, a] @ r[:, b] - r[:, b] @ D_intra[:, a])
+                )
+            pd[:, b, a] = v_intra[:, a] @ r[:, b] - r[:, b] @ v_intra[:, a]  # r^b_nm Delta^a_nm
     rd *= mask[:, None, None]
     return BandGeometry(
         energies=energies,
         eigenvectors=U,
         omega=omega,
+        cluster=cluster,
         pair_mask=mask,
         inv_omega=inv,
         velocity=v,
+        velocity_intra=v_intra,
         delta_velocity=delta,
         position=r,
+        position_delta=pd,
         position_derivative=rd,
     )
+
+
+def dipole_gradient_by_differences(
+    dipoles: Callable[[NDArray[np.float64]], NDArray[np.complex128]],
+    k_cryst: NDArray[np.float64],
+    a_vectors: NDArray[np.float64],
+    alat: float,
+    step: float = 1.0e-4,
+) -> NDArray[np.complex128]:
+    """Cartesian k-gradient of the position dipoles by central differences.
+
+    Parameters
+    ----------
+    dipoles : callable
+        ``K_cryst (nk, 3) -> d (nk, 3, n, n)`` (bohr), e.g.
+        :func:`~PAOFLOW.hamiltonian.position_dipoles.position_dipole_operator`.
+    k_cryst : ndarray ``(nk, 3)``
+    a_vectors : ndarray ``(3, 3)``
+        Lattice vectors (rows, alat units).
+    alat : float
+        Bohr.
+    step : float, optional
+        Cartesian step (bohr^-1).
+
+    Returns
+    -------
+    ndarray ``(nk, 3, 3, n, n)``
+        ``[a, b]`` -> :math:`\\partial_a d^b` (bohr^2).
+    """
+    at = np.asarray(a_vectors, dtype=float)
+    scale = float(step) * float(alat) / (2.0 * np.pi)  # crystal shift of a Cartesian step
+    out = None
+    for a in range(3):
+        dk = scale * at[:, a][None, :]  # e_a @ at.T
+        plus, minus = dipoles(k_cryst + dk), dipoles(k_cryst - dk)
+        if out is None:
+            out = np.empty((k_cryst.shape[0], 3) + plus.shape[1:], dtype=complex)
+        out[:, a] = (plus - minus) / (2.0 * float(step))
+    return out
 
 
 def occupations(
@@ -236,6 +378,7 @@ def accumulate_shift_and_injection(
     components: Sequence[tuple[int, int, int]],
     smearing: str,
     out: dict,
+    k_weights: NDArray[np.float64] | None = None,
 ) -> None:
     """Add the :math:`\\delta`-function sums of a k-block to ``out`` (unnormalised).
 
@@ -253,8 +396,12 @@ def accumulate_shift_and_injection(
     out : dict
         Accumulators ``'shift'``, ``'shiftm'``, ``'injectc'``, ``'injectm'`` of shape
         ``(ncomp, ne)``.
+    k_weights : ndarray ``(nb,)``, optional
+        Weight of every k-point (orbit sizes of an irreducible wedge); 1 by default.
     """
     F = occupation[:, None, :] - occupation[:, :, None]  # f_m - f_n  (n: first band index)
+    if k_weights is not None:
+        F = F * np.asarray(k_weights, dtype=float)[:, None, None]
     span = 5.0 * float(np.max(widths))
     select = (
         geometry.pair_mask
@@ -266,7 +413,7 @@ def accumulate_shift_and_injection(
     ik_all, n_all, m_all = np.nonzero(select)
     if ik_all.size == 0:
         return
-    r, rd, dv = geometry.position, geometry.position_derivative, geometry.delta_velocity
+    r, rd, pd = geometry.position, geometry.position_derivative, geometry.position_delta
     chunk = max(1, int(2.0e6 // max(energy_grid.size, 1)))  # pairs per kernel block (~16 MB)
     for start in range(0, ik_all.size, chunk):
         sl = slice(start, start + chunk)
@@ -283,7 +430,7 @@ def accumulate_shift_and_injection(
             rdc, rdb = rd[ik, a, c, n, m], rd[ik, a, b, n, m]  # r^c_{nm;a}, r^b_{nm;a}
             shift = np.imag(rb_mn * rdc + rc_mn * rdb)
             shift_m = np.real(rb_mn * rdc - rc_mn * rdb)
-            inject = dv[ik, a, m, n] * rb_mn * rc_nm  # Delta^a_mn r^b_mn r^c_nm
+            inject = pd[ik, b, a, m, n] * rc_nm  # (r^b Delta^a)_mn r^c_nm, covariant
             out['shift'][ic] += (-f * shift) @ kernel
             out['shiftm'][ic] += (f * shift_m) @ kernel
             out['injectc'][ic] += (f * inject.imag) @ kernel
@@ -322,6 +469,7 @@ def accumulate_shg_histograms(
     out: dict,
     degeneracy_tol: float = 1.0e-4,
     chunk: int | None = None,
+    k_weights: NDArray[np.float64] | None = None,
 ) -> None:
     """Add the SHG weights of a k-block to the transition-energy histograms ``out``.
 
@@ -345,6 +493,8 @@ def accumulate_shg_histograms(
         ``'hist1'``, ``'hist2'``.
     degeneracy_tol : float
     chunk : int, optional
+    k_weights : ndarray ``(nb,)``, optional
+        Weight of every k-point (orbit sizes of an irreducible wedge); 1 by default.
         k-points per inner chunk of the three-band term (memory).
     """
     nbins = bin_edges.size - 1
@@ -361,9 +511,11 @@ def accumulate_shg_histograms(
         sl = slice(start, start + chunk)
         E_s = energies_scissored[sl]
         f = occupation[sl]
+        if k_weights is not None:
+            f = f * np.asarray(k_weights, dtype=float)[sl, None]  # f_n - f_m scaled by the weight
         r = geometry.position[sl]
         rd = geometry.position_derivative[sl]
-        dv = geometry.delta_velocity[sl]
+        pd = geometry.position_delta[sl]
         mask = geometry.pair_mask[sl]
         om_nm = E_s[:, :, None] - E_s[:, None, :]  # omega'_nm
         inv_nm = np.where(mask, 1.0 / np.where(mask, om_nm, 1.0), 0.0)
@@ -403,13 +555,19 @@ def accumulate_shg_histograms(
                 * inv_mn
             )
             t2 = (rd[:, c, a] * rb_mn + rd[:, b, a] * rc_mn) * inv_mn
+            # (r^b Delta^c)_mn and (r^c Delta^b)_mn in their covariant form
             x3 = (
                 ra_nm
-                * (rb_mn * dv[:, c].transpose(0, 2, 1) + rc_mn * dv[:, b].transpose(0, 2, 1))
+                * (pd[:, b, c].transpose(0, 2, 1) + pd[:, c, b].transpose(0, 2, 1))
                 * inv_mn**2
             )
             t4 = -0.5 * (rb_mn * rd[:, a, c] + rc_mn * rd[:, a, b]) * inv_mn
-            t5 = -0.5 * dv[:, a].transpose(0, 2, 1) * np.real(r[:, b] * rc_mn) * inv_mn**2
+            # Delta^a_mn Re[r^b_nm r^c_mn] = (1/2)[(r^c Delta^a)_mn r^b_nm + (r^b Delta^a)_mn r^c_nm]
+            t5 = (
+                -0.25
+                * (pd[:, c, a].transpose(0, 2, 1) * r[:, b] + pd[:, b, a].transpose(0, 2, 1) * r[:, c])
+                * inv_mn**2
+            )
             out['hist1'][ic] += _bincount_complex(
                 om_mn, 1j * fnm * (t2 + x3 + t4 + t5), edge0, width, nbins
             )
@@ -462,6 +620,9 @@ def nonlinear_optical_spectra(
     want: Sequence[str] = RESPONSES,
     shg_bin: float | None = None,
     hopping_cutoff: float | None = None,
+    position_dipoles: Callable[[NDArray[np.float64]], NDArray[np.complex128]] | None = None,
+    dipole_step: float = 1.0e-4,
+    symmetry_ops_cryst: NDArray[np.float64] | None = None,
     comm=None,
     progress: bool = False,
 ) -> dict:
@@ -519,6 +680,22 @@ def nonlinear_optical_spectra(
         Histogram bin of the SHG transition energies (eV; default ``eta / 5``).
     hopping_cutoff : float, optional
         Drop real-space cells with ``max |H(n)|`` below it (eV).
+    position_dipoles : callable, optional
+        ``K_cryst (nk, 3) -> d (nk, 3, n, n)``, the Löwdin position dipoles of the orbital
+        basis (bohr, lattice gauge), e.g.
+        :func:`~PAOFLOW.hamiltonian.position_dipoles.position_dipole_operator`: the position
+        operator becomes :math:`\\tau + d(\\mathbf k)` in :math:`r` and :math:`r_{;a}`
+        (:func:`band_geometry`). Its k-gradient is taken by central differences of step
+        ``dipole_step`` (bohr^-1) and completed with the gauge term
+        :math:`i(\\tau_j - \\tau_i)_a d_{ij}`.
+    dipole_step : float, optional
+    symmetry_ops_cryst : ndarray ``(nops, 3, 3)``, optional
+        Point-group operations as integer matrices on fractional k (``k' = W k``, the
+        convention of ``arrays['sym_rot']``; time-reversal-combined operations excluded). The
+        dense grid is reduced to its irreducible wedge (orbit sizes as weights), the closure of
+        the requested components under the group is accumulated and the spectra are symmetrised
+        once at the end (:mod:`PAOFLOW.utils.point_groups`), which is exact for the covariant
+        integrands. The operations are checked on the coarse grid (band energies invariant).
     comm : MPI communicator, optional
         k-points are split over its ranks; ``None`` runs serially.
     progress : bool, optional
@@ -562,6 +739,27 @@ def nonlinear_optical_spectra(
     coarse = _k_grid(np.asarray(HRs).shape[2:5])
     H0, _, _ = hamiltonian_derivatives_block(terms, coarse)
     e0 = np.linalg.eigvalsh(H0)
+    ops_cart = None
+    if symmetry_ops_cryst is not None:
+        ops_frac = np.asarray(symmetry_ops_cryst, dtype=float)
+        if not np.allclose(ops_frac, np.rint(ops_frac), atol=1e-8):
+            raise ValueError('symmetry operations must be integer matrices on fractional k')
+        ops_frac = np.rint(ops_frac)
+        bg = np.linalg.inv(np.asarray(a_vectors, dtype=float)).T
+        ops_cart = cartesian_from_fractional_k(ops_frac, bg)
+        ortho = np.abs(ops_cart @ np.transpose(ops_cart, (0, 2, 1)) - np.eye(3)).max()
+        if ortho > 1e-6:
+            raise ValueError('symmetry operations are not orthogonal in Cartesian coordinates')
+        ng = np.asarray(HRs).shape[2:5]
+        idx = grid_indices(ng)
+        strides = np.array([ng[1] * ng[2], ng[2], 1])
+        for W in ops_frac.astype(int):
+            image = ((idx @ W.T) % ng) @ strides
+            if np.abs(e0[image] - e0).max() > 1.0e-5:
+                raise ValueError(
+                    'a symmetry operation does not leave the band energies invariant on the '
+                    'coarse grid (%.1e eV): pass symmetry=False' % np.abs(e0[image] - e0).max()
+                )
     vbm, cbm = float(e0[:, nocc - 1].max()), float(e0[:, nocc].min())
     bandwidth = float(e0.max() - e0.min()) + abs(float(scissor)) + 2.0 * float(eta) + 1.0
     mu = fermi_energy
@@ -572,6 +770,20 @@ def nonlinear_optical_spectra(
     conduction = (np.arange(n) >= nocc).astype(float)
     scissor_pair = float(scissor) * (conduction[:, None] - conduction[None, :])  # (n, n)
     spacing = (8.0 * np.pi**3 / (float(cell_volume) * nkd)) ** (1.0 / 3.0)  # 1/bohr
+    requested = list(comps)
+    k_weights_all = None
+    if ops_cart is not None:
+        comps = component_closure(requested, ops_cart)
+        K, k_weights_all, _ = reduce_k_grid(nk, ops_frac)
+        nk_loop = K.shape[0]
+        if progress and rank == 0:
+            print(
+                '  nonlinear optics: %d symmetry operations, %d irreducible of %d k-points, '
+                '%d of %d components' % (ops_cart.shape[0], nk_loop, nkd, len(comps), len(requested)),
+                flush=True,
+            )
+    else:
+        nk_loop = nkd
     # accumulators
     ne, ncomp = energy_grid.size, len(comps)
     out = {key: np.zeros((ncomp, ne)) for key in ('shift', 'shiftm', 'injectc', 'injectm')}
@@ -588,7 +800,7 @@ def nonlinear_optical_spectra(
     # k loop
     from ..utils.communication import load_balancing
 
-    kstart, kstop = load_balancing(size, rank, nkd)
+    kstart, kstop = load_balancing(size, rank, nk_loop)
     nblocks = max(1, -(-(kstop - kstart) // int(kblock)))
     for ib, b0 in enumerate(range(kstart, kstop, int(kblock))):
         if progress and rank == 0 and (ib % max(1, nblocks // 10) == 0 or ib == nblocks - 1):
@@ -598,10 +810,19 @@ def nonlinear_optical_spectra(
                 flush=True,
             )
         kb = K[b0 : min(b0 + int(kblock), kstop)]
+        kw = k_weights_all[b0 : min(b0 + int(kblock), kstop)] if k_weights_all is not None else None
         H, dH, d2H = hamiltonian_derivatives_block(terms, kb)
         v_orb, w_orb = velocity_and_curvature_operators(terms, H, dH, d2H)
         E, U = np.linalg.eigh(H)
-        geometry = band_geometry(E, U, v_orb, w_orb, degeneracy_tol)
+        if position_dipoles is not None:
+            d_orb = np.asarray(position_dipoles(kb), dtype=complex)
+            dg_orb = dipole_gradient_by_differences(
+                position_dipoles, kb, a_vectors, alat, dipole_step
+            )
+            dg_orb += 1j * terms.separation_bohr[None, :, None] * d_orb[:, None]
+            geometry = band_geometry(E, U, v_orb, w_orb, degeneracy_tol, d_orb, dg_orb)
+        else:
+            geometry = band_geometry(E, U, v_orb, w_orb, degeneracy_tol)
         f = occupations(E, nocc, temperature, mu)
         omega_s = geometry.omega + scissor_pair[None]
         if do_delta:
@@ -611,7 +832,7 @@ def nonlinear_optical_spectra(
             else:
                 widths = np.full(omega_s.shape, float(eta))
             accumulate_shift_and_injection(
-                geometry, f, omega_s, energy_grid, widths, comps, smearing, out
+                geometry, f, omega_s, energy_grid, widths, comps, smearing, out, kw
             )
         if do_shg:
             accumulate_shg_histograms(
@@ -622,12 +843,19 @@ def nonlinear_optical_spectra(
                 comps,
                 hist,
                 degeneracy_tol,
+                k_weights=kw,
             )
     if comm is not None and size > 1:
         from mpi4py import MPI
 
         for array in list(out.values()) + list(hist.values()):
             comm.Allreduce(MPI.IN_PLACE, array, op=MPI.SUM)
+    if ops_cart is not None:
+        for key in list(out):
+            out[key] = symmetrize_components(out[key], comps, ops_cart, requested)
+        for key in list(hist):
+            hist[key] = symmetrize_components(hist[key], comps, ops_cart, requested)
+        comps = requested
     norm = float(spin_factor) / (nkd * float(cell_volume))
     results = {
         'energy_ev': energy_grid,
@@ -641,6 +869,12 @@ def nonlinear_optical_spectra(
         'spin_factor': float(spin_factor),
         'fermi_energy_ev': mu,
         'temperature_k': float(temperature),
+        'position_dipoles': position_dipoles is not None,
+        'symmetry': (
+            {'operations': int(ops_cart.shape[0]), 'k_irreducible': int(nk_loop), 'k_full': int(nkd)}
+            if ops_cart is not None
+            else None
+        ),
     }
     if 'shift' in want:
         results['shift'] = C_SHIFT * norm * out['shift']
