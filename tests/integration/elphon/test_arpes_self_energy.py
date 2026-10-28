@@ -37,7 +37,9 @@ def _gamma_x_path(nscf, npts=4):
     return k_cryst, k_cart
 
 
-def test_fan_migdal_self_energy_on_a_path(electrons):
+@pytest.fixture(scope='module')
+def self_energy(electrons):
+    """The Fan-Migdal self-energy on Gamma-X at 300 K, computed once for both tests."""
     el, save, dfpt = electrons
     nscf = el.nscf
     k_cryst, _ = _gamma_x_path(nscf)
@@ -50,6 +52,11 @@ def test_fan_migdal_self_energy_on_a_path(electrons):
         coupling_source='dfpt', save_dir=save, tau_cryst=nscf['tau_cryst'],
         orbital_positions=nscf['orbital_positions'], allow_missing_long_range=True,
     )  # fmt: skip
+    return result, w
+
+
+def test_fan_migdal_self_energy_on_a_path(self_energy):
+    result, w = self_energy
     sigma = result['sigma_ev']
     assert sigma.shape == (1, 4, result['bands'].size, 61)
     assert np.all(np.isfinite(sigma)) and np.all(sigma.imag <= 1e-12)
@@ -67,19 +74,11 @@ def test_fan_migdal_self_energy_on_a_path(electrons):
     assert np.abs(sigma.real).max() < 10.0 * np.abs(sigma.imag).max() + 0.05
 
 
-def test_arpes_map_with_the_tabulated_self_energy(electrons):
-    el, save, dfpt = electrons
+def test_arpes_map_with_the_tabulated_self_energy(electrons, self_energy):
+    el, _, _ = electrons
     nscf = el.nscf
     k_cryst, k_cart = _gamma_x_path(nscf)
-    w = np.linspace(-2.0, 1.0, 61)
-    result = fan_migdal_self_energy(
-        el.projections, el.HRs, nscf['kpts_cryst'], nscf['bg'], nscf['at'], nscf['alat'],
-        nscf['omega'], dfpt, (3, 3, 3), (6, 6, 6),
-        masses_amu=atom_masses(MASSES_AMU, nscf['species'], nscf['atom_names']), nelec=NELEC,
-        k_cryst=k_cryst, w_ev=w, temps_k=[300.0], nq_dense=6, eta_ev=0.02,
-        coupling_source='dfpt', save_dir=save, tau_cryst=nscf['tau_cryst'],
-        orbital_positions=nscf['orbital_positions'], allow_missing_long_range=True,
-    )  # fmt: skip
+    result, w = self_energy
     basis = PhotoemissionBasis.from_data_controller(el.data_controller)
     assert basis.size == el.HRs.shape[0]
     assert all(o.radial is not None for o in basis.orbitals)

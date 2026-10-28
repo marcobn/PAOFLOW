@@ -649,9 +649,15 @@ def partial_wave_dipole_radial(upf) -> NDArray[np.float64]:
     out = np.zeros((nb, nb))
     for i in range(nb):
         for j in range(nb):
-            n = max(int(upf.beta[i].get('cutoff_index') or upf.r.size), int(upf.beta[j].get('cutoff_index') or upf.r.size))
+            n = max(
+                int(upf.beta[i].get('cutoff_index') or upf.r.size),
+                int(upf.beta[j].get('cutoff_index') or upf.r.size),
+            )
             n = min(n, upf.r.size)
-            diff = (upf.aewfc[i][:n] * upf.aewfc[j][:n] - upf.pswfc_partial[i][:n] * upf.pswfc_partial[j][:n]) * upf.r[:n]
+            diff = (
+                upf.aewfc[i][:n] * upf.aewfc[j][:n]
+                - upf.pswfc_partial[i][:n] * upf.pswfc_partial[j][:n]
+            ) * upf.r[:n]
             out[i, j] = qe_simpson(diff, upf.rab[:n])
     return out
 
@@ -696,7 +702,9 @@ def build_projector_augmentation(
         ``q_ij`` is applied, their dipole augmentation is not available.
     """
     arrays, attributes = data_controller.data_dicts()
-    species_upf = {name: UPF(os.path.join(attributes['fpath'], pseudo)) for name, pseudo in arrays['species']}
+    species_upf = {
+        name: UPF(os.path.join(attributes['fpath'], pseudo)) for name, pseudo in arrays['species']
+    }
     augmented = {
         name
         for name, upf in species_upf.items()
@@ -735,7 +743,9 @@ def build_projector_augmentation(
                 if abs(l_i - l_j) == 1 and radial_dipole[i, j] != 0.0:
                     d_block[:, si, sj] = radial_dipole[i, j] * _angular_dipole(l_i, l_j)
         cutoff = max(
-            float(b['cutoff_radius']) if b.get('cutoff_radius') else float(upf.r[min(int(b['cutoff_index'] or upf.r.size), upf.r.size) - 1])
+            float(b['cutoff_radius'])
+            if b.get('cutoff_radius')
+            else float(upf.r[min(int(b['cutoff_index'] or upf.r.size), upf.r.size) - 1])
             for b in upf.beta
         )
         channels = []
@@ -781,7 +791,9 @@ def build_projector_augmentation(
                         displacement = site.tau + deltaR - tau_atoms[atom_index]
                         if float(displacement @ displacement) > reach * reach:
                             continue
-                        block, _ = two_center_pair_blocks(bra, ket, displacement, q_grid, include_dipole=False)
+                        block, _ = two_center_pair_blocks(
+                            bra, ket, displacement, q_grid, include_dipole=False
+                        )
                         overlaps.append((len(atoms) - 1, site_index, deltaR.copy(), block))
     return ProjectorAugmentation(
         atoms=atoms,
@@ -837,7 +849,9 @@ def augmentation_kspace(
             start = aug.basis_offsets[site_index]
             stop = start + aug.orbitals_per_site[site_index]
             B[:, :, start:stop] += phase[:, None, None] * block[None]
-            dB[:, :, :, start:stop] += (phase[:, None] * (1j * deltaR)[None, :])[:, :, None, None] * block[None, None]
+            dB[:, :, :, start:stop] += (phase[:, None] * (1j * deltaR)[None, :])[
+                :, :, None, None
+            ] * block[None, None]
         Bh = np.conj(np.transpose(B, (0, 2, 1)))
         q = aug.q_blocks[ia]
         dS += Bh @ q @ B

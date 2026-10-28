@@ -196,7 +196,9 @@ def build_augmentation(data_controller) -> AugmentedOverlap | None:
     Returns
     -------
     AugmentedOverlap or None
-        ``None`` for VASP input or when every species is norm-conserving. With spin-orbit
+        ``None`` for VASP input, when every species is norm-conserving, or when an augmented
+        species comes from a UPF v1 file whose projectors and charges are not parsed (a warning
+        names the species and the plain-overlap path is kept). With spin-orbit
         coupling the charges of the fully relativistic pseudopotentials are rotated into the
         spinor basis (``kb.Q_so``); a scalar-relativistic species in such a run couples the
         spins diagonally, as in QE.
@@ -208,6 +210,23 @@ def build_augmentation(data_controller) -> AugmentedOverlap | None:
         name: UPF(os.path.join(attr['fpath'], pseudo)) for name, pseudo in arry['species']
     }
     if not any(is_augmented(upf) for upf in upf_by_species.values()):
+        return None
+    unparsed = [
+        name
+        for name, upf in upf_by_species.items()
+        if is_augmented(upf) and (getattr(upf, 'qqq', None) is None or not getattr(upf, 'beta', []))
+    ]
+    if unparsed:
+        # UPF v1 files: the reader does not parse PP_NONLOCAL / PP_QIJ, so the projectors and
+        # charges of S are unknown. Keep the plain-overlap path (band re-orthonormalisation)
+        # rather than failing; the references of the transport examples were made with it.
+        if getattr(data_controller, 'rank', 0) == 0:
+            print(
+                'WARNING: ultrasoft / PAW species %s: the augmentation charges and projectors '
+                'are not available from the pseudopotential file (UPF v1), the projections use '
+                'the plain overlap with re-orthonormalised bands (approximate). Convert the '
+                'file to UPF v2 (QE upfconv.x) for the augmented metric.' % ', '.join(unparsed)
+            )
         return None
     qmax = np.sqrt(float(attr['ecutwfc'])) + 1.0
     kb = KleinmanBylanderProjectors(

@@ -107,7 +107,7 @@ user-invocable: true
     - Sparse backend: never materialize dense `(nk, nawf, nawf)` or `(nawf, nawf, nR)` tensors. Unsupported methods must raise loudly, with no silent fallback to dense
 
 6. **Testing**
-    - Run all tests with `pytest`, or select with `pytest -m unit`, `pytest -m integration`, `pytest -q tests/unit/<pkg>`, `pytest tests/... -k exampleNN`
+    - Run all tests with `pytest`, or select with `pytest -m unit`, `pytest -m integration`, `pytest -q tests/unit/<pkg>`, `pytest tests/... -k exampleNN`. Integration tests that take minutes on a 4-core runner carry `@pytest.mark.slow`; CI runs `-m "integration and not slow"` and splits the electron-phonon suite into three parallel groups (core, workflows, arpes)
     - Integration tests only run PAOFLOW; they do not run QE. The `*.save/` and `Reference/` inputs are downloaded as release-asset tarballs (see `tests/integration/qe/README.md` and `tests/integration/transport/README.md`). The generators live in `.github/assets_generation/`
     - New features ship with tests. Keep them fast by using reduced grids and k-points
 

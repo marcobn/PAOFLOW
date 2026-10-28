@@ -178,7 +178,9 @@ def degenerate_clusters(energies: NDArray[np.float64], degeneracy_tol: float) ->
     """
     e = np.asarray(energies, dtype=float)
     split = (np.diff(e, axis=-1) >= float(degeneracy_tol)).astype(int)
-    return np.concatenate([np.zeros(e.shape[:-1] + (1,), dtype=int), np.cumsum(split, axis=-1)], axis=-1)
+    return np.concatenate(
+        [np.zeros(e.shape[:-1] + (1,), dtype=int), np.cumsum(split, axis=-1)], axis=-1
+    )
 
 
 def band_geometry(
@@ -565,7 +567,10 @@ def accumulate_shg_histograms(
             # Delta^a_mn Re[r^b_nm r^c_mn] = (1/2)[(r^c Delta^a)_mn r^b_nm + (r^b Delta^a)_mn r^c_nm]
             t5 = (
                 -0.25
-                * (pd[:, c, a].transpose(0, 2, 1) * r[:, b] + pd[:, b, a].transpose(0, 2, 1) * r[:, c])
+                * (
+                    pd[:, c, a].transpose(0, 2, 1) * r[:, b]
+                    + pd[:, b, a].transpose(0, 2, 1) * r[:, c]
+                )
                 * inv_mn**2
             )
             out['hist1'][ic] += _bincount_complex(
@@ -779,7 +784,8 @@ def nonlinear_optical_spectra(
         if progress and rank == 0:
             print(
                 '  nonlinear optics: %d symmetry operations, %d irreducible of %d k-points, '
-                '%d of %d components' % (ops_cart.shape[0], nk_loop, nkd, len(comps), len(requested)),
+                '%d of %d components'
+                % (ops_cart.shape[0], nk_loop, nkd, len(comps), len(requested)),
                 flush=True,
             )
     else:
@@ -871,7 +877,11 @@ def nonlinear_optical_spectra(
         'temperature_k': float(temperature),
         'position_dipoles': position_dipoles is not None,
         'symmetry': (
-            {'operations': int(ops_cart.shape[0]), 'k_irreducible': int(nk_loop), 'k_full': int(nkd)}
+            {
+                'operations': int(ops_cart.shape[0]),
+                'k_irreducible': int(nk_loop),
+                'k_full': int(nkd),
+            }
             if ops_cart is not None
             else None
         ),

@@ -40,3 +40,12 @@ assets, through `PAOFLOW_ELPHON_ASSET_ARCHIVE` (a local file) or
 ```bash
 PAOFLOW_ELPHON_ASSET_ARCHIVE=/path/to/elphon_test_assets.tar.gz pytest -m integration tests/integration/elphon
 ```
+
+CI (`.github/workflows/ci.yaml`) runs the suite as three parallel jobs, `core`
+(`test_dfpt_coupling_parity`, `test_irreducible_wedge`, `test_long_range_sic`,
+`test_pao_electrons_integration`), `workflows` (`test_example_workflows`) and `arpes`
+(`test_arpes_self_energy`), each with `-m "integration and not slow"`. On a 4-core runner the
+coarse vertex built from the `dvscf` files costs about 90 s per build, so the ARPES tests share
+one self-energy through a module fixture and `test_coupling_workflow`, which builds the vertex
+twice (plain and dipole-model variants), is marked `slow` and left to local runs
+(`pytest -m integration tests/integration/elphon`).

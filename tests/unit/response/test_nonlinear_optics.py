@@ -383,7 +383,9 @@ def test_kernels_are_invariant_under_rotations_inside_exact_doublets():
     model = random_hopping_model(seed=7, time_reversal=True)
     HRs, at, tau, nelec, _ = supercell_x(model)
     terms = bloch_terms_from_HRs(HRs, at, model.alat, tau)
-    kpts = np.array([[0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])  # folded plane, k_y, k_z in {0, 1/2}: exact doublets
+    kpts = np.array(
+        [[0.5, 0.0, 0.5], [0.5, 0.5, 0.0]]
+    )  # folded plane, k_y, k_z in {0, 1/2}: exact doublets
     H, dH, d2H = hamiltonian_derivatives_block(terms, kpts)
     v, w = velocity_and_curvature_operators(terms, H, dH, d2H)
     E, U = np.linalg.eigh(H)
@@ -499,7 +501,9 @@ def test_generalized_derivative_with_dipoles_matches_covariant_finite_difference
     v, w = velocity_and_curvature_operators(terms, H, dH, d2H)
     E, U = np.linalg.eigh(H)
     # the engine takes the atomic-gauge derivative in the lattice basis: d_a d + i (tau_j - tau_i)_a d
-    grad = gradient(k0[None]) + 1j * terms.separation_bohr[None, :, None] * dipoles(k0[None])[:, None]
+    grad = (
+        gradient(k0[None]) + 1j * terms.separation_bohr[None, :, None] * dipoles(k0[None])[:, None]
+    )
     geometry = nlo.band_geometry(E, U, v, w, 1e-4, dipoles(k0[None]), grad)
     r0, rd0, U0 = geometry.position[0], geometry.position_derivative[0], geometry.eigenvectors[0]
     assert np.all(np.abs(E[0, 1:] - E[0, :-1]) > 0.1)
@@ -630,7 +634,9 @@ def test_irreducible_wedge_reproduces_the_full_grid():
     full = spectra(model, (18, 18, 1), energy, **kwargs)
     wedge = spectra(model, (18, 18, 1), energy, symmetry_ops_cryst=np.rint(ops_frac), **kwargs)
     assert wedge['symmetry']['operations'] == 12
-    assert wedge['symmetry']['k_irreducible'] <= 324 / 4  # 6 in-plane operations, small orbits on the lines
+    assert (
+        wedge['symmetry']['k_irreducible'] <= 324 / 4
+    )  # 6 in-plane operations, small orbits on the lines
     assert wedge['components'] == comps
     for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg'):
         # the T-odd kinds and the injection current of D3h vanish: roundoff of the natural scale

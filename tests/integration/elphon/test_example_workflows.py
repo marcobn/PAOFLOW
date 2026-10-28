@@ -129,7 +129,10 @@ def test_arpes_workflow(system_folder, monkeypatch):
     assert (out / 'arpes_bare.npz').exists() and (out / 'arpes_fan_migdal_300K.npz').exists()
 
 
+@pytest.mark.slow
 def test_coupling_workflow(system_folder, monkeypatch):
+    # three minutes on four cores: the plain and the model variant each build the coarse
+    # vertex from the dvscf files (the long-range physics is covered by test_long_range_sic.py)
     # the asset's ph.x run has epsil: Si is non-polar (|Z*| < 0.01), so the model and the plain
     # curves coincide for the LO mode and differ by the residual dipole term (< 1 %) elsewhere
     out = _run(

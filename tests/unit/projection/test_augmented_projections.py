@@ -118,3 +118,31 @@ def test_norm_conserving_projectors_have_no_charges():
     assert kb.Q is None
     with pytest.raises(ValueError):
         AugmentedOverlap(kb, np.zeros((1, 3)), 1.0)
+
+
+def test_unparsed_ultrasoft_file_falls_back_to_the_plain_overlap(monkeypatch, capsys):
+    """A UPF v1 ultrasoft species has no parsed projectors or charges: warn and return None."""
+    from PAOFLOW.projection import augmentation as module
+
+    class _Upf:
+        def __init__(self, path):
+            self.ptype = 'US' if 'van' in path else 'NC'
+            self.has_augmentation = self.ptype == 'US'
+            self.qqq = None
+            self.beta = []
+
+    class _DC:
+        rank = 0
+
+        def data_dicts(self):
+            arrays = {
+                'species': [('Al', 'Al.pbe-rrkj.UPF'), ('H', 'H.pbe-van_bm.UPF')],
+                'atoms': ['Al', 'H'],
+                'tau': np.zeros((2, 3)),
+            }
+            attrs = {'dft': 'QE', 'fpath': '/nowhere', 'ecutwfc': 20.0, 'omega': 100.0, 'alat': 5.0}
+            return arrays, attrs
+
+    monkeypatch.setattr(module, 'UPF', _Upf)
+    assert module.build_augmentation(_DC()) is None
+    assert 'H' in capsys.readouterr().out

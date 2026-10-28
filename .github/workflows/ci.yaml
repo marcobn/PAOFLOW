@@ -191,6 +191,17 @@ jobs:
   elphon-integration-tests:
     runs-on: ubuntu-22.04
     needs: pre-commit
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: core
+            paths: tests/integration/elphon/test_dfpt_coupling_parity.py tests/integration/elphon/test_irreducible_wedge.py tests/integration/elphon/test_long_range_sic.py tests/integration/elphon/test_pao_electrons_integration.py
+          - group: workflows
+            paths: tests/integration/elphon/test_example_workflows.py
+          - group: arpes
+            paths: tests/integration/elphon/test_arpes_self_energy.py
+    name: elphon-integration-tests (${{ matrix.group }})
     env:
       PAOFLOW_ELPHON_ASSET_VERSION: integration-assets-v1
       PAOFLOW_ELPHON_ASSET_URL: https://github.com/marcobn/PAOFLOW/releases/download/integration-assets-v1/elphon_test_assets.tar.gz
@@ -215,6 +226,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run electron-phonon integration tests
+      - name: Run electron-phonon integration tests (${{ matrix.group }})
         run: |
-          pytest tests/integration/elphon -m integration -v
+          pytest ${{ matrix.paths }} -m "integration and not slow" -v --durations=10
