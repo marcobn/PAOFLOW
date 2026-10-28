@@ -21,7 +21,7 @@ below; the figures are produced by `make_report_figures.py` from the same files.
 | system | quantity | PAOFLOW | literature | status |
 |---|---|---|---|---|
 | gapped graphene (TB) | D3h relations σ^{yyy} = −σ^{yxx} = −σ^{xxy}, σ^{xxx} = 0; same for χ | exact (relative deviations 1e-15, forbidden 4e-16 of the peak) | analytic | pass |
-| GaAs | \|χ_xyz\| at the lowest photon energy (scissor 0.86 eV, 40³) | **178 pm/V (norm-conserving, with position dipoles)**, 156 pm/V (PAW with dipoles); tight-binding position operator: 103 (norm-conserving), 120 (PAW) | 166–180 pm/V measured at 0.12 eV; 207–245 pm/V TDDFT + scissor (0.7–0.9 eV) | within the measured range with the dipoles; 35–45 % low without (§3.2) |
+| GaAs | \|χ_xyz\| at the lowest photon energy (scissor 0.86 eV, 40³) | **178 pm/V (norm-conserving, with position dipoles)**, 193 pm/V (PAW, dipoles with the PAW augmentation; 158 without it); tight-binding position operator: 103 (norm-conserving), 98 (PAW) | 166–180 pm/V measured at 0.12 eV; 207–245 pm/V TDDFT + scissor (0.7–0.9 eV) | within the measured range with the dipoles; 35–45 % low without (§3.2) |
 | GaAs | \|χ_xyz\| at 1.5 eV; at 3 eV; peak | norm-conserving with dipoles 628; 393; 677 pm/V at 2.54 eV (tight binding 305; 206; 492); PAW with dipoles 572; 526; 855 at 2.63 eV (tight binding 416; 397; 725) | hundreds of pm/V between 1.5 and 3 eV (E1 region) | order of magnitude and shape plausible; the resonance region is not converged at 60³ |
 | GaAs | σ_xyz shift current | norm-conserving with dipoles −41 µA/V² at 3.9 eV, −3.5 at 2.0 eV (tight binding −28, −2.3); PAW with dipoles −38 and −4.5 (tight binding −32, −3.6) | tens of µA/V² (Nastos–Sipe 2006, Ibañez-Azpiroz 2018) | order of magnitude |
 | GaAs | symmetry audit (current code) | norm-conserving 40³: every T_d relation to 1e-10 of the peak (χ_yzx = χ_xyz, σ_yzx = σ_xyz, forbidden χ_xxx and σ_xxx, T-odd files), circular injection 1e-5 of its scale; wedge-reduced run identical to the full grid to 1e-10. Before October 28: SHG 1–10 % (degenerate gauge), first PAW runs 2–5 % (projections) | — | exact |
@@ -147,8 +147,11 @@ the eigenvalue spread over the 24 images of an off-grid k is 3e-3 meV (was 5–2
 real-space Hamiltonian is 20 times better localised; on the UPF pseudo-atomic basis the
 projectabilities agree with `projwfc.x` to 1.5e-3. The projectabilities of the all-electron
 62-orbital basis change (they were inflated by the re-orthonormalisation): the Ga 3d bands
-project at 0.91 and 12 instead of 18 bands pass 0.95, so the PAW rerun below uses
-`pthr = 0.90` (21 bands kept). The norm-conserving rerun (PseudoDojo nc-sr-05 Ga/As with the As 3d in
+project at 0.91 and 12 instead of 18 bands pass 0.95; the PAW runs of October 28 used
+`pthr = 0.90` (21 bands kept). The basis route was then fixed (`docs/internals/internal-basis.md`):
+the valence shells come from the UPF pseudo-orbitals and only the augmenting shells from the
+all-electron tables, which projects 23 bands above 0.95 (Ga 3d at 1.00); the example uses it
+with `pthr = 0.95`, and the runs with this basis are reported at the end of this section. The norm-conserving rerun (PseudoDojo nc-sr-05 Ga/As with the As 3d in
 valence, 90 Ry, symmetric 16³ nscf, same 62-orbital basis) confirms the diagnosis: the
 antiunitary error of the internal projections drops from 2e-2 to 6e-11, the C2z error of H(k)
 on the grid from 0.65 eV to 3e-9 eV at every point, the eigenvalue spread over the 24 images of
@@ -206,6 +209,35 @@ basis functions while the projections live in the augmented metric (the PAW dipo
 the augmentation correction of the position operator, not implemented), so the norm-conserving
 number is the consistent one; and the spread between the two pseudopotentials (156 vs 178 pm/V)
 is of the size of the remaining disagreement with experiment.
+
+**PAW with the fixed basis route** (`paoflow/output_nk40_mixed`, `output_nk40_mixed_dip`: the
+valence shells from the UPF pseudo-orbitals, the augmenting shells from the all-electron
+tables, 23 bands above 0.95, `pthr = 0.95`; wedge-reduced 40³, 135 s and 221 s on 8 ranks).
+This is what the GaAs example of this folder computes:
+
+| run | \|χ_xyz\| 0 / 1.0 / 1.5 / 2.0 / 3.0 eV (pm/V) | peak | σ_xyz 2.0 / 3.0 eV, peak (µA/V²) |
+|---|---|---|---|
+| tight-binding r | 98 / 149 / 318 / 252 / 294 | 695 at 2.63 | −2.9 / −14.2, −29.2 at 3.89 |
+| with dipoles | 158 / 232 / 559 / 391 / 458 | 850 at 2.63 | −4.0 / −22.4, −37.9 at 3.89 |
+
+With the properly projected basis the PAW tight-binding static value (98 pm/V) agrees with the
+norm-conserving one (103) to 5 %, where the 21-band all-electron basis gave 120; with the
+dipoles the two pseudopotentials give 158 and 178 pm/V against the measured 166–180.
+
+**PAW augmentation of the position operator** (`paoflow/output_nk40_mixed_augdip`, same basis
+and grid): the dipoles of a PAW run are matrix elements between pseudo functions; their
+all-electron counterparts carry the partial-wave correction
+Σ ⟨φ̃|p̃_i⟩[⟨φ_i|r|φ_j⟩ − ⟨φ̃_i|r|φ̃_j⟩]⟨p̃_j|φ̃⟩ and the overlap the q_ij term
+(`docs/internals/nonlinear-optics.md`, validated on the isolated Ga atom to machine precision).
+With it |χ_xyz| = 193 / 267 / 636 / 418 / 520 pm/V at 0 / 1 / 1.5 / 2 / 3 eV, peak 874 at
+2.63 eV, σ_xyz = −4.4 / −24.7 µA/V² at 2 / 3 eV, −41.6 at 3.88 eV. The static value moves from
+158 to 193 pm/V: the consistent PAW result now lies 8 % above the measured range, the
+norm-conserving one (178) inside it, so the two pseudopotentials bracket the experiment from
+both sides and the remaining spread (15 pm/V) is the pseudopotential and basis dependence. A
+caution: with an all-electron-only 62-orbital basis the augmented overlap S + ΔS of the crystal
+is nearly singular and the Löwdin dipoles blow up (|d| 40 bohr); the augmentation is meant for
+the basis route of October 28 (UPF valence orbitals plus augmentation shells), which is
+well-conditioned.
 
 **PAW GaAs with the augmented projections, 40³** (`paoflow/output_nk40_aug`; example10
 inputs, `pthr = 0.90` → 21 bands, scissor 0.86 eV, η 0.05 eV; this is what the example in

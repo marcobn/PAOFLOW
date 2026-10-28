@@ -42,6 +42,8 @@ from the formula below: the gradient that enters is the atomic-gauge derivative 
 basis, $\partial_a d + i(\tau_j - \tau_i)_a d_{ij}$, and the diagonal-dipole term is the
 intra-cluster commutator $-i[D^a_{\rm intra}, r^b]$ in the U(N) form. The analytic gradient
 (pass 2) is not implemented; the finite differences are accurate to $3\times10^{-5}$ relative.
+The PAW augmentation of the position operator (partial-wave correction of $X$ and $S$) was
+added the same day (`ProjectorAugmentation` in `position_dipoles.py`).
 
 **Physics.** In the Löwdin-orthonormal PAO Bloch basis the position operator is
 $\hat r = \boldsymbol\tau + \mathbf d(\mathbf k)$, with $\mathbf d(\mathbf k)$ the Hermitian

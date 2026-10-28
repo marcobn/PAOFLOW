@@ -88,7 +88,7 @@ jobs:
 
       PAOFLOW_QE_TEST_ASSET_URL: https://github.com/marcobn/PAOFLOW/releases/download/integration-assets-v1/qe_test_assets.tar.gz
 
-      PAOFLOW_QE_TEST_ASSET_SHA256: "45412f34ebf9fd1bea9d1df958048a63793836a35e779a51c69ed8770a7955dc"
+      PAOFLOW_QE_TEST_ASSET_SHA256: "351c72356183e36affe9f3a1c0f1e88fff2147d3d62b07ff159373a22656e7e5"
 
     steps:
       - uses: actions/checkout@v4

@@ -53,13 +53,17 @@ vectorised over the orbitals of a site pair in :mod:`PAOFLOW.hamiltonian.two_cen
 
 from __future__ import annotations
 
+import os
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import cache
 
 import numpy as np
 from numpy.typing import NDArray
 
-from ._two_center import radial_bessel_transform
+from ..inputs.read_upf import UPF
+from ._two_center import _SPHERE_DIRS, _SPHERE_WEIGHTS, _SPHERE_YLM, radial_bessel_transform
 from .nonlocal_velocity import (
     PAOCatalog,
     _lattice_search_bounds,
@@ -67,7 +71,7 @@ from .nonlocal_velocity import (
     pao_orbital_signs,
     site_pao_cutoff,
 )
-from .two_center_blocks import two_center_pair_blocks
+from .two_center_blocks import qe_order, two_center_pair_blocks
 
 DIPOLE_LEVELS = ('full', 'intra-atomic')
 
@@ -471,6 +475,15 @@ def overlap_sqrt_and_derivative(
             f'the PAO overlap S(k) is not positive definite (smallest eigenvalue '
             f'{eigenvalues.min():.3e}): linearly dependent orbitals'
         )
+    if eigenvalues.min() < 1.0e-4 * eigenvalues.max():
+        warnings.warn(
+            'the PAO overlap S(k) is ill-conditioned (eigenvalues %.1e .. %.1e): the Löwdin '
+            'position dipoles amplify the nearly dependent combinations; use a basis without '
+            'redundant shells (for ultrasoft / PAW the UPF orbitals plus augmentation shells)'
+            % (eigenvalues.min(), eigenvalues.max()),
+            RuntimeWarning,
+            stacklevel=2,
+        )
     sqrt_eigenvalues = np.sqrt(eigenvalues)
     adjoint = np.conj(np.transpose(eigenvectors, (0, 2, 1)))
     sqrt_k = (eigenvectors * sqrt_eigenvalues[:, None, :]) @ adjoint
@@ -577,6 +590,266 @@ def tesseral_signs(pao_catalog: PAOCatalog) -> NDArray[np.float64]:
     return pao_orbital_signs(pao_catalog)
 
 
+# --------------------------------------------------------------------------- PAW augmentation
+@dataclass
+class ProjectorAugmentation:
+    r"""PAW augmentation of the overlap and position matrices of the PAO Bloch basis.
+
+    With the projectors :math:`\tilde p^a_i` and the partial waves :math:`\phi^a_i`,
+    :math:`\tilde\phi^a_i` of the PAW datasets, a local operator between the all-electron
+    counterparts of two pseudo functions is
+    :math:`\langle\tilde f|A|\tilde g\rangle + \sum_{a,ij}\langle\tilde f|\tilde p^a_i\rangle
+    [\langle\phi^a_i|A|\phi^a_j\rangle - \langle\tilde\phi^a_i|A|\tilde\phi^a_j\rangle]
+    \langle\tilde p^a_j|\tilde g\rangle`. For :math:`A = 1` the bracket is :math:`q^a_{ij}`
+    (``PP_Q``); for :math:`A = \mathbf r - \boldsymbol\tau_a` it is the dipole of the partial
+    waves, a radial integral of :math:`(\phi_i\phi_j - \tilde\phi_i\tilde\phi_j)\,r` times the
+    angular factor :math:`\langle Y_{l_i m_i}|\hat r_\alpha|Y_{l_j m_j}\rangle`.
+
+    Attributes
+    ----------
+    atoms : list of int
+        Atom index of every projector block.
+    tau_atoms : ndarray ``(nat, 3)``
+        Atom positions (Cartesian bohr).
+    q_blocks, dipole_blocks : list of ndarray
+        ``q^a`` ``(np_a, np_a)`` and ``Delta r^a`` ``(3, np_a, np_a)`` with the magnetic index
+        resolved (QE order inside every channel), per atom.
+    overlaps : list of tuple
+        ``(atom, site, deltaR_cart, block)``: :math:`\langle\tilde p^a_i|\tilde\varphi_\mu
+        (\boldsymbol\tau_\mu + \Delta\mathbf R)\rangle`, ``block`` of shape ``(np_a, n_site)``.
+    basis_offsets, orbitals_per_site, nawf : as in :class:`PositionTables`.
+    """
+
+    atoms: list
+    tau_atoms: NDArray[np.float64]
+    q_blocks: list
+    dipole_blocks: list
+    overlaps: list
+    basis_offsets: list
+    orbitals_per_site: list
+    nawf: int
+
+
+def partial_wave_dipole_radial(upf) -> NDArray[np.float64]:
+    r"""Radial dipole integrals of the PAW partial waves, :math:`\int (u_i u_j - \tilde u_i \tilde u_j)\, r\, dr`.
+
+    Parameters
+    ----------
+    upf : UPF
+        A PAW dataset with ``PP_FULL_WFC`` (:attr:`aewfc`, :attr:`pswfc_partial`).
+
+    Returns
+    -------
+    ndarray ``(nbeta, nbeta)``
+        Bohr; zero beyond the projector cutoff by construction (the partial waves coincide).
+    """
+    from ..elphon.pseudopotential_terms import qe_simpson
+
+    nb = len(upf.beta)
+    out = np.zeros((nb, nb))
+    for i in range(nb):
+        for j in range(nb):
+            n = max(int(upf.beta[i].get('cutoff_index') or upf.r.size), int(upf.beta[j].get('cutoff_index') or upf.r.size))
+            n = min(n, upf.r.size)
+            diff = (upf.aewfc[i][:n] * upf.aewfc[j][:n] - upf.pswfc_partial[i][:n] * upf.pswfc_partial[j][:n]) * upf.r[:n]
+            out[i, j] = qe_simpson(diff, upf.rab[:n])
+    return out
+
+
+@cache
+def _angular_dipole(l_i: int, l_j: int) -> NDArray[np.float64]:
+    r"""``<Y_{l_i m}|r_hat_alpha|Y_{l_j m'}>`` as ``(3, 2l_i+1, 2l_j+1)`` in QE magnetic order."""
+    dirs, weights, ylm = _SPHERE_DIRS, _SPHERE_WEIGHTS, _SPHERE_YLM
+    out = np.zeros((3, 2 * l_i + 1, 2 * l_j + 1))
+    for a, m_i in enumerate(range(-l_i, l_i + 1)):
+        for b, m_j in enumerate(range(-l_j, l_j + 1)):
+            prod = weights * ylm[(l_i, m_i)] * ylm[(l_j, m_j)]
+            out[:, a, b] = prod @ dirs
+    rows, cols = qe_order(l_i), qe_order(l_j)
+    return out[:, rows][:, :, cols]
+
+
+def build_projector_augmentation(
+    data_controller,
+    pao_catalog: PAOCatalog,
+    *,
+    q_max: float = 20.0,
+    n_q: int = 600,
+    pao_tol: float = 1.0e-4,
+) -> ProjectorAugmentation | None:
+    r"""The PAW augmentation of the PAO overlap and position matrices, or ``None`` without PAW.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        ``arrays['species']``, ``arrays['atoms']``, ``arrays['tau']`` (bohr), ``attr['fpath']``.
+    pao_catalog : PAOCatalog
+        The PAO orbitals (:func:`~PAOFLOW.hamiltonian.nonlocal_velocity.load_pao_orbitals`).
+    q_max, n_q, pao_tol : optional
+        As in :func:`build_position_tables` / :func:`enumerate_pao_pairs`.
+
+    Returns
+    -------
+    ProjectorAugmentation or None
+        ``None`` when no species carries augmentation charges. Ultrasoft datasets without
+        partial waves (``PP_FULL_WFC``) are skipped with a warning: their overlap augmentation
+        ``q_ij`` is applied, their dipole augmentation is not available.
+    """
+    arrays, attributes = data_controller.data_dicts()
+    species_upf = {name: UPF(os.path.join(attributes['fpath'], pseudo)) for name, pseudo in arrays['species']}
+    augmented = {
+        name
+        for name, upf in species_upf.items()
+        if getattr(upf, 'ptype', 'NC') != 'NC' or getattr(upf, 'has_augmentation', False)
+    }
+    if not augmented:
+        return None
+    q_grid = np.linspace(0.0, q_max, n_q)
+    per_species = {}
+    for name in augmented:
+        upf = species_upf[name]
+        if upf.qqq is None:
+            continue
+        betas = [(int(b['l']), np.asarray(b['wfc'], dtype=float)) for b in upf.beta]
+        if upf.aewfc is None:
+            warnings.warn(
+                '%s: no PAW partial waves (PP_FULL_WFC) in the UPF, the position dipoles are '
+                'augmented for the overlap only' % name,
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            radial_dipole = np.zeros((len(betas), len(betas)))
+        else:
+            radial_dipole = partial_wave_dipole_radial(upf)
+        # m-resolved q and Delta r, channel-major with QE magnetic order
+        sizes = [2 * l + 1 for l, _ in betas]
+        offsets = np.concatenate([[0], np.cumsum(sizes)])
+        nproj = int(offsets[-1])
+        q_block = np.zeros((nproj, nproj))
+        d_block = np.zeros((3, nproj, nproj))
+        for i, (l_i, _) in enumerate(betas):
+            for j, (l_j, _) in enumerate(betas):
+                si, sj = slice(offsets[i], offsets[i + 1]), slice(offsets[j], offsets[j + 1])
+                if l_i == l_j:
+                    q_block[si, sj] = upf.qqq[i, j] * np.eye(2 * l_i + 1)
+                if abs(l_i - l_j) == 1 and radial_dipole[i, j] != 0.0:
+                    d_block[:, si, sj] = radial_dipole[i, j] * _angular_dipole(l_i, l_j)
+        cutoff = max(
+            float(b['cutoff_radius']) if b.get('cutoff_radius') else float(upf.r[min(int(b['cutoff_index'] or upf.r.size), upf.r.size) - 1])
+            for b in upf.beta
+        )
+        channels = []
+        for l, u in betas:
+            radial = np.zeros_like(u)
+            radial[1:] = u[1:] / upf.r[1:]
+            radial[0] = radial[1]
+            channels.append((l, radial_bessel_transform(upf.r, radial, l, q_grid)))
+        per_species[name] = (q_block, d_block, channels, cutoff)
+    if not per_species:
+        return None
+    # Bessel transforms of the PAO channels of every species
+    bessel_phi = {}
+    for label, species in pao_catalog.species.items():
+        for channel_index, channel in enumerate(species.channels):
+            bessel_phi[(label, channel_index)] = radial_bessel_transform(
+                species.r, channel.R_radial, channel.l, q_grid
+            )
+    sites = pao_catalog.sites
+    site_cutoffs = [site_pao_cutoff(site, tol=pao_tol) for site in sites]
+    a_cart = np.asarray(arrays['a_vectors'], dtype=float) * float(attributes['alat'])
+    tau_atoms = np.asarray(arrays['tau'], dtype=float)
+    atoms, q_blocks, d_blocks, overlaps = [], [], [], []
+    for atom_index, name in enumerate(arrays['atoms']):
+        if name not in per_species:
+            continue
+        q_block, d_block, proj_channels, cutoff = per_species[name]
+        atoms.append(atom_index)
+        q_blocks.append(q_block)
+        d_blocks.append(d_block)
+        bra = [(l, j, None) for l, j in proj_channels]
+        for site_index, site in enumerate(sites):
+            ket = [
+                (channel.l, bessel_phi[(site.label, channel_index)])
+                for channel_index, channel in enumerate(site.species.channels)
+            ]
+            reach = cutoff + site_cutoffs[site_index]
+            N1, N2, N3 = _lattice_search_bounds(a_cart, reach)
+            for n1 in range(-N1, N1 + 1):
+                for n2 in range(-N2, N2 + 1):
+                    for n3 in range(-N3, N3 + 1):
+                        deltaR = n1 * a_cart[0] + n2 * a_cart[1] + n3 * a_cart[2]
+                        displacement = site.tau + deltaR - tau_atoms[atom_index]
+                        if float(displacement @ displacement) > reach * reach:
+                            continue
+                        block, _ = two_center_pair_blocks(bra, ket, displacement, q_grid, include_dipole=False)
+                        overlaps.append((len(atoms) - 1, site_index, deltaR.copy(), block))
+    return ProjectorAugmentation(
+        atoms=atoms,
+        tau_atoms=tau_atoms,
+        q_blocks=q_blocks,
+        dipole_blocks=d_blocks,
+        overlaps=overlaps,
+        basis_offsets=[site.basis_offset for site in sites],
+        orbitals_per_site=[len(site.orbitals) for site in sites],
+        nawf=pao_catalog.total_nlm,
+    )
+
+
+def augmentation_kspace(
+    aug: ProjectorAugmentation,
+    k_points_cart: NDArray[np.float64],
+    tau_orbitals: NDArray[np.float64],
+) -> tuple[NDArray[np.complex128], NDArray[np.complex128], NDArray[np.complex128]]:
+    r"""PAW corrections to ``S(k)``, ``d_k S(k)`` and ``X(k)`` of :func:`assemble_position_kspace`.
+
+    Parameters
+    ----------
+    aug : ProjectorAugmentation
+    k_points_cart : ndarray ``(nk, 3)``
+        Cartesian inverse bohr (no :math:`2\pi`).
+    tau_orbitals : ndarray ``(nawf, 3)``
+        Orbital centres (bohr), the bra origin of :math:`X`.
+
+    Returns
+    -------
+    overlap, overlap_gradient, dipole : ndarray
+        ``(nk, nawf, nawf)``, ``(nk, 3, nawf, nawf)``, ``(nk, 3, nawf, nawf)``: with
+        :math:`B^a(\mathbf k) = \sum_{\Delta\mathbf R} e^{i\mathbf k\cdot\Delta\mathbf R}
+        \langle\tilde p^a|\tilde\varphi(\Delta\mathbf R)\rangle`,
+        :math:`\Delta S = \sum_a B^{a\dagger} q^a B^a`, its k-gradient, and
+        :math:`\Delta X_\alpha = \sum_a B^{a\dagger}(\Delta r^a_\alpha + \tau_{a\alpha} q^a)B^a
+        - \tau_{\mu\alpha}\Delta S_{\mu\nu}` (origin on the bra orbital).
+    """
+    k = np.asarray(k_points_cart, dtype=float)
+    nk, nawf = k.shape[0], aug.nawf
+    tau = np.asarray(tau_orbitals, dtype=float)
+    dS = np.zeros((nk, nawf, nawf), dtype=complex)
+    dS_grad = np.zeros((nk, 3, nawf, nawf), dtype=complex)
+    dX = np.zeros((nk, 3, nawf, nawf), dtype=complex)
+    for ia, atom_index in enumerate(aug.atoms):
+        nproj = aug.q_blocks[ia].shape[0]
+        B = np.zeros((nk, nproj, nawf), dtype=complex)
+        dB = np.zeros((nk, 3, nproj, nawf), dtype=complex)
+        for ja, site_index, deltaR, block in aug.overlaps:
+            if ja != ia:
+                continue
+            phase = np.exp(1j * (k @ deltaR))  # (nk,)
+            start = aug.basis_offsets[site_index]
+            stop = start + aug.orbitals_per_site[site_index]
+            B[:, :, start:stop] += phase[:, None, None] * block[None]
+            dB[:, :, :, start:stop] += (phase[:, None] * (1j * deltaR)[None, :])[:, :, None, None] * block[None, None]
+        Bh = np.conj(np.transpose(B, (0, 2, 1)))
+        q = aug.q_blocks[ia]
+        dS += Bh @ q @ B
+        for alpha in range(3):
+            dBh = np.conj(np.transpose(dB[:, alpha], (0, 2, 1)))
+            dS_grad[:, alpha] += dBh @ q @ B + Bh @ q @ dB[:, alpha]
+            op = aug.dipole_blocks[ia][alpha] + aug.tau_atoms[atom_index, alpha] * q
+            dX[:, alpha] += Bh @ op @ B
+    dX -= tau.T[None, :, :, None] * dS[:, None, :, :]
+    return dS, dS_grad, dX
+
+
 def position_dipole_operator(
     data_controller,
     bg: NDArray[np.float64],
@@ -587,6 +860,7 @@ def position_dipole_operator(
     n_q: int = 600,
     pao_tol: float = 1.0e-4,
     extra_pad: float = 0.0,
+    augmentation: bool | str = 'auto',
 ) -> Callable[[NDArray[np.float64]], NDArray[np.complex128]]:
     r"""Position dipoles of the PAO basis at arbitrary k, in PAOFLOW's orbital conventions.
 
@@ -602,6 +876,12 @@ def position_dipole_operator(
         See :func:`lowdin_dipole_kspace`.
     q_max, n_q, pao_tol, extra_pad : optional
         Table parameters of :func:`build_position_tables` and :func:`enumerate_pao_pairs`.
+    augmentation : {'auto', True, False}, optional
+        PAW augmentation of the overlap and of the position matrix
+        (:class:`ProjectorAugmentation`): the PAO orbitals are pseudo functions whose
+        all-electron counterparts carry the partial-wave corrections inside the augmentation
+        spheres. ``'auto'`` applies it when a species is ultrasoft / PAW (the ``level='full'``
+        Löwdin formula only); ``False`` gives the plain tables.
 
     Returns
     -------
@@ -636,11 +916,21 @@ def position_dipole_operator(
     signs = tesseral_signs(pao_catalog)
     sign_matrix = signs[:, None] * signs[None, :]
     bg = np.asarray(bg, dtype=float)
+    aug = None
+    if augmentation and level == 'full':
+        aug = build_projector_augmentation(
+            data_controller, pao_catalog, q_max=q_max, n_q=n_q, pao_tol=pao_tol
+        )
 
     def dipoles(k_cryst: NDArray[np.float64]) -> NDArray[np.complex128]:
         folded = k_cryst - np.floor(k_cryst + 0.5)
         k_cart = (folded @ bg) * (2.0 * np.pi / float(alat))
         overlap_k, overlap_gradient_k, dipole_k = assemble_position_kspace(tables, k_cart)
+        if aug is not None:
+            d_overlap, d_gradient, d_dipole = augmentation_kspace(aug, k_cart, tables.tau_orbitals)
+            overlap_k = overlap_k + d_overlap
+            overlap_gradient_k = overlap_gradient_k + d_gradient
+            dipole_k = dipole_k + d_dipole
         dipole = lowdin_dipole_kspace(
             overlap_k,
             overlap_gradient_k,

@@ -149,6 +149,31 @@ $r^{TB} + D$ in a parallel-transport gauge (with the Berry-connection shift of t
 dipoles), invariance under orbital unitaries applied to $H$ and $d$ together, and the U(N)
 covariance inside exact doublets with dipoles.
 
+**PAW augmentation of the dipoles (October 28 2026).** With ultrasoft / PAW pseudopotentials
+the PAO orbitals are pseudo functions; the position matrix of their all-electron counterparts
+carries the partial-wave correction
+$\sum_{a,ij}\langle\tilde\varphi_\mu|\tilde p^a_i\rangle[\langle\phi^a_i|\mathbf r|\phi^a_j\rangle
+- \langle\tilde\phi^a_i|\mathbf r|\tilde\phi^a_j\rangle]\langle\tilde p^a_j|\tilde\varphi_\nu\rangle$
+and the overlap the analogous $q^a_{ij}$ term. `position_dipole_operator(augmentation='auto')`
+adds both to $S(\mathbf k)$, $\partial_{\mathbf k}S$ and $X(\mathbf k)$ before the Löwdin formula
+(`ProjectorAugmentation`, `build_projector_augmentation`, `augmentation_kspace` in
+`hamiltonian/position_dipoles.py`): the partial waves come from `PP_FULL_WFC` of the UPF
+(parsed as `UPF.aewfc`, `UPF.pswfc_partial`), the radial dipole integrals
+$\int(u_iu_j - \tilde u_i\tilde u_j)\,r\,dr$ are combined with the angular factors
+$\langle Y_{l_im}|\hat r_\alpha|Y_{l_jm'}\rangle$ (sphere quadrature of the two-centre module),
+and the projector-orbital overlaps are two-centre blocks of the same machinery, Bloch-summed
+with the lattice-gauge phases of the tables. Ultrasoft files without partial waves get the
+overlap term only, with a warning. Test: the on-site $\langle 4s|r|4p\rangle$ of Ga
+reconstructed from the pseudo-orbitals and the partial waves equals the pseudo value plus the
+augmentation to machine precision (2.487 bohr against 2.547 without the correction, and 2.490
+from the independent all-electron table), and the module's on-site $\Delta S$, $\Delta X$ of an
+isolated Ga atom reproduce these radial values ($S + \Delta S = 1$ for the pseudo-orbitals). In
+the GaAs crystal the two-centre $\Delta S(\mathbf k)$ agrees with the plane-wave
+$\langle\varphi|S|\varphi\rangle - \langle\varphi|\varphi\rangle$ to $7\times10^{-3}$. GaAs
+with the 23-band PAW basis: $\chi_{xyz}(0)$ 158 → 193 pm/V with the augmentation (norm-conserving
+178, measured 166–180). With an all-electron-only basis $S + \Delta S$ of the crystal is nearly
+singular and the Löwdin dipoles blow up; use the UPF-orbital basis route.
+
 **Symmetry reduction (since October 28 2026).** `symmetry=True` (default) reduces the dense
 grid to its irreducible wedge under the point-group operations read from Quantum ESPRESSO
 (`arrays['sym_rot']`, integer matrices acting on fractional k, the time-reversal-combined ones
@@ -222,8 +247,11 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   3e-8 meV and a real-space Hamiltonian 15 times better localised. **Fixed** (October 2026):
   the internal projections now use the augmented metric $S = 1 + \sum q_{ij}|\beta_i\rangle\langle\beta_j|$
   for ultrasoft / PAW pseudopotentials ([internal-basis.md](internal-basis.md)); the PAW GaAs
-  Hamiltonian is then symmetric too (spread 3e-3 meV). Check the projectability vector again
-  after the change (the old values were inflated: 12 instead of 18 GaAs bands above 0.95).
+  Hamiltonian is then symmetric too (spread 3e-3 meV). The projectabilities changed with it
+  (the old values were inflated): with the all-electron tables alone 12 GaAs bands pass 0.95;
+  the default basis route for PAW inputs now takes the valence shells from the UPF
+  pseudo-orbitals and only the augmenting shells from the tables (`pseudo_orbitals='auto'`,
+  [internal-basis.md](internal-basis.md)), which gives 23.
 - **Degenerate bands on symmetry lines.** With an exactly symmetric Hamiltonian the shift
   current obeys the T_d relations to 1e-10, but $\chi_{xyz}$ and $\chi_{yzx}$ still differ by
   10 % (1–2 eV) and 2 % (2–4 eV) at 40³, and the circular injection current, forbidden in T_d,
