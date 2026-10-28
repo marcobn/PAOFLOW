@@ -115,4 +115,5 @@ user-invocable: true
     - Ruff lint and format run through pre-commit: line length 100, single quotes. Run `pre-commit run --all-files` before committing. `BASIS/` and `examples/` are excluded
     - CI (`.github/workflows/ci.yaml`) runs on PRs into `develop`: pre-commit, then the QE and transport integration matrices under MPI
     - `develop` is the integration branch, and PRs into `main` are only accepted from `develop`. Feature work happens on branches such as `develop-marco`
+    - Never commit autonomously. Stage nothing and run no `git commit` unless the user asks for a commit in the current message; a request to commit in an earlier message does not carry over to later work
     - Docs: `./docs/serve_docs.sh` gives a live preview, and `--full` builds with source links. Developer notes are in `docs/internals/`
