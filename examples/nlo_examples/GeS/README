@@ -1,0 +1,38 @@
+GeS: non-linear optics of the monolayer (shift current, SHG of a 2D polar crystal)
+---------------------------------------------------------------------------------
+
+Structure: Pmn2_1 monolayer GeS, the puckered (phosphorene-like) monochalcogenide of
+Wang et al. 2017 and Rangel et al. 2017.  The in-plane cell is fixed at the PBE literature
+values (a = 4.40 A armchair along x, b = 3.68 A zigzag along y) and the positions were
+relaxed with PBE (relax.in; pseudopotentials PSEUDOS/nc-sr-05_pbe_standard_upf, 60 Ry,
+12x12x1 k, 18 A cell with assume_isolated='2D').
+
+Run:
+  P=../../../PSEUDOS/nc-sr-05_pbe_standard_upf
+  paoflow-genbasis-ps --pseudo $P/Ge.upf --out BASIS_PS --preset standard
+  paoflow-genbasis-ps --pseudo $P/S.upf  --out BASIS_PS --preset standard
+  mpirun -np 8 pw.x -nk 4 -in scf.in > scf.out
+  mpirun -np 8 pw.x -nk 2 -in nscf.in > nscf.out      # 18x18x1, nosym (see below), nbnd = 40
+  mpirun -np 8 python main.py
+
+main.py builds the PAO Hamiltonian with the internal projections on the BASIS_PS tables
+(62 orbitals, 26 bands with projectability > 0.95: all 20 valence + 6 conduction) and calls
+PAOFLOW.nonlinear_optics(nk=(120,120,1), twoD=True, ...), which writes the sheet responses:
+shift_<abc>.dat (nm uA/V^2), shg{r,i,a}_<abc>.dat (pm^2/V), the injection currents.
+
+Symmetry (point group mm2, polar axis x): sigma^{xxx}, sigma^{xyy}, sigma^{yxy} are allowed;
+sigma^{yyy} = sigma^{xxy} = 0 (mirror y -> -y); the T-odd files (shiftm, injectm) vanish.
+Targets: the shift current sigma^{xxx}, sigma^{xyy} of Wang et al. 2017 Fig. 1(c) and
+Rangel et al. 2017 (peaks of a few hundred nm uA/V^2 at the PBE/GW gap), and the SHG of
+Wang et al.  Converge nk (120 -> 300) and eta before quoting numbers.
+
+The nscf uses nosym/noinv: the PAO Hamiltonian built from a symmetry-reduced k-set is
+symmetric only to about 1 meV, which the 1/omega factors of the second-order responses
+amplify into percent-level violations of the tensor symmetry (see
+docs/internals/nonlinear-optics.md).
+
+Reference run (October 2026, 18x18x1 nosym nscf, 200x200 dense grid, eta 0.05 eV, no scissor, PBE gap
+1.68 eV): sheet shift current peaks sigma^{xxx} = 46, sigma^{xyy} = 48, sigma^{yxy} = 26 nm uA/V^2
+(at 2.8, 2.8 and 2.05 eV; divided by a 0.6 nm layer thickness ~ 75 uA/V^2, the order of magnitude
+of Rangel 2017 / Wang 2017); the forbidden yyy and xxy components and the T-odd files vanish
+(< 1e-8). 13 min on 8 ranks.

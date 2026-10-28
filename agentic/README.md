@@ -1,6 +1,6 @@
 # PAOFLOW agentic workflows
 
-Each folder here is a self-contained workflow that an AI coding agent (Claude Code, Codex, or similar) runs on top of PAOFLOW's library code. The library code lives in `src/PAOFLOW/`. The workflows only import it, and their files are never installed with the package. The three electron-phonon workflows (transport, superconductivity, ARPES) share the data toolkit of `thermo_optics` (`datasets`, `units`, `ingest`, `digitize`, `metrics`, `plotting`) and read the same electron-phonon *system folders* (`examples/elphon/<System>` layout) through their own adapters.
+Each folder here is a self-contained workflow that an AI coding agent (Claude Code, Codex, or similar) runs on top of PAOFLOW's library code. The library code lives in `src/PAOFLOW/`. The workflows only import it, and their files are never installed with the package. The transport, superconductivity, ARPES and non-linear optics workflows share the data toolkit of `thermo_optics` (`datasets`, `units`, `ingest`, `digitize`, `metrics`, `plotting`) and read the same electron-phonon *system folders* (`examples/elphon/<System>` layout) through their own adapters.
 
 | Folder | Workflow | Library code |
 |---|---|---|
@@ -9,6 +9,7 @@ Each folder here is a self-contained workflow that an AI coding agent (Claude Co
 | `transport/` | Comparing PAOFLOW's electron-phonon transport with experiment: phonon-limited mobilities, carrier densities, conductivity and Seebeck of semiconductors; resistivity, infrared optics and thermal emissivity of metals from α²F_tr; the Boltzmann bridge with impurity and residual channels | `PAOFLOW.agentic.transport` (+ the thermo-optics toolkit) |
 | `superconductivity/` | Comparing PAOFLOW's electron-phonon superconductivity with experiment: α²F and its moments, McMillan / Allen–Dynes / Migdal–Eliashberg Tc with the μ* sensitivity, Δ(T), gap ratios, the gap and λ_nk distributions of multi-gap metals, the quasiparticle DOS | `PAOFLOW.agentic.superconductivity` (+ the thermo-optics toolkit) |
 | `arpes/` | Comparing PAOFLOW's simulated ARPES with measured spectra: dispersions and kinks (λ by a stated bare-band protocol), self-energies, MDC widths, phonon linewidths versus temperature, band-map images through an axis calibration | `PAOFLOW.agentic.arpes` (+ the thermo-optics toolkit) |
+| `nlo/` | Comparing PAOFLOW's second-order optical responses (SHG susceptibility and d coefficients, shift and injection currents, 3D or 2D sheet values) with experiments and published calculations: conventions as data, the symmetry audit of the run as the error bar | `PAOFLOW.agentic.nlo` (+ the thermo-optics toolkit) |
 
 How to start any workflow:
 1. Go to its folder.

@@ -68,6 +68,7 @@ acbn0
 nonlocal-velocity
 position-dipoles
 scattering-channels
+nonlinear-optics
 dfpt-coupling-port
 long-range-elphon-plan
 arpes-chinook-plan
@@ -77,6 +78,7 @@ thermo-optics
 agentic-transport
 agentic-superconductivity
 agentic-arpes
+agentic-nlo
 sk-edtb
 cli-generators
 

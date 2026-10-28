@@ -340,3 +340,25 @@ def test_read_epw_a2f_helper_parses_epw_format(tmp_path):
 
     w, a2f_values, lam = read_epw_a2f(str(a2f))
     assert list(w) == [0.5, 1.0] and list(a2f_values) == [0.1, 0.2] and lam[-1] == 0.05
+
+
+def test_build_run_script_nonlinear_optics_block():
+    cfg = _run_cfg(
+        ibrav=2, is_2d=False, properties=['bands', 'nonlinear'], nlo_nk=24, nlo_emax=3.5,
+        nlo_eta=0.04, nlo_scissor=0.86, nlo_components=['xyz'],
+    )  # fmt: skip
+    text = d.build_run_script(cfg)
+    assert 'def run_nonlinear():' in text and '    run_nonlinear()' in text
+    assert 'NLO_NK = (24, 24, 24)' in text and 'NLO_SCISSOR = 0.86' in text
+    assert "NLO_COMPONENTS = ['xyz']" in text
+    assert 'p.nonlinear_optics(nk=NLO_NK, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA,' in text
+    # the non-linear run has its own PAOFLOW instance and never interpolates (HRs must survive)
+    block = text[text.index('def run_nonlinear():') :].split('def main')[0]
+    assert 'p.interpolated_hamiltonian(' not in block
+    assert (
+        'nonlinear',
+        'Non-linear optics (shift / injection currents, SHG) on the PAO Hamiltonian',
+    ) in d.PROPERTY_MENU
+    plot = d.build_plot_script(cfg)
+    assert 'def plot_shg' in plot and "_many('shga_*.dat')" in plot
+    assert 'plot_shift_current' in plot and 'plot_injection_current' in plot

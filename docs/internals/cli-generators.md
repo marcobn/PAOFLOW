@@ -32,6 +32,8 @@ Generates a PAOFLOW property-calculation driver (`main.py`) from a completed QE 
 
 **Workflow B — Property runs:** Pick from band structure, DOS, transport, Fermi surface, spin texture, spin Hall conductivity, orbital Hall conductivity, anomalous Hall effects, topology, optical properties, and more. The generated `plot.py` includes only the visualization routines for the properties you chose.
 
+The property `nonlinear` (non-linear optics) adds a separate `run_nonlinear()` to `main.py`: a PAOFLOW instance on the standard basis that calls `nonlinear_optics(nk=NLO_NK, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA, scissor=NLO_SCISSOR, components=NLO_COMPONENTS)` right after `pao_hamiltonian()` (it needs `HRs`, so it never interpolates). The prompts ask for the dense k-grid, the photon window, the broadening, the scissor and the tensor components (`all`, `diag` or e.g. `xyz,yyy`); `plot.py` gets the entries "Shift current", "Injection current" and "SHG susceptibility". See [Non-linear optics](nonlinear-optics.md) and `examples/nlo_examples/`.
+
 **Workflow C — Harmonic phonons** (`main.phonon.py`): finite-displacement phonons via phonopy.
 
 **Workflow D — Electron–phonon** (`paoflow-gen`, workflow `elphon`): writes a *system folder* in the layout of `examples/elphon/<System>` instead of a single script (see [Electron–Phonon Coupling](Electron-Phonon-Coupling.md), "The examples and the `paoflow-gen elphon` CLI workflow"):

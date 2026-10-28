@@ -22,8 +22,12 @@ Each subpackage serves the workflow of the same name in the repository folder
 * :mod:`PAOFLOW.agentic.arpes` -- ``agentic/arpes/``: simulated ARPES band
   maps, kinks, self-energies and phonon linewidths vs measured spectra and
   band-map images (``ArpesModel``, ``curves``, ``images``).
+* :mod:`PAOFLOW.agentic.nlo` -- ``agentic/nlo/``: second-order optical
+  responses (SHG, shift and injection currents) vs experiments and published
+  calculations, with the point-group audit of the run (``NonlinearModel``,
+  ``symmetry``).
 
-The last three reuse the data toolkit of :mod:`PAOFLOW.agentic.thermo_optics`
+The last four reuse the data toolkit of :mod:`PAOFLOW.agentic.thermo_optics`
 (datasets with provenance, units, PDF/raster ingestion and digitising, metrics,
 publication plots) and open electron-phonon system folders
 (``examples/elphon/<System>`` layout) through ``from_system``.

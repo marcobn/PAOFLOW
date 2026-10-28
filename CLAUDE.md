@@ -33,10 +33,12 @@ user-invocable: true
       inputs/             QE XML, VASP, UPF, PAOFLOW XML input readers; basis presets; input_default.xml
       projection/         Atomic-wfc projections, projectability, ortho/non-ortho, minimal basis
       hamiltonian/        H(k)/H(R) construction, doubling, SOC, external fields, gradients, momenta,
+                          bloch_derivatives (H, dH, d2H at arbitrary k from HRs for the non-linear optics),
                           nonlocal velocity, symmetry expansion (pao_sym), two-center integrals
       spectrum/           Bands, eigh, DOS/PDOS, Fermi energy, adaptive smearing, effective mass
       topology/           Berry phase, Fermi surface, Weyl search, spin texture, Z2/pfaffian
-      response/           Dielectric tensor, (spin/anomalous) Hall, Rashba–Edelstein, IPR, linear response
+      response/           Dielectric tensor, (spin/anomalous) Hall, Rashba–Edelstein, IPR, linear response,
+                          nonlinear_optics (shift/injection currents, SHG from HRs; docs/internals/nonlinear-optics.md)
       boltzmann/          Boltzmann transport tensors, doping, relaxation-time (tau) models
       transport/          Backend for Transport.py: calculators/ (Green's functions, leads, transmittance,
                           current), grid/, hamiltonian/, partition/, parsers/, io/, smearing/, workspace/
@@ -59,7 +61,8 @@ user-invocable: true
                           transport/ (MobilityModel, ResistivityModel, Bloch-Gruneisen/Matthiessen baselines,
                           Boltzmann channel bridge), superconductivity/ (EliashbergModel, GapModel,
                           AnisotropicGapModel, Allen-Dynes/BCS baselines), arpes/ (ArpesModel, MDC curve
-                          analysis, band-map images); all adapters open a system folder via from_system
+                          analysis, band-map images), nlo/ (NonlinearModel, point-group symmetry audit of
+                          second-order tensors); the elphon adapters open a system folder via from_system
       basis_gen/          Generates atomic-orbital basis from pseudopotentials (paoflow-genbasis-ps)
       gen/                Generators: QE input from AFLOW/C2DB (paoflow-gen-qe), main.py driver (paoflow-gen),
                           elphon_system.py + elphon_templates/ (paoflow-gen elphon writes a system folder; the
@@ -75,7 +78,8 @@ user-invocable: true
     tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data
     examples/             qe_examples, transport_examples, acbn0_examples, TBmodel_examples, elphon (one folder per
                           system: system.py, qe/, phonons/ coupling/ superconductivity/ optics/ transport/ arpes/),
-                          pyskeaf_examples, qo_analysis_examples, unfold_examples, plot_examples, new_examples, vasp_examples
+                          pyskeaf_examples, qo_analysis_examples, unfold_examples, plot_examples, new_examples, vasp_examples,
+                          nlo_examples (Graphene TB, GaAs, GeS: shift current / SHG, REPORT.md, figures)
     BASIS/                Per-element radial orbital tables (e.g. BASIS/Si/3P.dat) for internal projections
     PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard)
     agentic/              Agentic workflows run on top of the library (not installed). skeaf/: playbook,
@@ -83,6 +87,7 @@ user-invocable: true
                           thermo_optics/: same layout, optics-vs-experiment playbook (PAOFLOW.agentic.*)
                           transport/, superconductivity/, arpes/: same layout, one playbook each over the
                           elphon system folders (mobility/resistivity, alpha2F/Tc/gaps, band maps/kinks)
+                          nlo/: same layout for the non-linear optics outputs (SHG, shift current)
     docs/                 Sphinx + MyST site (Read the Docs); docs/internals/ holds developer notes
     .github/              CI workflows and asset_generation scripts for integration-test tarballs
     ```

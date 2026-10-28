@@ -220,3 +220,9 @@ examples/elphon/*/qe/*/*.out
 examples/elphon/*/qe/*.upf
 examples/elphon/*/qe/*.UPF
 examples/elphon/*/BASIS_PS/
+
+# non-linear optics examples: generated basis tables and QE saves
+examples/nlo_examples/*/BASIS_PS/
+examples/nlo_examples/*/*.save/
+examples/nlo_examples/*/*.wfc*
+examples/nlo_examples/*/*.out

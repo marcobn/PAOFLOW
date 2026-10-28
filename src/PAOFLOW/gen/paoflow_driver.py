@@ -357,6 +357,7 @@ PROPERTY_MENU = [
     ('topology', 'Band topology (Berry, effective mass)'),
     ('optical', 'Optical / dielectric tensor (separate extended-basis run)'),
     ('emissivity', 'Emissivity (Fresnel/Kirchhoff; implies the optical run)'),
+    ('nonlinear', 'Non-linear optics (shift / injection currents, SHG) on the PAO Hamiltonian'),
 ]
 SPIN_PROPERTIES = {'spin_texture', 'spin_Hall'}
 # Properties that read an explicit (emin, emax) energy window.
@@ -490,9 +491,10 @@ def _projection_lines(
 def build_run_script(cfg):
     """Assemble a full property-run main.py from the collected config."""
     props = cfg['properties']
-    standard_props = [p for p in props if p not in ('optical', 'emissivity')]
+    standard_props = [p for p in props if p not in ('optical', 'emissivity', 'nonlinear')]
     has_optical = 'optical' in props or 'emissivity' in props
     has_emissivity = 'emissivity' in props
+    has_nonlinear = 'nonlinear' in props
     needs_spin = any(p in SPIN_PROPERTIES for p in props)
     needs_energy_window = any(p in ENERGY_WINDOW_PROPERTIES for p in props)
 
@@ -541,6 +543,20 @@ def build_run_script(cfg):
     else:
         lines.append('NFFT = None')
     lines.append('')
+    if has_nonlinear:
+        lines.append(
+            '# Non-linear optics: dense k-grid, photon window (eV), broadening, scissor (eV)'
+        )
+        lines.append('NLO_NK = ({n}, {n}, {n})'.format(n=cfg.get('nlo_nk', 40)))
+        lines.append('NLO_EMAX, NLO_NE = {}, 401'.format(cfg.get('nlo_emax', 4.0)))
+        lines.append('NLO_ETA = {}'.format(cfg.get('nlo_eta', 0.05)))
+        lines.append('NLO_SCISSOR = {}'.format(cfg.get('nlo_scissor', 0.0)))
+        lines.append(
+            "NLO_COMPONENTS = {!r}   # 'all', 'diag' or a list such as ['xyz', 'yyy']".format(
+                cfg.get('nlo_components', 'all')
+            )
+        )
+        lines.append('')
 
     # ---- basis generation --------------------------------------------- #
     lines.append(BASIS_GEN_BLOCK)
@@ -624,6 +640,40 @@ def build_run_script(cfg):
         lines.append('    p.finish_execution()')
         lines.append('')
 
+    # ---- non-linear optics (standard basis, needs HRs) ----------------- #
+    if has_nonlinear:
+        lines.append('')
+        lines.append('def run_nonlinear():')
+        lines.append(
+            '    """Shift / injection currents and SHG from the real-space PAO Hamiltonian.'
+        )
+        lines.append('')
+        lines.append(
+            '    nonlinear_optics() interpolates HRs on NLO_NK on the fly, so it runs right'
+        )
+        lines.append(
+            '    after pao_hamiltonian() (before interpolated_hamiltonian / pao_eigh release HRs).'
+        )
+        lines.append('    """')
+        lines.append('    p = PAOFLOW.PAOFLOW(')
+        lines.append('        workpath=HERE,')
+        lines.append('        outputdir=OUTPUTDIR,')
+        lines.append('        savedir=SAVEDIR,')
+        lines.append('        smearing=SMEARING,')
+        lines.append('        npool=NPOOL,')
+        lines.append('        save_overlaps=SAVE_OVERLAPS,')
+        lines.append('        verbose=False,')
+        lines.append('    )')
+        lines.append('')
+        lines.extend(_projection_lines(cfg, configuration='STD_BASIS'))
+        lines.append('    p.projectability(pthr=PTHR)')
+        lines.append('    p.pao_hamiltonian()')
+        lines.append('    p.nonlinear_optics(nk=NLO_NK, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA,')
+        lines.append('                       scissor=NLO_SCISSOR, components=NLO_COMPONENTS)')
+        lines.append('')
+        lines.append('    p.finish_execution()')
+        lines.append('')
+
     # ---- main --------------------------------------------------------- #
     lines.append('')
     lines.append('def main():')
@@ -640,7 +690,9 @@ def build_run_script(cfg):
         lines.append('    run_properties()')
     if has_optical:
         lines.append('    run_optical()')
-    if not standard_props and not has_optical:
+    if has_nonlinear:
+        lines.append('    run_nonlinear()')
+    if not standard_props and not has_optical and not has_nonlinear:
         lines.append('    pass  # no properties selected')
     lines.append('')
     lines.append('')
@@ -1930,6 +1982,27 @@ def build_plot_script(cfg):
         )
         menu.append(('Visible color (sRGB swatch)', 'plot_visible_color'))
 
+    if 'nonlinear' in props:
+        nonlinear_groups = [
+            ('Shift current', 'plot_shift_current', ['shift_*.dat', 'shiftm_*.dat']),
+            ('Injection current', 'plot_injection_current', ['injectc_*.dat', 'injectm_*.dat']),
+            ('SHG susceptibility', 'plot_shg', ['shgr_*.dat', 'shgi_*.dat', 'shga_*.dat']),
+        ]
+        for label, fname, globs in nonlinear_groups:
+            glob_calls = ' + '.join(f'_many({gl!r})' for gl in globs)
+            funcs += _plot_func(
+                fname,
+                [
+                    f'files = {glob_calls}',
+                    'if not files:',
+                    '    _missing(None)',
+                    '    return',
+                    'pplt.plot_dielectric(files if len(files) > 1 else files[0],',
+                    f'                     title={label!r}, y_lim=_ylim(), legend_outside=True)',
+                ],
+            )
+            menu.append((label, fname))
+
     if has_emissivity:
         funcs += _plot_func(
             'plot_emissivity',
@@ -2911,6 +2984,15 @@ def collect_run(common):
         'optical' in props,
     )
     cfg['nfft'] = ask_int('FFT grid size per direction', 24) if cfg['interpolate'] else 0
+    if 'nonlinear' in props:
+        print('\nNon-linear optics (shift / injection currents, SHG):')
+        cfg['nlo_nk'] = ask_int('  dense k-grid per direction', 40)
+        cfg['nlo_emax'] = ask_float('  largest photon energy (eV)', 4.0)
+        cfg['nlo_eta'] = ask_float('  broadening eta (eV)', 0.05)
+        cfg['nlo_scissor'] = ask_float('  scissor shift of the conduction bands (eV)', 0.0)
+        cfg['nlo_components'] = ask("  tensor components ('all', 'diag' or e.g. xyz,yyy)", 'all')
+        if ',' in cfg['nlo_components']:
+            cfg['nlo_components'] = [c.strip() for c in cfg['nlo_components'].split(',')]
     cfg['plot'] = ask_yes_no('Also generate a plotting script (plot.py)?', True)
     return cfg
 

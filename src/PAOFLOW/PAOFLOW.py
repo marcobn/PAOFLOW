@@ -3408,6 +3408,228 @@ class PAOFLOW:
 
         self.report_module_time('Dielectric Tensor')
 
+    def nonlinear_optics(
+        self,
+        nk,
+        emin=0.0,
+        emax=4.0,
+        ne=401,
+        eta=0.05,
+        shift_current=True,
+        injection_current=True,
+        second_harmonic=True,
+        components='all',
+        scissor=0.0,
+        temperature=0.0,
+        fermi_energy=None,
+        smearing='gauss',
+        adaptive_smearing=None,
+        degeneracy_tol=1.0e-2,
+        twoD=False,
+        slab_height=None,
+        orbital_positions=None,
+        nelec=None,
+        kblock=128,
+        hopping_cutoff=None,
+        shg_bin=None,
+    ):
+        r"""Second-order optical responses: shift and injection currents, second-harmonic generation.
+
+        Evaluates, on a uniform ``nk`` grid interpolated from the real-space PAO Hamiltonian
+        ``HRs`` (Wigner-Seitz interpolation, no stored k-grid tensors), the band energies, the
+        interband position matrix :math:`r^a_{nm} = -i v^a_{nm}/\omega_{nm}`, its generalized
+        derivative :math:`r^b_{nm;a}` (sum rule over all PAO bands, exact in the tight-binding
+        approximation) and the velocity differences, and from them
+
+        * the **shift current** :math:`\sigma^{abc}(\omega)` (normal, T-even) and the magnetic
+          shift current (T-odd), :math:`J^a = \sigma^{abc}E^b(\omega)E^c(-\omega)`
+          (+ :math:`\sigma_M^{abc}\,\mathrm{Im}[E^bE^{c*}]`);
+        * the **injection currents** :math:`dJ^a/dt = \eta_M^{abc}\mathrm{Re}[E^bE^{c*}]
+          + \eta_C^{abc}\mathrm{Im}[E^bE^{c*}]` (magnetic, T-odd; circular, T-even);
+        * the **SHG susceptibility** :math:`\chi^{abc}(-2\omega;\omega,\omega)`,
+          :math:`P^a(2\omega) = \epsilon_0\chi^{abc}E^bE^c`, in the low-frequency convergent
+          form of Chen *et al.* (2022) (Rashkeev 1998 / Wang 2017 with the T-odd term).
+
+        Call it after :meth:`pao_hamiltonian` (and :meth:`add_external_fields`) and before
+        :meth:`interpolated_hamiltonian` or :meth:`pao_eigh`, which release ``HRs``.
+
+        Outputs (written by ``data_controller``, two columns: photon energy (eV), value):
+
+        * ``shift_<abc>.dat``, ``shiftm_<abc>.dat`` -- :math:`\mu`\ A/V\ :sup:`2`
+          (2D: nm :math:`\mu`\ A/V\ :sup:`2`);
+        * ``injectc_<abc>.dat``, ``injectm_<abc>.dat`` -- A V\ :sup:`-2` s\ :sup:`-1`
+          (2D: nm A V\ :sup:`-2` s\ :sup:`-1`);
+        * ``shgr_<abc>.dat``, ``shgi_<abc>.dat``, ``shga_<abc>.dat`` -- Re, Im and
+          :math:`|\chi|` in pm/V (2D: pm\ :sup:`2`/V).
+
+        With ``nspin = 2`` the files hold the sum of the two channels and ``_0`` / ``_1``
+        suffixed copies hold each channel.
+
+        Parameters
+        ----------
+        nk : sequence of int
+            Dense k-grid ``(n1, n2, n3)`` (``(n1, n2, 1)`` for 2D).
+        emin, emax, ne : float, float, int
+            Photon-energy grid (eV).
+        eta : float
+            Width of the :math:`\delta` functions (shift, injection) and imaginary part added
+            to every SHG resonance denominator (eV).
+        shift_current, injection_current, second_harmonic : bool
+            Responses to compute.
+        components : 'all', 'diag', or sequence of ``'abc'`` strings / index triples
+            Tensor components (``a``: current or polarisation direction; ``b, c``: fields).
+        scissor : float
+            Rigid shift of the conduction bands (eV) in the resonance energies and in the
+            explicit :math:`1/\omega_{mn}` factors; the matrix elements keep the DFT eigenvectors.
+        temperature : float
+            Electronic temperature (K); 0 gives step occupations (``nelec`` / spin factor bands).
+        fermi_energy : float, optional
+            Chemical potential (eV) for finite temperatures or metals (default: the mid-gap).
+        smearing : {'gauss', 'lorentz'}
+            Shape of the :math:`\delta` functions.
+        adaptive_smearing : float, optional
+            Yates prefactor ``a`` of the per-pair widths :math:`a|\mathbf v_n - \mathbf v_m|\Delta k`,
+            floored at ``eta``.
+        degeneracy_tol : float
+            Pairs closer than this (eV) are skipped in :math:`r` and in the band sums (10 meV:
+            the nearly degenerate pairs of DFT-derived Hamiltonians otherwise leak numerical
+            asymmetries into symmetry-forbidden components).
+        twoD : bool
+            Multiply the responses by the slab height (sheet responses).
+        slab_height : float, optional
+            Height of the 2D cell (bohr; default :math:`|\mathbf a_3|`).
+        orbital_positions : ndarray ``(nawf, 3)``, optional
+            Orbital centres in crystal coordinates (default: from the PAO basis, or from the
+            model's ``tau`` and ``naw``).
+        nelec : float, optional
+            Electrons per cell (default ``attr['nelec']``).
+        kblock : int
+            k-points per block.
+        hopping_cutoff : float, optional
+            Drop real-space cells with ``max |H(n)|`` below it (eV).
+        shg_bin : float, optional
+            Bin of the SHG transition-energy histograms (eV; default ``eta / 5``).
+
+        Returns
+        -------
+        dict
+            The spectra (``'energy_ev'``, ``'components'``, ``'shift'``, ``'shiftm'``,
+            ``'injectc'``, ``'injectm'``, ``'shg'``) summed over the spin channels, and the run
+            metadata (``'nocc'``, ``'gap_ev'``, ``'direct_gap_ev'``, ...); ``None`` on failure
+            when ``abort_on_exception`` is off.
+
+        Notes
+        -----
+        Units and conventions follow :mod:`PAOFLOW.response.nonlinear_optics`; see
+        ``docs/internals/nonlinear-optics.md`` for the formulas, the sign of the curvature term
+        in the sum rule, the histogram scheme of the SHG and the validation on GaAs and
+        tight-binding models.
+        """
+        import numpy as np
+
+        from .hamiltonian.bloch_derivatives import orbital_positions_from_data
+        from .response.nonlinear_optics import nonlinear_optical_spectra, write_nonlinear_outputs
+
+        arrays, attr = self.data_controller.data_dicts()
+        total = None
+        try:
+            if 'HRs' not in arrays:
+                raise KeyError(
+                    "nonlinear_optics needs 'HRs': call it after pao_hamiltonian() and before "
+                    'interpolated_hamiltonian() / pao_eigh() (or keep free_HRs=False).'
+                )
+            want = tuple(
+                name
+                for name, flag in (
+                    ('shift', shift_current),
+                    ('injection', injection_current),
+                    ('shg', second_harmonic),
+                )
+                if flag
+            )
+            if not want:
+                raise ValueError('nothing to compute: enable at least one response')
+            HRs = arrays['HRs']
+            at = np.asarray(arrays['a_vectors'], dtype=float)
+            alat = float(attr['alat'])
+            volume = float(attr['omega']) if 'omega' in attr else alat**3 * abs(np.linalg.det(at))
+            nelec_value = float(attr['nelec']) if nelec is None else float(nelec)
+            nspin = HRs.shape[-1]
+            spin_factor = 2.0 if (nspin == 1 and not attr.get('dftSO', False)) else 1.0
+            positions = (
+                np.asarray(orbital_positions, dtype=float)
+                if orbital_positions is not None
+                else orbital_positions_from_data(self.data_controller)
+            )
+            if positions is None and self.rank == 0:
+                print(
+                    'WARNING: no orbital positions found; all orbitals are placed at the origin '
+                    '(pass orbital_positions for a multi-site cell).'
+                )
+            energy = np.linspace(emin, emax, ne)
+            slab = None
+            if twoD:
+                slab = float(slab_height) if slab_height else alat * float(np.linalg.norm(at[2]))
+            per_spin = []
+            for ispin in range(nspin):
+                per_spin.append(
+                    nonlinear_optical_spectra(
+                        HRs,
+                        at,
+                        alat,
+                        volume,
+                        positions,
+                        nelec_value,
+                        nk,
+                        energy,
+                        components=components,
+                        eta=eta,
+                        smearing=smearing,
+                        adaptive_smearing=adaptive_smearing,
+                        scissor=scissor,
+                        temperature=temperature,
+                        fermi_energy=fermi_energy,
+                        degeneracy_tol=degeneracy_tol,
+                        spin_factor=spin_factor,
+                        ispin=ispin,
+                        kblock=kblock,
+                        want=want,
+                        shg_bin=shg_bin,
+                        hopping_cutoff=hopping_cutoff,
+                        comm=self.comm,
+                        progress=bool(attr.get('verbose', False)),
+                    )  # fmt: skip
+                )
+            total = dict(per_spin[0])
+            if nspin == 2:
+                for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg'):
+                    if key in total:
+                        total[key] = per_spin[0][key] + per_spin[1][key]
+                for ispin, result in enumerate(per_spin):
+                    write_nonlinear_outputs(
+                        self.data_controller, result, slab, suffix='_%d' % ispin
+                    )
+            written = write_nonlinear_outputs(self.data_controller, total, slab)
+            attr['nonlinear_optics'] = {
+                'nk': tuple(int(n) for n in nk), 'eta_ev': float(eta), 'scissor_ev': float(scissor),
+                'components': list(total['components']), 'nocc': int(total['nocc']),
+                'gap_ev': float(total['gap_ev']), 'twoD': bool(twoD), 'slab_height_bohr': slab,
+            }  # fmt: skip
+            if self.rank == 0:
+                print(
+                    'Nonlinear optics: %d occupied bands, gap %.3f eV (direct %.3f eV), '
+                    'scissor %.3f eV, %d k-points, %s; wrote %d files'
+                    % (total['nocc'], total['gap_ev'], total['direct_gap_ev'], scissor,
+                       int(np.prod(nk)), ', '.join(want), len(written))
+                )  # fmt: skip
+        except Exception as e:
+            self.report_exception('nonlinear_optics')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Nonlinear Optics')
+        return total
+
     def jdos(self, delta=0.1, emin=0.0, emax=10.0, ne=501, jdos_smeartype='gauss'):
         """
         Calculate the Dielectric Tensor

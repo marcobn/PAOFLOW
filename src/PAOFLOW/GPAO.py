@@ -692,6 +692,13 @@ class GPAO:
         'sigmai': (r'Im $\sigma$', r'$\sigma$ (S/m)'),
         'emish': ('Hemispherical emissivity', 'Emissivity'),
         'emist': ('Total emissivity', 'Emissivity'),
+        'shift': (r'$\sigma_{\rm shift}$', r'Shift current ($\mu$A/V$^2$)'),
+        'shiftm': (r'$\sigma_{\rm shift}^{M}$', r'Magnetic shift current ($\mu$A/V$^2$)'),
+        'injectc': (r'$\eta_C$', r'Circular injection (A V$^{-2}$ s$^{-1}$)'),
+        'injectm': (r'$\eta_M$', r'Magnetic injection (A V$^{-2}$ s$^{-1}$)'),
+        'shgr': (r'Re $\chi^{(2)}$', r'$\chi^{(2)}$ (pm/V)'),
+        'shgi': (r'Im $\chi^{(2)}$', r'$\chi^{(2)}$ (pm/V)'),
+        'shga': (r'$|\chi^{(2)}|$', r'$\chi^{(2)}$ (pm/V)'),
     }
 
     def plot_optical(

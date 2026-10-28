@@ -1,0 +1,26 @@
+GaAs: non-linear optics (shift current, injection currents, SHG)
+----------------------------------------------------------------
+
+Inputs: the QE scf/nscf of example10 (same GaAs.save; copy or link it here; no projwfc is needed,
+the PAO projections are computed internally from the wavefunctions):
+  ln -s ../../qe_examples/example10/GaAs.save GaAs.save)
+Run:    mpirun -np 8 python main.py
+
+main.py builds the PAO Hamiltonian (internal basis, 26 orbitals) and calls
+PAOFLOW.nonlinear_optics(nk=(40,40,40), scissor=0.86, eta=0.05, components=['xyz', ...]),
+which writes output/{shift,shiftm,injectc,injectm}_<abc>.dat and shg{r,i,a}_<abc>.dat
+(photon energy in eV; uA/V^2, A V^-2 s^-1 and pm/V).
+
+Targets (see docs/internals/nonlinear-optics.md): |chi_xyz(w)| of Wang et al. 2017 Fig. 4
+(scissors curve), chi_xyz(0) ~ 1.5-2.5 x 10^2 pm/V (Rashkeev 1998, Nastos 2005), and the
+shift current sigma_xyz of Ibanez-Azpiroz et al. 2018.  chi_xyz = chi_yzx = chi_zxy by
+symmetry at every frequency, chi_xxx = 0; the shift and injection currents of a cubic
+T_d crystal vanish for the diagonal components and the T-odd files (shiftm, injectm) vanish.
+Converge nk (60^3 -> 100^3) and eta before quoting numbers.
+
+Reference run (October 2026, 40^3, scissor 0.86 eV, eta 0.05 eV, 62-orbital basis, 15 min on 8 ranks):
+|chi_xyz| = 110 pm/V at 0 eV, 341 pm/V at 1.5 eV, peak 610 pm/V at 2.63 eV (literature with a
+scissor: chi_xyz(0) ~ 100-170 pm/V, peaks of 400-600 pm/V); chi_yzx agrees with chi_xyz within
+5 % and the forbidden chi_xxx is below 2 % away from the resonances (the symmetry-expanded PAO
+Hamiltonian is symmetric to ~1 meV; a nosym nscf removes this). The shift current sigma_xyz
+reaches -30 uA/V^2 at 3.9 eV.
