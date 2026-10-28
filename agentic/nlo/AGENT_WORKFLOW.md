@@ -26,7 +26,7 @@ A system folder of the `examples/nlo_examples/<System>` layout: QE `scf.in` / `n
 | step | what | cost |
 |---|---|---|
 | `pw.x` scf, nscf | the nscf grid is the coarse grid of the Wigner–Seitz interpolation (16³ for GaAs, 18×18×1 for GeS); `nbnd` large enough for the PAO basis | minutes |
-| `paoflow-genbasis-ps --pseudo <upf> --out BASIS_PS --preset standard` | PAO radial tables matched to the pseudopotentials (check the projectability vector: all valence bands and a few conduction bands above 0.95) | seconds |
+| `paoflow-genbasis-ps --pseudo <upf> --out BASIS_PS --preset standard` | PAO radial tables matched to the pseudopotentials (check the projectability vector: all valence bands and a few conduction bands above 0.95); with ultrasoft / PAW files `projections()` takes the valence shells from the UPF itself and the all-electron tables of `BASIS/` project the conduction bands better than the generated ones (GaAs: 23 vs 17 bands above 0.95) | seconds |
 | `main.py`: `projections(internal=True, ...)`, `projectability()`, `pao_hamiltonian()`, `nonlinear_optics(nk, emin, emax, ne, eta, scissor, components, twoD, degeneracy_tol, position_dipoles, symmetry)` | the responses on the dense `nk` grid, interpolated from `HRs` on the fly; `output/`. `symmetry=True` (default) reduces the grid to the irreducible wedge (GaAs: 24×); `position_dipoles=True` adds the Löwdin dipoles to the position operator (about 2× the cost) | GaAs 62 orbitals: 15 min at 40³ on the full grid, ~1 h at 60³ on 8 ranks; GeS: 13 min at 200² |
 | `paoflow-gen` property `nonlinear` | the same `main.py` from prompts | — |
 

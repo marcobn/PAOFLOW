@@ -484,6 +484,114 @@ def build_aewfc_basis(data_controller):
     return basis, shells
 
 
+def build_basis_from_sources(data_controller, pseudo_labels):
+    """Basis with the shells of ``arry['configuration']`` taken from two sources, atom by atom.
+
+    The shells listed in ``pseudo_labels[element]`` come from the ``PP_PSWFC`` pseudo-orbitals
+    of the UPF (the pseudo-atom's own solutions, consistent with the augmented metric of
+    ultrasoft / PAW pseudopotentials), the others from ``basispath/<elem>/<shell>.dat``. The
+    records are ordered atom by atom in the order of ``arry['configuration'][element]``, as the
+    symmetry expansion (``pao_sym``) and ``arry['shells']`` require. When a species mixes the
+    two sources its pseudo-orbitals are resampled (cubic spline) on the radial mesh of its
+    tables, so that every shell of a species shares one mesh (the position-dipole tables of
+    ``hamiltonian/position_dipoles.py`` require it).
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Required arrays: ``atoms``, ``tau``, ``species``, ``configuration``; attributes
+        ``ecutrho``, ``omega``, ``verbose``, ``dftSO``, ``fpath``, ``basispath``.
+    pseudo_labels : dict
+        ``{element: [shell labels taken from the UPF]}``.
+
+    Returns
+    -------
+    basis : list of dict
+        Same schema as :func:`build_pswfc_basis_all`.
+    shells : dict
+        ``{species: [l, ...]}``.
+
+    Raises
+    ------
+    NotImplementedError
+        With spin-orbit coupling (the ``jm`` bookkeeping of a mixed set is not implemented).
+    """
+    arry, attr = data_controller.data_dicts()
+    if attr.get('dftSO'):
+        raise NotImplementedError('a basis mixing UPF pseudo-orbitals and tables needs a scalar-relativistic run')
+    verbose = attr['verbose']
+    qmesh = np.arange(0, np.sqrt(attr['ecutrho']) + 4, 0.01)
+    volume = attr['omega']
+    from scipy.interpolate import CubicSpline
+
+    arry['jchia'] = {}
+    upf_cache = {}
+    per_atom, tasks = [], []
+    for na in range(len(arry['atoms'])):
+        atom = arry['atoms'][na]
+        elem = re.split(r'\d+', atom)[0]
+        tau = arry['tau'][na]
+        wanted = list(arry['configuration'][elem])
+        from_upf = {lbl.upper() for lbl in pseudo_labels.get(elem, [])}
+        table_mesh = None
+        for label in wanted:  # the common mesh of the species: that of its tables, if any
+            if label.upper() not in from_upf:
+                table_mesh = np.loadtxt(os.path.join(attr['basispath'], elem, '%s.dat' % label))[:, 0]
+                break
+        records = []
+        for label in wanted:
+            l = 'SPDF'.find(label[1].upper())
+            assert l != -1, label
+            if label.upper() in from_upf:
+                if elem not in upf_cache:
+                    upf_cache[elem] = read_pswfc_from_upf(data_controller, elem)
+                r_grid, pswfc, pseudo = upf_cache[elem]
+                match = [pao for pao in pswfc if pao['label'].upper() == label.upper()]
+                if not match:
+                    raise RuntimeError('%s: no pseudo-orbital %s in %s' % (elem, label, pseudo))
+                wfc = np.asarray(match[0]['wfc'], dtype=float)
+                if table_mesh is not None:
+                    spline = CubicSpline(r_grid, wfc, extrapolate=False)
+                    wfc = np.nan_to_num(spline(table_mesh), nan=0.0)
+                    r_use = np.asarray(table_mesh, dtype=float)
+                else:
+                    r_use = np.asarray(r_grid, dtype=float)
+                source = pseudo
+            else:
+                path = os.path.join(attr['basispath'], elem, '%s.dat' % label)
+                data = np.loadtxt(path)
+                r_use, wfc, source = data[:, 0], data[:, 1], path
+            if verbose and rank == 0:
+                print('atom: %-2s  %s from %s' % (atom, label, source))
+            records.append((label, l, r_use, wfc, len(tasks)))
+            tasks.append((r_use, wfc, l))
+        per_atom.append((atom, tau, records))
+    wfc_g_list = _parallel_radialfft(tasks, qmesh, volume)
+    basis, shells = [], {}
+    for atom, tau, records in per_atom:
+        ash = []
+        for label, l, r_use, wfc, itask in records:
+            ash.append(l)
+            for m in range(1, 2 * l + 2):
+                basis.append(
+                    {
+                        'atom': atom,
+                        'tau': tau,
+                        'l': l,
+                        'm': m,
+                        'label': label,
+                        'r': r_use,
+                        'wfc': np.array(wfc, dtype=float),
+                        'qmesh': qmesh,
+                        'wfc_g': wfc_g_list[itask],
+                    }
+                )
+        if atom not in shells:
+            shells[atom] = ash
+            arry['jchia'][atom] = []
+    return basis, shells
+
+
 def build_mixed_basis(data_controller):
     """Construct a mixed basis: pseudo-atomic wavefunctions + AE polarization.
 

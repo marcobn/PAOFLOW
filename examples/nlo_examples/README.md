@@ -20,7 +20,10 @@ the three systems, their figures and the comparison with the literature are in
    k-points, [REPORT.md](REPORT.md) §3.2): check the projectability vector, and prefer
    norm-conserving pseudopotentials when the basis projects the semicore bands poorly.
 2. Basis: the repository `BASIS/` tables, or tables generated from the pseudopotentials with
-   `paoflow-genbasis-ps` when the projectability of the valence bands is below 0.95 (GeS).
+   `paoflow-genbasis-ps` when the projectability of the valence bands is below 0.95 (GeS). With
+   ultrasoft / PAW pseudopotentials the valence shells are taken from the UPF pseudo-orbitals
+   automatically (`projections(pseudo_orbitals='auto')`) and only the augmenting shells from the
+   tables (GaAs: 23 bands above 0.95).
 3. PAOFLOW: `projections(internal=True, ...)`, `projectability()`, `pao_hamiltonian()`,
    `nonlinear_optics(nk=..., emax, eta, scissor, components, twoD)`, `finish_execution()`.
    Call `nonlinear_optics` before `interpolated_hamiltonian` / `pao_eigh` (they release `HRs`).

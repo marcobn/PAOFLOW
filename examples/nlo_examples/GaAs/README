@@ -6,8 +6,9 @@ the PAO projections are computed internally from the wavefunctions):
   ln -s ../../qe_examples/example10/GaAs.save GaAs.save)
 Run:    mpirun -np 8 python main.py
 
-main.py builds the PAO Hamiltonian (internal 62-orbital basis, projectability threshold 0.90:
-see below) and calls
+main.py builds the PAO Hamiltonian (62 orbitals: the valence shells from the UPF pseudo-orbitals,
+the augmenting shells from the all-electron BASIS tables, the default for PAW inputs since October
+2026; 23 bands above 0.95) and calls
 PAOFLOW.nonlinear_optics(nk=(40,40,40), scissor=0.86, eta=0.05, components=['xyz', ...]),
 which writes output/{shift,shiftm,injectc,injectm}_<abc>.dat and shg{r,i,a}_<abc>.dat
 (photon energy in eV; uA/V^2, A V^-2 s^-1 and pm/V).
@@ -30,10 +31,12 @@ does not help). Fixed in October 2026 (augmented metric of the projections, see 
 section 3.2): the Hamiltonian is now symmetric (interpolation spread 3e-3 meV between equivalent
 k-points instead of 5-25 meV), the shift current obeys the T_d relations to 1e-10; the
 projectability vector changed (12 instead of 18 bands above 0.95; use pthr = 0.90 to keep 21).
-Reference runs with the current code (PAW, augmented projections, pthr 0.90, 40^3, 13 min on
-8 ranks): |chi_xyz| = 120 pm/V at 0 eV, 416 at 1.5 eV, peak 725 pm/V at 2.63 eV, sigma_xyz =
--32 uA/V^2 at 3.9 eV; with position_dipoles=True (20 min): 156 pm/V, 572, 855, -38 uA/V^2.
-Every T_d relation holds to 1e-8 of the peak (covariant kernels, October 28 2026). With the PseudoDojo norm-conserving Ga/As set
+Reference runs with the current code (PAW, augmented projections, valence shells from the UPF,
+23 bands above 0.95, 40^3 reduced to 3091 k-points by symmetry: 135 s on 8 ranks): |chi_xyz| =
+98 pm/V at 0 eV, 318 at 1.5 eV, peak 695 pm/V at 2.63 eV, sigma_xyz = -29 uA/V^2 at 3.9 eV; with
+position_dipoles=True (the PAW augmentation of the position operator included, 4 min): 193 pm/V,
+636, 874, -42 uA/V^2 (158, 559, 850, -38 without the augmentation). Every T_d relation holds to 1e-8
+of the peak (covariant kernels and symmetrised tensors, October 28 2026). With the PseudoDojo norm-conserving Ga/As set
 (PSEUDOS/nc-sr-05_pbe_standard_upf, 90 Ry, As 3d in valence; nelec 28) the same basis gives
 |chi_xyz(0)| = 103 pm/V, peak 492 pm/V at 2.54 eV, sigma_xyz -28 uA/V^2 at 3.9 eV at 40^3, and
 178 pm/V, 677 pm/V, -41 uA/V^2 with the position dipoles: the dipoles bring the static chi_xyz

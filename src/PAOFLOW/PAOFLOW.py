@@ -460,7 +460,7 @@ class PAOFLOW:
                 print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / to_gb))
                 print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / to_gb))
 
-    def projections(self, configuration=None, basispath=None, internal=None):
+    def projections(self, configuration=None, basispath=None, internal=None, pseudo_orbitals='auto'):
         """
         Calculate the projections on the atomic basis provided by the pseudopotential or
         on the all-electron internal basis sets.
@@ -504,6 +504,14 @@ class PAOFLOW:
             * ``None`` — keep whatever is already stored in
               ``arry['configuration']`` (legacy behaviour).
         internal: for backward compatibility only, not used
+        pseudo_orbitals : {'auto', True, False}, optional
+            Take the shells that the pseudopotential provides as pseudo-orbitals (``PP_PSWFC``)
+            from the UPF and only the remaining shells of the configuration from the tables of
+            ``basispath``. ``'auto'`` does so for ultrasoft / PAW pseudopotentials (the stored
+            pseudo-orbitals are the only radial functions consistent with their augmented
+            metric; all-electron tables project PAW semicore bands poorly) and keeps the pure
+            table basis for norm-conserving ones; ``True`` / ``False`` force either choice.
+            Not with the ``'minimal'`` preset (already the UPF basis) nor with spin-orbit.
         """
 
         from .inputs.basis_presets import (
@@ -565,7 +573,36 @@ class PAOFLOW:
         if preset == None or preset == 'minimal':
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
         else:
-            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
+            use_pseudo = pseudo_orbitals
+            if use_pseudo == 'auto':
+                import os
+
+                from .inputs.read_upf import UPF
+                from .projection.augmentation import is_augmented
+
+                use_pseudo = attr.get('dft', 'QE') == 'QE' and any(
+                    is_augmented(UPF(os.path.join(attr['fpath'], pseudo)))
+                    for _, pseudo in arry['species']
+                )
+            if use_pseudo and not attr.get('dftSO', False):
+                from .inputs.basis_presets import minimal_shells_from_upf
+                from .projection.do_atwfc_proj import build_basis_from_sources
+
+                pseudo_labels = {}
+                for elem in arry['configuration']:
+                    available = {lbl.upper() for lbl in minimal_shells_from_upf(self.data_controller, elem)}
+                    pseudo_labels[elem] = [
+                        lbl for lbl in arry['configuration'][elem] if lbl.upper() in available
+                    ]
+                if attr.get('verbose') and self.rank == 0:
+                    for elem, labels in pseudo_labels.items():
+                        print('  %-3s: %s from the UPF pseudo-orbitals, %s from %s' % (
+                            elem, ', '.join(labels) or 'nothing',
+                            ', '.join(l for l in arry['configuration'][elem] if l not in labels) or 'nothing',
+                            attr.get('basispath')))  # fmt: skip
+                basis, arry['shells'] = build_basis_from_sources(self.data_controller, pseudo_labels)
+            else:
+                basis, arry['shells'] = build_aewfc_basis(self.data_controller)
 
         # Expose the per-orbital atomic-basis records (r, wfc, l, m, atom,
         # tau, label) so that downstream modules can reconstruct the
