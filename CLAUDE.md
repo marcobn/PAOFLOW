@@ -31,7 +31,8 @@ user-invocable: true
       GPAO.py             Plotting helper class (bands, DOS, Berry, transport, optics, phonons)
       ErrorHandler.py     Error reporting
       inputs/             QE XML, VASP, UPF, PAOFLOW XML input readers; basis presets; input_default.xml
-      projection/         Atomic-wfc projections, projectability, ortho/non-ortho, minimal basis
+      projection/         Atomic-wfc projections, projectability, ortho/non-ortho, minimal basis,
+                          augmentation (ultrasoft/PAW metric S = 1 + q|beta><beta| of the projections)
       hamiltonian/        H(k)/H(R) construction, doubling, SOC, external fields, gradients, momenta,
                           bloch_derivatives (H, dH, d2H at arbitrary k from HRs for the non-linear optics),
                           nonlocal velocity, symmetry expansion (pao_sym), two-center integrals

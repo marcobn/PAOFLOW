@@ -427,6 +427,13 @@ class KleinmanBylanderProjectors:
     spin_orbit : bool, optional
         Fully relativistic projectors with the spinor coupling matrix (QE ``dvan_so``);
         otherwise fully relativistic UPFs are averaged as in a scalar run.
+    require_norm_conserving : bool, optional
+        Raise on ultrasoft / PAW pseudopotentials (default, the electron-phonon vertex needs
+        the norm-conserving form of the non-local potential). With ``False`` the projectors of
+        augmented pseudopotentials are tabulated too and :attr:`Q` holds the integrated
+        augmentation charges, which is what the overlap operator
+        ``S = 1 + sum_ij q_ij |beta_i><beta_j|`` of the projections needs (scalar-relativistic
+        only).
 
     Attributes
     ----------
@@ -434,6 +441,10 @@ class KleinmanBylanderProjectors:
     l_of_projector : ndarray ``(nproj,)`` int
     D : ndarray ``(nproj, nproj)`` or None
         Block diagonal per atom, coupling projectors with equal ``(l, m)`` (Ry); ``None`` with
+        spin-orbit coupling.
+    Q : ndarray ``(nproj, nproj)`` or None
+        Integrated augmentation charges :math:`q_{ij}` with the same block structure as
+        :attr:`D` (dimensionless); ``None`` when every species is norm-conserving or with
         spin-orbit coupling.
     D_so : ndarray ``(2, 2, nproj, nproj)`` complex or None
         Spinor coupling ``D^{s1 s2}_{ij} = dion_{nb_i nb_j} fcoef(i, j, s1, s2)`` (Ry).
@@ -447,6 +458,7 @@ class KleinmanBylanderProjectors:
         qmax: float,
         dq: float = DQ,
         spin_orbit: bool = False,
+        require_norm_conserving: bool = True,
     ):
         self.dq = float(dq)
         self.omega = float(omega)
@@ -457,12 +469,26 @@ class KleinmanBylanderProjectors:
         self.lll: dict[str, list[int]] = {}
         self.jjj: dict[str, list[float]] = {}
         self.dion: dict[str, NDArray[np.float64]] = {}
+        self.qqq: dict[str, NDArray[np.float64] | None] = {}
         pref = FPI / np.sqrt(self.omega)
         for name, upf in upf_by_species.items():
-            if getattr(upf, 'ptype', 'NC') != 'NC' or getattr(upf, 'has_augmentation', False):
+            augmented = getattr(upf, 'ptype', 'NC') != 'NC' or getattr(
+                upf, 'has_augmentation', False
+            )
+            if augmented and require_norm_conserving:
                 raise NotImplementedError(
                     '%s: only norm-conserving pseudopotentials are supported' % name
                 )
+            if augmented and self.spin_orbit:
+                raise NotImplementedError(
+                    '%s: augmentation (ultrasoft / PAW) with spin-orbit projectors is not '
+                    'implemented' % name
+                )
+            self.qqq[name] = (
+                np.asarray(upf.qqq, dtype=float)
+                if augmented and getattr(upf, 'qqq', None) is not None
+                else None
+            )
             proj = relativistic_projectors(upf) if self.spin_orbit else scalar_projectors(upf)
             self.jjj[name] = list(proj.get('jjj', [None] * len(proj['lll'])))
             r = np.asarray(upf.r, dtype=float)
@@ -519,6 +545,7 @@ class KleinmanBylanderProjectors:
             self.D = None
         else:
             D = np.zeros((nproj, nproj))
+            Q = np.zeros((nproj, nproj))
             for i in range(nproj):
                 for j in range(nproj):
                     if (
@@ -527,8 +554,13 @@ class KleinmanBylanderProjectors:
                     ):
                         name = self.species_of_atom[self.atom_of_projector[i]]
                         D[i, j] = self.dion[name][self._nb[i], self._nb[j]]
+                        if self.qqq[name] is not None:
+                            Q[i, j] = self.qqq[name][self._nb[i], self._nb[j]]
             self.D = D
             self.D_so = None
+            self.Q = Q if any(q is not None for q in self.qqq.values()) else None
+        if self.spin_orbit:
+            self.Q = None
 
     @property
     def nproj(self) -> int:

@@ -87,7 +87,7 @@ def graphene(model, out):
         return save_figure(fig, out / 'fig1_graphene')
 
 
-def gaas(model, conv, out):
+def gaas(model, conv, out, label='40$^3$', conv_label='60$^3$', note=None):
     with publication_style(7.0, 2.6):
         fig, (a, b) = plt.subplots(1, 2)
         e = model.energy_ev
@@ -95,7 +95,7 @@ def gaas(model, conv, out):
             e,
             model.spectrum('shga', 'xyz'),
             color=COLORS[0],
-            label='|$\\chi_{xyz}$| 40$^3$',
+            label='|$\\chi_{xyz}$| ' + label,
             **LINE,
         )
         a.plot(
@@ -109,7 +109,7 @@ def gaas(model, conv, out):
             model.spectrum('shga', 'yzx'),
             color=COLORS[1],
             lw=0.8,
-            label='|$\\chi_{yzx}$| 40$^3$',
+            label='|$\\chi_{yzx}$| ' + label,
         )
         if conv is not None:
             a.plot(
@@ -117,7 +117,7 @@ def gaas(model, conv, out):
                 conv.spectrum('shga', 'xyz'),
                 color=COLORS[2],
                 lw=0.9,
-                label='|$\\chi_{xyz}$| 60$^3$',
+                label='|$\\chi_{xyz}$| ' + conv_label,
             )
         # low-frequency experiments (Levine-Bethea 180, Roberts 166, Eyres 172 pm/V at ~0.12 eV)
         a.errorbar(
@@ -145,7 +145,7 @@ def gaas(model, conv, out):
             e,
             model.spectrum('shift', 'xyz'),
             color=COLORS[0],
-            label='$\\sigma_{xyz}$ 40$^3$',
+            label='$\\sigma_{xyz}$ ' + label,
             **LINE,
         )
         b.plot(
@@ -153,7 +153,7 @@ def gaas(model, conv, out):
             model.spectrum('shift', 'yzx'),
             color=COLORS[1],
             lw=0.8,
-            label='$\\sigma_{yzx}$ 40$^3$',
+            label='$\\sigma_{yzx}$ ' + label,
         )
         b.plot(
             e,
@@ -168,14 +168,15 @@ def gaas(model, conv, out):
                 conv.spectrum('shift', 'xyz'),
                 color=COLORS[2],
                 lw=0.9,
-                label='$\\sigma_{xyz}$ 60$^3$',
+                label='$\\sigma_{xyz}$ ' + conv_label,
             )
         b.set(xlabel='photon energy (eV)', ylabel='shift current ($\\mu$A/V$^2$)', xlim=(0, 4))
         b.legend(fontsize=6, loc='lower left')
         panel_label(b, '(b)')
         provenance_note(
             fig,
-            'GaAs, PAW 16^3 nscf (symmetry-reduced), 62-orbital PAO basis, scissor 0.86 eV, eta 0.05 eV, 10 meV degeneracy tolerance. Experimental static values from the literature summary in REPORT.md.',
+            note
+            or 'GaAs, 16^3 nscf (symmetry-reduced), 62-orbital PAO basis, scissor 0.86 eV, eta 0.05 eV, 10 meV degeneracy tolerance. Experimental static values from the literature summary in REPORT.md.',
         )
         return save_figure(fig, out / 'fig2_gaas')
 
@@ -228,6 +229,9 @@ def main():
     parser.add_argument('--graphene', default=str(HERE / 'Graphene' / 'output'))
     parser.add_argument('--gaas', default=str(HERE / 'GaAs' / 'output'))
     parser.add_argument('--gaas-conv', default=None, help='a second GaAs output (denser grid)')
+    parser.add_argument('--gaas-label', default='40$^3$', help='legend label of --gaas')
+    parser.add_argument('--gaas-conv-label', default='60$^3$', help='legend label of --gaas-conv')
+    parser.add_argument('--gaas-note', default=None, help='provenance note of the GaAs figure')
     parser.add_argument('--ges', default=str(HERE / 'GeS' / 'output'))
     parser.add_argument('--out', default=str(HERE / 'figures'))
     args = parser.parse_args()
@@ -242,7 +246,9 @@ def main():
             if args.gaas_conv and Path(args.gaas_conv).is_dir()
             else None
         )
-        written += gaas(NonlinearModel(args.gaas), conv, out)
+        written += gaas(
+            NonlinearModel(args.gaas), conv, out, args.gaas_label, args.gaas_conv_label, args.gaas_note
+        )
     if Path(args.ges).is_dir():
         written += ges(NonlinearModel(args.ges, two_d=True), out)
     print('\n'.join(str(w) for w in written))

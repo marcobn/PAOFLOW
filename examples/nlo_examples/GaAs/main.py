@@ -29,7 +29,10 @@ def main():
     paoflow.projections(
         internal=True, basispath=attr['basispath'], configuration=arry['configuration']
     )
-    paoflow.projectability()
+    # PAW pseudopotentials are projected in the augmented metric: the 62-orbital all-electron
+    # basis then projects the Ga 3d semicore bands at 0.91 and 12 bands above 0.95, so the
+    # threshold is lowered to keep 21 bands (9 valence + 12 conduction) in the Hamiltonian.
+    paoflow.projectability(pthr=0.90)
     paoflow.pao_hamiltonian()
     paoflow.nonlinear_optics(
         nk=(NK, NK, NK),

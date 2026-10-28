@@ -31,7 +31,7 @@ publication figures and a report. You steer it with the prompts.
 - **Have a finished calculation:** an `examples/nlo_examples/<System>`-like folder with the
   `output*/` of `main.py` (`shift_`, `shiftm_`, `injectc_`, `injectm_`, `shgr_`, `shgi_`,
   `shga_<abc>.dat`), its `main.py` (grid, η, scissor, components, `twoD`) and the QE inputs
-  (nosym recommended). The folder stays read-only.
+  (ultrasoft / PAW inputs need the augmented projections of October 2026 or later: `LESSONS_LEARNED.md` #2). The folder stays read-only.
 - **Have the experimental sources** and know the conventions: which coefficient is quoted
   (d_ijk = χ_ijk/2 in pm/V, or |χ|), at which photon energy, with which reference material, which
   component and crystal orientation; for photocurrents the illumination geometry and whether the

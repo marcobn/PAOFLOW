@@ -17,7 +17,7 @@ susceptibility and d coefficients, shift current, injection currents, magnetic r
      layout). New runs are `main.py` edits (NK, ETA, SCISSOR, COMPONENTS, `twoD`) run into a new
      `--outputdir`/`output_<label>`; never into an existing output. `nonlinear_optics` needs `HRs`
      (call it right after `pao_hamiltonian`), 10 meV degeneracy tolerance for DFT Hamiltonians,
-     and a `nosym`/`noinv` nscf for symmetric results.
+     and, for ultrasoft / PAW inputs, the augmented projections of October 2026 or later (`LESSONS_LEARNED.md` #2) for symmetric results.
    Every study has `digitize_sources.py`, `analysis.py`, `plot_figures.py` from `templates/`
    (figures: `agentic/thermo_optics/templates/digitize_template.py`). Inputs are Python
    arguments; no config files.

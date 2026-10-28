@@ -14,9 +14,11 @@ the three systems, their figures and the comparison with the literature are in
 
 ## Workflow
 
-1. QE: `scf.in`, then `nscf.in` on a uniform grid; use `nosym = .true., noinv = .true.` (the
-   PAO Hamiltonian expanded from a symmetry-reduced k-set is symmetric only to about 1 meV, which
-   the second-order responses amplify). No `projwfc.x` is needed: the projections are internal.
+1. QE: `scf.in`, then `nscf.in` on a uniform grid (symmetry-reduced or `nosym`/`noinv`: the
+   symmetry expansion is exact). Ultrasoft / PAW pseudopotentials are projected in the augmented metric
+   (since October 2026; before that the internal projections broke the point symmetry at a few
+   k-points, [REPORT.md](REPORT.md) §3.2): check the projectability vector, and prefer
+   norm-conserving pseudopotentials when the basis projects the semicore bands poorly.
 2. Basis: the repository `BASIS/` tables, or tables generated from the pseudopotentials with
    `paoflow-genbasis-ps` when the projectability of the valence bands is below 0.95 (GeS).
 3. PAOFLOW: `projections(internal=True, ...)`, `projectability()`, `pao_hamiltonian()`,

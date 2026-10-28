@@ -69,6 +69,7 @@ nonlocal-velocity
 position-dipoles
 scattering-channels
 nonlinear-optics
+nonlinear-optics-phase2-plan
 dfpt-coupling-port
 long-range-elphon-plan
 arpes-chinook-plan

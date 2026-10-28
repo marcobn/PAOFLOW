@@ -21,7 +21,7 @@ Read `LESSONS_LEARNED.md` once before starting.
 
 ## The model pipeline
 
-A system folder of the `examples/nlo_examples/<System>` layout: QE `scf.in` / `nscf.in` (uniform grid, **`nosym = .true., noinv = .true.`**), optionally `relax.in`, a `BASIS_PS/` generated from the pseudopotentials when the repository tables project the valence bands below 0.95, and `main.py`:
+A system folder of the `examples/nlo_examples/<System>` layout: QE `scf.in` / `nscf.in` (uniform grid, symmetry-reduced or `nosym`; ultrasoft / PAW pseudopotentials are projected in the augmented metric since October 2026, check the projectability vector: `LESSONS_LEARNED.md` #2), optionally `relax.in`, a `BASIS_PS/` generated from the pseudopotentials when the repository tables project the valence bands below 0.95, and `main.py`:
 
 | step | what | cost |
 |---|---|---|
@@ -115,7 +115,7 @@ One row per (comparison, dataset, condition, window) in `tables/metrics.csv`, wi
 
 ## Stage 6: diagnosis
 
-Cheap checks first: the symmetry audit (leakage and equivalent-component spread: Hamiltonian asymmetry → nosym nscf), the degeneracy tolerance (0.1 meV gives spurious peaks; 10 meV default), the projectability vector (a gapless or distorted PAO Hamiltonian → `BASIS_PS`), η vs the feature widths, k-convergence between the available grids (GaAs 40³ vs 60³), the scissor (gap and the renormalised matrix elements), the onset vs the gap (half the gap for SHG), the sign conventions of the field and the current. Then physics outside the model: excitons, local fields, surface SHG, the reference-crystal value behind the experimental d. Then propose runs as `main.py` settings with cost. See the decision tree.
+Cheap checks first: the symmetry audit (leakage and equivalent-component spread: with the current code the shift current is exact and the SHG carries the degenerate-gauge error bar of `LESSONS_LEARNED.md` #9; runs older than October 2026 on PAW/ultrasoft inputs carry the projection error of #2; a nosym nscf does not help), the degeneracy tolerance (0.1 meV gives spurious peaks; 10 meV default), the projectability vector (a gapless or distorted PAO Hamiltonian → `BASIS_PS`), η vs the feature widths, k-convergence between the available grids (GaAs 40³ vs 60³), the scissor (gap and the renormalised matrix elements), the onset vs the gap (half the gap for SHG), the sign conventions of the field and the current. Then physics outside the model: excitons, local fields, surface SHG, the reference-crystal value behind the experimental d. Then propose runs as `main.py` settings with cost. See the decision tree.
 
 ## Stage 7: figures
 
@@ -133,7 +133,7 @@ As in the thermo-optics playbook (`plotting`): model as lines, experiments as ma
 model - experiment discrepancy
  ├─ same quantity?             -> d vs chi (factor 2), component / orientation, d_eff geometry, 3D vs sheet (thickness)
  ├─ same photon energy / gap?  -> below-gap static vs the run's lowest energy; scissor to the measured gap; onset vs gap
- ├─ symmetry error bar?        -> forbidden-component leakage, equivalent-component spread, Kleinman: nosym nscf, tolerance
+ ├─ symmetry error bar?        -> forbidden-component leakage, equivalent-component spread, Kleinman: degenerate-gauge error bar of the SHG (lesson #9), old PAW projections (#2), tolerance
  ├─ ingestion error?           -> overlay, units (pm/V vs esu: use the source's own conversion), reference crystal
  ├─ convergence?               -> nk (40^3 -> 60^3 -> 100^3), eta, shg_bin, nbnd / basis (projectability)
  ├─ method?                    -> independent particles (no excitons, no local fields), scissor with DFT matrix elements

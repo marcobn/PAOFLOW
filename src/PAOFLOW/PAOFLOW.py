@@ -575,6 +575,18 @@ class PAOFLOW:
         # does not match the UPF pswfc set.
         arry['atomic_basis'] = basis
 
+        # Ultrasoft / PAW pseudopotentials: the projections, the overlap of the atomic
+        # orbitals and the orthonormality of the bands are all taken in the augmented
+        # metric S = 1 + sum q_ij |beta_i><beta_j| (None for norm-conserving sets and VASP).
+        from .projection.augmentation import build_augmentation
+
+        arry['augmentation'] = build_augmentation(self.data_controller)
+        if arry['augmentation'] is not None and self.rank == 0 and attr.get('verbose'):
+            print(
+                'Ultrasoft / PAW pseudopotentials: projections in the augmented metric '
+                '(%d projectors)' % arry['augmentation'].nproj
+            )
+
         nkpnts = len(arry['kpnts'])
         nbnds = attr['nbnds']
         nspin = attr['nspin']
@@ -626,6 +638,25 @@ class PAOFLOW:
         # DataController.full_projections() to assemble it on demand.
         arry['U_local'] = Unewaux
         arry['basis'] = basis
+
+        if arry['augmentation'] is not None and nk_local > 0:
+            # One sanity check of the projectors and charges: the stored bands must be
+            # orthonormal in the augmented metric (QE's S-orthonormalisation).
+            from .projection.augmentation import k_plus_g_vectors
+            from .projection.do_atwfc_proj import read_QE_wfc
+
+            gkspace, wfc = read_QE_wfc(self.data_controller, int(k_local[0]), 0, orthonormalize=False)
+            beta = arry['augmentation'].beta(k_plus_g_vectors(gkspace))
+            ovp = arry['augmentation'].overlap(wfc['wfc'], wfc['wfc'], beta)
+            deviation = float(np.abs(ovp - np.eye(ovp.shape[0])).max())
+            if deviation > 1.0e-3:
+                print(
+                    'WARNING (rank %d): <psi|S|psi> deviates from the identity by %.1e at '
+                    'k-point %d: check the pseudopotential files of the save directory'
+                    % (self.rank, deviation, int(k_local[0]) + 1)
+                )
+            elif self.rank == 0 and attr.get('verbose'):
+                print('<psi|S|psi> - 1 at k-point %d: %.1e' % (int(k_local[0]) + 1, deviation))
 
         if acbn0_active:
             # Gather the distributed per-k overlaps on rank 0 and store as

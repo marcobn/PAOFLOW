@@ -159,17 +159,39 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   (semicore and ghost bands). With `degeneracy_tol = 1e-4` eV the symmetry-forbidden
   $\sigma^{xxx}$ of GaAs came out at 30 % of $\sigma^{xyz}$; with 10 meV (the default) the
   leakage is 0.8 % and the allowed components are unchanged. Analytic models can use `1e-4`.
-- **Symmetry of the PAO Hamiltonian.** The Hamiltonian expanded from a symmetry-reduced nscf
-  k-set is exactly symmetric at the grid points that are rotation images of each other but its
-  real-space images are symmetric only to about 1 meV, which the $1/\omega$ factors of the
-  second-order responses amplify: equivalent components ($\chi_{xyz}$ vs $\chi_{yzx}$) differed by
-  9 % on a 16³ nscf grid. Quote such differences as the symmetry error bar, or run the nscf with
-  `nosym = .true., noinv = .true.` on the full grid (the examples do).
-- **GaAs numbers** (symmetric 16³ nscf, 40³ dense grid, scissor 0.86 eV, η = 0.05 eV):
-  $|\chi_{xyz}(0)| = 110$ pm/V, 341 pm/V at 1.5 eV, peak 610 pm/V at 2.63 eV, against
+- **Symmetry of the PAO Hamiltonian (PAW / ultrasoft pseudopotentials).** With PAW
+  pseudopotentials the GaAs Hamiltonian is symmetric at the grid points to 1e-14 at general k but
+  fails by up to 0.65 eV at a few high-symmetry points (16 of 4096), its real-space images are
+  symmetric only to 1 meV and the eigenvalues interpolated at an off-grid k spread by 5–25 meV
+  over the 24 T_d images, which the $1/\omega$ factors amplify: equivalent components
+  ($\chi_{xyz}$ vs $\chi_{yzx}$) differ by 5 % at 40³ and 2–4 % at 60³, and a no-symmetry nscf
+  does **not** change this. The cause is the Löwdin re-orthonormalisation of the PAW
+  pseudo-wavefunctions in the internal projections (the raw projections and the `projwfc.x`
+  ones obey the symmetry to 1e-10; the symmetry expansion, the Wigner–Seitz images, the band
+  selection and the Hamiltonian construction were ruled out, see `examples/nlo_examples/REPORT.md`
+  §3.2). With the PseudoDojo norm-conserving Ga/As set the same basis gives projections
+  symmetric to 1e-10, H(k) symmetric to 3e-9 eV at every grid point, an interpolation spread of
+  3e-8 meV and a real-space Hamiltonian 15 times better localised. **Fixed** (October 2026):
+  the internal projections now use the augmented metric $S = 1 + \sum q_{ij}|\beta_i\rangle\langle\beta_j|$
+  for ultrasoft / PAW pseudopotentials ([internal-basis.md](internal-basis.md)); the PAW GaAs
+  Hamiltonian is then symmetric too (spread 3e-3 meV). Check the projectability vector again
+  after the change (the old values were inflated: 12 instead of 18 GaAs bands above 0.95).
+- **Degenerate bands on symmetry lines.** With an exactly symmetric Hamiltonian the shift
+  current obeys the T_d relations to 1e-10, but $\chi_{xyz}$ and $\chi_{yzx}$ still differ by
+  10 % (1–2 eV) and 2 % (2–4 eV) at 40³, and the circular injection current, forbidden in T_d,
+  is not zero: the SHG and injection kernels are gauge-dependent for exactly degenerate bands
+  (the Λ-line points of the grid, where `eigh` returns an arbitrary basis of the doublets;
+  k-resolved test in the GaAs validation folder: 18 % at a Λ point, 1e-10 elsewhere), the
+  shift-current kernel is not. The error decreases with the grid density (170 % at 8³) and does
+  not depend on the degeneracy tolerance or the histogram bin; the U(N)-covariant treatment
+  (phase-2 plan C2) is the fix. Quote the equivalent-component spread of the SHG as its error
+  bar until then.
+- **GaAs numbers** (PAW, symmetric 16³ nscf, scissor 0.86 eV, η = 0.05 eV):
+  $|\chi_{xyz}(0)| = 110$ pm/V at both 40³ and 60³, 341 → 337 pm/V at 1.5 eV, peak 610 (40³) →
+  480 (60³) pm/V near 2.6 eV (the resonance region is not converged at 60³), against
   100–170 pm/V and 400–600 pm/V in the literature (Nastos 2005, Wang 2017, experiment
-  $2d_{14} \approx 170$ pm/V); $\sigma_{xyz}$ reaches $-30$ µA/V² at 3.9 eV. The T-odd responses and
-  the circular injection are $10^{-5}$ of their natural scale.
+  $2d_{14} \approx 170$ pm/V); $\sigma_{xyz}$ reaches $-30$ (40³) / $-27$ (60³) µA/V² at 3.9–4 eV.
+  The T-odd responses and the circular injection are $10^{-5}$ of their natural scale.
 - **GeS numbers** (monolayer, nosym 18×18×1 nscf, 200² dense grid, η = 0.05 eV, PBE gap 1.68 eV,
   sheet units with the 18 Å cell): shift-current peaks $\sigma^{xxx} = 46$, $\sigma^{xyy} = 48$,
   $\sigma^{yxy} = 26$ nm µA/V² (about 75 µA/V² for a 0.6 nm layer, the order of magnitude of Rangel
@@ -188,8 +210,9 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
 ## Not implemented (follow-ups)
 
 Position dipoles beyond the tight-binding approximation (`position_dipoles.py` in $r$ and $r_{;a}$),
-the U(N)-covariant derivative for degenerate bands, k-resolved integrand maps, symmetry reduction of
-the k-grid, and a Rust kernel for the post-`eigh` algebra.
+the U(N)-covariant derivative for degenerate bands and the symmetry reduction of the k-grid are planned
+in [nonlinear-optics-phase2-plan.md](nonlinear-optics-phase2-plan.md); k-resolved integrand maps and a
+Rust kernel for the post-`eigh` algebra come after.
 
 ## References
 
