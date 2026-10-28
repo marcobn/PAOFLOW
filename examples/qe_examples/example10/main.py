@@ -28,7 +28,9 @@ def main():
 
     # Compute the chemical potential at specified doping concentration for various temperatures
     doping = -3.5e17
-    paoflow.doping(tmin=380, tmax=812, nt=28, emin=-36, emax=2, ne=5000, doping_conc=doping)
+    # The energy grid must resolve the 0.01 eV Gaussians of the DOS (spacing below delta/3) for the
+    # valence count to reach nelec: 8000 points over [-20, 2] eV, which holds every valence band.
+    paoflow.doping(tmin=380, tmax=812, nt=28, emin=-20, emax=2, ne=8000, doping_conc=doping)
 
     # Define the functional form for our 'custom' TauModel
     me = 9.10938e-31  # Electron Mass

@@ -26,7 +26,10 @@ def main():
 
     # Compute the chemical potential at specified doping concentration for various temperatures
     doping = -3.5e17
-    paoflow.doping(tmin=380, tmax=812, nt=10, emin=-36, emax=2, ne=100, doping_conc=doping)
+    # The energy grid must resolve the 0.01 eV Gaussians of the DOS (spacing below delta/3) for the
+    # valence count to reach nelec: 8000 points over [-20, 2] eV, which holds every valence band
+    # (Ga 3d at -15 eV). 100 points over [-36, 2] eV pinned mu at the window edge.
+    paoflow.doping(tmin=380, tmax=812, nt=10, emin=-20, emax=2, ne=8000, doping_conc=doping)
 
     # Define the functional form for our 'custom' TauModel
     me = 9.10938e-31  # Electron Mass
@@ -75,7 +78,10 @@ def main():
         'ms': 0.7,
     }
 
-    # Compute the transport properties for each temperature and chemical potential
+    # Compute the transport properties for each temperature and chemical potential. On the 16^3
+    # mesh of this job the Gamma valley is sampled by a single k-point (the next conduction states
+    # lie 0.5 eV above the CBM), so mu(T), set by the weight of that point, and the resistivity are
+    # regression numbers, not converged values.
     rho = []
     for t, m in zip(temp, mu):
         if paoflow.rank == 0:
