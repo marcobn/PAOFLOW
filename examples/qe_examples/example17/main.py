@@ -11,6 +11,21 @@ using the ``minimal`` projection preset (pseudo-atomic wavefunctions
 shipped in the Sn/Te UPFs) and reports the mirror Chern number C_M,
 the Z2 index nu and the gap.  The mirror Chern step requires the
 optional ``z2pack`` and ``tbmodels`` packages.
+
+The pseudopotentials are fully relativistic PAW: the projections, the
+overlap of the atomic orbitals and the orthonormality of the stored
+spinor bands are taken in the augmented spinor metric
+S = 1 + sum q^{s1 s2}_{kl} |beta_k s1><beta_l s2| (QE's ``qq_so``),
+built automatically by ``projections()``; see
+docs/internals/internal-basis.md.  With verbose=True the run prints the
+deviation of <psi|S|psi> from the identity (6e-6 here) and the number of
+projectors (68).
+
+Reference output (QE 7.5, the scf.in of this folder, October 2026):
+
+    [minimal] nawf =  36   Pn>0.95 bands =  32   C_M = +2.000   nu = +0.000   gap = +0.083 eV
+
+with a mirror-symmetry residual [H, M_z] of 2e-6 over a 36 eV bandwidth.
 """
 
 import os

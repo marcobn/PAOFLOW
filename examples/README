@@ -19,7 +19,7 @@ Quantum ESPRESSO examples: ./qe_examples/
 - example14 : Layer resolved Pt spin Hall conductivity
 - example15 : Si with a norm-conserving pseudopotential, internal projections and dielectric tensor
 - example16 : minimal vs standard vs extended basis presets of the internal projections
-- example17 : SnTe (PAW, fully relativistic) with the minimal internal projections
+- example17 : SnTe monolayer (PAW, fully relativistic) with the minimal internal projections in the augmented spinor metric; mirror Chern number
 
 New-style property workflows: ./new_examples/
 
