@@ -4,7 +4,7 @@ description: "General description of the PAOFLOW codebase and high level instruc
 user-invocable: true
 ---
 
-1. **Python environment** 
+1. **Python environment**
     Run all python code in the "conda -n work" environment
 
 2. **Existing instructions**
