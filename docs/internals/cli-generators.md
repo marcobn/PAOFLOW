@@ -1,6 +1,6 @@
 # CLI Input and Script Generators
 
-Setting up a PAOFLOW calculation involves quite a bit of boilerplate — QE input files, driver scripts, plotting routines. These two command-line tools handle that for you, letting you focus on the science rather than the setup. Both rely primarily on Python's standard library and produce static, well-commented scripts that are easy to read and modify.
+Setting up a PAOFLOW calculation involves quite a bit of boilerplate — QE input files, driver scripts, plotting routines. These command-line tools handle that for you, letting you focus on the science rather than the setup. Two further console commands are documented elsewhere: `paoflow-genbasis-ps`, which generates the atomic-orbital basis tables from the pseudopotentials ([Internal basis](internal-basis.md)), and `pyskeaf` / `fermi-plotter` for the quantum-oscillation analysis. Both rely primarily on Python's standard library and produce static, well-commented scripts that are easy to read and modify.
 
 ## `paoflow-gen-qe`
 

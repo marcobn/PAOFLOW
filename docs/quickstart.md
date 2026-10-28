@@ -131,3 +131,8 @@ You can diff your results against them to confirm a correct installation.
   paoflow-gen
   ```
 - See the [API Reference](internals/api-reference.md) for the full list of methods on the `PAOFLOW` class.
+- The repository `examples/` folder has one folder per topic: `qe_examples` and `vasp_examples`
+  (the property workflows), `elphon` (electron-phonon: superconductivity, optics, transport,
+  ARPES, one system folder each), `nlo_examples` (shift current and second-harmonic
+  generation), `acbn0_examples`, `transport_examples` (Landauer), `TBmodel_examples`,
+  `unfold_examples`, `pyskeaf_examples` and `qo_analysis_examples`.

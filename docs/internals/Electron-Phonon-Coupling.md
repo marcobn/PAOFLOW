@@ -27,7 +27,7 @@ ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 - [Workflow 2 — dense-q (k *and* q interpolation)](#workflow-2--dense-q-k-and-q-interpolation)
 - [Symmetry reduction of the dense q-grid](#symmetry-reduction-of-the-dense-q-grid)
 - [Pair-resolved Wigner–Seitz interpolation (several atoms per cell)](#pair-resolved-wignerseitz-interpolation-several-atoms-per-cell)
-- [Isotropic Migdal–Eliashberg: gap, Padé, analytic continuation, linearised $T_c$](#isotropic-migdaleliashberg-gap-padé-analytic-continuation-linearised-t_c)
+- [Isotropic Migdal–Eliashberg: gap, Padé, analytic continuation, linearised $T_c$](#isotropic-migdal-eliashberg)
 - [Anisotropic Migdal–Eliashberg (Fermi-surface restricted)](#anisotropic-migdaleliashberg-fermi-surface-restricted)
 - [Phonon-assisted optical absorption](#phonon-assisted-optical-absorption)
 - [Carrier transport in semiconductors and insulators (SERTA / MRTA)](#carrier-transport-in-semiconductors-and-insulators-serta--mrta)
@@ -439,6 +439,7 @@ cells are unchanged. The MgB₂ example and the `paoflow-gen` EPW driver pass th
 
 ---
 
+(isotropic-migdal-eliashberg)=
 ## Isotropic Migdal–Eliashberg: gap, Padé, analytic continuation, linearised $T_c$
 
 `elphon/migdal_eliashberg.py` turns the Eliashberg function into
@@ -1345,7 +1346,7 @@ dictionaries of `system.py`), calls one function of `PAOFLOW.elphon.workflows` a
 `tests/unit/gen/test_elphon_system.py` keeps the examples and the templates identical, and
 `tests/integration/elphon/test_example_workflows.py` runs each workflow on the Si asset.
 
-`paoflow-gen` (see [Input and Script Generators (CLI)](Input-and-Script-Generators-CLI))
+`paoflow-gen` (see [Input and Script Generators (CLI)](cli-generators.md))
 asks for a `pw.x` input, the prefix, the coupling source (`dfpt` default, `epw`), the
 coarse grids (re-prompted until q divides k), the nscf sampling (irreducible wedge or the
 explicit list EPW needs), `nbnd`, masses, `nelec`, whether the system is a metal, the PAO
@@ -1738,5 +1739,5 @@ write_me_aniso_outputs(res, coupling, 'output/me_aniso', 'mgb2', lin)
   Rev. B **106**, 094302 (2022) (momentum-relaxation time approximation).
 - G. Brunin *et al.*, Phys. Rev. Lett. **125**, 136601 (2020); V. A. Jhalani
   *et al.*, Phys. Rev. Lett. **125**, 136602 (2020) (dynamical quadrupoles).
-- See also [Phonon Module](Phonon-Module) and
-  [Input and Script Generators (CLI)](Input-and-Script-Generators-CLI).
+- See also [Phonon Module](https://github.com/marcobn/PAOFLOW/wiki/Phonon-Module) and
+  [Input and Script Generators (CLI)](cli-generators.md).

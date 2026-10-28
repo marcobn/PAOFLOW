@@ -23,14 +23,26 @@ This installs PAOFLOW and its mandatory runtime dependencies.
 PAOFLOW ships several optional extras. Install only what you need:
 
 ```bash
-# Matplotlib + VTK plotting support
+# Matplotlib + VTK plotting support (and mendeleev for the basis generator)
 pip install "PAOFLOW[graphics]"
 
-# Boltzmann transport extras (pydantic, pyyaml, psutil)
+# Boltzmann transport extras (psutil, for the core budget of the joblib workers)
 pip install "PAOFLOW[transport]"
 
-# Fermi surface orbit analysis (pyskeaf)
+# Fermi surface rendering (mayavi, scikit-image)
+pip install "PAOFLOW[fermisurface]"
+
+# Fermi surface extremal-orbit analysis, de Haas-van Alphen (pyskeaf)
 pip install "PAOFLOW[pyskeaf]"
+
+# Quantum-oscillation analysis workflow (pyskeaf orbits vs measured frequencies)
+pip install "PAOFLOW[qo_analysis]"
+
+# Optics vs experiment workflow: digitising figures from PDF and raster images
+pip install "PAOFLOW[thermo_optics]"
+
+# Phonons, Raman, quasi-harmonic approximation (phonopy, phono3py, seekpath)
+pip install "PAOFLOW[phonon]"
 
 # Weyl point search (z2pack, tbmodels)
 pip install "PAOFLOW[weyl_search]"
@@ -39,8 +51,33 @@ pip install "PAOFLOW[weyl_search]"
 pip install "PAOFLOW[fast]"
 
 # All common extras at once
-pip install "PAOFLOW[graphics,transport,pyskeaf,fast]"
+pip install "PAOFLOW[graphics,transport,pyskeaf,phonon,fast]"
 ```
+
+The electron-phonon, non-linear optics and ARPES modules need only the core dependencies;
+the electron-phonon workflows read the `ph.x` and `pw.x` outputs of Quantum ESPRESSO directly
+(EPW is optional).
+
+### Command-line tools
+
+The package installs five console commands:
+
+| Command | Purpose |
+|---|---|
+| `paoflow-gen-qe` | Quantum ESPRESSO `scf` input from an AFLOW or C2DB database entry |
+| `paoflow-gen` | Driver scripts from a QE run: property run, ACBN0, phonons, electron-phonon system folder |
+| `paoflow-genbasis-ps` | Atomic-orbital basis tables generated from the pseudopotentials |
+| `pyskeaf` | Extremal Fermi-surface orbits (de Haas-van Alphen frequencies and masses) |
+| `fermi-plotter` | Fermi-surface and field-direction viewer for the quantum-oscillation analysis |
+
+See [CLI generators](internals/cli-generators.md).
+
+### Optional Rust backend
+
+The heaviest kernels (ACBN0 Coulomb integrals, dielectric/JDOS loops, the phonon-assisted
+absorption kernel) have an optional Rust implementation, `paoflow_rs`, that PAOFLOW imports
+when present and otherwise replaces with the NumPy code (parity below 1e-12). Build and
+install instructions are in `rust/README.md` of the repository.
 
 ---
 
@@ -110,6 +147,6 @@ import PAOFLOW
 print(PAOFLOW.__version__)
 ```
 
-You should see the current version string (e.g. `2.9.3`).
+You should see the current version string (e.g. `3.0.0`).
 
 ---

@@ -29,6 +29,8 @@ if DOCS_FAST:
 
 nb_execution_mode = 'off'
 
+# GitHub-style anchors (#section-title) for the headings of the Markdown pages
+myst_heading_anchors = 4
 myst_enable_extensions = [
     'amsmath',
     'dollarmath',
