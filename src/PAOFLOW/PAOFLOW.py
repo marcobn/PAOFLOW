@@ -82,6 +82,9 @@ class PAOFLOW:
     pao_hamiltonian(shift_type, insulator, write_binary, expand_wedge, symmetrize, …)
         Build the real-space Hamiltonian ``H(R)`` (stored as ``HRs``) and the
         k-space Hamiltonian ``H(k)`` (stored as ``Hks``).
+    remove_semicore(emin, weight_threshold)
+        Drop the semicore orbitals and project ``H(k)`` onto the valence ones,
+        keeping every eigenvalue above ``emin``.
     add_external_fields(Efield, Bfield, HubbardU)
         Apply electric field, magnetic field, or Hubbard-U corrections to ``HRs``.
     write_Hamiltonian(fname)
@@ -802,6 +805,123 @@ class PAOFLOW:
             if attr['abort_on_exception']:
                 raise e
         self.report_module_time('k -> R')
+
+    def remove_semicore(self, emin: float = -20.0, weight_threshold: float = 0.5) -> None:
+        """Remove the semicore states from the PAO Hamiltonian.
+
+        The orbitals that carry the states below ``emin`` (semicore shells of the
+        pseudopotentials, e.g. Te 4d or Zr 4s4p) are dropped, and ``H(k)`` is
+        projected onto the remaining valence orbitals so that every eigenvalue above
+        ``emin`` is reproduced exactly on the k grid and ``HRs`` stays short ranged.
+        All later steps (doubling, supercells, bands, transport, spin and orbital
+        operators) then work in the smaller basis.
+
+        Call it right after :meth:`pao_hamiltonian` and before
+        :meth:`doubling_Hamiltonian`, :meth:`interpolated_hamiltonian`,
+        :meth:`adhoc_spin_orbit` or any property calculation.
+
+        Parameters
+        ----------
+        emin : float, default -20.0
+            Energy (eV, same reference as the PAO bands) below which the states are
+            removed. It must lie in a gap between the semicore and valence bands.
+        weight_threshold : float, default 0.5
+            Minimum k-averaged weight of an orbital in the states below ``emin`` for
+            it to be classified as semicore. Semicore orbitals have a weight close to
+            1 and valence orbitals close to 0.
+
+        Returns
+        -------
+        None
+            Replaces ``HRs`` (on all ranks) and ``Hks`` (rank 0, if present) by the
+            valence Hamiltonian, and removes the semicore orbitals from ``basis``,
+            ``Dnm``, ``Sj``, ``Lj``, ``naw``, ``shells``, ``jchia``, ``sh_l``,
+            ``sh_j`` and the semicore bands from ``my_eigsmat``. Updates ``nawf``,
+            ``nelec``, ``nbnds`` and ``bnd``.
+
+        Raises
+        ------
+        RuntimeError
+            If called at the wrong point of the workflow, with a non-orthogonal
+            basis or the ad hoc spin-orbit model, or if ``emin`` splits a shell or
+            does not lie in a gap.
+
+        Notes
+        -----
+        See :mod:`PAOFLOW.hamiltonian.semicore_removal` for the projection. The
+        smallest singular value printed at the end measures how much the valence
+        states mixed with the semicore orbitals (1 means not at all).
+
+        Examples
+        --------
+        ::
+
+            pf.read_atomic_proj_QE()
+            pf.projectability()
+            pf.pao_hamiltonian()
+            pf.remove_semicore(emin=-20.0)
+            pf.doubling_Hamiltonian(nx=2, ny=0, nz=0)
+        """
+        from .hamiltonian.semicore_removal import (
+            check_semicore_prerequisites,
+            find_semicore_orbitals,
+            project_valence_hamiltonian,
+            update_orbital_metadata,
+        )
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        try:
+            # every rank checks its own copy of the data (they are identical)
+            check_semicore_prerequisites(self.data_controller)
+            nawf_before, nelec_before = attr['nawf'], attr['nelec']
+
+            # semicore orbitals: found on rank 0, shared with every rank
+            is_semicore = (
+                find_semicore_orbitals(self.data_controller, emin, weight_threshold)
+                if self.rank == 0
+                else None
+            )
+            is_semicore = self.comm.bcast(is_semicore, root=0)
+            nsemicore = int(is_semicore.sum())
+
+            if nsemicore == 0:
+                if self.rank == 0:
+                    print('remove_semicore: no states below %.2f eV, nothing to do' % emin)
+            else:
+                # shells being removed, for the report (before the basis is reduced)
+                removed_shells = sorted(
+                    {'%s %s' % (orbital['atom'], orbital['label'])
+                     for orbital, semicore in zip(arrays['basis'], is_semicore) if semicore}
+                )
+
+                # valence Hamiltonian: projected on rank 0, then broadcast like pao_hamiltonian
+                smallest_singular_value = (
+                    project_valence_hamiltonian(self.data_controller, is_semicore, emin)
+                    if self.rank == 0
+                    else None
+                )
+                smallest_singular_value = self.comm.bcast(smallest_singular_value, root=0)
+                self.data_controller.broadcast_single_array('HRs')
+
+                # orbital lists, operators and counts: the same update on every rank
+                update_orbital_metadata(self.data_controller, is_semicore)
+
+                if self.rank == 0:
+                    print(
+                        'remove_semicore: removed %d states below %.2f eV (%s)'
+                        % (nsemicore, emin, ', '.join(removed_shells))
+                    )
+                    print(
+                        'remove_semicore: nawf %d -> %d, nelec %g -> %g, min valence overlap %.4f'
+                        % (nawf_before, attr['nawf'], nelec_before, attr['nelec'], smallest_singular_value)
+                    )
+        except Exception as e:
+            self.report_exception('remove_semicore')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Remove semicore')
 
     def minimal(self, first_band=None, R=False):
         from .projection.do_minimal import do_minimal
