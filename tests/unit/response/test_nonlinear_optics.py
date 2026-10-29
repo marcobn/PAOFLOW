@@ -442,7 +442,10 @@ def test_supercell_folding_is_exact_with_degenerate_doublets():
         for kb in (64, 1)
     }
     for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg'):
-        scale = max(np.max(np.abs(primitive[key])), 1e-6 * natural_scale(model, (8, 4, 4), key))
+        # kinds that vanish by time reversal (shiftm, injectm) are left with the rounding noise
+        # of cancelling sums, ~1e-12 of the natural scale and platform dependent (OpenBLAS on
+        # the CI runner differs from Accelerate): floor their scale at 1e-2 of the natural one
+        scale = max(np.max(np.abs(primitive[key])), 1e-2 * natural_scale(model, (8, 4, 4), key))
         assert np.allclose(primitive[key], folded[64][key], atol=1e-8 * scale), key
         assert np.allclose(folded[64][key], folded[1][key], atol=1e-9 * scale), key
 
@@ -613,7 +616,8 @@ def test_spectra_with_dipoles_are_gauge_invariant_and_differ_from_the_tight_bind
     )  # fmt: skip
     assert rotated['position_dipoles'] and base['position_dipoles']
     for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg'):
-        scale = max(np.max(np.abs(base[key])), 1e-6 * natural_scale(model, (4, 4, 4), key))
+        # vanishing kinds: rounding-noise floor, see test_supercell_folding_is_exact_with_degenerate_doublets
+        scale = max(np.max(np.abs(base[key])), 1e-2 * natural_scale(model, (4, 4, 4), key))
         assert np.allclose(base[key], rotated[key], atol=1e-9 * scale), key
 
 
@@ -640,7 +644,7 @@ def test_irreducible_wedge_reproduces_the_full_grid():
     assert wedge['components'] == comps
     for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg'):
         # the T-odd kinds and the injection current of D3h vanish: roundoff of the natural scale
-        atol = 1e-9 * np.max(np.abs(full[key])) + 1e-11 * natural_scale(model, (18, 18, 1), key)
+        atol = 1e-9 * np.max(np.abs(full[key])) + 1e-9 * natural_scale(model, (18, 18, 1), key)
         assert np.allclose(full[key], wedge[key], atol=atol), key
     # the identity alone changes nothing
     same = spectra(model, (18, 18, 1), energy, symmetry_ops_cryst=np.eye(3)[None], **kwargs)
