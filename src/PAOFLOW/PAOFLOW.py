@@ -98,6 +98,9 @@ class PAOFLOW:
         Double the supercell in one or more directions.
     cutting_Hamiltonian(x, y, z)
         Trim periodic images from ``HRs`` along selected axes.
+    supercell_Hamiltonian(nx, ny, nz, cut_x, cut_y, cut_z, max_range, build_Dnm)
+        Build an ``nx x ny x nz`` supercell (any sizes) in one step on its own,
+        smaller lattice-vector grid, optionally finite along some directions.
     adhoc_spin_orbit(naw, phi, theta, lambda_p, lambda_d, soc_strengh, soc_species)
         Add phenomenological spin-orbit coupling to ``HRs`` without a DFT+SOC run.
 
@@ -1926,6 +1929,151 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('cutting_Hamiltonian')
+
+    def supercell_Hamiltonian(
+        self,
+        nx: int = 1,
+        ny: int = 1,
+        nz: int = 1,
+        cut_x: bool = False,
+        cut_y: bool = False,
+        cut_z: bool = False,
+        max_range: tuple[int | None, int | None, int | None] = (None, None, None),
+        build_Dnm: bool = True,
+    ) -> None:
+        """Replace the PAO Hamiltonian by that of an ``nx x ny x nz`` supercell.
+
+        One-step alternative to :meth:`doubling_Hamiltonian` followed by
+        :meth:`cutting_Hamiltonian`. The repetitions can be any positive integers (not
+        only powers of two), and the supercell is built directly on its own grid of
+        lattice vectors, which shrinks as the cell grows, so the memory of ``HRs``
+        scales as ``N nawf**2`` per stored vector instead of ``N**2 nawf**2 nk1 nk2
+        nk3``. Directions can be made finite (ribbons, slabs, wires) without ever
+        allocating their periodic images, and ``max_range`` keeps only the nearest
+        supercell vectors along a direction (a transport principal layer needs only
+        ``H(0)`` and ``H(1)``). Atoms, orbitals, operators, lattice, k grid and
+        ``Hks`` are updated consistently.
+
+        Call it after :meth:`pao_hamiltonian` (and :meth:`remove_semicore`, if used)
+        and before :meth:`interpolated_hamiltonian` or any property calculation.
+
+        Parameters
+        ----------
+        nx, ny, nz : int, default 1
+            Number of primitive cells along the first, second and third lattice
+            vector.
+        cut_x, cut_y, cut_z : bool, default False
+            Remove the periodicity along this lattice vector (only the supercell
+            vector 0 is kept): finite ribbons, slabs or wires.
+        max_range : tuple of int or None, length 3, default ``(None, None, None)``
+            Keep only the supercell vectors with :math:`|R_i| \\le` ``max_range[i]``
+            along each direction; ``None`` keeps every vector that holds a hopping.
+            For a transport principal layer along z use ``(None, None, 1)`` with
+            ``nz`` large enough that the primitive hoppings beyond ``nz`` cells are
+            negligible.
+        build_Dnm : bool, default True
+            Rebuild the orbital-distance matrix ``Dnm`` (``3 (N nawf)**2`` floats),
+            needed by the velocity and gradient steps. If False it is removed, which
+            saves memory for transport.
+
+        Returns
+        -------
+        None
+            Replaces ``HRs`` (on all ranks) and ``Hks`` (rank 0, if present) by the
+            supercell Hamiltonian; repeats ``tau``, ``basis``, ``atoms``, ``naw``,
+            ``sh_l``, ``sh_j`` and the other per-atom arrays over the cells; makes
+            ``Sj`` and ``Lj`` block diagonal; rebuilds ``Dnm``; scales ``a_vectors``,
+            ``b_vectors``, ``omega``, ``nawf``, ``natoms``, ``nelec``, ``nbnds`` and
+            ``bnd``; sets the k grid (``nk1``, ``nk2``, ``nk3``, ``nkpnts``,
+            ``kpnts``) of the new ``HRs``. Removes the primitive-cell arrays ``U``,
+            ``my_eigsmat`` and ``equiv_atom``.
+
+        Raises
+        ------
+        ValueError
+            If a repetition is not a positive integer.
+        RuntimeError
+            If called before :meth:`pao_hamiltonian` or after the interpolation or
+            property steps, or with a non-orthogonal basis.
+
+        Notes
+        -----
+        Block :math:`(c, d)` of the supercell Hamiltonian at supercell vector
+        :math:`\\mathbf{R}'` is the primitive hopping between cells :math:`c` and
+        :math:`d`,
+
+        .. math::
+
+            H^{\\rm sc}_{cd}(\\mathbf{R}') = H\\big(\\mathbf{n} \\circ \\mathbf{R}'
+            + \\mathbf{c}_d - \\mathbf{c}_c\\big),
+
+        with cells ordered with the first direction fastest (as in
+        :meth:`doubling_Hamiltonian`). On an even primitive grid the zone-boundary
+        hopping is split evenly between :math:`\\pm n_k/2`, which keeps the supercell
+        Hamiltonian Hermitian. See :mod:`PAOFLOW.hamiltonian.supercell`.
+
+        Examples
+        --------
+        A ribbon 10 cells wide along x, finite in x, with the principal layer of 4
+        cells along z for transport::
+
+            pf.read_atomic_proj_QE()
+            pf.projectability()
+            pf.pao_hamiltonian()
+            pf.remove_semicore(emin=-20.0)
+            pf.supercell_Hamiltonian(nx=10, nz=4, cut_x=True,
+                                     max_range=(None, None, 1), build_Dnm=False)
+        """
+        from .hamiltonian.supercell import (
+            build_supercell_real_space_hamiltonian,
+            check_supercell_prerequisites,
+            update_supercell_k_grid,
+            update_supercell_metadata,
+        )
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        try:
+            # repetitions must be positive integers
+            repetitions = (nx, ny, nz)
+            if any(int(n) != n or n < 1 for n in repetitions):
+                raise ValueError('supercell_Hamiltonian: nx, ny, nz must be positive integers, got %s'
+                                 % (repetitions,))
+            repetitions = tuple(int(n) for n in repetitions)
+            finite_directions = (cut_x, cut_y, cut_z)
+
+            # every rank checks its own copy of the data (they are identical)
+            check_supercell_prerequisites(self.data_controller)
+            nawf_before = attr['nawf']
+
+            # supercell HRs: built on rank 0, then broadcast like pao_hamiltonian
+            if self.rank == 0:
+                arrays['HRs'] = build_supercell_real_space_hamiltonian(
+                    arrays['HRs'], repetitions, finite_directions, max_range
+                )
+            self.data_controller.broadcast_single_array('HRs')
+
+            # atoms, orbitals, operators, lattice and counts: the same update on every rank
+            update_supercell_metadata(self.data_controller, repetitions, build_Dnm)
+
+            # k grid of the new HRs, and Hks where pao_hamiltonian left it (rank 0)
+            update_supercell_k_grid(self.data_controller)
+
+            if self.rank == 0:
+                print(
+                    'supercell_Hamiltonian: %dx%dx%d cells, finite along %s, nawf %d -> %d, '
+                    'R grid %dx%dx%d, HRs %.2f GB'
+                    % (*repetitions,
+                       ''.join('xyz'[i] for i in range(3) if finite_directions[i]) or 'none',
+                       nawf_before, attr['nawf'], attr['nk1'], attr['nk2'], attr['nk3'],
+                       arrays['HRs'].nbytes / 1e9)
+                )
+        except Exception as e:
+            self.report_exception('supercell_Hamiltonian')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Supercell Hamiltonian')
 
     def spin_operator(self, adhoc_SO=False, sh_l=None, sh_j=None):
         """
