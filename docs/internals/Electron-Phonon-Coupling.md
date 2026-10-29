@@ -8,11 +8,13 @@ isotropic Migdal–Eliashberg equations. The route reads the coarse-grid DFPT co
 ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 (PAO) gauge.
 
-> **Recommended coupling source: EPW (`source='epw'`).** It is the only source
-> whose matrix elements share the band gauge of PAOFLOW's projections for every
-> q, which the interpolation requires. The ph.x sources (`'ahc'`, `'elphmat'`)
-> remain available in the library, but their vertices are gauge-inconsistent for
-> $q\neq\Gamma$ (the `paoflow-gen` menu offers only `ahc`, labelled "Gamma only"); see [Coupling sources and gauge consistency](#coupling-sources-and-gauge-consistency).
+> **Recommended coupling source: the native DFPT vertex (`source='dfpt'`)**, built from the
+> `ph.x` `dvscf` files and the nscf wavefunctions in the gauge of PAOFLOW's own projections
+> (see [Required inputs](#required-inputs) and `dfpt-coupling-port.md`); EPW's `.epb` files
+> (`source='epw'`) are the alternative and share that gauge for every q. The ph.x sources
+> (`'ahc'`, `'elphmat'`) remain available in the library, but their vertices are
+> gauge-inconsistent for $q\neq\Gamma$ (the `paoflow-gen` menu offers only `ahc`, labelled
+> "Gamma only"); see [Coupling sources and gauge consistency](#coupling-sources-and-gauge-consistency).
 
 ---
 
