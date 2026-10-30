@@ -1,0 +1,793 @@
+"""Unit tests for the phonon-assisted optical absorption of the PAO e-ph route."""
+
+import numpy as np
+import pytest
+
+pytest.importorskip('scipy')
+
+from PAOFLOW.elphon.elph_bloch import (
+    RY_TO_EV,
+    band_velocities,
+    band_vertex,
+    kq_index_map,
+    precompute_dense_electrons,
+    vertex_pao_R,
+    vertex_phases,
+    vertex_ws_coefficients,
+)
+from PAOFLOW.elphon.phonon_assisted_absorption import (
+    HBAR_C_EV_CM,
+    absorption_coefficient,
+    direct_absorption_kernel,
+    indirect_absorption_kernel,
+    write_absorption_outputs,
+)
+
+# --------------------------------------------------------------------------- #
+# Exactly solvable two-site tight-binding model (simple cubic, alat = 1 bohr)
+# --------------------------------------------------------------------------- #
+TAU = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]])
+NAWF = TAU.shape[0]
+CUTOFF = 1.0  # every hopping fits strictly inside the Wigner-Seitz cell of a 4^3 grid
+
+
+def _model_terms(seed):
+    """Hoppings ``h_ij(R)`` (eV) and a vertex ``G_ij(R)`` between orbital i at 0 and j at R.
+
+    ``h`` obeys ``h_ji(-R) = conj(h_ij(R))``; ``G`` (a k -> k+q operator) is generic.
+    """
+    rng = np.random.default_rng(seed)
+    sym = rng.standard_normal((NAWF, NAWF))
+    sym = sym + sym.T
+    anti = rng.standard_normal((NAWF, NAWF))
+    anti = anti + anti.T
+    onsite = np.diag([-2.0, 1.5, -1.0, 2.5])
+    vertex = rng.standard_normal((NAWF, NAWF)) + 1j * rng.standard_normal((NAWF, NAWF))
+    hops, verts = [], []
+    for cell in np.ndindex(5, 5, 5):
+        R = np.array(cell) - 2
+        for i in range(NAWF):
+            for j in range(NAWF):
+                d = R + TAU[j] - TAU[i]
+                r2 = float(d @ d)
+                if r2 > CUTOFF**2 + 1e-9:
+                    continue
+                envelope = np.exp(-r2)
+                h = sym[i, j] * envelope + 1j * anti[i, j] * d[0] * envelope
+                if not np.any(R) and i == j:
+                    h = h + onsite[i, i]
+                hops.append((i, j, R, h))
+                verts.append((i, j, R, vertex[i, j] * envelope * (1.0 + 0.3 * d[1])))
+    return hops, verts
+
+
+def _bloch(terms, k_cryst):
+    """``O_ij(k) = sum_R exp(2 pi i k.R) O_ij(R)`` (lattice gauge)."""
+    out = np.zeros((NAWF, NAWF), dtype=complex)
+    for i, j, R, value in terms:
+        out[i, j] += np.exp(2j * np.pi * (k_cryst @ R)) * value
+    return out
+
+
+def _exact_velocity(hops, k_cryst):
+    """Exact ``i [H, r]`` with the position operator diagonal on the orbital centres (eV bohr)."""
+    out = np.zeros((3, NAWF, NAWF), dtype=complex)
+    for i, j, R, value in hops:
+        d = R + TAU[j] - TAU[i]
+        out += (
+            1j
+            * d[:, None, None]
+            * (np.exp(2j * np.pi * (k_cryst @ R)) * value)
+            * (np.eye(NAWF)[i][:, None] * np.eye(NAWF)[j][None, :])
+        )
+    return out
+
+
+def _paoflow_HRs(hops, ng):
+    """PAOFLOW layout: ``H(k) = sum_n exp(-2 pi i k.n) HRs[..., n]``, i.e. ``HRs[n] = h(-n)``."""
+    HRs = np.zeros((NAWF, NAWF, ng, ng, ng, 1), dtype=complex)
+    for i, j, R, value in hops:
+        n = (-R) % ng
+        HRs[i, j, n[0], n[1], n[2], 0] += value
+    return HRs
+
+
+def _grid(n):
+    axes = [np.arange(n) / n] * 3
+    return np.stack(np.meshgrid(*axes, indexing='ij'), axis=-1).reshape(-1, 3)
+
+
+def test_velocity_and_vertex_phase_consistency_against_exact_model():
+    """The full PAO chain reproduces the exact gauge-invariant |S1 + S2|^2 spectrum.
+
+    Coarse 4^3 Kohn-Sham data with random band phases go through
+    ``vertex_pao_R``; the dense band velocities and couplings at 8^3-grid points off
+    the coarse grid must give the same phonon-assisted spectrum as the exact model,
+    which fails if g and v were in mutually conjugated or shifted gauges.
+    """
+    ng, nk_dense = 4, 8
+    hops, verts = _model_terms(seed=3)
+    q = np.array([0.25, 0.0, 0.5])
+    rng = np.random.default_rng(7)
+
+    kpts = _grid(ng)
+    states = []
+    for k in kpts:
+        e, c = np.linalg.eigh(_bloch(hops, k))
+        states.append(c * np.exp(2j * np.pi * rng.random(NAWF))[None, :])  # random phases
+    states = np.array(states)  # (nk, orbital, band)
+    ikq, _ = kq_index_map(kpts, q, (ng, ng, ng))
+    d = np.einsum(
+        'kim,kij,kjn->kmn', states[ikq].conj(), np.array([_bloch(verts, k) for k in kpts]), states
+    )[..., None]  # (nk, m, n, ncart = 1)
+    A = np.transpose(states, (2, 1, 0))  # A_{n i}(k) = <phi_i|psi_n> = c_{i n}
+    kgrid_idx = np.round(kpts * ng).astype(int) % ng
+    gR = vertex_pao_R(d, A, ikq, kgrid_idx, (ng, ng, ng))
+
+    electrons = precompute_dense_electrons(
+        _paoflow_HRs(hops, ng), np.eye(3), nk_dense, [0.01], None, (ng, ng, ng),
+        orbital_positions=TAU, velocities=True, alat=1.0,
+    )  # fmt: skip
+    K = electrons['K']
+    shift = np.round(q * nk_dense).astype(int)
+    idx3 = np.round(K * nk_dense).astype(int)
+    ikq_dense = np.ravel_multi_index(((idx3 + shift) % nk_dense).T, (nk_dense,) * 3)
+    sel = np.array([1, 7, 30, 77, 200, 311, 450])  # off the coarse 4^3 grid
+    V = electrons['V']
+    coupling = band_vertex(
+        vertex_ws_coefficients(gR, electrons), vertex_phases(electrons, sel), V[ikq_dense[sel]],
+        V[sel], np.ones((1, 1)),
+    )  # fmt: skip
+    vk = band_velocities(electrons, sel)
+    vkq = band_velocities(electrons, ikq_dense[sel])
+
+    # exact quantities in an independent eigenvector gauge
+    e_ex, e_ex_q, v_ex, v_ex_q, g_ex = [], [], [], [], []
+    for k in K[sel]:
+        ek, ck = np.linalg.eigh(_bloch(hops, k))
+        ekq, ckq = np.linalg.eigh(_bloch(hops, k + q))
+        e_ex.append(ek / RY_TO_EV)
+        e_ex_q.append(ekq / RY_TO_EV)
+        v_ex.append(np.einsum('im,aij,jn->amn', ck.conj(), _exact_velocity(hops, k), ck))
+        v_ex_q.append(np.einsum('im,aij,jn->amn', ckq.conj(), _exact_velocity(hops, k + q), ckq))
+        g_ex.append((ckq.conj().T @ _bloch(verts, k) @ ck)[None])
+    np.testing.assert_allclose(electrons['E'][sel], np.array(e_ex), atol=1e-10)
+
+    def spectrum(ek, ekq, v1, v2, g):
+        return indirect_absorption_kernel(
+            ek, ekq, v1, v2, g, np.array([0.02]), [0.01], np.linspace(0.05, 0.6, 12),
+            [0.005, 0.05], 0.03, 10.0, 1e-6, occupation_tol=0.0,
+        )  # fmt: skip
+
+    ef = 0.0
+    ours = spectrum(
+        electrons['E'][sel] - ef, electrons['E'][ikq_dense[sel]] - ef, vk, vkq, coupling
+    )
+    exact = spectrum(
+        np.array(e_ex) - ef, np.array(e_ex_q) - ef, np.array(v_ex) / RY_TO_EV,
+        np.array(v_ex_q) / RY_TO_EV, np.array(g_ex),
+    )  # fmt: skip
+    assert np.max(exact[0]) > 0.0
+    np.testing.assert_allclose(ours[0], exact[0], rtol=1e-7, atol=1e-12 * np.max(exact[0]))
+    np.testing.assert_allclose(ours[1], exact[1], rtol=1e-7, atol=1e-12 * np.max(exact[1]))
+
+
+def test_band_velocities_finite_difference():
+    """Without orbital separation, v is dH/dk; a PAO-basis correction enters interband elements only."""
+    hops, _ = _model_terms(seed=5)
+    single_site = [(i, j, R, h) for i, j, R, h in hops if i < 2 and j < 2]
+    HRs = _paoflow_HRs(single_site, 4)[:2, :2]
+    electrons = precompute_dense_electrons(
+        HRs, np.eye(3), 6, [0.01], None, (4, 4, 4), velocities=True, alat=1.0
+    )
+    sel = np.array([0, 5, 43, 100])
+    v = band_velocities(electrons, sel)
+    step = 1e-5
+    for b, ik in enumerate(sel):
+        k = electrons['K'][ik]
+        Vk = electrons['V'][ik]
+        for a in range(3):
+            dk = np.zeros(3)
+            dk[a] = step / (2.0 * np.pi)  # k_cart = 2 pi k_cryst for alat = 1, at = I
+            H_plus = _bloch([(i, j, R, h) for i, j, R, h in single_site], k + dk)[:2, :2]
+            H_minus = _bloch([(i, j, R, h) for i, j, R, h in single_site], k - dk)[:2, :2]
+            fd = Vk.conj().T @ ((H_plus - H_minus) / (2.0 * step)) @ Vk / RY_TO_EV
+            np.testing.assert_allclose(v[b, a], fd, atol=1e-8)
+
+
+def test_band_velocities_position_dipoles():
+    """The dipole term is i(e_n - e_m) d_nm in the band basis: diagonal untouched, Hermitian."""
+    hops, _ = _model_terms(seed=5)
+    single_site = [(i, j, R, h) for i, j, R, h in hops if i < 2 and j < 2]
+    HRs = _paoflow_HRs(single_site, 4)[:2, :2]
+    electrons = precompute_dense_electrons(
+        HRs, np.eye(3), 6, [0.01], None, (4, 4, 4), velocities=True, alat=1.0
+    )
+    sel = np.array([0, 5, 43, 100])
+    v = band_velocities(electrons, sel)
+    dipole = np.zeros((3, 2, 2), dtype=complex)
+    dipole[0] = [[0.0, 0.4 - 0.1j], [0.4 + 0.1j, 0.0]]
+    dipole[2] = [[0.05, 0.2j], [-0.2j, -0.05]]
+    with_dipoles = band_velocities(
+        electrons, sel, position_dipoles=lambda K: np.repeat(dipole[None], len(K), 0)
+    )
+    for b, ik in enumerate(sel):
+        Vk = electrons['V'][ik]
+        energies = electrons['E'][ik]  # Ry
+        d_band = np.einsum('im,aij,jn->amn', Vk.conj(), dipole, Vk)
+        expected = 1j * (energies[:, None] - energies[None, :])[None] * d_band
+        np.testing.assert_allclose(with_dipoles[b] - v[b], expected, atol=1e-12)
+        for a in range(3):
+            np.testing.assert_allclose(np.diag(with_dipoles[b, a]), np.diag(v[b, a]), atol=1e-12)
+        np.testing.assert_allclose(
+            with_dipoles[b], np.conj(np.transpose(with_dipoles[b], (0, 2, 1))), atol=1e-12
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Literal transliteration of EPW indabs.f90 / dirabs (reference loops)
+# --------------------------------------------------------------------------- #
+def _w0gauss(x):
+    return np.exp(-(x**2)) / np.sqrt(np.pi)
+
+
+def _wgauss_fd(x):
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def _epw_indabs(ek, ekq, vk, vkq, epf, wq, temps, omegas, etas, degaussw, fsthick, eps_ac):
+    nk, nb = ek.shape
+    nmodes = wq.size
+    eps = np.zeros((len(temps), len(etas), 3, len(omegas)))
+    epsl = np.zeros_like(eps)
+    for it, T in enumerate(temps):
+        nqv = np.zeros(nmodes)
+        for im in range(nmodes):
+            if wq[im] > eps_ac:
+                f = _wgauss_fd(-wq[im] / T)
+                nqv[im] = f / (1.0 - 2.0 * f)
+        for ik in range(nk):
+            for ib in range(nb):
+                ekk = ek[ik, ib]
+                if abs(ekk) >= fsthick:
+                    continue
+                wgkk = _wgauss_fd(-ekk / T)
+                for jb in range(nb):
+                    ekq_ = ekq[ik, jb]
+                    if not (
+                        abs(ekq_) < fsthick and ekq_ < ekk + wq[-1] + omegas[-1] + 6 * degaussw
+                    ):
+                        continue
+                    wgkq = _wgauss_fd(-ekq_ / T)
+                    if ekq_ - ekk - wq[-1] - omegas[-1] > 6 * degaussw:
+                        continue
+                    if ekq_ - ekk + wq[-1] - omegas[0] < -6 * degaussw:
+                        continue
+                    for im in range(nmodes):
+                        if wq[im] <= eps_ac:
+                            continue
+                        for m, eta in enumerate(etas):
+                            s1a = s1e = s2a = s2e = np.zeros(3, dtype=complex)
+                            for mb in range(nb):
+                                ekmk, ekmq = ek[ik, mb], ekq[ik, mb]
+                                s1a = s1a + epf[ik, im, jb, mb] * vk[ik, :, mb, ib] / (
+                                    ekmk - ekq_ + wq[im] + 1j * eta
+                                )
+                                s1e = s1e + epf[ik, im, jb, mb] * vk[ik, :, mb, ib] / (
+                                    ekmk - ekq_ - wq[im] + 1j * eta
+                                )
+                                s2a = s2a + epf[ik, im, mb, ib] * vkq[ik, :, jb, mb] / (
+                                    ekmq - ekk - wq[im] + 1j * eta
+                                )
+                                s2e = s2e + epf[ik, im, mb, ib] * vkq[ik, :, jb, mb] / (
+                                    ekmq - ekk + wq[im] + 1j * eta
+                                )
+                            pfac = nqv[im] * wgkk * (1 - wgkq) - (nqv[im] + 1) * (1 - wgkk) * wgkq
+                            pface = (nqv[im] + 1) * wgkk * (1 - wgkq) - nqv[im] * (1 - wgkk) * wgkq
+                            for iw, w in enumerate(omegas):
+                                if (
+                                    abs(ekq_ - ekk - wq[im] - w) > 6 * degaussw
+                                    and abs(ekq_ - ekk + wq[im] - w) > 6 * degaussw
+                                ):
+                                    continue
+                                we = _w0gauss((ekq_ - ekk - w + wq[im]) / degaussw) / degaussw
+                                wa = _w0gauss((ekq_ - ekk - w - wq[im]) / degaussw) / degaussw
+                                la = (
+                                    degaussw
+                                    / (degaussw**2 + (ekq_ - ekk - w - wq[im]) ** 2)
+                                    / np.pi
+                                )
+                                le = (
+                                    degaussw
+                                    / (degaussw**2 + (ekq_ - ekk - w + wq[im]) ** 2)
+                                    / np.pi
+                                )
+                                c = 16 * np.pi**2 / w**2 / (2 * wq[im])
+                                eps[it, m, :, iw] += c * (
+                                    pfac * wa * abs(s1a + s2a) ** 2
+                                    + pface * we * abs(s1e + s2e) ** 2
+                                )
+                                epsl[it, m, :, iw] += c * (
+                                    pfac * la * abs(s1a + s2a) ** 2
+                                    + pface * le * abs(s1e + s2e) ** 2
+                                )
+    return eps, epsl
+
+
+def _random_case(seed, nk=2, nb=4, nmode=2):
+    rng = np.random.default_rng(seed)
+    ek = np.sort(rng.uniform(-0.06, 0.06, (nk, nb)), axis=1)
+    ekq = np.sort(rng.uniform(-0.06, 0.06, (nk, nb)), axis=1)
+
+    def herm(shape):
+        a = rng.standard_normal(shape) + 1j * rng.standard_normal(shape)
+        return 0.5 * (a + np.conj(np.swapaxes(a, -1, -2)))
+
+    vk, vkq = herm((nk, 3, nb, nb)), herm((nk, 3, nb, nb))
+    epf = rng.standard_normal((nk, nmode, nb, nb)) + 1j * rng.standard_normal((nk, nmode, nb, nb))
+    wq = np.array([0.002, 0.004])[:nmode]
+    return ek, ekq, vk, vkq, epf, wq
+
+
+@pytest.mark.parametrize('seed', [0, 1])
+def test_indirect_kernel_matches_epw_loops(seed):
+    ek, ekq, vk, vkq, epf, wq = _random_case(seed)
+    temps, etas = [0.002, 0.004], [0.001, 0.01]
+    omegas = np.linspace(0.01, 0.12, 15)
+    degauss, fsthick = 0.004, 0.055
+    ref = _epw_indabs(ek, ekq, vk, vkq, epf, wq, temps, omegas, etas, degauss, fsthick, 1e-5)
+    got = indirect_absorption_kernel(
+        ek, ekq, vk, vkq, epf, wq, temps, omegas, etas, degauss, fsthick, 1e-5,
+        occupation_tol=0.0, pair_block=3,
+    )  # fmt: skip
+    assert np.max(ref[0]) > 0.0
+    np.testing.assert_allclose(got[0], ref[0], rtol=1e-10, atol=1e-14 * np.max(ref[0]))
+    np.testing.assert_allclose(got[1], ref[1], rtol=1e-10, atol=1e-14 * np.max(ref[1]))
+
+
+def test_indirect_kernel_skips_acoustic_modes():
+    ek, ekq, vk, vkq, epf, wq = _random_case(4)
+    args = ([0.003], np.linspace(0.01, 0.1, 5), [0.01], 0.004, 0.1)
+    full = indirect_absorption_kernel(ek, ekq, vk, vkq, epf, wq, *args, 1e-5)[0]
+    soft = indirect_absorption_kernel(ek, ekq, vk, vkq, epf, np.array([1e-7, wq[1]]), *args, 1e-5)[
+        0
+    ]
+    only_second = indirect_absorption_kernel(ek, ekq, vk, vkq, epf[:, 1:], wq[1:], *args, 1e-5)[0]
+    np.testing.assert_allclose(soft, only_second, rtol=1e-12)
+    assert not np.allclose(full, only_second)
+
+
+def test_direct_kernel_matches_epw_loops():
+    ek, _, vk, _, _, _ = _random_case(2, nk=3, nb=5)
+    temps, omegas, degauss, fsthick = [0.002], np.linspace(0.01, 0.12, 12), 0.004, 0.055
+    ref = np.zeros((1, 3, omegas.size))
+    for ik in range(ek.shape[0]):
+        for ib in range(ek.shape[1]):
+            if abs(ek[ik, ib]) >= fsthick:
+                continue
+            for jb in range(ek.shape[1]):
+                if abs(ek[ik, jb]) >= fsthick:
+                    continue
+                pfac = _wgauss_fd(-ek[ik, ib] / temps[0]) - _wgauss_fd(-ek[ik, jb] / temps[0])
+                for iw, w in enumerate(omegas):
+                    x = ek[ik, jb] - ek[ik, ib] - w
+                    if abs(x) > 6 * degauss:
+                        continue
+                    ref[0, :, iw] += (
+                        16
+                        * np.pi**2
+                        / w**2
+                        * pfac
+                        * _w0gauss(x / degauss)
+                        / degauss
+                        * np.abs(vk[ik, :, jb, ib]) ** 2
+                    )
+    got = direct_absorption_kernel(ek, vk, temps, omegas, degauss, fsthick)[0]
+    assert np.max(ref) > 0.0
+    np.testing.assert_allclose(got, ref, rtol=1e-10, atol=1e-14 * np.max(ref))
+
+
+def test_absorption_coefficient_and_outputs(tmp_path):
+    omega = np.array([1.0, 2.0])
+    np.testing.assert_allclose(
+        absorption_coefficient(omega, np.array([0.5, 1.0]), 2.0),
+        omega * np.array([0.5, 1.0]) / (2.0 * HBAR_C_EV_CM),
+    )
+    results = {
+        'omega_ev': omega,
+        'eps2_indirect': np.ones((1, 2, 3, 2)),
+        'eps2_indirect_lorentz': np.ones((1, 2, 3, 2)),
+        'eps2_direct': np.ones((1, 3, 2)),
+        'eps2_direct_lorentz': np.ones((1, 3, 2)),
+        'alpha_cm': np.ones((1, 2, 2)),
+        'etas_ev': np.array([0.01, 0.1]),
+        'temps_k': np.array([300.0]),
+    }
+    written = write_absorption_outputs(results, str(tmp_path))
+    names = sorted(p.split('/')[-1] for p in written)
+    assert names == sorted(
+        [
+            'epsilon2_indabs_300.0K.dat',
+            'epsilon2_indabs_lorenz300.0K.dat',
+            'epsilon2_dirabs_300.0K.dat',
+            'alpha_300.0K.dat',
+            'absorption.npz',
+        ]
+    )
+    assert np.loadtxt(tmp_path / 'epsilon2_indabs_300.0K.dat').shape == (2, 3)
+    assert np.loadtxt(tmp_path / 'epsilon2_dirabs_300.0K.dat').shape == (2, 9)
+
+
+# --------------------------------------------------------------------------- #
+# Temperature-dependent Fermi levels and thermal emissivity
+# --------------------------------------------------------------------------- #
+def test_external_refractive_index_pair():
+    from PAOFLOW.elphon.phonon_assisted_absorption import (
+        absorption_coefficient,
+        external_refractive_index,
+    )
+
+    omega = np.linspace(0.1, 5.0, 50)
+    eps1 = np.tile(12.0 + 0.2 * omega, (3, 1))
+    eps2 = np.tile(0.5 * omega, (3, 1))
+    omega_out, n = external_refractive_index((omega, eps1, eps2))
+    np.testing.assert_array_equal(omega_out, omega)
+    np.testing.assert_allclose(n, np.sqrt(eps1[0] + 1j * eps2[0]).real)
+    alpha_pair = absorption_coefficient(omega, eps2[0], n)
+    alpha_const = absorption_coefficient(omega, eps2[0], 3.4)
+    np.testing.assert_allclose(alpha_pair * n, alpha_const * 3.4)
+
+
+def test_fermi_levels_equal_a_rigid_energy_shift():
+    from PAOFLOW.elphon.phonon_assisted_absorption import indirect_absorption_kernel as kernel
+
+    ek, ekq, vk, vkq, epf, wq = _random_case(5)
+    temps, omegas = [0.002, 0.004], np.linspace(0.01, 0.12, 9)
+    args = (temps, omegas, [0.01], 0.004, 1.0, 1e-5)
+    base = kernel(ek, ekq, vk, vkq, epf, wq, *args, occupation_tol=0.0)
+    zero = kernel(ek, ekq, vk, vkq, epf, wq, *args, occupation_tol=0.0, fermi_levels=[0.0, 0.0])
+    np.testing.assert_array_equal(base[0], zero[0])
+    shift = 0.01
+    moved = kernel(ek, ekq, vk, vkq, epf, wq, *args, occupation_tol=0.0, fermi_levels=[shift] * 2)
+    rigid = kernel(ek - shift, ekq - shift, vk, vkq, epf, wq, *args, occupation_tol=0.0)
+    np.testing.assert_allclose(moved[0], rigid[0], rtol=1e-12, atol=1e-14 * np.abs(rigid[0]).max())
+    d_base = direct_absorption_kernel(ek, vk, temps, omegas, 0.004, 1.0, fermi_levels=[shift] * 2)
+    d_rigid = direct_absorption_kernel(ek - shift, vk, temps, omegas, 0.004, 1.0)
+    np.testing.assert_allclose(d_base[0], d_rigid[0], rtol=1e-12, atol=1e-30)
+
+
+def test_intrinsic_fermi_levels():
+    from PAOFLOW.elphon.phonon_assisted_absorption import intrinsic_fermi_levels
+
+    rng = np.random.default_rng(0)
+    valence = rng.uniform(-1.0, -0.3, (400, 1))
+    symmetric = np.hstack([valence, -valence])  # mirror-symmetric about 0
+    mu = intrinsic_fermi_levels(symmetric, [0.02, 0.05], nelec=2.0)
+    np.testing.assert_allclose(mu, 0.0, atol=1e-6)
+    # four degenerate valence copies (heavy holes): mu moves up, toward the lighter band
+    heavy = np.hstack([np.repeat(valence, 4, axis=1), -valence])
+    mu_heavy = intrinsic_fermi_levels(heavy, [0.02, 0.05], nelec=8.0)
+    assert np.all(mu_heavy > 0.0) and mu_heavy[1] > mu_heavy[0]
+    np.testing.assert_allclose(mu_heavy, 0.5 * np.array([0.02, 0.05]) * np.log(4.0), rtol=0.05)
+
+
+def _synthetic_results():
+    omega_kk = np.arange(0.0, 20.0 + 1e-9, 0.01)
+    omega = omega_kk[1:301]  # 0.01 ... 3.0 eV
+    temps = np.array([300.0, 900.0])
+    e0, gamma, strength = 3.5, 0.4, 120.0
+    lorentz = strength * gamma * omega_kk / ((e0**2 - omega_kk**2) ** 2 + (gamma * omega_kk) ** 2)
+    wide = np.repeat(lorentz[None, None, :], 3, axis=1).repeat(2, axis=0)  # (T, 3, nkk)
+    fca = np.array([1e-4, 1e-2])[:, None] / omega**2  # free carriers grow with T
+    indirect = np.zeros((2, 1, 3, omega.size)) + fca[:, None, None, :]
+    return {
+        'omega_ev': omega, 'omega_kk_ev': omega_kk, 'temps_k': temps, 'etas_ev': np.array([0.05]),
+        'direct_gap_ev': 2.5, 'eps2_indirect': indirect, 'eps2_direct_wide': wide,
+        # omega_p^2 = strength (eV^2): the oscillator alone exhausts the f-sum rule
+        'nelec': 1.0, 'cell_volume_bohr3': 16.0 * np.pi * RY_TO_EV**2 / strength,
+    }  # fmt: skip
+
+
+def test_thermal_emissivity_slab_and_opaque():
+    from PAOFLOW.elphon.phonon_assisted_absorption import thermal_emissivity
+
+    results = _synthetic_results()
+    emis = thermal_emissivity(results, 500e-6, angles_deg=(0.0, 45.0), ntheta=48)
+    for key in ('hemispherical_slab', 'hemispherical_opaque', 'directional_slab'):
+        assert np.all((emis[key] >= -1e-12) & (emis[key] <= 1.0 + 1e-12))
+    assert np.all(emis['hemispherical_slab'] <= emis['hemispherical_opaque'] + 1e-12)
+    # more free carriers at 900 K -> a more emissive wafer, while 1 - R barely moves
+    assert emis['total_slab'][1] > emis['total_slab'][0]
+    assert abs(emis['total_opaque'][1] - emis['total_opaque'][0]) < 0.05
+    assert np.all((emis['planck_coverage'] > 0.0) & (emis['planck_coverage'] <= 1.0))
+    # eps1 from Kramers-Kronig: static limit of the oscillator, about 1 + strength / e0^2
+    assert emis['eps1'][0, 0] == pytest.approx(1.0 + 120.0 / 3.5**2, rel=0.05)
+    np.testing.assert_allclose(emis['f_sum_ratio'], 1.0, atol=0.03)
+    thick = thermal_emissivity(results, np.inf, ntheta=48)
+    np.testing.assert_allclose(
+        thick['hemispherical_slab'], thick['hemispherical_opaque'], rtol=1e-12
+    )
+    with pytest.raises(KeyError):
+        thermal_emissivity({k: v for k, v in results.items() if k != 'eps2_direct_wide'}, 1e-3)
+
+
+def test_write_emissivity_outputs(tmp_path):
+    from PAOFLOW.elphon.phonon_assisted_absorption import (
+        thermal_emissivity,
+        write_emissivity_outputs,
+    )
+
+    emis = thermal_emissivity(_synthetic_results(), 500e-6, angles_deg=(0.0,), ntheta=24)
+    names = sorted(p.split('/')[-1] for p in write_emissivity_outputs(emis, str(tmp_path)))
+    assert 'emist.dat' in names and 'emissivity.npz' in names
+    assert 'emish_900.0K.dat' in names and 'emis_th0_300.0K.dat' in names
+    assert np.loadtxt(tmp_path / 'emist.dat').shape == (2, 4)
+
+
+def test_thermal_emissivity_with_external_direct_dielectric(tmp_path):
+    from PAOFLOW.elphon.phonon_assisted_absorption import (
+        read_direct_dielectric,
+        thermal_emissivity,
+    )
+
+    results = _synthetic_results()
+    e0, gamma, strength = 3.5, 0.4, 120.0
+    omega_ext = np.arange(0.01, 10.0 + 1e-9, 0.01)
+    denominator = (e0**2 - omega_ext**2) ** 2 + (gamma * omega_ext) ** 2
+    eps1_ext = 1.0 + strength * (e0**2 - omega_ext**2) / denominator  # exact, all energies
+    eps2_ext = strength * gamma * omega_ext / denominator
+    for comp in ('xx', 'yy', 'zz'):
+        np.savetxt(tmp_path / ('epsr_%s.dat' % comp), np.column_stack([omega_ext, eps1_ext]))
+        np.savetxt(tmp_path / ('epsi_%s.dat' % comp), np.column_stack([omega_ext, eps2_ext]))
+    direct = read_direct_dielectric(str(tmp_path))
+    assert direct[1].shape == (3, omega_ext.size)
+    # this run's own direct term: the same oscillator, without the sub-gap tail
+    omega = results['omega_ev']
+    tail_free = np.where(omega > 2.5, np.interp(omega, omega_ext, eps2_ext), 0.0)
+    results['eps2_direct'] = np.repeat(tail_free[None, None, :], 3, axis=1).repeat(2, axis=0)
+
+    ext = thermal_emissivity(results, 500e-6, ntheta=48, direct_dielectric=direct)
+    kk = thermal_emissivity(results, 500e-6, ntheta=48)
+    assert ext['direct_source'] == 'external' and kk['direct_source'] == 'kramers-kronig'
+    below = omega < 2.3
+    # below the gap Im eps is this run's (tail-free direct + phonon-assisted), not the
+    # Lorentzian tail of the external spectrum; Re eps comes from the external file
+    own = results['eps2_indirect'][:, 0].mean(axis=1)[:, below]
+    np.testing.assert_allclose(ext['eps2'][:, below], own, rtol=1e-10)
+    np.testing.assert_allclose(ext['eps1'][:, below], kk['eps1'][:, below], rtol=0.02)
+    # the tail kept by the Kramers-Kronig path makes the cold wafer spuriously emissive
+    assert ext['total_slab'][0] < kk['total_slab'][0]
+    np.testing.assert_allclose(ext['f_sum_ratio'], 1.0, atol=0.05)
+    with pytest.raises(ValueError):
+        thermal_emissivity(
+            results, 500e-6, direct_dielectric=(omega_ext[200:], eps1_ext[200:], eps2_ext[200:])
+        )
+
+
+def test_thermal_emissivity_refuses_metals():
+    from PAOFLOW.elphon.phonon_assisted_absorption import thermal_emissivity
+
+    metal = dict(_synthetic_results(), indirect_gap_ev=-0.3)
+    with pytest.raises(NotImplementedError, match='Drude'):
+        thermal_emissivity(metal, 500e-6)
+
+
+# --------------------------------------------------------------------------- #
+# Scissor operator
+# --------------------------------------------------------------------------- #
+def test_varshni_and_scissor_per_temperature():
+    from PAOFLOW.elphon.phonon_assisted_absorption import (
+        SILICON_VARSHNI,
+        scissor_per_temperature,
+        varshni_gap,
+    )
+
+    gap = varshni_gap(*SILICON_VARSHNI)
+    assert gap(0.0) == pytest.approx(1.170)
+    assert gap(300.0) == pytest.approx(1.170 - 4.73e-4 * 300.0**2 / 936.0)
+    temps = [300.0, 900.0]
+    np.testing.assert_allclose(scissor_per_temperature(temps, 0.6), 0.0)
+    np.testing.assert_allclose(scissor_per_temperature(temps, 0.6, scissor_ev=0.5), 0.5)
+    np.testing.assert_allclose(scissor_per_temperature(temps, 0.6, target_gap_ev=1.12), 0.52)
+    np.testing.assert_allclose(
+        scissor_per_temperature(temps, 0.6, target_gap_ev=gap), [gap(300.0) - 0.6, gap(900.0) - 0.6]
+    )
+    with pytest.raises(ValueError):
+        scissor_per_temperature(temps, 0.6, scissor_ev=0.5, target_gap_ev=1.1)
+
+
+def test_varshni_shift_is_relative_to_the_hamiltonian_gap():
+    from PAOFLOW.elphon.phonon_assisted_absorption import (
+        scissor_per_temperature,
+        varshni_gap,
+        varshni_shift,
+    )
+
+    shift = varshni_shift(4.73e-4, 636.0)
+    assert shift(0.0) == 0.0
+    temps = [0.0, 300.0, 900.0]
+    # the shift on top of the Hamiltonian's own gap equals a Varshni target anchored at that gap
+    np.testing.assert_allclose(
+        scissor_per_temperature(temps, 1.2, scissor_ev=shift),
+        scissor_per_temperature(temps, 1.2, target_gap_ev=varshni_gap(1.2, 4.73e-4, 636.0)),
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(scissor_per_temperature(temps, 1.2, scissor_ev=0.5), 0.5)
+    with pytest.raises(ValueError):
+        scissor_per_temperature(temps, 1.2, scissor_ev=shift, target_gap_ev=1.1)
+
+
+def _gapped_case(seed, nk=3, nval=2, ncond=3):
+    rng = np.random.default_rng(seed)
+    ev = np.sort(rng.uniform(-0.12, -0.03, (nk, nval)), axis=1)
+    ec = np.sort(rng.uniform(0.03, 0.15, (nk, ncond)), axis=1)
+    energies = np.hstack([ev, ec])
+    nb = nval + ncond
+    a = rng.standard_normal((nk, 3, nb, nb)) + 1j * rng.standard_normal((nk, 3, nb, nb))
+    velocity = 0.5 * (a + np.conj(np.swapaxes(a, -1, -2)))
+    conduction = np.arange(nb) >= nval
+    return energies, velocity, conduction
+
+
+def test_scissor_velocities():
+    from PAOFLOW.elphon.phonon_assisted_absorption import scissor_velocities
+
+    energies, velocity, conduction = _gapped_case(0)
+    delta = 0.05
+    scaled = scissor_velocities(velocity, energies, delta, conduction)
+    np.testing.assert_allclose(scaled, np.conj(np.swapaxes(scaled, -1, -2)), atol=1e-14)
+    val, cond = np.nonzero(~conduction)[0], np.nonzero(conduction)[0]
+    i, j = val[0], cond[1]
+    factor = (energies[:, j] - energies[:, i] + delta) / (energies[:, j] - energies[:, i])
+    np.testing.assert_allclose(scaled[:, :, j, i], velocity[:, :, j, i] * factor[:, None])
+    np.testing.assert_array_equal(scaled[:, :, cond[0], cond[1]], velocity[:, :, cond[0], cond[1]])
+    np.testing.assert_array_equal(scaled[:, :, val[0], val[1]], velocity[:, :, val[0], val[1]])
+    assert scissor_velocities(velocity, energies, delta, conduction, 'ks') is velocity
+    with pytest.raises(ValueError):
+        scissor_velocities(velocity, energies, delta, conduction, 'other')
+
+
+def test_scissor_shifts_direct_absorption_rigidly():
+    from PAOFLOW.elphon.phonon_assisted_absorption import scissor_velocities
+
+    energies, velocity, conduction = _gapped_case(1)
+    delta, sigma = 0.04, 0.001
+    omegas = np.linspace(0.07, 0.32, 251)
+    temps = [1e-4]
+    ks = direct_absorption_kernel(energies, velocity, temps, omegas, sigma, 1.0)[0][0]
+    shifted_e = energies + delta * conduction
+    renorm = scissor_velocities(velocity, energies, delta, conduction)
+    sc = direct_absorption_kernel(shifted_e, renorm, temps, omegas + delta, sigma, 1.0)[0][0]
+    # renormalized velocities: the spectrum moves rigidly (up to the delta width)
+    np.testing.assert_allclose(sc.sum(axis=1), ks.sum(axis=1), rtol=0.02)
+    # Kohn-Sham velocities (EPW scissor): the weight drops roughly as (omega_KS / omega)^2
+    sc_ks = direct_absorption_kernel(shifted_e, velocity, temps, omegas + delta, sigma, 1.0)[0][0]
+    ratio = (sc_ks * omegas[None] ** 0).sum(axis=1) / sc.sum(axis=1)
+    assert np.all(ratio < 1.0)
+
+
+def test_scissor_shift_dielectric():
+    from PAOFLOW.elphon.phonon_assisted_absorption import scissor_shift_dielectric
+    from PAOFLOW.response.do_epsilon import kramers_kronig_eps1
+
+    omega = np.arange(0.0, 60.0 + 1e-9, 0.01)
+    e0, gamma, strength = 3.0, 0.3, 20.0
+    denominator = (e0**2 - omega**2) ** 2 + (gamma * omega) ** 2
+    eps2 = strength * gamma * omega / denominator
+    eps1 = kramers_kronig_eps1(omega, eps2)
+    same = scissor_shift_dielectric(omega, eps1, eps2, 0.0)
+    np.testing.assert_array_equal(same[1], eps2)
+    new1, new2 = scissor_shift_dielectric(omega, eps1, eps2, 0.5)
+    np.testing.assert_allclose(new2, np.interp(omega - 0.5, omega, eps2, left=0.0), atol=1e-12)
+    np.testing.assert_allclose(new1, kramers_kronig_eps1(omega, new2), atol=1e-8)
+    assert new1[1] < eps1[1]  # a larger gap lowers the static dielectric constant
+    _, ks2 = scissor_shift_dielectric(omega, eps1, eps2, 0.5, 'ks')
+    i = np.argmin(abs(omega - 3.5))
+    assert ks2[i] == pytest.approx(new2[i] * (3.0 / 3.5) ** 2, rel=1e-6)
+
+
+def test_scissor_shift_dielectric_ks_negative_keeps_the_tail_bounded():
+    """KS factor ((w - D)/w)^2 diverges for D < 0 as w -> 0: the broadening tail must not blow up."""
+    from PAOFLOW.elphon.phonon_assisted_absorption import scissor_shift_dielectric
+
+    omega = np.arange(0.0, 20.0 + 1e-9, 0.0125)
+    e0, gamma, strength = (
+        3.4,
+        0.1,
+        40.0,
+    )  # a sharp edge with a Drude-Lorentz tail, as dielectric_tensor
+    denominator = (e0**2 - omega**2) ** 2 + (gamma * omega) ** 2
+    eps2 = strength * gamma * omega / denominator
+    eps1 = 1.0 + strength * (e0**2 - omega**2) / denominator
+    low = (omega > 0.0) & (omega < 0.3)
+    previous = None
+    for shift in (-0.2, -0.3, -0.5):
+        e1, e2 = scissor_shift_dielectric(omega, eps1, eps2, shift, 'ks', onset_ev=e0)
+        # the tail: the shifted tail scaled like the edge, never by the divergent factor
+        expected = np.interp(omega[low] - shift, omega, eps2) * (e0 / (e0 + shift)) ** 2
+        np.testing.assert_allclose(e2[low], expected, rtol=1e-10)
+        # above the shifted onset the exact KS factor is kept
+        j = np.argmin(abs(omega - 4.0))
+        assert e2[j] == pytest.approx(
+            np.interp(4.0 - shift, omega, eps2) * ((4.0 - shift) / 4.0) ** 2, rel=1e-6
+        )
+        # a larger downward shift raises the static dielectric constant monotonically
+        if previous is not None:
+            assert e1[4] > previous
+        previous = e1[4]
+    with pytest.raises(ValueError, match='closes the direct gap'):
+        scissor_shift_dielectric(omega, eps1, eps2, -3.5, 'ks', onset_ev=e0)
+
+
+def test_pao_band_gaps_matches_brute_force():
+    from PAOFLOW.elphon.phonon_assisted_absorption import pao_band_gaps
+
+    hops, _ = _model_terms(seed=3)
+    gaps = pao_band_gaps(_paoflow_HRs(hops, 4), np.eye(3), 6, nelec=4.0, orbital_positions=TAU)
+    energies = np.array([np.linalg.eigvalsh(_bloch(hops, k)) for k in _grid(6)])
+    assert gaps['vbm_ev'] == pytest.approx(energies[:, 1].max(), abs=1e-10)
+    assert gaps['cbm_ev'] == pytest.approx(energies[:, 2].min(), abs=1e-10)
+    assert gaps['indirect_gap_ev'] == pytest.approx(gaps['cbm_ev'] - gaps['vbm_ev'])
+    assert gaps['direct_gap_ev'] == pytest.approx(
+        (energies[:, 2] - energies[:, 1]).min(), abs=1e-10
+    )
+
+
+def test_thermal_emissivity_uses_per_temperature_scissor(tmp_path):
+    from PAOFLOW.elphon.phonon_assisted_absorption import thermal_emissivity
+
+    results = _synthetic_results()
+    omega_ext = np.arange(0.01, 10.0 + 1e-9, 0.01)
+    e0, gamma, strength = 3.5, 0.4, 120.0
+    denominator = (e0**2 - omega_ext**2) ** 2 + (gamma * omega_ext) ** 2
+    direct = (omega_ext, 1.0 + strength * (e0**2 - omega_ext**2) / denominator,
+              strength * gamma * omega_ext / denominator)  # fmt: skip
+    results['eps2_direct'] = np.zeros((2, 3, results['omega_ev'].size))
+    results['eps2_indirect'] = np.zeros_like(results['eps2_indirect'])  # isolate the scissor
+    results['scissor_ev'] = np.array([0.0, 0.3])
+    results['direct_gap_ev_t'] = np.array([2.5, 2.8])
+    emis = thermal_emissivity(results, 500e-6, ntheta=24, direct_dielectric=direct)
+    omega = results['omega_ev']
+    above = omega > 2.85  # above both direct gaps: external eps2, shifted by the scissor
+    np.testing.assert_allclose(
+        emis['eps2'][0, above], np.interp(omega[above], omega_ext, direct[2])
+    )
+    np.testing.assert_allclose(
+        emis['eps2'][1, above], np.interp(omega[above] - 0.3, omega_ext, direct[2]), rtol=1e-6
+    )
+    assert emis['eps1'][1, 0] < emis['eps1'][0, 0]
+    assert emis['direct_scissor'] == 'same'
+    np.testing.assert_array_equal(emis['direct_scissor_ev'], results['scissor_ev'])
+
+    # only the temperature-dependent part of the scissor on the external spectrum
+    results['scissor_0k_ev'] = 0.1
+    thermal = thermal_emissivity(
+        results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor='thermal'
+    )
+    np.testing.assert_allclose(thermal['direct_scissor_ev'], [-0.1, 0.2])
+    np.testing.assert_allclose(
+        thermal['eps2'][1, above], np.interp(omega[above] - 0.2, omega_ext, direct[2]), rtol=1e-6
+    )
+    explicit = thermal_emissivity(
+        results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor=[-0.1, 0.2]
+    )
+    np.testing.assert_array_equal(explicit['eps2'], thermal['eps2'])
+    none = thermal_emissivity(
+        results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor='none'
+    )
+    np.testing.assert_allclose(
+        none['eps2'][1, above], np.interp(omega[above], omega_ext, direct[2])
+    )
+    with pytest.raises(ValueError):
+        thermal_emissivity(
+            results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor='half'
+        )
+    with pytest.raises(ValueError):
+        thermal_emissivity(
+            results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor=[0.0, 0.1, 0.2]
+        )
+    del results['scissor_0k_ev']
+    with pytest.raises(KeyError, match='scissor_0k_ev'):
+        thermal_emissivity(
+            results, 500e-6, ntheta=24, direct_dielectric=direct, direct_scissor='thermal'
+        )

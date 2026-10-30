@@ -12,19 +12,21 @@ Two workflows are supported:
 2. **Full property run** from the QE output, where the user picks the
    properties to compute from a menu.  Standard properties use the *standard*
    basis; optical properties (dielectric tensor) need the *extended* basis and
-   the non-local velocity correction, so they are emitted as a **separate**
-   PAOFLOW run in the same script.
+   the position dipoles in the velocity operator, so they are emitted as a
+   **separate** PAOFLOW run in the same script.
 
 Two further workflows generate multi-phase driver scripts:
 
 3. **Harmonic phonons** (``main.phonon.py``) -- finite-displacement phonons via
    phonopy (generate supercells -> run pw.x -> analyse forces).
-4. **Electron-phonon** (``main.elphon.py``) -- the pseudo-atomic-orbital (Agapito &
-   Bernardi) interpolation of QE's DFPT coupling into ``alpha^2F`` / ``lambda`` /
-   ``Tc`` (write the ph.x phonon + AHC inputs -> run QE -> analyse).  Optionally
-   the *dense-q* variant interpolates the phonon q-grid too (double real-space
-   vertex ``g(R_e, R_p)`` + dyn-file phonon interpolation); its ``analyse`` phase
-   is MPI-parallel over the dense q-grid (``mpirun -np N python main.elphon.py``).
+4. **Electron-phonon** (``paoflow-gen elphon``) -- writes a *system folder* in the layout
+   of ``examples/elphon/<System>``: ``system.py`` (the only file with values, an
+   ``ElphonSystem`` plus per-workflow defaults), ``qe/`` (scf, ph.x with ``fildvscf``,
+   the nscf on the irreducible wedge, ``run_qe.sh``; EPW inputs for the EPW source) and
+   one subfolder per selected workflow (``phonons/``, ``coupling/``,
+   ``superconductivity/``, ``optics/``, ``transport/``, ``arpes/``) with the drivers of
+   ``PAOFLOW/gen/elphon_templates`` (the same thin drivers the examples use, built on
+   ``PAOFLOW.elphon.workflows``).  See :mod:`PAOFLOW.gen.elphon_system`.
 
 The generated script is static and heavily commented so it is easy to tweak
 afterwards.
@@ -170,6 +172,24 @@ def detect_prefix(workdir, savedir):
             if prefix:
                 return prefix
     return 'pwscf'
+
+
+def detect_pw_input(workdir):
+    """A pw.x input in ``workdir`` to derive the electron-phonon scf/nscf from."""
+    candidates = ['scf.in'] + sorted(
+        os.path.basename(p) for p in glob.glob(os.path.join(workdir, '*.scf.in'))
+    )
+    candidates += ['pw.in', 'nscf.in']
+    for name in candidates:
+        if os.path.isfile(os.path.join(workdir, name)):
+            return name
+    return None
+
+
+def _read_namelist_value(text, name):
+    """Value of a namelist variable in a QE input (quotes stripped), or None."""
+    match = re.search(r"(?im)^[^!]*\b%s\s*=\s*('[^']*'|\"[^\"]*\"|[^,\s]+)" % re.escape(name), text)
+    return match.group(1).strip('\'"') if match else None
 
 
 def _read_prefix_from_input(path):
@@ -332,14 +352,16 @@ PROPERTY_MENU = [
     ('fermi_surface', 'Fermi surface'),
     ('spin_texture', 'Spin texture'),
     ('spin_Hall', 'Spin Hall conductivity'),
+    ('orbital_Hall', 'Orbital Hall conductivity'),
     ('anomalous_Hall', 'Anomalous Hall / Berry curvature'),
     ('topology', 'Band topology (Berry, effective mass)'),
     ('optical', 'Optical / dielectric tensor (separate extended-basis run)'),
     ('emissivity', 'Emissivity (Fresnel/Kirchhoff; implies the optical run)'),
+    ('nonlinear', 'Non-linear optics (shift / injection currents, SHG) on the PAO Hamiltonian'),
 ]
 SPIN_PROPERTIES = {'spin_texture', 'spin_Hall'}
 # Properties that read an explicit (emin, emax) energy window.
-ENERGY_WINDOW_PROPERTIES = {'dos', 'transport', 'spin_Hall', 'anomalous_Hall'}
+ENERGY_WINDOW_PROPERTIES = {'dos', 'transport', 'spin_Hall', 'orbital_Hall', 'anomalous_Hall'}
 
 
 def select_properties():
@@ -469,9 +491,10 @@ def _projection_lines(
 def build_run_script(cfg):
     """Assemble a full property-run main.py from the collected config."""
     props = cfg['properties']
-    standard_props = [p for p in props if p not in ('optical', 'emissivity')]
+    standard_props = [p for p in props if p not in ('optical', 'emissivity', 'nonlinear')]
     has_optical = 'optical' in props or 'emissivity' in props
     has_emissivity = 'emissivity' in props
+    has_nonlinear = 'nonlinear' in props
     needs_spin = any(p in SPIN_PROPERTIES for p in props)
     needs_energy_window = any(p in ENERGY_WINDOW_PROPERTIES for p in props)
 
@@ -520,6 +543,24 @@ def build_run_script(cfg):
     else:
         lines.append('NFFT = None')
     lines.append('')
+    if has_nonlinear:
+        lines.append(
+            '# Non-linear optics: dense k-grid, photon window (eV), broadening, scissor (eV)'
+        )
+        lines.append('NLO_NK = ({n}, {n}, {n})'.format(n=cfg.get('nlo_nk', 40)))
+        lines.append('NLO_EMAX, NLO_NE = {}, 401'.format(cfg.get('nlo_emax', 4.0)))
+        lines.append('NLO_ETA = {}'.format(cfg.get('nlo_eta', 0.05)))
+        lines.append('NLO_SCISSOR = {}'.format(cfg.get('nlo_scissor', 0.0)))
+        lines.append(
+            'NLO_DIPOLES = False   # True: Löwdin position dipoles in r and r_{;a} (beyond tight binding)'
+        )
+        lines.append('NLO_SYMMETRY = True   # irreducible wedge of the dense grid (QE symmetries)')
+        lines.append(
+            "NLO_COMPONENTS = {!r}   # 'all', 'diag' or a list such as ['xyz', 'yyy']".format(
+                cfg.get('nlo_components', 'all')
+            )
+        )
+        lines.append('')
 
     # ---- basis generation --------------------------------------------- #
     lines.append(BASIS_GEN_BLOCK)
@@ -554,9 +595,13 @@ def build_run_script(cfg):
     if has_optical:
         lines.append('')
         lines.append('def run_optical():')
-        lines.append('    """Optical properties: extended basis + non-local velocity.')
+        lines.append(
+            '    """Optical properties: extended basis + position dipoles in the velocity.'
+        )
         lines.append('')
-        lines.append('    The dielectric tensor requires the non-local velocity correction,')
+        lines.append(
+            '    The dielectric tensor needs the complete velocity operator (position dipoles),'
+        )
         lines.append('    so it runs as a separate PAOFLOW instance on the extended basis.')
         if has_emissivity:
             lines.append('')
@@ -583,8 +628,11 @@ def build_run_script(cfg):
         )
         lines.append('    p.pao_eigh()')
         lines.append('')
-        lines.append('    # Non-local velocity is essential for the optical matrix elements.')
-        lines.append('    p.gradient_and_momenta(nonlocal_velocity=True)')
+        lines.append('    # Position dipoles of the PAO orbitals complete the velocity operator')
+        lines.append(
+            '    # (the non-local term would double count: PAOFLOW docs, position-dipoles.md).'
+        )
+        lines.append('    p.gradient_and_momenta(position_dipoles=True)')
         lines.append('    p.adaptive_smearing()')
         if has_emissivity:
             lines.append("    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1,")
@@ -592,6 +640,41 @@ def build_run_script(cfg):
             lines.append('                        emis_ntheta=90, emis_temperature=300.0)')
         else:
             lines.append("    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1)")
+        lines.append('')
+        lines.append('    p.finish_execution()')
+        lines.append('')
+
+    # ---- non-linear optics (standard basis, needs HRs) ----------------- #
+    if has_nonlinear:
+        lines.append('')
+        lines.append('def run_nonlinear():')
+        lines.append(
+            '    """Shift / injection currents and SHG from the real-space PAO Hamiltonian.'
+        )
+        lines.append('')
+        lines.append(
+            '    nonlinear_optics() interpolates HRs on NLO_NK on the fly, so it runs right'
+        )
+        lines.append(
+            '    after pao_hamiltonian() (before interpolated_hamiltonian / pao_eigh release HRs).'
+        )
+        lines.append('    """')
+        lines.append('    p = PAOFLOW.PAOFLOW(')
+        lines.append('        workpath=HERE,')
+        lines.append('        outputdir=OUTPUTDIR,')
+        lines.append('        savedir=SAVEDIR,')
+        lines.append('        smearing=SMEARING,')
+        lines.append('        npool=NPOOL,')
+        lines.append('        save_overlaps=SAVE_OVERLAPS,')
+        lines.append('        verbose=False,')
+        lines.append('    )')
+        lines.append('')
+        lines.extend(_projection_lines(cfg, configuration='STD_BASIS'))
+        lines.append('    p.projectability(pthr=PTHR)')
+        lines.append('    p.pao_hamiltonian()')
+        lines.append('    p.nonlinear_optics(nk=NLO_NK, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA,')
+        lines.append('                       scissor=NLO_SCISSOR, components=NLO_COMPONENTS,')
+        lines.append('                       position_dipoles=NLO_DIPOLES, symmetry=NLO_SYMMETRY)')
         lines.append('')
         lines.append('    p.finish_execution()')
         lines.append('')
@@ -612,7 +695,9 @@ def build_run_script(cfg):
         lines.append('    run_properties()')
     if has_optical:
         lines.append('    run_optical()')
-    if not standard_props and not has_optical:
+    if has_nonlinear:
+        lines.append('    run_nonlinear()')
+    if not standard_props and not has_optical and not has_nonlinear:
         lines.append('    pass  # no properties selected')
     lines.append('')
     lines.append('')
@@ -666,6 +751,10 @@ def _emit_standard_properties(props, needs_spin, cfg):
         # Do not pre-build the spin operator here: spin_Hall builds it
         # internally with the correct do_spin_orbit flag from the DFT data.
         body.append('    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]])')
+    if 'orbital_Hall' in selected:
+        # The orbital (L) operator is built inside orbital_Hall from the PAO shells;
+        # [[0, 1, 2]] is sigma^{L_z}_{xy}, the counterpart of the spin Hall element.
+        body.append('    p.orbital_Hall(emin=EMIN, emax=EMAX, o_tensor=[[0, 1, 2]])')
     if 'anomalous_Hall' in selected:
         body.append('    p.anomalous_Hall(do_ac=True, emin=EMIN, emax=EMAX, a_tensor=[[0, 1]])')
     if 'transport' in selected:
@@ -1326,532 +1415,8 @@ def build_phonon_script(cfg):
 
 
 # --------------------------------------------------------------------------- #
-# Electron-phonon (PAO route) workflow builder
+# Migdal-Eliashberg post-processing builder
 # --------------------------------------------------------------------------- #
-ELPHON_TEMPLATE = r'''#!/usr/bin/env python3
-"""PAOFLOW electron-phonon (Eliashberg) workflow -- PAO route (generated by paoflow_gen.py).
-
-Pseudo-atomic-orbital (Agapito & Bernardi, Phys. Rev. B 97, 235146 (2018)) interpolation
-of Quantum ESPRESSO's DFPT electron-phonon coupling.  PAOFLOW reads QE's *full*
-coarse-grid coupling (no potential reconstruction), rotates it into the PAO gauge
-and Wigner-Seitz interpolates electrons + vertex to a dense grid for alpha^2F,
-lambda, omega_log and Tc.
-
-Two phases:
-
-    python main.elphon.py inputs    # write the ph.x phonon + AHC input templates
-    python main.elphon.py analyse   # PAO interpolation -> alpha^2F, lambda, Tc
-
-The ``analyse`` phase parallelises the per-q interpolation over MPI ranks, so
-on a cluster launch it with mpirun for an (up to nq-fold) speedup::
-
-    mpirun -np N python main.elphon.py analyse
-
-The dense electron diagonalisation is done redundantly on every rank, so it is
-usually best to keep N at or below the number of q-points and let BLAS threads
-(OMP_NUM_THREADS) fill the remaining cores.
-
-Between them, run the two QE ph.x steps in the same outdir (typically on HPC):
-
-    1. phonon:  ph.x < <prefix>.ph.in    # full DFPT dvscf on the q-grid
-    2. ahc:     ph.x < <prefix>.ahc.in   # electron_phonon='ahc' -> ahc_dir/
-
-``fildvscf`` and ``fildyn`` MUST match between the two ph.x steps.  The AHC path
-(SOURCE='ahc') is for norm-conserving pseudopotentials; for ultrasoft / PAW use
-the patched-QE ``el_ph_mat`` dump (SOURCE='elphmat').
-"""
-
-import argparse
-import os
-import sys
-
-import numpy as np
-from mpi4py import MPI
-
-from PAOFLOW import PAOFLOW
-from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
-from PAOFLOW.elphon.elph_bloch import read_nscf
-
-
-# ----------------------------------------------------------------------- #
-# Configuration  (edit freely -- masses / NELEC / NBND are system-specific) #
-# ----------------------------------------------------------------------- #
-HERE = os.path.dirname(os.path.abspath(__file__))
-SAVEDIR = os.path.join(HERE, __SAVEDIR__)
-OUTPUTDIR = __OUTPUTDIR__
-PREFIX = __PREFIX__
-BASISDIR = os.path.join(HERE, __BASISDIR__)
-
-# Coupling source:
-#   'ahc'     -> unpatched QE AHC dumps (ahc_dir/ahc_gkk_iq<iq>.bin); NC pseudos.
-#   'elphmat' -> patched-QE el_ph_mat dumps (elph_dir/elphmat.<iq>.dat); any pseudo.
-SOURCE = __SOURCE__
-COUPLING_DIR = os.path.join(HERE, __COUPLING_DIR__)
-
-KGRID = __KGRID__          # SCF / coupling k-grid (== pw.x K_POINTS)
-QGRID = __QGRID__          # phonon q-grid (nq1, nq2, nq3)
-NBND = __NBND__            # bands in the nscf / AHC run (nbnd = ahc_nbnd)
-MASSES_AMU = __MASSES__    # atomic masses (amu), one per atom in the cell
-NELEC = __NELEC__          # valence electrons (dense E_F recompute)
-NK_DENSE = __NK_DENSE__    # dense interpolation grid
-SIGMA_RY = __SIGMA__       # Fermi-surface smearing (Ry)
-MU_STAR = __MU_STAR__      # Coulomb pseudopotential for Tc
-PTHR = __PTHR__            # projectability threshold
-DYNPREFIX = PREFIX         # <DYNPREFIX>.dyn<iq> phonon files
-
-# For SOURCE='elphmat' (patched, symmetry-reduced) set the irreducible-q star
-# weights here; leave empty (or use SOURCE='ahc') to sum the full q-grid with
-# unit weights.
-Q_WEIGHTS = __QWEIGHTS__
-
-
-def _phonon_input():
-    return '\n'.join([
-        '&inputph',
-        "  prefix='%s'," % PREFIX,
-        "  outdir='./',",
-        "  fildyn='%s.dyn'," % PREFIX,
-        "  fildvscf='dvscf',",
-        '  tr2_ph=1.0d-12,',
-        '  ldisp=.true., nq1=%d, nq2=%d, nq3=%d,' % (QGRID[0], QGRID[1], QGRID[2]),
-        '/',
-        '',
-    ])
-
-
-def _ahc_input():
-    return '\n'.join([
-        '&inputph',
-        "  prefix='%s'," % PREFIX,
-        "  outdir='./',",
-        "  fildyn='%s.dyn'," % PREFIX,
-        "  fildvscf='dvscf',",
-        "  electron_phonon='ahc',",
-        '  ahc_nbnd=%d, ahc_nbndskip=0, skip_upperfan=.true.,' % NBND,
-        "  ahc_dir='ahc_dir/',",
-        '  ldisp=.true., nq1=%d, nq2=%d, nq3=%d,' % (QGRID[0], QGRID[1], QGRID[2]),
-        '/',
-        '',
-    ])
-
-
-def inputs():
-    """Phase 1: write the ph.x phonon and AHC input templates."""
-    ph = os.path.join(HERE, PREFIX + '.ph.in')
-    ahc = os.path.join(HERE, PREFIX + '.ahc.in')
-    with open(ph, 'w') as fh:
-        fh.write(_phonon_input())
-    with open(ahc, 'w') as fh:
-        fh.write(_ahc_input())
-    print('Wrote %s' % ph)
-    print('Wrote %s' % ahc)
-    print('Run (same outdir), then `analyse`:')
-    print('  1) ph.x < %s' % os.path.basename(ph))
-    print('  2) ph.x < %s' % os.path.basename(ahc))
-
-
-def analyse():
-    """Phase 2: PAO interpolation of the QE coupling -> alpha^2F, lambda, Tc."""
-    if not os.path.isdir(SAVEDIR):
-        sys.exit('%s not found. Run pw.x (nscf) first.' % SAVEDIR)
-    if not os.path.isdir(COUPLING_DIR):
-        sys.exit('%s not found. Run the QE phonon + AHC steps first (phase: inputs).' % COUPLING_DIR)
-
-    pf = PAOFLOW.PAOFLOW(workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=__SAVE_OVERLAPS__, verbose=False)
-__PROJECTION_CALL__
-    pf.projectability(pthr=PTHR)
-    # Grab the projection matrices A_k BEFORE pao_hamiltonian (which deletes them).
-    A = pf.data_controller.full_projections()[:, :, :, 0].copy()
-    pf.pao_hamiltonian()
-    HRs = pf.data_controller.data_arrays['HRs']
-    info = read_nscf(SAVEDIR)
-
-    if SOURCE == 'ahc' or not Q_WEIGHTS:
-        nq = QGRID[0] * QGRID[1] * QGRID[2]
-        q_weights = [1.0] * nq
-    else:
-        q_weights = list(Q_WEIGHTS)
-        nq = len(q_weights)
-    dyn_paths = [os.path.join(HERE, '%s.dyn%d' % (DYNPREFIX, i + 1)) for i in range(nq)]
-
-    out = eliashberg_from_qe_coupling(
-        A, HRs, info['kpts_cryst'], info['bg'], info['at'],
-        COUPLING_DIR, q_weights, tuple(KGRID), dyn_paths,
-        source=SOURCE, masses_amu=MASSES_AMU, nk_dense=NK_DENSE,
-        sigmas_ry=[SIGMA_RY], nelec=NELEC, mu_star=MU_STAR,
-    )
-
-    # The Eliashberg result is identical on every rank (Allreduce inside the
-    # driver); only rank 0 reports and writes the output files.
-    if MPI.COMM_WORLD.Get_rank() != 0:
-        return
-
-    kB = 8.617333262e-5  # eV/K
-    print('PAO-route Eliashberg (%s, source=%s, Nk=%d):' % (PREFIX, SOURCE, NK_DENSE))
-    print('  N(E_F)   = %.3f states/spin/Ry' % out['dos_ef'].mean())
-    print('  lambda   = %.4f' % out['lambda'])
-    print('  <w_log>  = %.1f K' % (out['omega_log'] / kB))
-    print('  Tc (McM) = %.2f K  (mu* = %.3f)' % (out['Tc_mcmillan'], MU_STAR))
-    print('  Tc (AD)  = %.2f K  (mu* = %.3f)' % (out['Tc_allen_dynes'], MU_STAR))
-
-    outdir = os.path.join(HERE, OUTPUTDIR)
-    os.makedirs(outdir, exist_ok=True)
-    a2f = os.path.join(outdir, 'alpha2F.dat')
-    np.savetxt(a2f, np.column_stack([out['omega'] * 1.0e3, out['a2F']]),
-               header='omega(meV)   alpha^2F(omega)   '
-                      '(lambda=%.4f, omega_log=%.2fK, Tc_McM=%.3fK, Tc_AD=%.3fK, mu*=%.3f)'
-                      % (out['lambda'], out['omega_log'] / kB, out['Tc_mcmillan'],
-                         out['Tc_allen_dynes'], MU_STAR))
-    npz = os.path.join(outdir, 'eliashberg.npz')
-    np.savez(npz, **out)
-    print('  wrote %s' % a2f)
-    print('  wrote %s' % npz)
-
-
-def main():
-    parser = argparse.ArgumentParser(description='PAOFLOW electron-phonon (PAO) workflow.')
-    parser.add_argument('phase', nargs='?', choices=['inputs', 'analyse', 'all'],
-                        default='all', help='Workflow phase to run (default: all).')
-    args = parser.parse_args()
-    if args.phase in ('inputs', 'all'):
-        inputs()
-    if args.phase in ('analyse', 'all'):
-        analyse()
-
-
-if __name__ == '__main__':
-    main()
-'''
-
-
-def build_elphon_script(cfg):
-    """Assemble a main.elphon.py electron-phonon (PAO route) workflow from the config."""
-    if cfg.get('dense_q'):
-        return build_elphon_dense_q_script(cfg)
-    subs = {
-        '__SAVEDIR__': repr(cfg['savedir']),
-        '__OUTPUTDIR__': repr(cfg['outputdir']),
-        '__PREFIX__': repr(cfg['prefix']),
-        '__BASISDIR__': repr(cfg['basisdir']),
-        '__SOURCE__': repr(cfg['source']),
-        '__COUPLING_DIR__': repr(cfg['coupling_dir']),
-        '__KGRID__': repr(tuple(cfg['kgrid'])),
-        '__QGRID__': repr(tuple(cfg['qgrid'])),
-        '__NBND__': str(int(cfg['nbnd'])),
-        '__MASSES__': repr([float(m) for m in cfg['masses_amu']]),
-        '__NELEC__': str(int(cfg['nelec'])),
-        '__NK_DENSE__': str(int(cfg['nk_dense'])),
-        '__SIGMA__': repr(float(cfg['sigma_ry'])),
-        '__MU_STAR__': repr(float(cfg['mu_star'])),
-        '__PTHR__': repr(float(cfg['pthr'])),
-        '__QWEIGHTS__': repr([float(w) for w in cfg['q_weights']]),
-        '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
-        '__PROJECTION_CALL__': '\n'.join(
-            _projection_lines(cfg, var='pf', basispath='BASISDIR', configuration="'standard'")
-        ),
-    }
-    content = ELPHON_TEMPLATE
-    for token, value in subs.items():
-        content = content.replace(token, value)
-    return content
-
-
-# --------------------------------------------------------------------------- #
-# Electron-phonon dense-q (g(R_e, R_p)) workflow builder
-# --------------------------------------------------------------------------- #
-ELPHON_DENSE_Q_TEMPLATE = r'''#!/usr/bin/env python3
-"""PAOFLOW electron-phonon (Eliashberg) -- dense-q PAO route (generated by paoflow_gen.py).
-
-EXPERIMENTAL extension of the PAO route that interpolates BOTH the electronic
-k-grid and the phonon q-grid.  The coarse-q couplings are Fourier-transformed to
-the double real-space vertex g(R_e, R_p); the phonons are Wigner-Seitz
-interpolated directly from the coarse <prefix>.dyn files (no q2r).  Both are
-evaluated on a dense NQ_DENSE^3 q-grid for alpha^2F, lambda, omega_log and Tc.
-
-Two phases:
-
-    python main.elphon.py inputs    # write the ph.x phonon + AHC templates
-    python main.elphon.py analyse   # g(R_e,R_p) + dense-q interpolation -> Tc
-
-The ``analyse`` phase distributes the dense-q loop over MPI ranks, so launch it
-with mpirun for an (up to NQ_DENSE^3-fold) speedup::
-
-    mpirun -np N python main.elphon.py analyse
-
-Between them (same outdir), run the QE steps:
-
-    1. phonon:  ph.x  < <prefix>.ph.in    # full DFPT dvscf on the coarse q-grid
-    2. ahc:     ph.x  < <prefix>.ahc.in   # electron_phonon='ahc' -> ahc_dir/
-
-IMPORTANT: the dense-q route needs the coupling AND the <prefix>.dyn files on the
-FULL coarse q-grid (every q, not just the irreducible set).  Symmetry unfolding
-of the coupling is not yet automated (see the do_pao_eph_dense_q TODOs), and the
-polar (Frohlich) long-range term is not applied -- use it on metals (e.g. Pb).
-"""
-
-import argparse
-import os
-import sys
-
-import numpy as np
-
-from mpi4py import MPI
-
-from PAOFLOW import PAOFLOW
-from PAOFLOW.elphon.do_pao_eph_dense_q import (
-    eliashberg_dense_q,
-    phonon_interp_from_dyn,
-)
-from PAOFLOW.elphon.elph_bloch import read_nscf
-from PAOFLOW.elphon.qe_elph_io import read_qe_dyn
-
-
-# ----------------------------------------------------------------------- #
-# Configuration  (edit freely -- masses / NELEC / NBND are system-specific) #
-# ----------------------------------------------------------------------- #
-HERE = os.path.dirname(os.path.abspath(__file__))
-SAVEDIR = os.path.join(HERE, __SAVEDIR__)
-OUTPUTDIR = __OUTPUTDIR__
-PREFIX = __PREFIX__
-BASISDIR = os.path.join(HERE, __BASISDIR__)
-
-# Coupling source:
-#   'ahc'     -> unpatched QE AHC dumps (ahc_dir/ahc_gkk_iq<iq>.bin); NC pseudos.
-#   'elphmat' -> patched-QE el_ph_mat dumps (elph_dir/elphmat.<iq>.dat); any pseudo.
-SOURCE = __SOURCE__
-COUPLING_DIR = os.path.join(HERE, __COUPLING_DIR__)
-
-KGRID = __KGRID__          # SCF / coupling k-grid (== pw.x K_POINTS)
-QGRID = __QGRID__          # coarse phonon q-grid (nq1, nq2, nq3)
-NBND = __NBND__            # bands in the nscf / AHC run (nbnd = ahc_nbnd)
-MASSES_AMU = __MASSES__    # atomic masses (amu), one per atom in the cell
-NELEC = __NELEC__          # valence electrons (dense E_F recompute)
-NK_DENSE = __NK_DENSE__    # dense electron k-grid
-NQ_DENSE = __NQ_DENSE__    # dense phonon q-grid
-SIGMA_RY = __SIGMA__       # Fermi-surface smearing (Ry)
-MU_STAR = __MU_STAR__      # Coulomb pseudopotential for Tc
-PTHR = __PTHR__            # projectability threshold
-
-
-def _phonon_input():
-    return '\n'.join([
-        '&inputph',
-        "  prefix='%s'," % PREFIX,
-        "  outdir='./',",
-        "  fildyn='%s.dyn'," % PREFIX,
-        "  fildvscf='dvscf',",
-        '  tr2_ph=1.0d-12,',
-        '  ldisp=.true., nq1=%d, nq2=%d, nq3=%d,' % (QGRID[0], QGRID[1], QGRID[2]),
-        '/',
-        '',
-    ])
-
-
-def _ahc_input():
-    return '\n'.join([
-        '&inputph',
-        "  prefix='%s'," % PREFIX,
-        "  outdir='./',",
-        "  fildyn='%s.dyn'," % PREFIX,
-        "  fildvscf='dvscf',",
-        "  electron_phonon='ahc',",
-        '  ahc_nbnd=%d, ahc_nbndskip=0, skip_upperfan=.true.,' % NBND,
-        "  ahc_dir='ahc_dir/',",
-        '  ldisp=.true., nq1=%d, nq2=%d, nq3=%d,' % (QGRID[0], QGRID[1], QGRID[2]),
-        '/',
-        '',
-    ])
-
-
-def inputs():
-    """Phase 1: write the ph.x phonon + AHC input templates."""
-    ph = os.path.join(HERE, PREFIX + '.ph.in')
-    ahc = os.path.join(HERE, PREFIX + '.ahc.in')
-    with open(ph, 'w') as fh:
-        fh.write(_phonon_input())
-    with open(ahc, 'w') as fh:
-        fh.write(_ahc_input())
-    print('Wrote %s' % ph)
-    print('Wrote %s' % ahc)
-    print('Run (same outdir), then `analyse`:')
-    print('  1) ph.x  < %s' % os.path.basename(ph))
-    print('  2) ph.x  < %s' % os.path.basename(ahc))
-
-
-def analyse():
-    """Phase 2: g(R_e,R_p) + dense-q interpolation -> alpha^2F, lambda, Tc."""
-    if not os.path.isdir(SAVEDIR):
-        sys.exit('%s not found. Run pw.x (nscf) first.' % SAVEDIR)
-    if not os.path.isdir(COUPLING_DIR):
-        sys.exit('%s not found. Run the QE phonon + AHC steps first (phase: inputs).' % COUPLING_DIR)
-
-    pf = PAOFLOW.PAOFLOW(workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=__SAVE_OVERLAPS__, verbose=False)
-__PROJECTION_CALL__
-    pf.projectability(pthr=PTHR)
-    # Grab the projection matrices A_k BEFORE pao_hamiltonian (which deletes them).
-    A = pf.data_controller.full_projections()[:, :, :, 0].copy()
-    pf.pao_hamiltonian()
-    HRs = pf.data_controller.data_arrays['HRs']
-    info = read_nscf(SAVEDIR)
-
-    # FULL coarse q-grid: one <prefix>.dyn per q, index-matched to the couplings.
-    nq_full = QGRID[0] * QGRID[1] * QGRID[2]
-    dyn_paths = [os.path.join(HERE, '%s.dyn%d' % (PREFIX, i + 1)) for i in range(nq_full)]
-    q_coarse = np.array([
-        np.linalg.solve(info['bg'].T, np.asarray(read_qe_dyn(p)['q'], dtype=float))
-        for p in dyn_paths
-    ])
-
-    # phonons interpolated straight from the coarse dyn files (no q2r).
-    phonon_at_q = phonon_interp_from_dyn(dyn_paths, tuple(QGRID), info['bg'], info['at'])
-
-    out = eliashberg_dense_q(
-        A, HRs, info['kpts_cryst'], info['bg'], info['at'],
-        COUPLING_DIR, tuple(QGRID), q_coarse, dyn_paths, tuple(KGRID),
-        phonon_at_q, nq_dense=NQ_DENSE, source=SOURCE,
-        masses_amu=MASSES_AMU, nk_dense=NK_DENSE, sigmas_ry=[SIGMA_RY],
-        nelec=NELEC, mu_star=MU_STAR,
-        sym_rots=info['s_cryst'], tau_cryst=info['tau_cryst'], species=info['atom_names'],
-    )
-
-    # The Eliashberg result is identical on every rank (Allreduce inside the
-    # driver); only rank 0 reports and writes the output files.
-    if MPI.COMM_WORLD.Get_rank() != 0:
-        return
-
-    kB = 8.617333262e-5  # eV/K
-    print('PAO dense-q Eliashberg (%s, source=%s, Nk=%d, Nq=%d):'
-          % (PREFIX, SOURCE, NK_DENSE, NQ_DENSE))
-    print('  lambda   = %.4f' % out['lambda'])
-    print('  <w_log>  = %.1f K' % (out['omega_log'] / kB))
-    print('  Tc (McM) = %.2f K  (mu* = %.3f)' % (out['Tc_mcmillan'], MU_STAR))
-    print('  Tc (AD)  = %.2f K  (mu* = %.3f)' % (out['Tc_allen_dynes'], MU_STAR))
-
-    outdir = os.path.join(HERE, OUTPUTDIR)
-    os.makedirs(outdir, exist_ok=True)
-    a2f = os.path.join(outdir, 'alpha2F.dat')
-    np.savetxt(a2f, np.column_stack([out['omega'] * 1.0e3, out['a2F']]),
-               header='omega(meV)   alpha^2F(omega)   '
-                      '(lambda=%.4f, omega_log=%.2fK, Tc_McM=%.3fK, Tc_AD=%.3fK, mu*=%.3f)'
-                      % (out['lambda'], out['omega_log'] / kB, out['Tc_mcmillan'],
-                         out['Tc_allen_dynes'], MU_STAR))
-    npz = os.path.join(outdir, 'eliashberg.npz')
-    np.savez(npz, **out)
-    print('  wrote %s' % a2f)
-    print('  wrote %s' % npz)
-
-
-def main():
-    parser = argparse.ArgumentParser(description='PAOFLOW electron-phonon dense-q (PAO) workflow.')
-    parser.add_argument('phase', nargs='?', choices=['inputs', 'analyse', 'all'],
-                        default='all', help='Workflow phase to run (default: all).')
-    args = parser.parse_args()
-    if args.phase in ('inputs', 'all'):
-        inputs()
-    if args.phase in ('analyse', 'all'):
-        analyse()
-
-
-if __name__ == '__main__':
-    main()
-'''
-
-
-def build_elphon_dense_q_script(cfg):
-    """Assemble a dense-q (g(R_e, R_p)) main.elphon.py from the config."""
-    subs = {
-        '__SAVEDIR__': repr(cfg['savedir']),
-        '__OUTPUTDIR__': repr(cfg['outputdir']),
-        '__PREFIX__': repr(cfg['prefix']),
-        '__BASISDIR__': repr(cfg['basisdir']),
-        '__SOURCE__': repr(cfg['source']),
-        '__COUPLING_DIR__': repr(cfg['coupling_dir']),
-        '__KGRID__': repr(tuple(cfg['kgrid'])),
-        '__QGRID__': repr(tuple(cfg['qgrid'])),
-        '__NBND__': str(int(cfg['nbnd'])),
-        '__MASSES__': repr([float(m) for m in cfg['masses_amu']]),
-        '__NELEC__': str(int(cfg['nelec'])),
-        '__NK_DENSE__': str(int(cfg['nk_dense'])),
-        '__NQ_DENSE__': str(int(cfg['nq_dense'])),
-        '__SIGMA__': repr(float(cfg['sigma_ry'])),
-        '__MU_STAR__': repr(float(cfg['mu_star'])),
-        '__PTHR__': repr(float(cfg['pthr'])),
-        '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
-        '__PROJECTION_CALL__': '\n'.join(
-            _projection_lines(cfg, var='pf', basispath='BASISDIR', configuration="'standard'")
-        ),
-    }
-    content = ELPHON_DENSE_Q_TEMPLATE
-    for token, value in subs.items():
-        content = content.replace(token, value)
-    return content
-
-
-# --------------------------------------------------------------------------- #
-# Electron-phonon plotting-script builder
-# --------------------------------------------------------------------------- #
-ELPHON_PLOT_TEMPLATE = r'''#!/usr/bin/env python3
-"""Plot the Eliashberg alpha^2F(omega) and cumulative lambda(omega).
-
-    python plot.elphon.py
-
-Reads OUTPUTDIR/eliashberg.npz written by main.elphon.py (analyse).
-"""
-
-import os
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-OUTPUTDIR = __OUTPUTDIR__
-NPZ = os.path.join(HERE, OUTPUTDIR, 'eliashberg.npz')
-
-
-def main():
-    if not os.path.isfile(NPZ):
-        raise SystemExit('%s not found; run main.elphon.py analyse first.' % NPZ)
-    d = np.load(NPZ)
-    omega = d['omega'] * 1e3   # eV -> meV
-    a2F = d['a2F']
-    lam = float(d['lambda'])
-    tc_ad = float(d['Tc_allen_dynes']) if 'Tc_allen_dynes' in d else None
-    tc_mcm = float(d['Tc_mcmillan']) if 'Tc_mcmillan' in d else None
-    mu = float(d['mu_star']) if 'mu_star' in d else None
-    # Cumulative lambda(omega) = 2 * integral_0^omega a2F(w)/w dw.
-    w = d['omega']
-    with np.errstate(divide='ignore', invalid='ignore'):
-        integrand = np.where(w > 0, 2.0 * a2F / w, 0.0)
-    lam_cum = np.concatenate([[0.0], np.cumsum(0.5 * (integrand[1:] + integrand[:-1]) * np.diff(w))])
-
-    fig, ax1 = plt.subplots(figsize=(6, 4))
-    ax1.plot(omega, a2F, color='C0', label=r'$\alpha^2F(\omega)$')
-    ax1.set_xlabel(r'$\omega$ (meV)')
-    ax1.set_ylabel(r'$\alpha^2F(\omega)$', color='C0')
-    ax1.set_xlim(left=0.0)
-    ax1.set_ylim(bottom=0.0)
-    ax2 = ax1.twinx()
-    ax2.plot(omega, lam_cum, color='C3', label=r'$\lambda(\omega)$')
-    ax2.set_ylabel(r'$\lambda(\omega)$', color='C3')
-    ax2.set_ylim(bottom=0.0)
-    title = r'Eliashberg spectral function ($\lambda = %.3f$)' % lam
-    if tc_mcm is not None and tc_ad is not None:
-        title += '\n' + r'$T_c^{McM} = %.2f$ K,  $T_c^{AD} = %.2f$ K ($\mu^* = %.2f$)' % (tc_mcm, tc_ad, mu)
-    ax1.set_title(title)
-    fig.tight_layout()
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
-'''
-
-
-def build_elphon_plot_script(cfg):
-    """Assemble a plot.elphon.py for the Eliashberg alpha^2F / lambda output."""
-    content = ELPHON_PLOT_TEMPLATE
-    content = content.replace('__OUTPUTDIR__', repr(cfg['outputdir']))
-    return content
 
 
 # --------------------------------------------------------------------------- #
@@ -1959,7 +1524,6 @@ def _dos_mag_lim(fnames):
     return (0.0, 1.1 * peak)
 
 
-
 def _ask_float(prompt, default):
     """Prompt for a float, accepting Enter to keep *default* (may be None)."""
     shown = 'auto' if default is None else default
@@ -1976,7 +1540,6 @@ def _ask_float(prompt, default):
     except ValueError:
         print('  (invalid number, keeping {})'.format(shown))
         return default
-
 
 
 def _one(pattern):
@@ -2322,6 +1885,19 @@ def build_plot_script(cfg):
         )
         menu.append(('Spin Hall conductivity', 'plot_spin_hall'))
 
+    if 'orbital_Hall' in props:
+        funcs += _plot_func(
+            'plot_orbital_hall',
+            [
+                "files = _many('*.ohcEf*.dat')",
+                'if not files:',
+                '    _missing(None)',
+                '    return',
+                "pplt.plot_ohc(files if len(files) > 1 else files[0], title='Orbital Hall conductivity', x_lim=_ewin(), y_lim=_ylim())",
+            ],
+        )
+        menu.append(('Orbital Hall conductivity', 'plot_orbital_hall'))
+
     if 'anomalous_Hall' in props:
         funcs += _plot_func(
             'plot_anomalous_hall',
@@ -2410,6 +1986,27 @@ def build_plot_script(cfg):
             ],
         )
         menu.append(('Visible color (sRGB swatch)', 'plot_visible_color'))
+
+    if 'nonlinear' in props:
+        nonlinear_groups = [
+            ('Shift current', 'plot_shift_current', ['shift_*.dat', 'shiftm_*.dat']),
+            ('Injection current', 'plot_injection_current', ['injectc_*.dat', 'injectm_*.dat']),
+            ('SHG susceptibility', 'plot_shg', ['shgr_*.dat', 'shgi_*.dat', 'shga_*.dat']),
+        ]
+        for label, fname, globs in nonlinear_groups:
+            glob_calls = ' + '.join(f'_many({gl!r})' for gl in globs)
+            funcs += _plot_func(
+                fname,
+                [
+                    f'files = {glob_calls}',
+                    'if not files:',
+                    '    _missing(None)',
+                    '    return',
+                    'pplt.plot_dielectric(files if len(files) > 1 else files[0],',
+                    f'                     title={label!r}, y_lim=_ylim(), legend_outside=True)',
+                ],
+            )
+            menu.append((label, fname))
 
     if has_emissivity:
         funcs += _plot_func(
@@ -3392,6 +2989,15 @@ def collect_run(common):
         'optical' in props,
     )
     cfg['nfft'] = ask_int('FFT grid size per direction', 24) if cfg['interpolate'] else 0
+    if 'nonlinear' in props:
+        print('\nNon-linear optics (shift / injection currents, SHG):')
+        cfg['nlo_nk'] = ask_int('  dense k-grid per direction', 40)
+        cfg['nlo_emax'] = ask_float('  largest photon energy (eV)', 4.0)
+        cfg['nlo_eta'] = ask_float('  broadening eta (eV)', 0.05)
+        cfg['nlo_scissor'] = ask_float('  scissor shift of the conduction bands (eV)', 0.0)
+        cfg['nlo_components'] = ask("  tensor components ('all', 'diag' or e.g. xyz,yyy)", 'all')
+        if ',' in cfg['nlo_components']:
+            cfg['nlo_components'] = [c.strip() for c in cfg['nlo_components'].split(',')]
     cfg['plot'] = ask_yes_no('Also generate a plotting script (plot.py)?', True)
     return cfg
 
@@ -3518,63 +3124,6 @@ def collect_phonon(common):
     return cfg
 
 
-def collect_elphon(common):
-    """Prompt for the electron-phonon (PAO route) configuration."""
-    cfg = dict(common)
-    cfg['source'] = ask_choice(
-        'Coupling source (ahc = unpatched QE, norm-conserving; '
-        'elphmat = patched QE, any pseudopotential)',
-        ['ahc', 'elphmat'],
-        'ahc',
-    )
-    cfg['coupling_dir'] = 'ahc_dir' if cfg['source'] == 'ahc' else 'elph_dir'
-    kg = ask_int('SCF / coupling k-grid per axis (NK1 = NK2 = NK3)', 9)
-    cfg['kgrid'] = [kg, kg, kg]
-    qg = ask_int('Phonon q-grid per axis (nq1 = nq2 = nq3)', 3)
-    cfg['qgrid'] = [qg, qg, qg]
-    cfg['nbnd'] = ask_int('Bands in the nscf / AHC run (nbnd = ahc_nbnd)', 0)
-    masses = ask('Atomic masses (amu), comma-separated, one per atom in the cell', '')
-    cfg['masses_amu'] = [float(x) for x in masses.replace(',', ' ').split() if x.strip()]
-    cfg['nelec'] = ask_int('Valence electrons (nelec)', 0)
-    cfg['nk_dense'] = ask_int('Dense interpolation grid per axis (NK_DENSE)', 18)
-    cfg['sigma_ry'] = ask_float('Fermi-surface smearing (Ry)', 0.02)
-    cfg['mu_star'] = ask_float('Coulomb pseudopotential mu* (for Tc)', 0.10)
-    cfg['pthr'] = ask_float('Projectability threshold (pthr)', 0.90)
-    if cfg['source'] == 'elphmat':
-        weights = ask(
-            'Irreducible-q star weights, comma-separated (blank = full grid, unit weights)', ''
-        )
-        cfg['q_weights'] = [float(x) for x in weights.replace(',', ' ').split() if x.strip()]
-    else:
-        cfg['q_weights'] = []
-    # Dense-q route: interpolate the phonons + vertex g(R_e, R_p) to a dense
-    # q-grid instead of summing only the coarse DFPT q-points (experimental).
-    cfg['dense_q'] = ask_yes_no(
-        'Also interpolate the phonon q-grid (dense-q g(R_e,R_p), experimental)?', False
-    )
-    if cfg['dense_q']:
-        cfg['nq_dense'] = ask_int('Dense phonon q-grid per axis (NQ_DENSE)', cfg['nk_dense'])
-        print(
-            '\nNote: the dense-q route needs the coupling + <prefix>.dyn on the '
-            'FULL coarse q-grid\n  (all %d q of the %dx%dx%d grid, not just the '
-            'irreducible set).  Phonons are\n  interpolated directly from the '
-            'dyn files (no q2r); symmetry unfolding of the\n  coupling is not '
-            'yet automated.'
-            % (
-                cfg['qgrid'][0] * cfg['qgrid'][1] * cfg['qgrid'][2],
-                cfg['qgrid'][0],
-                cfg['qgrid'][1],
-                cfg['qgrid'][2],
-            )
-        )
-    if cfg['nbnd'] <= 0 or not cfg['masses_amu'] or cfg['nelec'] <= 0:
-        print(
-            '\nNote: NBND, MASSES_AMU and NELEC are system-specific; edit the '
-            'generated main.elphon.py before running the "analyse" phase.'
-        )
-    return cfg
-
-
 def collect_acbn0(common):
     """Prompt for the ACBN0 / eACBN0 configuration."""
     cfg = dict(common)
@@ -3632,7 +3181,21 @@ def collect_acbn0(common):
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
+    """Run the interactive generator.
+
+    Parameters
+    ----------
+    argv : list of str, optional
+        Command-line arguments; ``sys.argv[1:]`` by default.
+
+    Returns
+    -------
+    int
+        Exit status (0 on success).  Writes the selected driver and its
+        companion scripts; the electron-phonon workflow writes a system folder
+        instead (:func:`PAOFLOW.gen.elphon_system.main_elphon`).
+    """
     parser = argparse.ArgumentParser(
         description='Generate a PAOFLOW main.py driver script interactively.'
     )
@@ -3654,7 +3217,7 @@ def main(argv=None):
         '--out',
         default=None,
         help='Output script path (default: main.py for the run workflow, '
-        'main.acbn0.py for the acbn0 workflow)',
+        'main.acbn0.py for the acbn0 workflow); the system folder for elphon',
     )
     parser.add_argument(
         '--plot',
@@ -3680,12 +3243,16 @@ def main(argv=None):
         'run',
     )
 
+    if workflow == 'elphon':
+        # The electron-phonon workflow writes a system folder (-o/--out: its path).
+        from .elphon_system import main_elphon
+
+        return main_elphon(args, workdir)
     # Each non-default workflow gets its own main.<workflow>.py name so it is
     # not confused with a regular PAOFLOW main.py; an explicit -o/--out wins.
     _default_out = {
         'acbn0': 'main.acbn0.py',
         'phonon': 'main.phonon.py',
-        'elphon': 'main.elphon.py',
     }
     out_path = args.out or _default_out.get(workflow, 'main.py')
     if os.path.exists(out_path) and not args.force:
@@ -3703,11 +3270,6 @@ def main(argv=None):
         if cfg is None:
             return 1
         content = build_phonon_script(cfg)
-    elif workflow == 'elphon':
-        cfg = collect_elphon(common)
-        if cfg is None:
-            return 1
-        content = build_elphon_script(cfg)
     else:
         cfg = collect_run(common)
         if cfg is None:
@@ -3758,25 +3320,6 @@ def main(argv=None):
                     with open(raman_plot_path, 'w', encoding='utf-8') as handle:
                         handle.write(raman_plot_content)
                     print(f'Wrote {os.path.abspath(raman_plot_path)}')
-    elif workflow == 'elphon':
-        # Always pair the elphon driver with a plot.elphon.py for alpha^2F / lambda.
-        plot_path = args.plot_out or 'plot.elphon.py'
-        if os.path.exists(plot_path) and not args.force:
-            sys.stderr.write(f'Refusing to overwrite {plot_path} (use --force).\n')
-        else:
-            plot_content = build_elphon_plot_script(cfg)
-            with open(plot_path, 'w', encoding='utf-8') as handle:
-                handle.write(plot_content)
-            print(f'Wrote {os.path.abspath(plot_path)}')
-        # Remind the user of the two-phase workflow (and the MPI dense-q option).
-        script = os.path.basename(out_path)
-        print('\nNext steps:')
-        print(f'  1) python {script} inputs      # write the ph.x (+AHC) input templates')
-        print('  2) run QE (ph.x phonon + AHC) in the same outdir')
-        if cfg.get('dense_q'):
-            print(f'  3) mpirun -np N python {script} analyse   # dense-q g(R_e,R_p) -> Tc')
-        else:
-            print(f'  3) python {script} analyse     # PAO interpolation -> alpha^2F, lambda, Tc')
     elif args.plot or cfg.get('plot'):
         plot_path = args.plot_out or 'plot.py'
         if os.path.exists(plot_path) and not args.force:

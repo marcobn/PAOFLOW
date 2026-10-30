@@ -1,7 +1,69 @@
+from __future__ import annotations
+
 import xml.etree.cElementTree as ET
 
 import numpy as np
 from mpi4py import MPI
+from numpy.typing import NDArray
+
+
+def uniform_grid_from_kpoints(
+    kpoints_cart: NDArray[np.float64], b_vectors: NDArray[np.float64]
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Recover the Monkhorst-Pack grid of an explicit, complete k-point list.
+
+    Parameters
+    ----------
+    kpoints_cart : NDArray[np.float64], shape ``(nk, 3)``
+        k-points in Cartesian coordinates (units of ``2 pi / alat``), in file
+        order.
+    b_vectors : NDArray[np.float64], shape ``(3, 3)``
+        Reciprocal lattice vectors as rows, same units.
+
+    Returns
+    -------
+    grid : tuple of int
+        ``(nk1, nk2, nk3)``.
+    shift : tuple of int
+        ``(k1, k2, k3)``, 0 for a Gamma-centred axis and 1 for a half-step
+        offset (the ``K_POINTS automatic`` convention).
+
+    Raises
+    ------
+    ValueError
+        If the list is not a complete uniform grid, or not in the order of
+        ``K_POINTS automatic`` (third index fastest), which the PAO Fourier
+        transforms assume.
+
+    Notes
+    -----
+    Explicit lists such as the full grid required by EPW and wannier90 leave
+    no ``monkhorst_pack`` element in ``data-file-schema.xml``.  Crystal
+    coordinates may be given in any periodic image (e.g. ``[0, 1)`` or
+    ``(-1/2, 1/2]``).
+    """
+    kcryst = np.linalg.solve(np.asarray(b_vectors).T, np.asarray(kpoints_cart).T).T
+    frac = np.round(kcryst % 1.0, 6) % 1.0
+    grid, shift, labels = [], [], []
+    for axis in range(3):
+        values = np.unique(frac[:, axis])
+        n = values.size
+        offset = values[0] * n
+        if not np.allclose(values, (np.arange(n) + offset) / n, atol=1e-5) or not (
+            np.isclose(offset, 0.0, atol=1e-4) or np.isclose(offset, 0.5, atol=1e-4)
+        ):
+            raise ValueError('explicit k-point list is not a uniform grid along axis %d' % axis)
+        grid.append(n)
+        shift.append(int(round(2 * offset)))
+        labels.append(np.round(frac[:, axis] * n - offset).astype(int) % n)
+    n1, n2, n3 = grid
+    flat = (labels[0] * n2 + labels[1]) * n3 + labels[2]
+    if flat.size != n1 * n2 * n3 or not np.array_equal(flat, np.arange(flat.size)):
+        raise ValueError(
+            'explicit k-point list is not the complete %dx%dx%d grid in K_POINTS automatic '
+            'order (third index fastest)' % (n1, n2, n3)
+        )
+    return (n1, n2, n3), tuple(shift)
 
 
 def parse_qe_data_file_schema(data_controller, fname):
@@ -84,9 +146,7 @@ def parse_qe_data_file_schema(data_controller, fname):
         if mag_elem.text == 'true':
             dftMag = True
 
-    mpg = elem.find('band_structure/starting_k_points/monkhorst_pack').attrib
-    k1, k2, k3 = int(mpg['k1']), int(mpg['k2']), int(mpg['k3'])
-    nk1, nk2, nk3 = int(mpg['nk1']), int(mpg['nk2']), int(mpg['nk3'])
+    mp_elem = elem.find('band_structure/starting_k_points/monkhorst_pack')
     bs = elem.find('band_structure')
     nkpnts = int(bs.find('nks').text)
     nelec = int(float(bs.find('nelec').text))
@@ -123,9 +183,6 @@ def parse_qe_data_file_schema(data_controller, fname):
             print('Fermi energy not located in QE data file.')
             raise e
     Efermi = float(ef_text) * Hart2eV
-    if verbose:
-        print(f'DFT Fermi energy: {Efermi:.9f} eV')
-        print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
 
     kpnts = np.empty((nkpnts, 3), dtype=float)
     kpnt_weights = np.empty((nkpnts), dtype=float)
@@ -140,6 +197,17 @@ def parse_qe_data_file_schema(data_controller, fname):
             np.array(k.find('eigenvalues').text.split(), dtype=float).reshape((nspin, nbnds)).T
         )
     eigs = eigs * Hart2eV - Efermi
+
+    if mp_elem is not None:
+        mpg = mp_elem.attrib
+        k1, k2, k3 = int(mpg['k1']), int(mpg['k2']), int(mpg['k3'])
+        nk1, nk2, nk3 = int(mpg['nk1']), int(mpg['nk2']), int(mpg['nk3'])
+    else:
+        # Explicit K_POINTS list (e.g. the full grid required by EPW/wannier90).
+        (nk1, nk2, nk3), (k1, k2, k3) = uniform_grid_from_kpoints(kpnts, b_vectors)
+    if verbose:
+        print(f'DFT Fermi energy: {Efermi:.9f} eV')
+        print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
 
     sym_rot, shifts = [], []
     eq_atoms, sym_info, time_rev = [], [], []

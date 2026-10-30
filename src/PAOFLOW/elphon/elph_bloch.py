@@ -6,28 +6,45 @@ the dense-grid Eliashberg properties:
 
 * :func:`read_nscf` -- k-points, eigenvalues, Fermi level and lattice from the QE
   ``data-file-schema.xml``;
+* :func:`atom_masses` -- per-species masses expanded to the atoms of the cell;
 * :func:`kq_index_map` -- ``k -> (index of k+q on the grid, umklapp G0)``;
 * :func:`vertex_pao_R` -- rotate the band-basis Cartesian coupling into the PAO
-  gauge ``A_{k+q}^dagger d A_k`` and Fourier-transform it to the electron
-  real-space cells ``g(R_e)``;
+  gauge ``A_{k+q}^T d A_k^*`` (``A_{ni} = <phi_i|psi_n>``) and Fourier-transform
+  it to the electron real-space cells ``g(R_e)``;
 * :func:`lambda_q_dense_ws` -- Wigner-Seitz interpolate the electrons (``HRs``)
   and the vertex to a dense grid and evaluate the Fermi-surface double delta ->
   ``lambda_{q nu}``.
 """
 
+from __future__ import annotations
+
 import os
 import xml.etree.ElementTree as ET
+from collections.abc import Callable, Sequence
 
 import numpy as np
+from numpy.typing import NDArray
+
+from .adaptive_smearing import fermi_level_adaptive, grid_spacing, state_widths
 
 HARTREE_TO_RY = 2.0
 RY_TO_THZ = 3289.842
+VERTEX_WS_SIGN = 1  # sign of R in the orbital separation of the vertex (see _ws_lattice_pairs)
 RY_TO_EV = 13.605693122994
 AMU_RY = 911.4442421
 
 
-def read_nscf(save_dir):
+def read_nscf(save_dir, unfold=False):
     """Read k-points, eigenvalues, Fermi level and lattice from ``data-file-schema.xml``.
+
+    Parameters
+    ----------
+    save_dir : str
+        QE save directory.
+    unfold : bool, optional
+        The nscf holds the irreducible wedge of a Gamma-centred automatic grid: return the
+        k-points and eigenvalues of the full grid in ``K_POINTS automatic`` order
+        (:class:`PAOFLOW.elphon.wavefunction_symmetry.WavefunctionProvider`).
 
     Returns
     -------
@@ -76,6 +93,8 @@ def read_nscf(save_dir):
         ).reshape(-1, 3, 3)
 
     ef_ha = out.find('band_structure/fermi_energy')
+    if ef_ha is None:  # fixed occupations without a Fermi level: the highest occupied level
+        ef_ha = out.find('band_structure/highestOccupiedLevel')
     ef_ry = float(ef_ha.text) * HARTREE_TO_RY
 
     ks = out.findall('band_structure/ks_energies')
@@ -88,6 +107,15 @@ def read_nscf(save_dir):
     # crystal coords: k_cart = sum_i k_cryst_i bg_i  ->  k_cryst = (bg^T)^{-1} k_cart
     kpts_cryst = np.linalg.solve(bg.T, kpts_cart.T).T
     kpts_cryst = kpts_cryst - np.round(kpts_cryst - 0.5 + 1e-9)  # fold into [0,1)
+
+    if unfold:
+        from .wavefunction_symmetry import provider_for
+
+        provider = provider_for(save_dir)
+        kpts_cryst = provider.kpts_cryst
+        kpts_cart = provider.kpts_cart()
+        eigs_ry = provider.expand(eigs_ry, axis=0)
+        nk = provider.nk
 
     return {
         'kpts_cart': kpts_cart,
@@ -106,6 +134,72 @@ def read_nscf(save_dir):
         'species': species,
         's_cryst': s_cryst,
     }
+
+
+def pao_orbital_positions(data_controller, at) -> NDArray[np.float64]:
+    """Centre of every PAO orbital in crystal coordinates.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        PAOFLOW data after ``projections`` (``arrays['basis']`` holds each
+        orbital's Cartesian ``tau`` in bohr, ``attributes['alat']`` the lattice
+        parameter).
+    at : ndarray, shape ``(3, 3)``
+        Direct lattice vectors (rows, alat units), e.g. ``read_nscf(...)['at']``.
+
+    Returns
+    -------
+    ndarray, shape ``(nawf, 3)``
+        Orbital centres, input of the orbital-pair Wigner-Seitz interpolation of
+        :func:`precompute_dense_electrons`.
+    """
+    arrays, attributes = data_controller.data_dicts()
+    tau_alat = np.array([orbital['tau'] for orbital in arrays['basis']]) / attributes['alat']
+    return np.linalg.solve(np.asarray(at, dtype=float).T, tau_alat.T).T
+
+
+def atom_masses(
+    species_masses: Sequence[float],
+    species: Sequence[str],
+    atom_names: Sequence[str],
+) -> NDArray[np.float64]:
+    """Expand per-species masses to one mass per atom.
+
+    Parameters
+    ----------
+    species_masses : sequence of float
+        Mass of each species (amu), in the order of ``species`` (the
+        ``ATOMIC_SPECIES`` order, as EPW's ``amass(i)``).
+    species : sequence of str
+        Species names, e.g. ``list(read_nscf(...)['species'])``.
+    atom_names : sequence of str
+        Species name of every atom in the cell, e.g. ``read_nscf(...)['atom_names']``.
+
+    Returns
+    -------
+    ndarray, shape ``(nat,)``
+        Mass of each atom (amu), the ``masses_amu`` expected by
+        :func:`~PAOFLOW.elphon.do_pao_eph.eliashberg_from_qe_coupling` and
+        :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.eliashberg_dense_q`.
+
+    Raises
+    ------
+    ValueError
+        If the number of masses differs from the number of species, or an atom
+        has an unknown species.
+    """
+    species = list(species)
+    if len(species_masses) != len(species):
+        raise ValueError(
+            'got %d masses for the %d species %s; give one mass per species'
+            % (len(species_masses), len(species), species)
+        )
+    unknown = sorted(set(atom_names) - set(species))
+    if unknown:
+        raise ValueError('atoms with unknown species %s (species: %s)' % (unknown, species))
+    by_name = dict(zip(species, species_masses))
+    return np.array([float(by_name[name]) for name in atom_names])
 
 
 def kq_index_map(kpts_cryst, q_cryst, nkgrid, tol=1.0e-5):
@@ -148,41 +242,92 @@ def kq_index_map(kpts_cryst, q_cryst, nkgrid, tol=1.0e-5):
 # --------------------------------------------------------------------------- #
 
 
-def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
+def vertex_pao_R(d, A, ikq, kgrid_idx, ng, long_range=None):
     """PAO-gauge vertex in real space ``g(R_e)`` for one q (EPW electron transform).
 
     Rotates the band-basis deformation potentials to the PAO gauge,
-    ``g^{PAO}_{ij,c}(k) = (A_{k+q}^\\dagger d_c(k) A_k)_{ij}``, places them on the
-    coarse k-grid and Fourier-transforms to the electron cells ``R_e``.  The
-    transform matches PAOFLOW's ``HRs`` convention so the result can be
-    interpolated with :func:`PAOFLOW.elphon.eph_kq.estates_on_grid`.
+    ``g^{PAO}_{ij,c}(k) = (A_{k+q}^T d_c(k) A_k^*)_{ij}``, places them on the
+    coarse k-grid and Fourier-transforms to the electron cells ``R_e``
+    (``fftn / N``).  :func:`lambda_q_dense_ws_fast` evaluates it back with
+    ``exp(+2 pi i k.R)``, whereas the electron Hamiltonian follows PAOFLOW's
+    ``Hks = fftn(HRs)`` (``exp(-2 pi i k.R)``), so both are taken at the same
+    physical k.
 
     Parameters
     ----------
     d : ndarray ``(nk, nbnd, nbnd, ncart)``
-        Band-basis Cartesian deformation potentials ``d_{mn,c}(k)`` (QE's
-        ``el_ph_mat`` / ``ahc_gkk`` on the coarse k-grid).
+        Band-basis Cartesian deformation potentials
+        ``d_{mn,c}(k) = <psi_{m,k+q}|dV/du_c|psi_{n,k}>`` (QE's ``el_ph_mat`` /
+        ``ahc_gkk`` on the coarse k-grid).
     A : ndarray ``(nbnd, nawf, nk)``
-        PAO projections ``A_{n i}(k) = <psi_{nk}|phi_i>`` (``arry['U'][..., ispin]``).
+        PAO projections ``A_{n i}(k) = <phi_i|psi_{nk}>`` (``arry['U'][..., ispin]``),
+        the convention of both the internal projector and QE's ``projwfc.x``.
     ikq : ndarray ``(nk,)``
         Index of ``k+q`` on the coarse grid.
     kgrid_idx : ndarray ``(nk, 3)`` int
         Integer grid labels ``round(k_cryst * ng) % ng`` of each k-point.
     ng : tuple(int, int, int)
         Coarse k-grid dimensions.
+    long_range : ndarray ``(nawf, nawf, ncart)``, optional
+        Analytic long-range vertex of this q (:class:`~PAOFLOW.elphon.long_range.LongRangeModel`),
+        subtracted from the PAO-gauge vertex at every k so that only the short-range part is
+        Fourier-interpolated; the dense drivers add it back (:func:`band_vertex`).
 
     Returns
     -------
     ndarray ``(nawf, nawf, ncart, n1, n2, n3)`` complex
         The PAO-gauge vertex in the electron real-space cells.
+
+    Notes
+    -----
+    With ``A_{ni}(k) = \\langle\\phi_i|\\psi_{nk}\\rangle`` the PAO vertex is the
+    band-projected operator
+
+    .. math::
+
+        g^{PAO}_{ij,c}(k) = \\sum_{mn} \\langle\\phi_i|\\psi_{m,k+q}\\rangle\\,
+            d_{mn,c}(k)\\, \\langle\\psi_{nk}|\\phi_j\\rangle
+            = \\left(A_{k+q}^{T}\\, d_c(k)\\, A_k^{*}\\right)_{ij},
+
+    i.e. :math:`\\langle\\phi_i|P_{k+q}\\, \\partial V/\\partial u_c\\, P_k|\\phi_j\\rangle`.
+    Each band index enters once as a bra and once as a ket, so the result does
+    not depend on the band phases, provided ``d`` and ``A`` are built from the
+    same Kohn-Sham states.  It is the operator that the band-basis contraction
+    ``V_{k+q}^\\dagger g V_k`` (PAO eigenvectors of ``H = A E A^\\dagger``) maps
+    back to ``d``.
     """
-    nk, nbnd, _, ncart = d.shape
-    nawf = A.shape[1]
-    # Batched PAO rotation g^{PAO}(k) = A_{k+q}^dagger d(k) A_k over all k at once
+    # Batched PAO rotation g^{PAO}(k) = A_{k+q}^T d(k) A_k^* over all k at once
     # (BLAS-backed einsum) instead of a Python loop over k-points.
     Ak = np.transpose(A, (2, 0, 1))  # (nk, nbnd, nawf)
     Akq = np.transpose(A[:, :, ikq], (2, 0, 1))  # (nk, nbnd, nawf)
-    gk_b = np.einsum('kmi,kmnc,knj->kijc', Akq.conj(), d, Ak, optimize=True)  # (nk,nawf,nawf,ncart)
+    gk_b = np.einsum('kmi,kmnc,knj->kijc', Akq, d, Ak.conj(), optimize=True)  # (nk,nawf,nawf,ncart)
+    if (
+        long_range is not None
+    ):  # subtract the analytic long-range part before the k -> R_e transform
+        gk_b = gk_b - np.asarray(long_range)[None]
+    return pao_vertex_to_cells(gk_b, kgrid_idx, ng)
+
+
+def pao_vertex_to_cells(
+    gk_b: NDArray[np.complex128], kgrid_idx: NDArray[np.integer], ng: tuple[int, int, int]
+) -> NDArray[np.complex128]:
+    """Place a PAO-gauge vertex ``g(k)`` on the coarse k-grid and transform it to ``g(R_e)``.
+
+    Parameters
+    ----------
+    gk_b : ndarray ``(nk, nawf, nawf, ncart)``
+        ``g^{PAO}_{ij,c}(k)`` of every coarse k-point.
+    kgrid_idx : ndarray ``(nk, 3)`` int
+        Integer grid labels of the k-points (see :func:`vertex_pao_R`).
+    ng : tuple(int, int, int)
+        Coarse k-grid dimensions.
+
+    Returns
+    -------
+    ndarray ``(nawf, nawf, ncart, n1, n2, n3)`` complex
+        ``g(R_e) = N^-1 sum_k exp(-2 pi i k.R) g(k)`` (the tail of :func:`vertex_pao_R`).
+    """
+    nk, nawf, _, ncart = gk_b.shape
     gk = np.zeros((nawf, nawf, ncart, ng[0], ng[1], ng[2]), dtype=complex)
     i1, i2, i3 = kgrid_idx[:, 0], kgrid_idx[:, 1], kgrid_idx[:, 2]
     # each k maps to a unique coarse-grid cell, so this scatter is unambiguous
@@ -252,6 +397,83 @@ def _ws_lattice(ng, at, span=2):
     return Nint, W, Midx.astype(int)
 
 
+def _ws_lattice_pairs(
+    ng: Sequence[int],
+    at: NDArray[np.float64],
+    positions_cryst: NDArray[np.float64],
+    sign: int,
+    span: int = 2,
+    column_positions_cryst: NDArray[np.float64] | None = None,
+) -> tuple[NDArray[np.int_], NDArray[np.float64], NDArray[np.int_]]:
+    """Wigner-Seitz images of the real-space cells for every pair of centres.
+
+    Pair-resolved version of :func:`_ws_lattice` (EPW ``use_ws``, wannier90
+    ``use_ws_distance``, QE ``matdyn``): the cell ``n`` of the element ``(i, j)``
+    is kept when the separation ``sign * n + tau_j - tau_i`` lies in (or on the
+    boundary of) the Wigner-Seitz cell of the ``ng``-supercell.  For a cell with
+    several atoms this keeps the interpolation invariant under the point group,
+    which the single-site construction breaks.
+
+    Parameters
+    ----------
+    ng : sequence of int
+        Real-space grid (supercell) size.
+    at : ndarray, shape ``(3, 3)``
+        Direct lattice vectors (rows, alat units).
+    positions_cryst : ndarray, shape ``(nrow, 3)``
+        Centres ``tau_i`` of the row index (crystal coordinates), e.g. the PAO
+        orbitals.
+    sign : {1, -1}
+        Sign of the cell vector in the separation, fixed by the Fourier
+        convention of the real-space array.
+    span : int, optional
+        Candidate cells extend to ``span * ng`` (default 2).
+    column_positions_cryst : ndarray, shape ``(ncol, 3)``, optional
+        Centres ``tau_j`` of the column index; defaults to ``positions_cryst``.
+
+    Returns
+    -------
+    Nint : ndarray, shape ``(nws, 3)``, int
+        Union of the kept cells over all pairs.
+    W : ndarray, shape ``(nws, nrow, ncol)``
+        Degeneracy weight of each cell for each pair (0 where not kept).
+    Midx : ndarray, shape ``(nws, 3)``, int
+        Grid indices ``n mod ng``.
+
+    Notes
+    -----
+    The weights of every pair sum to ``prod(ng)``, as those of :func:`_ws_lattice`.
+    """
+    ng = np.asarray(ng, dtype=int)
+    axes = [np.arange(-span * ng[d], span * ng[d] + 1) for d in range(3)]
+    cells = np.stack(np.meshgrid(*axes, indexing='ij'), axis=-1).reshape(-1, 3)
+    shifts = np.stack(np.meshgrid(*[np.arange(-span, span + 1)] * 3, indexing='ij'), axis=-1)
+    shifts = shifts.reshape(-1, 3)
+    shifts = shifts[np.any(shifts != 0, axis=1)]
+    rws = (shifts * ng[None, :]) @ at
+    half = 0.5 * np.einsum('ij,ij->i', rws, rws)
+    if column_positions_cryst is None:
+        column_positions_cryst = positions_cryst
+    row_sites, site_of_row = np.unique(
+        np.round(np.asarray(positions_cryst, dtype=float), 8), axis=0, return_inverse=True
+    )
+    column_sites, site_of_column = np.unique(
+        np.round(np.asarray(column_positions_cryst, dtype=float), 8), axis=0, return_inverse=True
+    )
+    tol = 1.0e-6
+    weights = np.zeros((cells.shape[0], len(row_sites), len(column_sites)))
+    for a, site_a in enumerate(row_sites):
+        for b, site_b in enumerate(column_sites):
+            proj = ((sign * cells + site_b - site_a) @ at) @ rws.T - half[None, :]
+            inside = np.all(proj <= tol, axis=1)
+            degeneracy = 1 + np.count_nonzero(np.abs(proj) < tol, axis=1)
+            weights[inside, a, b] = 1.0 / degeneracy[inside]
+    keep = np.any(weights > 0.0, axis=(1, 2))
+    Nint = cells[keep]
+    W = weights[keep][:, np.ravel(site_of_row)][:, :, np.ravel(site_of_column)]
+    return Nint, W, (Nint % ng).astype(int)
+
+
 def lambda_q_dense_ws(
     gR,
     HRs,
@@ -265,8 +487,12 @@ def lambda_q_dense_ws(
     ispin=0,
     kblock=4096,
     nelec=None,
+    spin_degeneracy=2.0,
 ):
     """``lambda_{q nu}`` with a Wigner-Seitz (EPW-style) electron interpolation.
+
+    ``spin_degeneracy`` (2 for scalar bands, 1 for spinors) sets the Fermi level
+    of ``nelec`` electrons.
 
     Same as :func:`lambda_q_dense` but the vertex ``gR`` and the PAO Hamiltonian
     ``HRs`` are interpolated to the dense grid with explicit Wigner-Seitz real-space
@@ -333,16 +559,18 @@ def lambda_q_dense_ws(
         Eall = np.empty((nkd, nawf))
         for s0 in range(0, nkd, kblock):
             Kb = K[s0 : s0 + kblock]
-            phk = np.exp(2j * np.pi * (Kb @ NintH.T))
+            phk = np.exp(-2j * np.pi * (Kb @ NintH.T))  # PAOFLOW: H(k) = fftn(HRs)
             Hk = (phk @ Hn_flat).reshape(Kb.shape[0], nawf, nawf)
             Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
             Eall[s0 : s0 + Kb.shape[0]] = np.linalg.eigvalsh(Hk) / RY_TO_EV
         for isig, sig in enumerate(sigmas):
-            ef_sig[isig] = _fermi_level(Eall, sig, nelec)
+            ef_sig[isig] = _fermi_level(Eall, sig, nelec, spin_degeneracy)
     for s0 in range(0, nkd, kblock):
         Kb = K[s0 : s0 + kblock]
-        phkH = np.exp(2j * np.pi * (Kb @ NintH.T))  # (nb, nwsH)
-        phkqH = np.exp(2j * np.pi * ((Kb + q_cryst) @ NintH.T))
+        # Electrons: PAOFLOW builds HRs = ifftn(Hks), so H(k) = sum_R exp(-2 pi i k.R) HRs(R).
+        # The vertex keeps the opposite pair of vertex_pao_R (fftn / N, exp(+2 pi i k.R)).
+        phkH = np.exp(-2j * np.pi * (Kb @ NintH.T))  # (nb, nwsH)
+        phkqH = np.exp(-2j * np.pi * ((Kb + q_cryst) @ NintH.T))
         phkg = np.exp(2j * np.pi * (Kb @ Nintg.T))  # (nb, nwsg)
         nb = Kb.shape[0]
         Hk = (phkH @ Hn_flat).reshape(nb, nawf, nawf)
@@ -375,9 +603,29 @@ def lambda_q_dense_ws(
 
 
 def precompute_dense_electrons(
-    HRs, at, Nk, sigmas_ry, nelec, ng_vertex, ispin=0, kblock=4096, fs_window=8.0
-):
+    HRs,
+    at,
+    Nk,
+    sigmas_ry,
+    nelec,
+    ng_vertex,
+    ispin=0,
+    kblock=4096,
+    fs_window=8.0,
+    orbital_positions=None,
+    velocities: bool = False,
+    alat: float | None = None,
+    diagonal_velocities: bool = False,
+    keep_bands: Callable | None = None,
+    comm=None,
+    spin_degeneracy: float = 2.0,
+    adaptive_smearing: float | None = None,
+) -> dict:
     """Dense-grid electron spectrum + Fermi-surface delta, shared by every q.
+
+    ``spin_degeneracy`` (2 for scalar bands, 1 for spinors with spin-orbit
+    coupling) sets the Fermi level of ``nelec`` electrons; it must match the
+    degeneracy the caller uses for the density of states and the plasma frequency.
 
     Diagonalises ``H(k)`` **once** on the regular ``Nk^3`` grid (Wigner-Seitz
     interpolation of ``HRs``).  Because the electronic spectrum is q-independent,
@@ -405,21 +653,67 @@ def precompute_dense_electrons(
     fs_window : float, optional
         Fermi-surface window in smearings for the shell mask (default 8, exact to
         ``exp(-fs_window^2)``); lower it to prune wide-band metals more aggressively.
+    orbital_positions : ndarray ``(nawf, 3)``, optional
+        Orbital centres in crystal coordinates
+        (:func:`pao_orbital_positions`).  When given, ``H`` and the vertex are
+        interpolated with orbital-pair Wigner-Seitz images
+        (:func:`_ws_lattice_pairs`), which keeps the dense bands and couplings
+        symmetric in cells with several atoms; ``None`` uses the single-site
+        images of :func:`_ws_lattice`.
+    velocities : bool, optional
+        Also cache the real-space terms of the velocity operator so that
+        :func:`band_velocities` can evaluate ``v(k)`` in the gauge of ``V``
+        (default ``False``; the other keys are unchanged either way).
+    alat : float, optional
+        Lattice parameter (bohr); required with ``velocities=True``.
+    diagonal_velocities : bool, optional
+        With ``velocities``, also cache the band velocities
+        ``velocity_diag`` ``(nkd, nawf, 3)`` (Ry bohr, averaged over degenerate
+        subspaces) for the plasma frequency and the transport coupling.  These
+        are the group velocities :math:`\\partial_{\\mathbf k}\\varepsilon`; the
+        non-local pseudopotential correction belongs to interband dipoles only.
+    keep_bands : callable, optional
+        ``E (nkd, nawf) [Ry] -> band indices``: store the eigenvectors (and the
+        diagonal velocities) of these bands only, ``V`` ``(nkd, nawf, nband)``,
+        to save memory on dense grids (energies are kept for all bands; the
+        indices are stored as ``'bands'``).  ``None`` keeps all bands.
+    comm : mpi4py communicator, optional
+        With a communicator, ``E`` and ``V`` live in MPI shared memory, one copy
+        per node, and the diagonalisation is split between the ranks of each
+        node (identical results).  Release them with
+        :func:`release_dense_electrons` once every rank is done.  ``None`` keeps
+        private arrays (serial use).
+    adaptive_smearing : float, optional
+        Adaptive Fermi-surface smearing (Yates et al.; 0.7 is the usual Gaussian
+        prefactor): the delta of every state has the width ``adaptive_smearing *
+        |v_nk| * dk`` with ``dk`` the spacing of the dense grid
+        (:func:`~PAOFLOW.elphon.adaptive_smearing.state_widths`), floored at the
+        corresponding entry of ``sigmas_ry``; the Fermi level, ``dk``, ``dos`` and
+        the shell follow (``'widths'`` ``(nsigma, nkd, nawf)`` is stored).  Needs
+        ``velocities=True``, ``diagonal_velocities=True`` and all bands kept.
 
     Returns
     -------
     dict
         Cache consumed by :func:`lambda_q_dense_ws_fast` -- keys ``Nk``, ``nawf``,
         ``E`` ``(nkd, nawf)`` (Ry), ``V`` ``(nkd, nawf, nawf)``, ``dk``
-        ``(nsigma, nkd, nawf)``, ``dos`` ``(nsigma,)``, plus the cached vertex
-        Wigner-Seitz phase (``phkg``, ``Midxg``, ``Wg``, ``ng_vertex``).
+        ``(nsigma, nkd, nawf)``, ``dos`` ``(nsigma,)``, plus the vertex
+        Wigner-Seitz images (``Nintg``, ``Midxg``, ``Wg``, ``ng_vertex``; the
+        phases of a block of k come from :func:`vertex_phases`).  With
+        ``velocities=True`` it also holds ``'velocity'``, the input of
+        :func:`band_velocities`.
     """
     nawf = HRs.shape[0]
     H = HRs[:, :, :, :, :, ispin]
     ng_H = H.shape[2:5]
-    NintH, WH, MidxH = _ws_lattice(ng_H, at)
-    Hn = np.transpose(H[:, :, MidxH[:, 0], MidxH[:, 1], MidxH[:, 2]], (2, 0, 1))
-    Hn = Hn * WH[:, None, None]
+    if orbital_positions is None:
+        NintH, WH, MidxH = _ws_lattice(ng_H, at)
+        Hn = np.transpose(H[:, :, MidxH[:, 0], MidxH[:, 1], MidxH[:, 2]], (2, 0, 1))
+        Hn = Hn * WH[:, None, None]
+    else:
+        # H(k) = sum_R exp(-2 pi i k.R) H(R) couples orbital i to orbital j at -R.
+        NintH, WH, MidxH = _ws_lattice_pairs(ng_H, at, orbital_positions, sign=-1)
+        Hn = np.transpose(H[:, :, MidxH[:, 0], MidxH[:, 1], MidxH[:, 2]], (2, 0, 1)) * WH
     Hn_flat = Hn.reshape(Hn.shape[0], -1)
 
     ax = [np.arange(Nk) / Nk for _ in range(3)]
@@ -427,56 +721,559 @@ def precompute_dense_electrons(
     nkd = K.shape[0]
     sigmas = np.atleast_1d(sigmas_ry)
 
-    E = np.empty((nkd, nawf))
-    V = np.empty((nkd, nawf, nawf), dtype=complex)
-    for s0 in range(0, nkd, kblock):
-        Kb = K[s0 : s0 + kblock]
-        phk = np.exp(2j * np.pi * (Kb @ NintH.T))
-        Hk = (phk @ Hn_flat).reshape(Kb.shape[0], nawf, nawf)
-        Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
-        e, v = np.linalg.eigh(Hk)
-        E[s0 : s0 + Kb.shape[0]] = e / RY_TO_EV
-        V[s0 : s0 + Kb.shape[0]] = v
+    # One copy of E and V per node (MPI shared memory), each rank of the node
+    # diagonalising its own slice of k; private arrays without a communicator.
+    windows = []
+    if comm is not None:
+        from mpi4py import MPI
 
+        from ..utils.communication import load_balancing
+
+        node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+        kstart, kstop = load_balancing(node_comm.Get_size(), node_comm.Get_rank(), nkd)
+    else:
+        node_comm, kstart, kstop = None, 0, nkd
+
+    def allocate(shape, dtype):
+        if node_comm is None:
+            return np.empty(shape, dtype=dtype)
+        itemsize = np.dtype(dtype).itemsize
+        nbytes = int(np.prod(shape)) * itemsize if node_comm.Get_rank() == 0 else 0
+        window = MPI.Win.Allocate_shared(nbytes, itemsize, comm=node_comm)
+        windows.append(window)
+        buffer, _ = window.Shared_query(0)
+        return np.ndarray(buffer=buffer, dtype=dtype, shape=shape)
+
+    def hamiltonian_block(s0, s1):
+        Kb = K[s0:s1]
+        phk = np.exp(-2j * np.pi * (Kb @ NintH.T))  # PAOFLOW: H(k) = fftn(HRs)
+        Hk = (phk @ Hn_flat).reshape(Kb.shape[0], nawf, nawf)
+        return 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
+
+    E = allocate((nkd, nawf), float)
+    if keep_bands is not None:
+        # first pass: eigenvalues only, to choose the bands whose vectors are kept
+        for s0 in range(kstart, kstop, kblock):
+            s1 = min(s0 + kblock, kstop)
+            E[s0:s1] = np.linalg.eigvalsh(hamiltonian_block(s0, s1)) / RY_TO_EV
+        if node_comm is not None:
+            node_comm.Barrier()
+        kept = np.asarray(keep_bands(E), dtype=int)
+        if node_comm is not None:
+            node_comm.Barrier()  # every rank has read E before it is overwritten
+    else:
+        kept = np.arange(nawf)
+
+    V = allocate((nkd, nawf, kept.size), complex)
+    for s0 in range(kstart, kstop, kblock):
+        s1 = min(s0 + kblock, kstop)
+        e, v = np.linalg.eigh(hamiltonian_block(s0, s1))
+        E[s0:s1] = e / RY_TO_EV
+        V[s0:s1] = v if keep_bands is None else v[:, :, kept]
+    if node_comm is not None:
+        node_comm.Barrier()
+        E.setflags(write=False)
+        V.setflags(write=False)
+
+    if orbital_positions is None:
+        Nintg, Wg, Midxg = _ws_lattice(tuple(ng_vertex), at)
+    else:
+        # The vertex keeps the opposite Fourier convention, exp(+2 pi i k.R).
+        Nintg, Wg, Midxg = _ws_lattice_pairs(
+            tuple(ng_vertex), at, orbital_positions, sign=VERTEX_WS_SIGN
+        )
+    cache = {
+        'Nk': Nk,
+        'nawf': nawf,
+        'bands': kept,
+        'K': K,
+        'E': E,
+        'V': V,
+        'ef_sig': None,  # filled below
+        'dk': None,
+        'dos': None,
+        'sigmas': sigmas,
+        'shell': None,
+        'fs_window': fs_window,
+        'ng_vertex': tuple(int(n) for n in ng_vertex),
+        'Wg': Wg,
+        'Midxg': Midxg,
+        'Nintg': Nintg,
+        'windows': windows,
+        'Hn_flat': Hn_flat,  # Bloch terms, for states off the grid (bloch_states_at)
+        'NintH': NintH,
+    }
+    if velocities:
+        cache['velocity'] = _velocity_operator_terms(
+            Hn_flat, NintH, at, alat, nawf, orbital_positions
+        )
+        if diagonal_velocities:
+            cache['velocity_diag'] = _diagonal_velocities(cache, kblock)
+
+    # Fermi-surface delta of every state: fixed width, or adaptive from the group velocity
+    widths = None
+    if adaptive_smearing is not None:
+        if 'velocity_diag' not in cache or kept.size != nawf:
+            raise ValueError(
+                'adaptive_smearing needs velocities=True, diagonal_velocities=True and all bands'
+            )
+        spacing = grid_spacing(float(alat) ** 3 * abs(np.linalg.det(np.asarray(at, float))), Nk)
+        widths = np.stack(
+            [
+                state_widths(cache['velocity_diag'], spacing, adaptive_smearing, sig)
+                for sig in sigmas
+            ]
+        )  # (nsigma, nkd, nawf), Ry
+        cache['widths'] = widths
+        cache['adaptive_smearing'] = float(adaptive_smearing)
     ef_sig = np.zeros(sigmas.size)
     dk = np.empty((sigmas.size, nkd, nawf))
     dos = np.zeros(sigmas.size)
-    for isig, sig in enumerate(sigmas):
-        ef = _fermi_level(E, sig, nelec) if nelec is not None else 0.0
-        ef_sig[isig] = ef
-        d = np.exp(-(((E - ef) / sig) ** 2)) / (sig * np.sqrt(np.pi))
-        dk[isig] = d
-        dos[isig] = d.sum() / nkd
-
     # Fermi-surface shell: k with a band within ``fs_window`` smearings of E_F.
     # The double delta is negligible (exp(-fs_window^2)) outside it, so it prunes
     # the per-q vertex contraction to the states that actually scatter.
     shell = np.empty((sigmas.size, nkd), dtype=bool)
     for isig, sig in enumerate(sigmas):
-        shell[isig] = np.min(np.abs(E - ef_sig[isig]), axis=1) < fs_window * sig
+        if widths is None:
+            ef = _fermi_level(E, sig, nelec, spin_degeneracy) if nelec is not None else 0.0
+            w = sig
+        else:
+            w = widths[isig]
+            ef = fermi_level_adaptive(E, w, nelec, spin_degeneracy) if nelec is not None else 0.0
+        ef_sig[isig] = ef
+        d = np.exp(-(((E - ef) / w) ** 2)) / (w * np.sqrt(np.pi))
+        dk[isig] = d
+        dos[isig] = d.sum() / nkd
+        if widths is None:
+            shell[isig] = np.min(np.abs(E - ef), axis=1) < fs_window * sig
+        else:
+            shell[isig] = np.min(np.abs(E - ef) / w, axis=1) < fs_window
+    cache['ef_sig'], cache['dk'], cache['dos'], cache['shell'] = ef_sig, dk, dos, shell
+    return cache
 
-    Nintg, Wg, Midxg = _ws_lattice(tuple(ng_vertex), at)
-    phkg = np.exp(2j * np.pi * (K @ Nintg.T))  # (nkd, nwsg)
+
+def bloch_states_at(
+    electrons: dict, k_cryst: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.complex128]]:
+    """Energies (Ry) and eigenvectors of the cached PAO Hamiltonian at arbitrary k-points.
+
+    Parameters
+    ----------
+    electrons : dict
+        Output of :func:`precompute_dense_electrons`.
+    k_cryst : ndarray ``(nk, 3)``
+        Crystal coordinates (not restricted to the dense grid).
+
+    Returns
+    -------
+    energies : ndarray ``(nk, nawf)``
+        Same scale and convention as ``electrons['E']``.
+    vectors : ndarray ``(nk, nawf, nawf)``
+        Columns, in the gauge of ``electrons['V']`` (:func:`band_vertex` takes them).
+    """
+    k = np.atleast_2d(np.asarray(k_cryst, dtype=float))
+    nawf = electrons['nawf']
+    phk = np.exp(-2j * np.pi * (k @ electrons['NintH'].T))
+    Hk = (phk @ electrons['Hn_flat']).reshape(k.shape[0], nawf, nawf)
+    Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
+    e, v = np.linalg.eigh(Hk)
+    return e / RY_TO_EV, v
+
+
+def group_velocities_at(
+    electrons: dict,
+    k_cryst: NDArray[np.float64],
+    at: NDArray[np.float64],
+    alat: float,
+    step: float = 1.0e-4,
+) -> NDArray[np.float64]:
+    """``|v_nk|``-ready group velocities (Ry bohr) at arbitrary k by central differences.
+
+    Parameters
+    ----------
+    electrons : dict
+        Output of :func:`precompute_dense_electrons`.
+    k_cryst : ndarray ``(nk, 3)``
+    at : ndarray ``(3, 3)``
+        Lattice vectors (rows, alat units).
+    alat : float
+        Lattice parameter (bohr).
+    step : float, optional
+        Finite-difference step (2 pi / alat units) along each Cartesian direction.
+
+    Returns
+    -------
+    ndarray ``(nk, nawf, 3)``
+        ``d e_n / d k`` of the energy-ordered bands (Ry bohr); at band crossings the sorted
+        bands exchange character, which only matters for the ordering, not for the magnitudes
+        used by the adaptive widths.
+    """
+    k = np.atleast_2d(np.asarray(k_cryst, dtype=float))
+    at = np.asarray(at, dtype=float)
+    out = np.zeros((k.shape[0], electrons['nawf'], 3))
+    for a in range(3):
+        dk_cart = np.zeros(3)
+        dk_cart[a] = step
+        dk_cryst = dk_cart @ at.T  # crystal coordinates of the Cartesian step (2 pi / alat)
+        e_plus, _ = bloch_states_at(electrons, k + dk_cryst[None, :])
+        e_minus, _ = bloch_states_at(electrons, k - dk_cryst[None, :])
+        out[:, :, a] = (e_plus - e_minus) / (2.0 * step * 2.0 * np.pi / float(alat))  # Ry bohr
+    return out
+
+
+def vertex_phases_at(electrons: dict, k_cryst: NDArray[np.float64]) -> NDArray[np.complex128]:
+    """Vertex Wigner-Seitz phases ``e^{2 pi i k.n}`` ``(nk, nws)`` at arbitrary k-points."""
+    k = np.atleast_2d(np.asarray(k_cryst, dtype=float))
+    return np.exp(2j * np.pi * (k @ electrons['Nintg'].T))
+
+
+def vertex_phases(electrons: dict, k_indices: NDArray[np.int_]) -> NDArray[np.complex128]:
+    """Wigner-Seitz phases of the coupling vertex for a block of dense k-points.
+
+    Parameters
+    ----------
+    electrons : dict
+        Output of :func:`precompute_dense_electrons`.
+    k_indices : ndarray of int, shape ``(nb,)``
+        Flat indices into ``electrons['K']``.
+
+    Returns
+    -------
+    ndarray, shape ``(nb, nws)``, complex
+        :math:`e^{2\\pi i\\,\\mathbf k\\cdot\\mathbf n}` for the vertex cells
+        ``electrons['Nintg']`` (computed per block instead of stored for the whole
+        grid, which would cost ``16 nkd nws`` bytes per rank).
+    """
+    if 'phkg' in electrons:  # explicit table (tests, older caches)
+        return electrons['phkg'][k_indices]
+    K = electrons['K'][np.asarray(k_indices)]
+    return np.exp(2j * np.pi * (K @ electrons['Nintg'].T))
+
+
+def release_dense_electrons(electrons: dict) -> None:
+    """Free the MPI shared memory of :func:`precompute_dense_electrons` (``comm`` given).
+
+    Collective over the communicator passed to :func:`precompute_dense_electrons`;
+    the arrays ``E`` and ``V`` must not be used afterwards.
+
+    Parameters
+    ----------
+    electrons : dict
+        Output of :func:`precompute_dense_electrons`.
+    """
+    windows = electrons.get('windows', [])
+    for key in ('E', 'V'):
+        if windows:
+            electrons.pop(key, None)
+    for window in windows:
+        window.Free()
+    electrons['windows'] = []
+
+
+def _diagonal_velocities(
+    electrons: dict,
+    kblock: int,
+    degeneracy_tol: float = 1.0e-6,
+    k_range: tuple[int, int] | None = None,
+) -> NDArray:
+    """Band velocities :math:`\\mathbf v_{n\\mathbf k}` on the dense grid, gauge invariant.
+
+    Parameters
+    ----------
+    electrons : dict
+        Cache of :func:`precompute_dense_electrons` holding ``'velocity'``.
+    kblock : int
+        k-points per block.
+    degeneracy_tol : float, optional
+        Energy tolerance (Ry) of a degenerate subspace.
+    k_range : tuple of int, optional
+        Only the k-points ``start <= k < stop`` (the others stay zero), to share
+        the work between MPI ranks.
+
+    Returns
+    -------
+    ndarray, shape ``(nkd, nband, 3)``
+        Real diagonal velocity matrix elements (Ry bohr) of the cached bands,
+        averaged over each degenerate subspace (the diagonal of a degenerate
+        subspace depends on the choice of eigenvectors; its average does not).
+
+    Notes
+    -----
+    By the Hellmann-Feynman theorem these are the group velocities
+    :math:`\\partial_{\\mathbf k}\\varepsilon_{n\\mathbf k}` of the PAO Hamiltonian
+    (the position-dipole term of :func:`band_velocities` is off-diagonal).
+    """
+    bands = electrons.get('bands', np.arange(electrons['E'].shape[1]))
+    energies = electrons['E'][:, bands]
+    nkd, nband = energies.shape
+    start, stop = (0, nkd) if k_range is None else k_range
+    out = np.zeros((nkd, nband, 3))
+    for s0 in range(start, stop, kblock):
+        block = np.arange(s0, min(s0 + kblock, stop))
+        v = band_velocities(electrons, block)
+        diag = np.real(np.einsum('kann->kna', v))  # (nb, nawf, 3)
+        e = energies[block]
+        same = np.abs(e[:, :, None] - e[:, None, :]) < degeneracy_tol  # (nb, n, m)
+        out[block] = np.einsum('bnm,bma->bna', same, diag) / same.sum(axis=2)[:, :, None]
+    return out
+
+
+def fermi_surface_plasma_frequency(
+    electrons: dict, cell_volume: float, isig: int = 0, spin_degeneracy: float = 2.0
+) -> NDArray[np.float64]:
+    """Intraband (Drude) plasma-frequency tensor from the dense Fermi surface.
+
+    Parameters
+    ----------
+    electrons : dict
+        Cache of :func:`precompute_dense_electrons` with ``velocities=True``.
+    cell_volume : float
+        Unit-cell volume (bohr^3).
+    isig : int, optional
+        Smearing index of the Fermi-surface delta ``electrons['dk']``.
+    spin_degeneracy : float, optional
+        2 without spin-orbit coupling, 1 with it.
+
+    Returns
+    -------
+    ndarray, shape ``(3, 3)``
+        :math:`(\\hbar\\omega_p)^2_{\\alpha\\beta}` in eV^2.
+
+    Notes
+    -----
+    .. math::
+
+        \\omega^2_{p,\\alpha\\beta} = \\frac{4\\pi e^2 g_s}{\\Omega N_k}
+            \\sum_{n\\mathbf k} v^\\alpha_{n\\mathbf k} v^\\beta_{n\\mathbf k}\\,
+            \\delta(\\varepsilon_{n\\mathbf k} - \\mu),
+
+    with :math:`e^2 = 2` in Rydberg units; for free electrons it reduces to
+    :math:`4\\pi n e^2/m`.
+    """
+    if 'velocity_diag' not in electrons:
+        raise ValueError('needs precompute_dense_electrons(..., diagonal_velocities=True)')
+    v = electrons['velocity_diag']
+    bands = electrons.get('bands', np.arange(electrons['dk'].shape[2]))
+    delta = electrons['dk'][isig][:, bands]  # (nkd, nband), 1/Ry
+    nkd = v.shape[0]
+    tensor = np.einsum('kna,knb,kn->ab', v, v, delta) / nkd
+    return 8.0 * np.pi * spin_degeneracy / float(cell_volume) * tensor * RY_TO_EV**2
+
+
+def _velocity_operator_terms(
+    Hn_flat: NDArray[np.complex128],
+    NintH: NDArray[np.int_],
+    at: NDArray[np.float64],
+    alat: float | None,
+    nawf: int,
+    orbital_positions: NDArray[np.float64] | None,
+) -> dict:
+    """Real-space ingredients of the PAO velocity operator (see :func:`band_velocities`).
+
+    Parameters
+    ----------
+    Hn_flat : ndarray, shape ``(nws, nawf*nawf)``, complex
+        Wigner-Seitz weighted ``H(n)`` (eV) of :func:`precompute_dense_electrons`.
+    NintH : ndarray, shape ``(nws, 3)``, int
+        Integer cells ``n`` of ``Hn_flat`` (Bloch phase ``exp(-2 pi i k.n)``).
+    at : ndarray, shape ``(3, 3)``
+        Direct lattice vectors (rows, alat units).
+    alat : float or None
+        Lattice parameter (bohr).
+    nawf : int
+        Number of PAO orbitals.
+    orbital_positions : ndarray, shape ``(nawf, 3)`` or None
+        Orbital centres (crystal coordinates); ``None`` drops the intersite
+        position term (exact when all orbitals sit on one site).
+
+    Returns
+    -------
+    dict
+        ``NintH``, ``Hn_flat``, ``dHn_flat`` ``(3, nws, nawf*nawf)`` (eV bohr) and
+        ``separation`` ``(3, nawf, nawf)`` = ``tau_j - tau_i`` (bohr).
+    """
+    if alat is None:
+        raise ValueError('velocities=True requires alat (bohr).')
+    # H(k) = sum_n exp(-i k.R_n) H(n), R_n = alat * n @ at  ->  dH/dk = sum_n (-i R_n) ...
+    R_cart = float(alat) * (np.asarray(NintH, dtype=float) @ np.asarray(at, dtype=float))
+    dHn_flat = np.stack([-1j * R_cart[:, a, None] * Hn_flat for a in range(3)], axis=0)
+    separation = np.zeros((3, nawf, nawf))
+    if orbital_positions is not None:
+        tau_cart = float(alat) * (np.asarray(orbital_positions, dtype=float) @ at)  # (nawf, 3)
+        separation = np.transpose(tau_cart[None, :, :] - tau_cart[:, None, :], (2, 0, 1))
     return {
-        'Nk': Nk,
-        'nawf': nawf,
-        'K': K,
-        'E': E,
-        'V': V,
-        'ef_sig': ef_sig,
-        'dk': dk,
-        'dos': dos,
-        'sigmas': sigmas,
-        'shell': shell,
-        'fs_window': fs_window,
-        'ng_vertex': tuple(int(n) for n in ng_vertex),
-        'Wg': Wg,
-        'Midxg': Midxg,
-        'phkg': phkg,
+        'NintH': np.asarray(NintH),
+        'Hn_flat': Hn_flat,
+        'dHn_flat': dHn_flat,
+        'separation': separation,
     }
 
 
-def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096):
+def band_velocities(
+    electrons: dict,
+    k_indices: NDArray[np.int_],
+    bands: NDArray[np.int_] | slice = slice(None),
+    position_dipoles: Callable[[NDArray[np.float64]], NDArray[np.complex128]] | None = None,
+) -> NDArray[np.complex128]:
+    """Band-basis velocity matrix elements ``<m k|v_alpha|n k>`` on the dense grid.
+
+    Evaluates the PAO velocity operator at the dense k-points ``K[k_indices]``
+    and rotates it with the cached eigenvectors ``V``, so the result shares the
+    gauge of the band-basis coupling of :func:`band_vertex` (required whenever
+    ``g`` and ``v`` interfere, as in phonon-assisted absorption).
+
+    Parameters
+    ----------
+    electrons : dict
+        Output of :func:`precompute_dense_electrons` with ``velocities=True``.
+    k_indices : ndarray, shape ``(nb,)``, int
+        Flat indices into the dense grid ``electrons['K']``.
+    bands : ndarray of int or slice, optional
+        Bands kept in the rotation (default all ``nawf``).
+    position_dipoles : callable, optional
+        ``K_cryst (nb, 3) -> (nb, 3, nawf, nawf)``: the position dipoles
+        :math:`\\mathbf d(\\mathbf k)` of the PAO basis in bohr
+        (:func:`~PAOFLOW.hamiltonian.position_dipoles.position_dipole_operator`);
+        adds the commutator :math:`i[H(\\mathbf k), \\mathbf d(\\mathbf k)]` in the
+        orbital basis before the band rotation (see Notes).
+
+    Returns
+    -------
+    ndarray, shape ``(nb, 3, nband, nband)``, complex
+        ``v_{mn,alpha}(k)`` in Ry bohr (Rydberg atomic units, ``hbar = 1``).
+
+    Notes
+    -----
+    In the lattice-periodic PAO Bloch basis of ``H(k)`` the velocity operator
+    :math:`i[H, \\mathbf{r}]`, with the position operator diagonal on the orbital
+    centres :math:`\\boldsymbol{\\tau}_i`, is
+
+    .. math::
+
+        \\mathbf{v}_{ij}(\\mathbf{k}) = \\partial_{\\mathbf{k}} H_{ij}(\\mathbf{k})
+            + i\\, H_{ij}(\\mathbf{k})\\, (\\boldsymbol{\\tau}_j - \\boldsymbol{\\tau}_i),
+
+    the PAO analogue of EPW's ``vme = 'wannier'`` (and minus PAOFLOW's
+    ``dHksp`` of :func:`~PAOFLOW.hamiltonian.do_gradient.do_gradient`).  The band
+    matrix is :math:`V_k^\\dagger \\mathbf{v}(\\mathbf{k}) V_k`.
+
+    With ``position_dipoles`` the off-diagonal position matrix of the orbitals is
+    included as well, :math:`\\mathbf{v} \\mathrel{+}= i[H, \\mathbf d(\\mathbf k)]`,
+    whose band-basis form :math:`i(\\varepsilon_n - \\varepsilon_m) d_{nm}` is the
+    analogue of EPW's Berry-connection term; it vanishes on the diagonal and inside
+    degenerate blocks by construction.
+
+    Its diagonal is exactly the group velocity :math:`\\partial_{\\mathbf k}\\varepsilon_{n\\mathbf k}`
+    (Hellmann-Feynman), with the non-local pseudopotential already inside the PAO
+    Hamiltonian; no separate :math:`[V_{\\rm NL}, \\mathbf r]` term is needed (one was
+    carried until October 2026 and double counted it).
+    """
+    terms = electrons.get('velocity')
+    if terms is None:
+        raise ValueError('band_velocities needs precompute_dense_electrons(..., velocities=True).')
+    nawf = electrons['nawf']
+    k_indices = np.asarray(k_indices)
+    K = electrons['K'][k_indices]
+    phk = np.exp(-2j * np.pi * (K @ terms['NintH'].T))
+    Hk = (phk @ terms['Hn_flat']).reshape(-1, nawf, nawf)
+    Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
+    velocity = np.empty((K.shape[0], 3, nawf, nawf), dtype=complex)
+    for a in range(3):
+        dHk = (phk @ terms['dHn_flat'][a]).reshape(-1, nawf, nawf)
+        dHk = 0.5 * (dHk + np.conjugate(np.transpose(dHk, (0, 2, 1))))
+        velocity[:, a] = dHk + 1j * Hk * terms['separation'][a][None]
+    if position_dipoles is not None:
+        from ..hamiltonian.position_dipoles import dipole_velocity_term
+
+        velocity += dipole_velocity_term(Hk, position_dipoles(K))  # eV bohr
+    velocity /= RY_TO_EV  # eV bohr -> Ry bohr
+    Vb = electrons['V'][k_indices][:, :, bands]
+    return np.einsum('kim,kaij,kjn->kamn', Vb.conj(), velocity, Vb, optimize=True)
+
+
+def vertex_ws_coefficients(gR: NDArray[np.complex128], electrons: dict) -> NDArray[np.complex128]:
+    """Wigner-Seitz weighted vertex cells, flattened for the dense-k matmul.
+
+    Parameters
+    ----------
+    gR : ndarray, shape ``(nawf, nawf, ncart, n1, n2, n3)``, complex
+        PAO-gauge vertex real-space cells for one q (grid == ``ng_vertex``).
+    electrons : dict
+        Output of :func:`precompute_dense_electrons`.
+
+    Returns
+    -------
+    ndarray, shape ``(nws, nawf*nawf*ncart)``, complex
+        Coefficients ``gn`` with ``g(k) = vertex_phases(electrons, k) @ gn``.
+    """
+    if tuple(int(n) for n in gR.shape[3:6]) != electrons['ng_vertex']:
+        raise ValueError(
+            'vertex grid %s != cached ng_vertex %s' % (gR.shape[3:6], electrons['ng_vertex'])
+        )
+    Midxg, Wg = electrons['Midxg'], electrons['Wg']
+    gn = np.transpose(gR[:, :, :, Midxg[:, 0], Midxg[:, 1], Midxg[:, 2]], (3, 0, 1, 2))
+    if Wg.ndim == 1:
+        gn = gn * Wg[:, None, None, None]
+    else:  # orbital-pair Wigner-Seitz weights (nws, nawf, nawf)
+        gn = gn * Wg[:, :, :, None]
+    return gn.reshape(gn.shape[0], -1)
+
+
+def band_vertex(
+    gn_flat: NDArray[np.complex128],
+    phkg: NDArray[np.complex128],
+    Vkq: NDArray[np.complex128],
+    Vk: NDArray[np.complex128],
+    zmass: NDArray[np.float64],
+    long_range: NDArray[np.complex128] | None = None,
+) -> NDArray[np.complex128]:
+    """Band- and mode-resolved coupling ``g_{mn,nu}(k, q)`` for a block of dense k.
+
+    Parameters
+    ----------
+    gn_flat : ndarray, shape ``(nws, nawf*nawf*ncart)``, complex
+        Output of :func:`vertex_ws_coefficients`.
+    phkg : ndarray, shape ``(nb, nws)``, complex
+        Vertex Wigner-Seitz phases of the block (:func:`vertex_phases`).
+    Vkq, Vk : ndarray, shape ``(nb, nawf, nband)``, complex
+        Eigenvectors at ``k+q`` (rows ``m``) and ``k`` (columns ``n``); a band
+        subset may be passed as column slices.
+    zmass : ndarray, shape ``(nmode, ncart)``
+        Mass-scaled phonon eigenvectors ``z / sqrt(M)`` (Rydberg mass units).
+    long_range : ndarray, shape ``(nawf, nawf, ncart)``, optional
+        Analytic long-range vertex of this q in the PAO gauge
+        (:meth:`~PAOFLOW.elphon.long_range.LongRangeModel.vertex_pao`), added back to the
+        interpolated short-range part at every k of the block.
+
+    Returns
+    -------
+    ndarray, shape ``(nb, nmode, nband_kq, nband_k)``, complex
+        ``g_{mn,nu} = <m, k+q| dV_{q nu} |n, k>`` in Rydberg units, **without** the
+        zero-point factor :math:`1/\\sqrt{2\\omega_{q\\nu}}`.
+    """
+    nawf = Vk.shape[1]
+    gk = (phkg @ gn_flat).reshape(phkg.shape[0], nawf, nawf, -1)
+    if long_range is not None:
+        gk = gk + np.asarray(long_range)[None]
+    # Modes first, then V_{k+q}^dagger g V_k as batched matrix products (BLAS).
+    gk = np.ascontiguousarray(np.moveaxis(gk @ np.asarray(zmass).T, 3, 1))  # (nb, nmode, i, j)
+    left = np.matmul(np.conj(np.swapaxes(Vkq, 1, 2))[:, None], gk)  # (nb, nmode, m, j)
+    return np.matmul(left, Vk[:, None])  # (nb, nmode, m, n)
+
+
+def lambda_q_dense_ws_fast(
+    gR,
+    electrons,
+    q_cryst,
+    zmass,
+    freqs_thz,
+    kblock=4096,
+    pair_coupling=None,
+    pair_weights=None,
+    pair_q_weight=None,
+    transport: bool = False,
+    long_range=None,
+):
     """``lambda_{q nu}`` for one q, reusing a :func:`precompute_dense_electrons` cache.
 
     Numerically identical to :func:`lambda_q_dense_ws` (deterministic ``eigh``),
@@ -495,21 +1292,38 @@ def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096
     zmass : ndarray ``(nmode, ncart)``
     freqs_thz : ndarray ``(nmode,)``
     kblock : int, optional
+    pair_coupling : FermiSurfacePairCoupling, optional
+        Also accumulate the state-resolved Fermi-surface coupling of the
+        anisotropic Migdal-Eliashberg equations
+        (:class:`~PAOFLOW.elphon.fermi_surface_coupling.FermiSurfacePairCoupling`).
+        Its window is added to the Fermi-surface shell.
+    pair_weights : ndarray ``(nmode,)``, optional
+        Mode weights passed to ``pair_coupling`` (q-star multiplicity over the
+        number of q, 0 for excluded modes); required with ``pair_coupling``.
+    pair_q_weight : float, optional
+        q-star multiplicity over the number of q (Coulomb pairs); required with
+        ``pair_coupling``.
+    long_range : ndarray ``(nawf, nawf, ncart)``, optional
+        Long-range vertex of this q added at every k (:func:`band_vertex`).
+    transport : bool, optional
+        Also return the transport coupling ``lambda_tr_qnu`` (needs
+        ``precompute_dense_electrons(..., velocities=True)``): the same double
+        delta weighted by
+        :math:`\\mathbf v_{n\\mathbf k}\\cdot(\\mathbf v_{n\\mathbf k}
+        - \\mathbf v_{m\\mathbf k+\\mathbf q})/\\langle v^2\\rangle_{FS}`
+        (Allen's transport Eliashberg function, trace form).
 
     Returns
     -------
     dict
-        ``{'lambda_qnu', 'gamma_ghz', 'dos_ef', 'nk_dense'}``.
+        ``{'lambda_qnu', 'gamma_ghz', 'dos_ef', 'nk_dense'}``, plus
+        ``'lambda_tr_qnu'`` with ``transport``.
     """
     Nk = electrons['Nk']
     nawf = electrons['nawf']
     nkd = Nk**3
-    ncart = gR.shape[2]
     nmode = zmass.shape[0]
-    if tuple(int(n) for n in gR.shape[3:6]) != electrons['ng_vertex']:
-        raise ValueError(
-            'vertex grid %s != cached ng_vertex %s' % (gR.shape[3:6], electrons['ng_vertex'])
-        )
+    gn_flat = vertex_ws_coefficients(gR, electrons)
 
     shift = np.asarray(q_cryst, dtype=float) * Nk
     if np.any(np.abs(shift - np.round(shift)) > 1.0e-6):
@@ -520,17 +1334,13 @@ def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096
     roll = (-int(shift[0]), -int(shift[1]), -int(shift[2]))
 
     Vk = electrons['V']
-    Vkq = np.roll(Vk.reshape(Nk, Nk, Nk, nawf, nawf), roll, axis=(0, 1, 2)).reshape(nkd, nawf, nawf)
+    # k+q of every k as an index (gathered per block, no copy of V per q)
+    kq_index = np.roll(np.arange(nkd).reshape(Nk, Nk, Nk), roll, axis=(0, 1, 2)).reshape(nkd)
     dk_all = electrons['dk']  # (nsig, nkd, nawf)
     nsig = dk_all.shape[0]
     dkq_all = np.roll(dk_all.reshape(nsig, Nk, Nk, Nk, nawf), roll, axis=(1, 2, 3)).reshape(
         nsig, nkd, nawf
     )
-
-    Midxg, Wg, phkg = electrons['Midxg'], electrons['Wg'], electrons['phkg']
-    gn = np.transpose(gR[:, :, :, Midxg[:, 0], Midxg[:, 1], Midxg[:, 2]], (3, 0, 1, 2))
-    gn = gn * Wg[:, None, None, None]
-    gn_flat = gn.reshape(gn.shape[0], -1)
 
     # Restrict to the Fermi-surface shell: only k with a band near E_F at BOTH k
     # and k+q give a non-negligible double delta (exact to exp(-fs_window^2)).
@@ -540,6 +1350,9 @@ def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096
         for isig in range(nsig):
             shq = np.roll(shell[isig].reshape(Nk, Nk, Nk), roll, axis=(0, 1, 2)).reshape(nkd)
             keep |= shell[isig] & shq
+        if pair_coupling is not None:
+            window = pair_coupling.k_in_window
+            keep |= window & np.roll(window.reshape(Nk, Nk, Nk), roll, axis=(0, 1, 2)).reshape(nkd)
         idx = np.nonzero(keep)[0]
     else:
         idx = np.arange(nkd)
@@ -548,17 +1361,39 @@ def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096
     safe = omega_ry > 1.0e-8
     ry_to_ghz = RY_TO_EV * 2.417989242e5
     num = np.zeros((nsig, nmode))
+    if transport:
+        if 'velocity_diag' not in electrons:
+            raise ValueError(
+                'transport=True needs precompute_dense_electrons(..., diagonal_velocities=True)'
+            )
+        vk = electrons['velocity_diag']  # (nkd, nawf, 3)
+        vkq = np.roll(vk.reshape(Nk, Nk, Nk, nawf, 3), roll, axis=(0, 1, 2)).reshape(nkd, nawf, 3)
+        # Fermi-surface average <v^2> for each smearing
+        v2 = np.einsum('kna,kna->kn', vk, vk)
+        v2_fs = np.array([(v2 * dk_all[isig]).sum() / dk_all[isig].sum() for isig in range(nsig)])
+        num_tr = np.zeros((nsig, nmode))
     for s0 in range(0, idx.size, kblock):
         ii = idx[s0 : s0 + kblock]
-        gk = (phkg[ii] @ gn_flat).reshape(-1, nawf, nawf, ncart)
-        tmp = np.einsum('bim,bijc->bmjc', Vkq[ii].conj(), gk, optimize=True)
-        gband = np.einsum('bmjc,bjn->bmnc', tmp, Vk[ii], optimize=True)
-        gnu = np.einsum('bmnc,vc->bvmn', gband, zmass, optimize=True)
+        gnu = band_vertex(
+            gn_flat, vertex_phases(electrons, ii), Vk[kq_index[ii]], Vk[ii], zmass, long_range
+        )
         absg2 = np.abs(gnu) ** 2
         for isig in range(nsig):
             num[isig] += np.einsum(
                 'bvmn,bm,bn->v', absg2, dkq_all[isig][ii], dk_all[isig][ii], optimize=True
             )
+        if transport:
+            # w[b, m, n] = v_n(k) . (v_n(k) - v_m(k+q))
+            weight = np.einsum('bna,bna->bn', vk[ii], vk[ii])[:, None, :] - np.einsum(
+                'bna,bma->bmn', vk[ii], vkq[ii]
+            )
+            for isig in range(nsig):
+                num_tr[isig] += np.einsum(
+                    'bvmn,bmn,bm,bn->v', absg2, weight, dkq_all[isig][ii], dk_all[isig][ii],
+                    optimize=True,
+                ) / v2_fs[isig]  # fmt: skip
+        if pair_coupling is not None:
+            pair_coupling.accumulate(ii, shift, absg2, freqs_thz, pair_weights, pair_q_weight)
 
     lam = np.zeros((nsig, nmode))
     gam_ghz = np.zeros((nsig, nmode))
@@ -566,4 +1401,10 @@ def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096
     for isig in range(nsig):
         gam_ghz[isig] = np.pi * num[isig] / nkd * ry_to_ghz
         lam[isig, safe] = num[isig, safe] / (nkd * dos[isig] * omega_ry[safe] ** 2)
-    return {'lambda_qnu': lam, 'gamma_ghz': gam_ghz, 'dos_ef': dos, 'nk_dense': Nk}
+    out = {'lambda_qnu': lam, 'gamma_ghz': gam_ghz, 'dos_ef': dos, 'nk_dense': Nk}
+    if transport:
+        lam_tr = np.zeros((nsig, nmode))
+        for isig in range(nsig):
+            lam_tr[isig, safe] = num_tr[isig, safe] / (nkd * dos[isig] * omega_ry[safe] ** 2)
+        out['lambda_tr_qnu'] = lam_tr
+    return out

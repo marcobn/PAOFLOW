@@ -1,7 +1,7 @@
 """Dielectric-function metric extraction for PAOFLOW vs QE benchmarking.
 
-Helper utilities used by the Phase 1 / Phase 4 harness around the non-local
-pseudopotential velocity correction.  See ``TODOs/nonlocal_velocity_correction.md``.
+Helper utilities of the harness that pins the dielectric function of the PAO
+velocity operator (``docs/internals/position-dipoles.md``).
 
 Supports two file formats:
 

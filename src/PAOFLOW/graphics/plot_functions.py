@@ -1,5 +1,13 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 from matplotlib import pyplot as plt
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from typing import Any
 
 
 def plot_dos(es, dos, title, x_lim, y_lim, vertical, col, x_label=None, y_label=None):
@@ -877,4 +885,749 @@ def plot_raman_spectrum(
     if filename is not None:
         plt.savefig(filename, dpi=300, bbox_inches='tight')
 
+    plt.show()
+
+
+# Ordinal blue ramp (light -> dark with increasing temperature) and the three
+# categorical slots used for the gap estimates.
+_ME_T_RAMP = ['#86b6ef', '#3987e5', '#1c5cab', '#0d366b']
+_ME_SERIES = ['#2a78d6', '#eb6834', '#1baf7a']
+
+
+def plot_migdal_eliashberg(
+    data: Mapping[str, Any],
+    temps: Sequence[float] | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+    real_axis_max_mev: float = 60.0,
+) -> None:
+    """Plot the isotropic Migdal-Eliashberg results versus temperature.
+
+    Parameters
+    ----------
+    data : mapping
+        Contents of ``migdal_eliashberg.npz`` written by
+        :func:`PAOFLOW.elphon.migdal_eliashberg.write_me_outputs`.
+    temps : sequence of float, optional
+        Temperatures (K) drawn in the frequency-resolved panels; defaults to up
+        to four temperatures with a non-zero gap.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+    real_axis_max_mev : float, optional
+        Upper frequency (meV) of the real-axis ``Delta(w)`` panels (default 60),
+        capped at the end of the real-axis grid (``wscut``).
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Panels: ``Delta(i w_n)`` and ``Z(i w_n)``; ``Re`` / ``Im Delta(w)`` on the
+    real axis (analytic continuation solid, Pade dashed); the quasiparticle
+    DOS; ``Delta(T)`` from the lowest Matsubara frequency and the two real-axis
+    gap edges; and the largest eigenvalue of the linearised kernel with
+    ``Tc``.  Temperatures use one blue ramp (light to dark with increasing T);
+    the three gap estimates use distinct colours and markers.
+    """
+    from matplotlib.lines import Line2D
+
+    from ..elphon.migdal_eliashberg import temperature_tag
+
+    temperatures = np.asarray(data['temps'])
+    gap0_mev = np.asarray(data['gap0_imag']) * 1e3
+    if temps is None:
+        gapped = temperatures[gap0_mev > 0.0]
+        picks = np.linspace(0, gapped.size - 1, min(4, gapped.size)).round().astype(int)
+        temps = gapped[np.unique(picks)] if gapped.size else []
+    temps = [t for t in temps if 'imag_' + temperature_tag(t) in data]
+    ramp_last = len(_ME_T_RAMP) - 1
+    colours = [
+        _ME_T_RAMP[int(round(i * ramp_last / max(len(temps) - 1, 1)))] for i in range(len(temps))
+    ]
+    w_mev = np.asarray(data['w_real']) * 1e3
+    edges_mev = np.concatenate([np.asarray(data['gap_acon']), np.asarray(data['gap_pade'])]) * 1e3
+    if np.any(np.isfinite(edges_mev) & (edges_mev > 0)):
+        edge_mev = np.nanmax(edges_mev)
+    else:
+        edge_mev = gap0_mev.max()
+    w_max = min(w_mev[-1], real_axis_max_mev)
+
+    fig, axes = plt.subplots(2, 4, figsize=(17, 7.5))
+    fig.suptitle('Isotropic Migdal-Eliashberg' if title is None else title)
+    ax_gap_n, ax_z_n, ax_re, ax_im, ax_qdos, ax_gap_t, ax_rho, ax_legend = axes.ravel()
+
+    for t, colour in zip(temps, colours):
+        tag = temperature_tag(t)
+        wn, Zn, deltan = np.asarray(data['imag_' + tag]).T
+        ax_gap_n.plot(wn * 1e3, deltan * 1e3, color=colour, lw=1.5)
+        ax_z_n.plot(wn * 1e3, Zn, color=colour, lw=1.5)
+        for key, style in (('acon', '-'), ('pade', '--')):
+            if key + '_' + tag in data:
+                re_delta, im_delta = np.asarray(data[key + '_' + tag])[:, 2:4].T * 1e3
+                ax_re.plot(w_mev, re_delta, color=colour, ls=style, lw=1.5)
+                ax_im.plot(w_mev, im_delta, color=colour, ls=style, lw=1.5)
+        if 'qdos_' + tag in data:
+            ax_qdos.plot(w_mev, data['qdos_' + tag], color=colour, lw=1.5)
+    ax_gap_n.set(
+        xlabel=r'$\omega_n$ (meV)', ylabel=r'$\Delta(i\omega_n)$ (meV)', title='Imaginary axis: gap'
+    )
+    ax_z_n.set(
+        xlabel=r'$\omega_n$ (meV)',
+        ylabel=r'$Z(i\omega_n)$',
+        title='Imaginary axis: renormalisation',
+    )
+    for ax, label in ((ax_re, r'Re $\Delta(\omega)$ (meV)'), (ax_im, r'Im $\Delta(\omega)$ (meV)')):
+        ax.set(
+            xlabel=r'$\omega$ (meV)',
+            ylabel=label,
+            xlim=(0.0, w_max),
+            title='Real axis: ' + label.split(' (')[0],
+        )
+        visible = [line.get_ydata()[w_mev <= w_max] for line in ax.get_lines()]
+        if visible:  # scale y to the visible frequency window
+            low = min(0.0, min(y.min() for y in visible))
+            high = max(y.max() for y in visible)
+            ax.set_ylim(low - 0.05 * (high - low), high + 0.05 * (high - low))
+        ax.axhline(0.0, color='0.6', lw=0.8)
+    ax_qdos.set(
+        xlabel=r'$\omega$ (meV)',
+        ylabel=r'$N_S(\omega)/N_F$',
+        xlim=(0.0, 4.0 * edge_mev if edge_mev > 0 else w_max),
+        title='Quasiparticle DOS',
+    )
+    ax_qdos.set_ylim(0.0, min(ax_qdos.get_ylim()[1], 8.0))
+
+    estimates = (
+        ('gap0_imag', r'$\Delta(i\omega_0)$', 'o'),
+        ('gap_pade', 'gap edge, Pade', 's'),
+        ('gap_acon', 'gap edge, analytic cont.', '^'),
+    )
+    for (key, label, marker), colour in zip(estimates, _ME_SERIES):
+        gap_mev = np.asarray(data[key]) * 1e3
+        finite = np.isfinite(gap_mev)
+        ax_gap_t.plot(
+            temperatures[finite], gap_mev[finite], color=colour, marker=marker, ms=5, lw=1.2,
+            label=label,
+        )  # fmt: skip
+    tc_gap = float(data['Tc_gap']) if 'Tc_gap' in data else float('nan')
+    gap_title = r'Gap vs $T$'
+    if np.isfinite(tc_gap):
+        gap_title += r'  ($T_c \approx %.2f$ K)' % tc_gap
+    ax_gap_t.set(xlabel='Temperature (K)', ylabel=r'$\Delta$ (meV)', title=gap_title)
+    ax_gap_t.set_ylim(bottom=0.0)
+    ax_gap_t.legend(frameon=False, fontsize=9)
+
+    if 'max_eigenvalue' in data:
+        linear_temps = np.asarray(data['lin_temps'])
+        rho = np.asarray(data['max_eigenvalue'])
+        ax_rho.plot(linear_temps, rho, color=_ME_SERIES[0], marker='o', ms=5, lw=1.2)
+        ax_rho.axhline(1.0, color='0.5', ls='--', lw=1.0)
+        tc_linear = float(data['Tc_linear'])
+        if np.isfinite(tc_linear):
+            ax_rho.axvline(tc_linear, color='0.5', ls=':', lw=1.0)
+            ax_rho.annotate(
+                r'$T_c = %.2f$ K' % tc_linear,
+                (tc_linear, 1.0),
+                xytext=(6, 8),
+                textcoords='offset points',
+            )
+        ax_rho.set(
+            xlabel='Temperature (K)',
+            ylabel=r'max eigenvalue $\rho$',
+            title='Linearised Migdal-Eliashberg kernel',
+        )
+    else:
+        ax_rho.set_visible(False)
+
+    for ax in axes.ravel()[:-1]:
+        ax.grid(alpha=0.3)
+    ax_legend.axis('off')
+    handles = [Line2D([], [], color=colour, lw=2) for colour in colours]
+    handles += [Line2D([], [], color='0.3', ls='-'), Line2D([], [], color='0.3', ls='--')]
+    ax_legend.legend(
+        handles,
+        ['T = %g K' % t for t in temps] + ['analytic continuation', 'Pade'],
+        loc='center',
+        frameon=False,
+        title='Frequency panels',
+    )
+
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_migdal_eliashberg_aniso(
+    data: Mapping[str, Any],
+    temps: Sequence[float] | None = None,
+    iso_data: Mapping[str, Any] | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+    distribution_scale: float = 3.0e-3,
+) -> None:
+    """Plot the anisotropic Migdal-Eliashberg results versus temperature.
+
+    Parameters
+    ----------
+    data : mapping
+        Contents of ``migdal_eliashberg_aniso.npz`` written by
+        :func:`PAOFLOW.elphon.anisotropic_eliashberg.write_me_aniso_outputs`.
+    temps : sequence of float, optional
+        Temperatures (K) drawn in the distribution and quasiparticle-DOS
+        panels; defaults to up to four temperatures with a non-zero gap.
+    iso_data : mapping, optional
+        Contents of the isotropic ``migdal_eliashberg.npz``
+        (:func:`PAOFLOW.elphon.migdal_eliashberg.write_me_outputs`); its
+        ``Delta(i w_0)`` is drawn for comparison.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+    distribution_scale : float, optional
+        Horizontal scale (K per 1/eV^2) of the gap distributions in the
+        ``Delta(T)`` panel; the default 3e-3 is that of EPW tutorial 04.
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Panels: the distribution of ``Delta_nk(i w_0)`` at every temperature,
+    drawn as in EPW tutorial 04 (``plot_gap0.gnu``): EPW's
+    ``gap_distribution_FS``
+    (:func:`~PAOFLOW.elphon.anisotropic_eliashberg.epw_gap_distribution`),
+    filled from ``T`` to ``T + distribution_scale * rho(Delta)``, with the
+    isotropic gap when given; the gap distributions and the quasiparticle DOS at the
+    chosen temperatures; the distribution of ``lambda_nk``; ``Delta_nk`` versus
+    ``lambda_nk`` at the lowest temperature; and the largest eigenvalue of the
+    linearised kernel.
+    """
+    temperatures = np.asarray(data['temps'])
+    gap0_mev = np.asarray(data['gap0']) * 1e3  # (ntemps, nstates)
+    lambda_nk = np.asarray(data['lambda_nk'])
+    gapped = temperatures[gap0_mev.max(axis=1) > 0.0]
+    if temps is None:
+        picks = np.linspace(0, gapped.size - 1, min(4, gapped.size)).round().astype(int)
+        temps = gapped[np.unique(picks)] if gapped.size else []
+    picked = [int(np.argmin(np.abs(temperatures - t))) for t in temps]
+    ramp_last = len(_ME_T_RAMP) - 1
+    colours = [
+        _ME_T_RAMP[int(round(i * ramp_last / max(len(picked) - 1, 1)))] for i in range(len(picked))
+    ]
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8.5))
+    fig.suptitle('Anisotropic Migdal-Eliashberg' if title is None else title)
+    ax_gap_t, ax_dist, ax_qdos, ax_lambda, ax_corr, ax_rho = axes.ravel()
+
+    from ..elphon.anisotropic_eliashberg import epw_gap_distribution
+
+    weights = np.asarray(data['weight'])
+    for it, T in enumerate(temperatures):
+        distribution = epw_gap_distribution(gap0_mev[it] * 1e-3, weights)
+        if distribution is None:
+            continue
+        grid, _, raw = distribution
+        width = T + distribution_scale * raw
+        ax_gap_t.fill_betweenx(grid * 1e3, T, width, color=_ME_SERIES[0], alpha=0.2, lw=0)
+        ax_gap_t.plot(width, grid * 1e3, color=_ME_SERIES[0], lw=1.0)
+    if iso_data is not None:
+        ax_gap_t.plot(
+            np.asarray(iso_data['temps']), np.asarray(iso_data['gap0_imag']) * 1e3,
+            color=_ME_SERIES[2], ls='--', lw=2, label='isotropic',
+        )  # fmt: skip
+        ax_gap_t.legend(frameon=False, fontsize=9, loc='lower left')
+    mu_star = float(data['mu_star']) if 'mu_star' in data else float('nan')
+    ax_gap_t.text(
+        0.97, 0.95, r'FSR ($\mu^*_c = %.2g$)' % mu_star, transform=ax_gap_t.transAxes,
+        ha='right', va='top',
+    )  # fmt: skip
+    t_step = np.min(np.diff(temperatures)) if temperatures.size > 1 else 5.0
+    ax_gap_t.set_xlim(0.0, temperatures.max() + 1.5 * t_step)
+    gap_title = r'$\Delta_{n\mathbf{k}}(i\omega_0)$ vs $T$'
+    tc_gap = float(data['Tc_gap']) if 'Tc_gap' in data else float('nan')
+    if np.isfinite(tc_gap):
+        gap_title += r'  ($T_c \approx %.1f$ K)' % tc_gap
+    ax_gap_t.set(xlabel='Temperature (K)', ylabel=r'$\Delta_{n\mathbf{k}}$ (meV)', title=gap_title)
+    ax_gap_t.set_ylim(bottom=0.0)
+
+    gap_grid = np.asarray(data['gap_grid_mev'])
+    w_mev = np.asarray(data['w_real']) * 1e3
+    qdos = np.asarray(data['qdos'])
+    for it, colour in zip(picked, colours):
+        label = 'T = %g K' % temperatures[it]
+        ax_dist.plot(gap_grid, data['gap0_distribution'][it], color=colour, lw=1.5, label=label)
+        if np.all(np.isfinite(qdos[it])):
+            ax_qdos.plot(w_mev, qdos[it], color=colour, lw=1.5, label=label)
+    ax_dist.set(
+        xlabel=r'$\Delta_{n\mathbf{k}}(i\omega_0)$ (meV)', ylabel=r'$\rho(\Delta)$ (1/meV)',
+        title='Gap distribution',
+    )  # fmt: skip
+    ax_dist.set_ylim(bottom=0.0)
+    ax_dist.legend(frameon=False, fontsize=9)
+    gap_top = float(np.nanmax(gap0_mev)) if gap0_mev.size else 1.0
+    ax_qdos.set(
+        xlabel=r'$\omega$ (meV)', ylabel=r'$N_S(\omega)/N_F$', title='Quasiparticle DOS (Pade)',
+        xlim=(0.0, min(w_mev[-1], 2.5 * gap_top)),
+    )  # fmt: skip
+    ax_qdos.set_ylim(0.0, min(ax_qdos.get_ylim()[1], 6.0))
+    ax_qdos.legend(frameon=False, fontsize=9)
+
+    ax_lambda.plot(data['lambda_grid'], data['lambda_distribution'], color=_ME_SERIES[0], lw=1.5)
+    ax_lambda.axvline(float(data['lambda']), color='0.5', ls=':', lw=1.0)
+    ax_lambda.annotate(
+        r'$\lambda = %.3f$' % float(data['lambda']), (float(data['lambda']), 0.0),
+        xytext=(6, 12), textcoords='offset points',
+    )  # fmt: skip
+    ax_lambda.set(
+        xlabel=r'$\lambda_{n\mathbf{k}}$', ylabel=r'$\rho(\lambda_{n\mathbf{k}})$',
+        title='Coupling distribution',
+    )  # fmt: skip
+    ax_lambda.set_ylim(bottom=0.0)
+
+    if gap0_mev.size:
+        ax_corr.scatter(lambda_nk, gap0_mev[0], color=_ME_SERIES[0], s=10, edgecolors='none')
+    ax_corr.set(
+        xlabel=r'$\lambda_{n\mathbf{k}}$', ylabel=r'$\Delta_{n\mathbf{k}}(i\omega_0)$ (meV)',
+        title=r'Gap vs coupling at $T = %g$ K' % temperatures[0],
+    )  # fmt: skip
+
+    if 'max_eigenvalue' in data:
+        linear_temps = np.asarray(data['lin_temps'])
+        rho = np.asarray(data['max_eigenvalue'])
+        ax_rho.plot(linear_temps, rho, color=_ME_SERIES[0], marker='o', ms=5, lw=1.2)
+        ax_rho.axhline(1.0, color='0.5', ls='--', lw=1.0)
+        tc_linear = float(data['Tc_linear'])
+        if np.isfinite(tc_linear):
+            ax_rho.axvline(tc_linear, color='0.5', ls=':', lw=1.0)
+            ax_rho.annotate(
+                r'$T_c = %.2f$ K' % tc_linear, (tc_linear, 1.0), xytext=(6, 8),
+                textcoords='offset points',
+            )  # fmt: skip
+        ax_rho.set(
+            xlabel='Temperature (K)', ylabel=r'max eigenvalue $\rho$',
+            title='Linearised anisotropic kernel',
+        )  # fmt: skip
+    else:
+        ax_rho.set_visible(False)
+
+    for ax in axes.ravel():
+        ax.grid(alpha=0.3)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_phonon_assisted_absorption(
+    data: Mapping[str, Any],
+    eta_ev: float = 0.05,
+    temperature: float | None = None,
+    epw_indabs_file: str | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+) -> None:
+    """Plot the phonon-assisted and direct absorption versus photon energy.
+
+    Parameters
+    ----------
+    data : mapping
+        Contents of ``absorption.npz`` written by
+        :func:`PAOFLOW.elphon.phonon_assisted_absorption.write_absorption_outputs`.
+    eta_ev : float, optional
+        Intermediate-state broadening (eV) to show; the closest computed one is
+        used (default 0.05).
+    temperature : float, optional
+        Temperature (K) of the left panel; defaults to the first one.
+    epw_indabs_file : str, optional
+        EPW ``epsilon2_indabs_<T>K.dat`` overlaid (dashed) on the phonon-assisted
+        curve of the left panel, at the same broadening column.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Left: polarisation-averaged ``Im eps`` (direct, phonon-assisted and total,
+    Gaussian delta) on a log scale.  Right: the absorption coefficient (cm^-1)
+    for every temperature (one blue ramp, light to dark with increasing T).
+    The indirect and direct gaps of the dense grid are marked.
+    """
+    omega = np.asarray(data['omega_ev'])
+    etas = np.asarray(data['etas_ev'])
+    temps = np.atleast_1d(np.asarray(data['temps_k']))
+    ieta = int(np.argmin(np.abs(etas - eta_ev)))
+    itemp = 0 if temperature is None else int(np.argmin(np.abs(temps - temperature)))
+    indirect = np.asarray(data['eps2_indirect']).mean(axis=2)  # (nT, neta, nw)
+    direct = np.asarray(data['eps2_direct']).mean(axis=1)  # (nT, nw)
+    alpha = np.asarray(data['alpha_cm'])  # (nT, neta, nw)
+
+    fig, (ax_eps, ax_alpha) = plt.subplots(1, 2, figsize=(10, 4))
+    floor = 1.0e-6
+    curves = [
+        (direct[itemp], 'direct', _ME_SERIES[0]),
+        (indirect[itemp, ieta], 'phonon-assisted', _ME_SERIES[1]),
+        (direct[itemp] + indirect[itemp, ieta], 'total', _ME_SERIES[2]),
+    ]
+    for values, label, color in curves:
+        ax_eps.plot(omega, np.clip(values, floor, None), color=color, lw=2, label=label)
+    if epw_indabs_file is not None:
+        epw = np.loadtxt(epw_indabs_file)
+        column = min(ieta + 1, epw.shape[1] - 1)
+        ax_eps.plot(
+            epw[:, 0], np.clip(epw[:, column], floor, None), color=_ME_SERIES[1], lw=1.5,
+            ls='--', label='phonon-assisted (EPW)',
+        )  # fmt: skip
+    ax_eps.set_yscale('log')
+    ax_eps.set_ylim(bottom=max(floor, 1.0e-5 * np.max(indirect[itemp, ieta])))
+    ax_eps.set_xlabel('Photon energy (eV)')
+    ax_eps.set_ylabel(r'Im $\varepsilon(\omega)$')
+    ax_eps.set_title(r'T = %g K, $\eta$ = %g eV' % (temps[itemp], etas[ieta]), fontsize=10)
+
+    ramp_last = len(_ME_T_RAMP) - 1
+    colors = [
+        _ME_T_RAMP[int(round(i * ramp_last / max(len(temps) - 1, 1)))] for i in range(len(temps))
+    ]
+    for it, temp in enumerate(temps):
+        ax_alpha.plot(
+            omega, np.clip(alpha[it, ieta], floor, None), color=colors[it], lw=2,
+            label='%g K' % temp,
+        )  # fmt: skip
+    ax_alpha.set_yscale('log')
+    ax_alpha.set_ylim(bottom=max(1.0e-1, 1.0e-6 * np.max(alpha[:, ieta])))
+    ax_alpha.set_xlabel('Photon energy (eV)')
+    ax_alpha.set_ylabel(r'$\alpha$ (cm$^{-1}$)')
+    ax_alpha.set_title(
+        r'direct + phonon-assisted, $n_r$ = %s' % np.round(np.mean(data['refractive_index']), 2)
+        if 'refractive_index' in data
+        else 'direct + phonon-assisted',
+        fontsize=10,
+    )
+
+    for ax in (ax_eps, ax_alpha):
+        for key, label in (('indirect_gap_ev', r'$E_g^{ind}$'), ('direct_gap_ev', r'$E_g^{dir}$')):
+            if key in data and omega[0] <= float(data[key]) <= omega[-1]:
+                ax.axvline(float(data[key]), color='#52514e', lw=1, ls=':')
+                ax.text(
+                    float(data[key]), 1.0, ' ' + label, transform=ax.get_xaxis_transform(),
+                    va='top', ha='left', color='#52514e', fontsize=9,
+                )  # fmt: skip
+        ax.set_xlim(omega[0], omega[-1])
+        ax.grid(alpha=0.3)
+        ax.legend(frameon=False, fontsize=9, loc='lower right')
+    if title is not None:
+        fig.suptitle(title)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_thermal_emissivity(
+    data: Mapping[str, Any],
+    temps: Sequence[float] | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+) -> None:
+    """Plot the spectral and total hemispherical emissivity versus temperature.
+
+    Parameters
+    ----------
+    data : mapping
+        Contents of ``emissivity.npz`` written by
+        :func:`PAOFLOW.elphon.phonon_assisted_absorption.write_emissivity_outputs`.
+    temps : sequence of float, optional
+        Temperatures (K) of the spectral panel; defaults to up to four evenly
+        spaced ones.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Left: spectral hemispherical emissivity of the slab (solid) and of the
+    opaque half-space (dashed) at each temperature (one blue ramp, light to dark
+    with increasing T).  Right: the Planck-weighted total emissivity of the slab
+    and of the half-space versus T; the lowest Planck coverage of the
+    photon-energy grid is noted.
+    """
+    omega = np.asarray(data['omega_ev'])
+    all_temps = np.atleast_1d(np.asarray(data['temps_k']))
+    if temps is None:
+        picks = np.unique(np.round(np.linspace(0, all_temps.size - 1, min(4, all_temps.size))))
+        index = picks.astype(int)
+    else:
+        index = np.array([int(np.argmin(np.abs(all_temps - t))) for t in temps])
+    thickness_um = float(data['thickness_m']) * 1.0e6
+    opaque_only = not np.isfinite(thickness_um)  # e.g. a metal: slab == half-space
+
+    from matplotlib.colors import LinearSegmentedColormap
+
+    fig, (ax_w, ax_t) = plt.subplots(1, 2, figsize=(10, 4))
+    t_ramp = LinearSegmentedColormap.from_list('temperature', _ME_T_RAMP)
+    for rank_t, it in enumerate(index):
+        color = t_ramp(rank_t / max(len(index) - 1, 1))
+        ax_w.plot(
+            omega, data['hemispherical_slab'][it], color=color, lw=2,
+            label='%g K' % all_temps[it],
+        )  # fmt: skip
+        if not opaque_only:
+            ax_w.plot(omega, data['hemispherical_opaque'][it], color=color, lw=1, ls='--')
+    if not opaque_only:
+        ax_w.plot([], [], color='#52514e', lw=1, ls='--', label='opaque half-space')
+    ax_w.set_xscale('log')
+    ax_w.set_xlim(omega[0], omega[-1])
+    ax_w.set_xlabel('Photon energy (eV)')
+    ax_w.set_ylabel(r'Hemispherical emissivity $\varepsilon(\omega, T)$')
+
+    ax_t.plot(
+        all_temps, data['total_slab'], color=_ME_SERIES[0], lw=2, marker='o', ms=8,
+        label='opaque surface' if opaque_only else 'slab, d = %g µm' % thickness_um,
+    )  # fmt: skip
+    if not opaque_only:
+        ax_t.plot(
+            all_temps, data['total_opaque'], color=_ME_SERIES[1], lw=2, marker='s', ms=8,
+            ls='--', label='opaque half-space',
+        )  # fmt: skip
+    if opaque_only:
+        # a metal emits a few percent: zoom instead of the full [0, 1] range
+        ax_w.set_ylim(0.0, 1.1 * float(np.max(data['hemispherical_slab'][index])))
+        ax_w.set_title('opaque surface', fontsize=10)
+        ax_t.set_ylim(0.0, 1.1 * float(np.max(data['total_slab'])))
+    else:
+        ax_w.set_ylim(0.0, 1.0)
+        ax_w.set_title('slab, d = %g µm' % thickness_um, fontsize=10)
+        ax_t.set_ylim(0.0, 1.0)
+    ax_t.set_xlabel('Temperature (K)')
+    ax_t.set_ylabel(r'Total hemispherical emissivity $\varepsilon(T)$')
+    ax_t.set_title(
+        'Planck coverage of the grid ≥ %.3f' % float(np.min(data['planck_coverage'])), fontsize=10
+    )
+    ax_w.legend(frameon=False, fontsize=9, loc='upper center', bbox_to_anchor=(0.5, -0.16), ncol=3)
+    ax_t.legend(frameon=False, fontsize=9, loc='lower right')
+    for ax in (ax_w, ax_t):
+        ax.grid(alpha=0.3)
+    if title is not None:
+        fig.suptitle(title)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_metal_transport(
+    eliashberg: Mapping[str, Any],
+    resistivity: np.ndarray,
+    channel_names: Sequence[str] | None = None,
+    experiment: np.ndarray | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+) -> None:
+    """Plot the transport Eliashberg function and the resistivity of a metal.
+
+    Parameters
+    ----------
+    eliashberg : mapping
+        Contents of ``eliashberg.npz`` from a dense-q run with ``transport=True``
+        (``omega`` in eV, ``a2F``, ``a2F_tr``, ``lambda``, ``lambda_tr``,
+        ``omega_plasma_ev``).
+    resistivity : ndarray, shape ``(ntemp, 2 + nchannel)``
+        Rows of ``resistivity.dat`` written by ``transport.elphon.py``:
+        temperature (K), total and per-channel resistivity (micro-ohm cm).
+    channel_names : sequence of str, optional
+        Labels of the channel columns.
+    experiment : ndarray, shape ``(n, 2)``, optional
+        Measured (temperature, resistivity in micro-ohm cm), drawn as markers.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Left: :math:`\\alpha^2F(\\omega)` and the transport function
+    :math:`\\alpha^2F_{tr}(\\omega)` (the velocity-weighted coupling that relaxes
+    the current), with :math:`\\lambda` and :math:`\\lambda_{tr}`.  Right: the
+    resistivity :math:`\\rho(T)`, total and, with several channels, the
+    contribution of each (Matthiessen's rule).
+    """
+    omega_mev = np.asarray(eliashberg['omega']) * 1.0e3
+    fig, (ax_f, ax_r) = plt.subplots(1, 2, figsize=(10, 4))
+    ax_f.plot(
+        omega_mev, eliashberg['a2F'], color=_ME_SERIES[0], lw=2,
+        label=r'$\alpha^2F$, $\lambda$ = %.2f' % float(eliashberg['lambda']),
+    )  # fmt: skip
+    ax_f.plot(
+        omega_mev, eliashberg['a2F_tr'], color=_ME_SERIES[1], lw=2,
+        label=r'$\alpha^2F_{tr}$, $\lambda_{tr}$ = %.2f' % float(eliashberg['lambda_tr']),
+    )  # fmt: skip
+    ax_f.set_xlim(0.0, omega_mev[-1])
+    ax_f.set_ylim(bottom=0.0)
+    ax_f.set_xlabel(r'$\omega$ (meV)')
+    ax_f.set_ylabel('Eliashberg function')
+    if 'omega_plasma_ev' in eliashberg:
+        ax_f.set_title(
+            r'$\hbar\omega_p$ = %.2f eV' % float(eliashberg['omega_plasma_ev']), fontsize=10
+        )
+
+    rho = np.atleast_2d(np.asarray(resistivity, dtype=float))
+    temps = rho[:, 0]
+    ax_r.plot(temps, rho[:, 1], color=_ME_SERIES[0], lw=2, marker='o', ms=8, label='total')
+    nchannel = rho.shape[1] - 2
+    if nchannel > 1:
+        names = list(channel_names or ['channel %d' % (i + 1) for i in range(nchannel)])
+        for ic in range(nchannel):
+            ax_r.plot(
+                temps, rho[:, 2 + ic], color=_ME_SERIES[(ic + 1) % len(_ME_SERIES)], lw=2,
+                ls='--', label=names[ic],
+            )  # fmt: skip
+    if experiment is not None:
+        exp = np.atleast_2d(np.asarray(experiment, dtype=float))
+        ax_r.plot(exp[:, 0], exp[:, 1], ls='none', marker='s', ms=8, mfc='none',
+                  mec='#52514e', mew=1.5, label='experiment')  # fmt: skip
+    ax_r.set_xlim(0.0, 1.05 * temps.max())
+    ax_r.set_ylim(bottom=0.0)
+    ax_r.set_xlabel('Temperature (K)')
+    ax_r.set_ylabel(r'$\rho$ ($\mu\Omega$ cm)')
+    for ax in (ax_f, ax_r):
+        ax.grid(alpha=0.3)
+        ax.legend(frameon=False, fontsize=9, loc='upper left')
+    if title is not None:
+        fig.suptitle(title)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_carrier_mobility(
+    mobility: np.ndarray,
+    scattering: Mapping[str, Any] | None = None,
+    temperature_k: float = 300.0,
+    experiment: np.ndarray | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+) -> None:
+    """Plot phonon-limited carrier mobilities and the scattering rates of a semiconductor.
+
+    Parameters
+    ----------
+    mobility : ndarray, shape ``(ntemp, 11)``
+        Rows of ``mobility.dat`` (:func:`PAOFLOW.elphon.carrier_scattering.write_mobility_outputs`):
+        T (K), chemical potential, n_e, n_h, SERTA and MRTA electron and hole
+        mobilities (cm^2/(V s)), conductivities and Seebeck coefficient.
+    scattering : mapping, optional
+        Contents of ``carrier_scattering.npz`` (``energies_ev``, ``in_window``,
+        ``carrier``, ``rates_serta``, ``rates_mrta``, ``temps_k``, ``vbm_ev``,
+        ``cbm_ev``); adds the rates panel.
+    temperature_k : float, optional
+        Temperature of the rates panel (the closest computed one).
+    experiment : ndarray, shape ``(n, 3)``, optional
+        Measured (T, electron mobility, hole mobility), drawn as open markers;
+        NaN skips a value.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Left: :math:`\\mu_{e,h}(T)` in the momentum-relaxation (MRTA, solid) and
+    self-energy (SERTA, dashed) relaxation-time approximations, on log-log axes
+    (phonon-limited mobilities fall roughly as :math:`T^{-1.5}` to
+    :math:`T^{-2.5}`).  Right: :math:`1/\\tau_{n\\mathbf k}` (MRTA) of the
+    window states against the carrier energy from the band edge.
+    """
+    data = np.atleast_2d(np.asarray(mobility, dtype=float))
+    temps = data[:, 0]
+    panels = 2 if scattering is not None else 1
+    fig, axes = plt.subplots(1, panels, figsize=(5 * panels, 4), squeeze=False)
+    ax_m = axes[0, 0]
+    carriers = (('electrons', 4, 6, _ME_SERIES[0]), ('holes', 5, 7, _ME_SERIES[1]))
+    for label, col_serta, col_mrta, color in carriers:
+        if not np.isfinite(data[:, col_mrta]).any():
+            continue
+        ax_m.plot(temps, data[:, col_mrta], color=color, lw=2, marker='o', ms=8,
+                  label='%s (MRTA)' % label)  # fmt: skip
+        ax_m.plot(temps, data[:, col_serta], color=color, lw=2, ls='--',
+                  label='%s (SERTA)' % label)  # fmt: skip
+    if experiment is not None:
+        exp = np.atleast_2d(np.asarray(experiment, dtype=float))
+        for column, marker, color, label in ((1, 's', _ME_SERIES[0], 'electrons, experiment'),
+                                             (2, '^', _ME_SERIES[1], 'holes, experiment')):  # fmt: skip
+            if exp.shape[1] > column and np.isfinite(exp[:, column]).any():
+                ax_m.plot(exp[:, 0], exp[:, column], ls='none', marker=marker, ms=8, mfc='none',
+                          mec=color, mew=1.5, label=label)  # fmt: skip
+    if temps.size > 1:
+        from matplotlib.ticker import NullFormatter, ScalarFormatter
+
+        ax_m.set_xscale('log')
+        ax_m.set_xticks(temps)
+        ax_m.xaxis.set_major_formatter(ScalarFormatter())
+        ax_m.xaxis.set_minor_formatter(NullFormatter())
+    ax_m.set_yscale('log')
+    ax_m.set_xlabel('Temperature (K)')
+    ax_m.set_ylabel(r'Mobility (cm$^2$/V s)')
+    ax_m.grid(alpha=0.3, which='both')
+    ax_m.legend(frameon=False, fontsize=9)
+
+    if scattering is not None:
+        ax_r = axes[0, 1]
+        it = int(np.argmin(np.abs(np.asarray(scattering['temps_k']) - temperature_k)))
+        energies = np.asarray(scattering['energies_ev'])
+        window = np.asarray(scattering['in_window'])
+        carrier = np.asarray(scattering['carrier'])
+        rates = np.asarray(scattering['rates_mrta'])[it]
+        if np.all(carrier == 0):
+            sets = (('states', np.ones_like(carrier, bool), 0.0, 1.0, _ME_SERIES[0]),)
+        else:
+            sets = (
+                ('electrons', carrier > 0, float(scattering['cbm_ev']), 1.0, _ME_SERIES[0]),
+                ('holes', carrier < 0, float(scattering['vbm_ev']), -1.0, _ME_SERIES[1]),
+            )
+        for label, bands, edge, sign, color in sets:
+            mask = window & bands[None, :] & (rates > 0.0)
+            if mask.any():
+                ax_r.plot(sign * (energies[mask] - edge) * 1.0e3, rates[mask], ls='none',
+                          marker='o', ms=3, color=color, alpha=0.5, label=label)  # fmt: skip
+        ax_r.set_yscale('log')
+        ax_r.set_xlim(left=0.0)
+        ax_r.set_xlabel('Carrier energy from the band edge (meV)')
+        ax_r.set_ylabel(r'$1/\tau$ MRTA (s$^{-1}$)')
+        ax_r.set_title('T = %.0f K' % float(scattering['temps_k'][it]), fontsize=10)
+        ax_r.grid(alpha=0.3, which='both')
+        ax_r.legend(frameon=False, fontsize=9, markerscale=2)
+    if title is not None:
+        fig.suptitle(title)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.show()

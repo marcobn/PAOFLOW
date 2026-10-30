@@ -1,54 +1,57 @@
-# Non-local Velocity Correction
+# Non-local velocity correction (removed, October 2026)
 
-## The Problem
+Until October 2026 PAOFLOW offered a correction Δp = m/(iħ)[V_NL, r] to the velocity operator,
+assembled from the Kleinman–Bylander projectors of the UPF files by two-centre integrals:
+`gradient_and_momenta(nonlocal_velocity=True)` / `attr['nonlocal_velocity']` on the `dHksp`
+route, `nonlocal_velocity=<DataController>` (`NONLOCAL_VELOCITY`) in the electron–phonon
+drivers. The term was removed; its last version is in commit `c564f569`.
 
-PAOFLOW builds the velocity/momentum operator from the k-derivative of the PAO Hamiltonian. For non-local pseudopotentials, this misses a gauge-invariant correction term — the commutator [V_NL, r] — that the PAO projection doesn't capture. The effect is noticeable: without the correction, copper's d→s absorption peak comes out roughly 2× too small compared to Quantum ESPRESSO reference calculations.
+## Why
 
-## The Fix
+PAOFLOW's velocity is the commutator v = i[H, r] of the PAO Hamiltonian, and that Hamiltonian
+already contains the non-local pseudopotential (it is the full Kohn–Sham Hamiltonian projected on
+the PAO orbitals). Its only approximation is the position operator: with r reduced to the orbital
+centres (`dHksp` plus the intersite term) the missing piece is i[H, d] with the position dipoles
+d of the Löwdin basis (`position-dipoles.md`), not i[V_NL, r]. Adding Δp double counts V_NL.
 
-A correction term Δp is added to the velocity operator before band-resolved momentum matrix elements are computed. For Kleinman-Bylander pseudopotentials, Δp is assembled from projector-PAO overlaps and screened interaction coefficients, built in k-space via Fourier sums of real-space two-center integrals.
+Measured against the exact plane-wave velocity of the Kohn–Sham states of Si
+(`EPW_opt_audit/pao_dielectric/pw_dielectric_reference.py`: 12³ scf grid, 21 bands, extended
+44-orbital basis, ∫ε₂ over 2.5–5 / 2.5–10 eV relative to exact):
 
-## Turning It On
+| velocity | ∫ε₂ / exact | ε₁(0) (exact 13.62) |
+|---|---|---|
+| plain ∂H/∂k + intersite term | 1.04 / 1.02 | 14.42 |
+| + Δp as it was | 1.09 / 1.09 | 15.08 |
+| + Δp repaired (see below) | 0.93 / 0.90 | 13.23 |
+| + position dipoles | 0.99 / 1.01 | 13.60 |
+| + position dipoles + Δp repaired | 0.87 / 0.87 | 11.95 |
 
-```python
-pf.gradient_and_momenta(nonlocal_velocity=True)
-```
+On bcc Fe and fcc Pt (`Workspace/PAOFLOW/validation/position_dipoles_hall/`) the repaired Δp moved the AHC / SHC at
+E_F by +10 % / −7 % and doubled the Fe peak at −1.35 eV (the double counting amplified by the
+1/Δε² of the Kubo formula at the d-band near-degeneracies); the dipoles move them by −1 % /
++3.5 % with unchanged curves.
 
-Or equivalently, set `attr['nonlocal_velocity'] = True` before calling `gradient_and_momenta`.
+The term as implemented also had two defects, found on 2026-10-21 by comparing it with the
+plane-wave commutator between PAOFLOW's own orbitals (`EPW_opt_audit/compare/nl_orbital_check.py`,
+`nl_fixed_check.py`, both historical now): the raw-orbital matrix was used in the Löwdin basis
+without the transformation S^{-1/2} Δp S^{-1/2} (largest elements 4–5× too small), and it carried
+the odd-|m| sign only, without the (−1)^l of PAOFLOW's orbitals (every s–p and p–d element
+flipped). Repaired, it matched the exact commutator to 2–3 %, which is what made the double
+counting measurable. The earlier validations (Cu ε₂ peak and Pt against QE `epsilon.x`) were
+obtained with the defective term; `epsilon.x` itself uses the local momentum only and lies
+15–19 % above the exact Si spectrum, so it is not a reference for the velocity operator.
 
-## How It Was Built
+## What remains
 
-The correction was implemented incrementally across several phases:
-
-| Phase | What was added |
-|-------|----------------|
-| 1–4 | Scalar (spin-less) path for norm-conserving pseudopotentials. Validated on Cu and Si — restores cubic isotropy and matches QE `epsilon.x` peak heights. |
-| 4.5 | Ad-hoc spin-orbit support via block-diagonal tiling of the scalar correction. |
-| E | Fully-relativistic UPF path building Δp directly in the (j, m_j) coupled basis. Eliminates basis-mismatch artifacts and achieves machine-precision cubic isotropy on Pt. |
-| F | Performance optimization: per-pair memoization of expensive radial integrals and spherical harmonics. About a 19× speedup — from 161.5 s down to 8.6 s on a 1728-point k-grid. |
-
-## Design Decisions Worth Knowing
-
-**Covariance alignment.** PAOFLOW's tesseral Y_lm convention includes the Condon–Shortley phase, which differs from some standard conventions. The correction applies a sign-flip post-multiply for odd magnetic quantum numbers to stay consistent.
-
-**Injection sign.** +1 for scalar/ad-hoc-SO paths; −1 for fully-relativistic jm-kspace. This is resolved automatically per path — you don't need to set it manually.
-
-**Energy-diagonal is preserved.** By Hellmann–Feynman, group velocity stays exact. The correction only redistributes interband oscillator strength, not the diagonal energies.
-
-## What It Affects
-
-| Property | Effect of correction |
-|----------|---------------------|
-| Dielectric function, EELS, optical conductivity, AHC, SHC | High sensitivity — the correction matters here |
-| Band structure, transport (Boltzmann), effective mass | No effect — group velocity is protected by Hellmann–Feynman |
-| Fermi-sea geometric quantities (SHC, AHC) | Minor — high-energy redistribution gets suppressed by energy-denominator weighting |
-
-## Caveats
-
-- Norm-conserving pseudopotentials only for now. USPP/PAW augmentation is a separate piece of work.
-- Fully-relativistic paths need a calibrated injection sign per path — a mismatch produces Hellmann–Feynman violations.
-
-## Validation
-
-- **Cu FCC:** ε₂ peak ≈ 32 eV near 1.7 eV with the correction — matches QE.
-- **Pt (fully-relativistic):** cubic isotropy ε_xx = ε_yy = ε_zz to machine precision; SHC and EELS match QE references.
+- `hamiltonian/nonlocal_velocity.py` keeps the PAO orbital catalog used by the position dipoles:
+  `load_pao_orbitals`, `PAOCatalog` and its data classes, the cutoff helpers, `qe_m_index_to_std`,
+  `pao_orbital_signs`, `lowdin_transform`, `scalar_to_jm_matrix`. The projector loader, the
+  β–PAO tables, the k-space assembly, `inject_into_dHksp` and the (j, m_j) rotation of Δp are gone,
+  together with their unit tests.
+- `gradient_and_momenta(nonlocal_velocity=True)`, `attr['nonlocal_velocity']` and the drivers'
+  `nonlocal_velocity=` raise `ValueError` pointing to the replacement.
+- Replacement: `gradient_and_momenta(position_dipoles=True)` (`PAOFLOW.position_dipole_correction`,
+  scalar, ad-hoc spin-orbit and (j, m_j) bases) and `position_dipoles=data_controller` in the
+  electron–phonon drivers (`POSITION_DIPOLES = True`, the default of `paoflow-gen`).
+- `do_adaptive_smearing` keeps using `velkp_bare`, the Hellmann–Feynman diagonal stored before
+  the dipole term is folded into `dHksp`.

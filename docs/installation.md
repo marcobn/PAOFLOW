@@ -23,14 +23,26 @@ This installs PAOFLOW and its mandatory runtime dependencies.
 PAOFLOW ships several optional extras. Install only what you need:
 
 ```bash
-# Matplotlib + VTK plotting support
+# Matplotlib + VTK plotting support (and mendeleev for the basis generator)
 pip install "PAOFLOW[graphics]"
 
-# Boltzmann transport extras (pydantic, pyyaml, psutil)
+# Boltzmann transport extras (psutil, for the core budget of the joblib workers)
 pip install "PAOFLOW[transport]"
 
-# Fermi surface orbit analysis (pyskeaf)
+# Fermi surface rendering (mayavi, scikit-image)
+pip install "PAOFLOW[fermisurface]"
+
+# Fermi surface extremal-orbit analysis, de Haas-van Alphen (pyskeaf)
 pip install "PAOFLOW[pyskeaf]"
+
+# Quantum-oscillation analysis workflow (pyskeaf orbits vs measured frequencies)
+pip install "PAOFLOW[qo_analysis]"
+
+# Optics vs experiment workflow: digitising figures from PDF and raster images
+pip install "PAOFLOW[thermo_optics]"
+
+# Phonons, Raman, quasi-harmonic approximation (phonopy, phono3py, seekpath)
+pip install "PAOFLOW[phonon]"
 
 # Weyl point search (z2pack, tbmodels)
 pip install "PAOFLOW[weyl_search]"
@@ -39,8 +51,33 @@ pip install "PAOFLOW[weyl_search]"
 pip install "PAOFLOW[fast]"
 
 # All common extras at once
-pip install "PAOFLOW[graphics,transport,pyskeaf,fast]"
+pip install "PAOFLOW[graphics,transport,pyskeaf,phonon,fast]"
 ```
+
+The electron-phonon, non-linear optics and ARPES modules need only the core dependencies;
+the electron-phonon workflows read the `ph.x` and `pw.x` outputs of Quantum ESPRESSO directly
+(EPW is optional).
+
+### Command-line tools
+
+The package installs five console commands:
+
+| Command | Purpose |
+|---|---|
+| `paoflow-gen-qe` | Quantum ESPRESSO `scf` input from an AFLOW or C2DB database entry |
+| `paoflow-gen` | Driver scripts from a QE run: property run, ACBN0, phonons, electron-phonon system folder |
+| `paoflow-genbasis-ps` | Atomic-orbital basis tables generated from the pseudopotentials |
+| `pyskeaf` | Extremal Fermi-surface orbits (de Haas-van Alphen frequencies and masses) |
+| `fermi-plotter` | Fermi-surface and field-direction viewer for the quantum-oscillation analysis |
+
+See [CLI generators](internals/cli-generators.md).
+
+### Optional Rust backend
+
+The heaviest kernels (ACBN0 Coulomb integrals, dielectric/JDOS loops, the phonon-assisted
+absorption kernel) have an optional Rust implementation, `paoflow_rs`, that PAOFLOW imports
+when present and otherwise replaces with the NumPy code (parity below 1e-12). Build and
+install instructions are in `rust/README.md` of the repository.
 
 ---
 
@@ -79,6 +116,26 @@ Use `conda install -c conda-forge mpi4py` or load the correct MPI module and
 install mpi4py from source to ensure ABI compatibility.
 :::
 
+### MPI and joblib workers
+
+A few modules (Slater–Koster fitting, sparse band structures, band unfolding, and
+pyskeaf angle sweeps) can also spread work over joblib/loky worker processes via
+`n_jobs` / `n_workers`. When a script is launched with `mpirun -np N`, PAOFLOW
+automatically limits each rank's joblib pool to that rank's share of the node, so
+the MPI and joblib layers never oversubscribe the cores:
+
+- `n_jobs=-1` resolves to the rank's share (cores on the node divided by ranks on
+  the node, bounded by any CPU binding set by the launcher). This also applies to
+  `joblib.Parallel` calls in your own scripts, as long as `PAOFLOW` is imported first.
+- Explicit requests larger than the share are reduced, with a single warning.
+- If the launcher binds each rank to one core (the default for many `mpirun`
+  setups), joblib runs serially inside each rank. To mix MPI and joblib, give
+  every rank several cores, e.g. `mpirun -np 4 --map-by slot:pe=8` or
+  `mpirun -np 4 --bind-to none` on a 32-core node.
+- To set the per-rank budget yourself, export `LOKY_MAX_CPU_COUNT` before launching.
+
+Serial runs (no `mpirun`) are unaffected.
+
 ---
 
 ## Verifying the installation
@@ -90,6 +147,6 @@ import PAOFLOW
 print(PAOFLOW.__version__)
 ```
 
-You should see the current version string (e.g. `2.9.3`).
+You should see the current version string (e.g. `3.0.0`).
 
 ---

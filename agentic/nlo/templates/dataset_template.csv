@@ -1,0 +1,6 @@
+# <Author et al., Journal Vol, page (year)>, <Table/Fig. N>: <quantity and convention, component, photon energy, reference crystal, sample>.
+# <Provenance and method: measured | transcribed | vector-extracted | digitised (file, dpi, residuals) | calculated (functional, scissor, grid)>.
+# <Assumptions (convention inferred, orientation, thickness) and the overlay check file>.
+dataset,quantity,x,x_unit,y,y_unit,temperature_k,conditions,provenance,source,locator,y_rel_uncertainty,note
+Eyres2001_GaAs_d14,shg_d,0.118,eV,86,pm/V,300,component=d14; reference=absolute; method=Maker fringes; sample=bulk,transcribed,"Eyres et al., Appl. Phys. Lett. 79, 904 (2001)",text,0.05,chi_xyz = 2 d14
+Luppi2010_GaAs_chi_static,shg_chi,0.0,eV,224.4,pm/V,0,component=xyz; functional=LDA; scissor_ev=0.8; method=TDDFT,calculated,"Luppi, Hubener, Veniard, PRB 82, 235201 (2010)",Table,0.0,static limit

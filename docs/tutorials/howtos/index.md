@@ -22,6 +22,18 @@ How-Tos assume you have already worked through [Tutorial 01](../tutorial01.ipynb
 Run PAOFLOW on systems and grids too large for the dense pipeline to hold in memory.
 :::
 
+:::{grid-item-card}
+:link: qo_analysis
+:link-type: doc
+:class-card: landing-card
+
+{octicon}`pulse;1.8em;sd-text-muted`
+
+**Comparing pyskeaf orbits with quantum oscillations**
+
+Assign measured dHvA/SdH/torque frequencies to Fermi-surface sheets, with chance baselines, convergence and breakdown checks, and an agentic workflow.
+:::
+
 ::::
 
 ```{toctree}
@@ -29,4 +41,5 @@ Run PAOFLOW on systems and grids too large for the dense pipeline to hold in mem
 :maxdepth: 2
 
 sparse-workflow
+qo_analysis
 ```

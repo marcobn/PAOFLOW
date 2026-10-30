@@ -1,0 +1,8 @@
+# <Author et al., Journal Vol, page (year)>, <Fig. N>: <quantity, cut, hv, polarisation, T, resolution>.
+# <Provenance and method: measured | transcribed | vector-extracted | digitised (file, dpi, calibration residuals; map: colour channel, pixel size)>.
+# <Assumptions (bare band of the authors, k reference, E_F reference, label inference) and the overlay check file>.
+dataset,quantity,x,x_unit,y,y_unit,temperature_k,conditions,provenance,source,locator,y_rel_uncertainty,note
+Author2004_disp_GX,dispersion,-0.020,1/A,-45.0,meV,10,photon_ev=21.2; polarization=p; cut=GX; resolution_mev=5; method=mdc; k_reference=kF,digitised,"Author et al., J. 1, 2 (2004)",Fig. 2b,0.05,MDC fit markers
+Author2004_disp_GX,dispersion,-0.010,1/A,-18.0,meV,10,photon_ev=21.2; polarization=p; cut=GX; resolution_mev=5; method=mdc; k_reference=kF,digitised,"Author et al., J. 1, 2 (2004)",Fig. 2b,0.05,MDC fit markers
+Author2004_ReSigma,re_self_energy,-30.0,meV,6.5,meV,10,bare_band=linear fit -200..-80 meV; impurity_offset_mev=4,digitised,"Author et al., J. 1, 2 (2004)",Fig. 3,0.1,authors' extraction
+Author2004_lambda,lambda,10,K,1.5,1,10,method=slope of Re Sigma; bare_band=linear fit -200..-80 meV,transcribed,"Author et al., J. 1, 2 (2004)",text p. 3,0.1,quoted value

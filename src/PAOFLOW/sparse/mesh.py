@@ -9,7 +9,8 @@ band-diagonal property kernels need, without ever storing eigenvectors:
   the ascending eigenvalues of the group block (replicating
   ``utils.perturb_split`` as used by ``do_momentum``),
 - ``deltakp``   (nk_local, nev, nspin)  — Yates adaptive smearing widths
-  ``afac * dk * |v_n|`` (replicating ``do_adaptive_smearing``),
+  ``afac * dk * |v_n|``, optionally floored at ``min_width`` (replicating
+  ``do_adaptive_smearing``),
 
 stored k-scattered in the dense conventions so ``do_dos_adaptive`` and the
 Boltzmann transport stack consume them unchanged.  Registered consumers
@@ -149,6 +150,8 @@ def run_mesh(
     consumers: Sequence[MeshConsumer] = (),
     afac: float | None = None,
     smearing: str = 'gauss',
+    min_width: float | None = None,
+    max_width: float | None = None,
     verbose: bool = False,
     hk_solver: str = 'auto',
     ehi: float | None = None,
@@ -176,6 +179,12 @@ def run_mesh(
         the dense pipeline uses for the chosen ``smearing``.
     smearing : str, optional
         Smearing kernel name; sets the default ``afac``.
+    min_width : float or None, optional
+        Lower bound of the widths (eV), as in ``do_adaptive_smearing``: a
+        state narrower than the energy grid of a consumer drops out of its
+        sums.  ``None`` (default) keeps the raw widths.
+    max_width : float or None, optional
+        Upper bound of the widths (eV); ``None`` leaves them uncapped.
     verbose : bool, optional
         Log progress every few percent of this rank's k-points.
     hk_solver : {'auto', 'sparse', 'dense'}, optional
@@ -278,7 +287,12 @@ def run_mesh(
     else:
         log.field('interior window (eV)', f'[{interior[0]:.3f}, {interior[1]:.3f}]')
         log.field('bands per k', 'k-dependent (interior solve); padded after the loop')
-    log.field('smearing', f'{smearing}, afac = {afac:.3f}')
+    floor = 0.0 if min_width is None else min_width
+    if floor < 0.0 or (max_width is not None and max_width < floor):
+        raise ValueError('need 0 <= min_width <= max_width (got %r, %r)' % (min_width, max_width))
+    bounds = '' if min_width is None else f', widths floored at {min_width:.3g} eV'
+    bounds += '' if max_width is None else f', capped at {max_width:.3g} eV'
+    log.field('smearing', f'{smearing}, afac = {afac:.3f}{bounds}')
     log.field('window top ehi (eV)', 'none' if ehi is None else f'{ehi:.3f}')
     log.write(describe_hk_solver(sparse_h.nawf, nev, hk_solver=hk_solver))
 
@@ -305,6 +319,10 @@ def run_mesh(
 
             vel = _band_diagonal_velocities(E, V, dhk)
             delta = afac * dk * np.linalg.norm(vel, axis=0)
+            if min_width is not None:
+                delta = np.maximum(delta, min_width)
+            if max_width is not None:
+                delta = np.minimum(delta, max_width)
 
             if interior is None:
                 if ehi is not None and E[-1] < ehi:

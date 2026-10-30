@@ -107,8 +107,8 @@ class PAOFLOW:
     gradient_and_momenta(band_curvature)
         Compute ∇_k H (``dHksp``) and the momentum matrix ``pksp``.  Optionally
         compute the band-curvature tensor.
-    adaptive_smearing(smearing, afac)
-        Compute adaptive smearing widths ``deltakp`` for BZ integration.
+    adaptive_smearing(smearing, afac, min_width, max_width)
+        Compute adaptive smearing widths ``deltakp`` for BZ integration (optional floor and cap).
     effective_mass(emin, emax, ne)
         Calculate effective mass tensor components along kx, ky, kz.
 
@@ -232,6 +232,7 @@ class PAOFLOW:
         restart=False,
         dft='QE',
         header_style='color',
+        unfold_kpoints=False,
     ):
         """
         Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
@@ -248,6 +249,11 @@ class PAOFLOW:
             verbose (bool): False supresses debugging output
             restart (bool): True if the run is being restarted from a .json data dump.
             dft (str): 'QE' or 'VASP'
+            unfold_kpoints (bool): The QE nscf was run with ``K_POINTS automatic`` (Gamma-centred) and
+                holds only the irreducible wedge: expand its k-points, eigenvalues and wavefunctions
+                to the full grid by symmetry, so that projections and the PAO Hamiltonian
+                (``expand_wedge=False``) are those of a full-grid nscf. Needed by the
+                electron-phonon vertex, which requires the projections at every k. QE only
         Returns:
             None
         """
@@ -287,6 +293,7 @@ class PAOFLOW:
             verbose,
             restart,
             dft,
+            unfold_kpoints=unfold_kpoints,
         )
 
         self.report_exception = self.data_controller.report_exception
@@ -453,7 +460,9 @@ class PAOFLOW:
                 print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / to_gb))
                 print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / to_gb))
 
-    def projections(self, configuration=None, basispath=None, internal=None):
+    def projections(
+        self, configuration=None, basispath=None, internal=None, pseudo_orbitals='auto'
+    ):
         """
         Calculate the projections on the atomic basis provided by the pseudopotential or
         on the all-electron internal basis sets.
@@ -497,6 +506,14 @@ class PAOFLOW:
             * ``None`` — keep whatever is already stored in
               ``arry['configuration']`` (legacy behaviour).
         internal: for backward compatibility only, not used
+        pseudo_orbitals : {'auto', True, False}, optional
+            Take the shells that the pseudopotential provides as pseudo-orbitals (``PP_PSWFC``)
+            from the UPF and only the remaining shells of the configuration from the tables of
+            ``basispath``. ``'auto'`` does so for ultrasoft / PAW pseudopotentials (the stored
+            pseudo-orbitals are the only radial functions consistent with their augmented
+            metric; all-electron tables project PAW semicore bands poorly) and keeps the pure
+            table basis for norm-conserving ones; ``True`` / ``False`` force either choice.
+            Not with the ``'minimal'`` preset (already the UPF basis) nor with spin-orbit.
         """
 
         from .inputs.basis_presets import (
@@ -558,15 +575,61 @@ class PAOFLOW:
         if preset == None or preset == 'minimal':
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
         else:
-            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
+            use_pseudo = pseudo_orbitals
+            if use_pseudo == 'auto':
+                import os
+
+                from .inputs.read_upf import UPF
+                from .projection.augmentation import is_augmented
+
+                use_pseudo = attr.get('dft', 'QE') == 'QE' and any(
+                    is_augmented(UPF(os.path.join(attr['fpath'], pseudo)))
+                    for _, pseudo in arry['species']
+                )
+            if use_pseudo and not attr.get('dftSO', False):
+                from .inputs.basis_presets import minimal_shells_from_upf
+                from .projection.do_atwfc_proj import build_basis_from_sources
+
+                pseudo_labels = {}
+                for elem in arry['configuration']:
+                    available = {
+                        lbl.upper() for lbl in minimal_shells_from_upf(self.data_controller, elem)
+                    }
+                    pseudo_labels[elem] = [
+                        lbl for lbl in arry['configuration'][elem] if lbl.upper() in available
+                    ]
+                if attr.get('verbose') and self.rank == 0:
+                    for elem, labels in pseudo_labels.items():
+                        print('  %-3s: %s from the UPF pseudo-orbitals, %s from %s' % (
+                            elem, ', '.join(labels) or 'nothing',
+                            ', '.join(l for l in arry['configuration'][elem] if l not in labels) or 'nothing',
+                            attr.get('basispath')))  # fmt: skip
+                basis, arry['shells'] = build_basis_from_sources(
+                    self.data_controller, pseudo_labels
+                )
+            else:
+                basis, arry['shells'] = build_aewfc_basis(self.data_controller)
 
         # Expose the per-orbital atomic-basis records (r, wfc, l, m, atom,
         # tau, label) so that downstream modules can reconstruct the
         # actual PAO radial functions used by the projection.  Required
-        # by ``hamiltonian.nonlocal_velocity.load_pao_orbitals`` when the
-        # production run uses an AE / extended basis that does not match
-        # the UPF pswfc set.
+        # by ``hamiltonian.nonlocal_velocity.load_pao_orbitals`` (position
+        # dipoles) when the production run uses an AE / extended basis that
+        # does not match the UPF pswfc set.
         arry['atomic_basis'] = basis
+
+        # Ultrasoft / PAW pseudopotentials: the projections, the overlap of the atomic
+        # orbitals and the orthonormality of the bands are all taken in the augmented
+        # metric S = 1 + sum q_ij |beta_i><beta_j| (None for norm-conserving sets and VASP).
+        from .projection.augmentation import build_augmentation
+
+        arry['augmentation'] = build_augmentation(self.data_controller)
+        if arry['augmentation'] is not None and self.rank == 0 and attr.get('verbose'):
+            print(
+                'Ultrasoft / PAW pseudopotentials: projections in the augmented %smetric '
+                '(%d projectors)'
+                % ('spinor ' if arry['augmentation'].spin_orbit else '', arry['augmentation'].nproj)
+            )
 
         nkpnts = len(arry['kpnts'])
         nbnds = attr['nbnds']
@@ -619,6 +682,27 @@ class PAOFLOW:
         # DataController.full_projections() to assemble it on demand.
         arry['U_local'] = Unewaux
         arry['basis'] = basis
+
+        if arry['augmentation'] is not None and nk_local > 0:
+            # One sanity check of the projectors and charges: the stored bands must be
+            # orthonormal in the augmented metric (QE's S-orthonormalisation).
+            from .projection.augmentation import k_plus_g_vectors
+            from .projection.do_atwfc_proj import read_QE_wfc
+
+            gkspace, wfc = read_QE_wfc(
+                self.data_controller, int(k_local[0]), 0, orthonormalize=False
+            )
+            beta = arry['augmentation'].beta(k_plus_g_vectors(gkspace))
+            ovp = arry['augmentation'].overlap(wfc['wfc'], wfc['wfc'], beta)
+            deviation = float(np.abs(ovp - np.eye(ovp.shape[0])).max())
+            if deviation > 1.0e-3:
+                print(
+                    'WARNING (rank %d): <psi|S|psi> deviates from the identity by %.1e at '
+                    'k-point %d: check the pseudopotential files of the save directory'
+                    % (self.rank, deviation, int(k_local[0]) + 1)
+                )
+            elif self.rank == 0 and attr.get('verbose'):
+                print('<psi|S|psi> - 1 at k-point %d: %.1e' % (int(k_local[0]) + 1, deviation))
 
         if acbn0_active:
             # Gather the distributed per-k overlaps on rank 0 and store as
@@ -1073,9 +1157,8 @@ class PAOFLOW:
         """
 
         # IMPLEMENT HERE< AUTOMATIC SHELLS AND SOC strenght CALLING {"M":[0,0,0,1,0,0]}
-        import scipy.linalg as la
-        from .SocFitter import build_automatic_adhoc_soc
         from .hamiltonian.do_spin_orbit import do_spin_orbit_H
+        from .SocFitter import build_automatic_adhoc_soc
         from .utils.soc_header import soc_header
 
         arry, attr = self.data_controller.data_dicts()
@@ -1809,30 +1892,27 @@ class PAOFLOW:
         nonlocal_velocity=None,
         nonlocal_velocity_inject=None,
         nonlocal_velocity_sign=None,
+        position_dipoles=None,
+        position_dipole_level='full',
     ):
         """
         Calculate the gradient of the k-space Hamiltonian and momentum operator.
 
         Arguments:
           band_curvature (bool): also compute the band curvature.
-          nonlocal_velocity (bool or None): enable the non-local
-          pseudopotential velocity correction.  When ``None`` (default)
-          the value falls back to ``attr['nonlocal_velocity']`` (False if
-          unset), preserving the legacy DataController-driven behaviour.
-          Pass ``True`` here to enable the correction directly from the
-          call without touching the DataController.
-
-          nonlocal_velocity_inject (bool or None): fold the correction into
-          ``dHksp`` so downstream momenta/optics pick it up.  When ``None``
-          it falls back to ``attr['nonlocal_velocity_inject']`` if set,
-          otherwise defaults to the resolved ``nonlocal_velocity`` value
-          (i.e. enabling the correction injects it by default; building
-          without injecting is diagnostic-only).
-
-          nonlocal_velocity_sign (int or None): injection sign convention.
-          When ``None`` it falls back to ``attr['nonlocal_velocity_sign']``
-          if set, otherwise the calibrated per-path default is used
-          (+1 scalar / ad-hoc-SO, -1 fully-relativistic jm-kspace).
+          position_dipoles (bool or None): add the position dipoles of the PAO
+          orbitals to the velocity operator, ``dHksp -= i[H, d(k)]``
+          (:meth:`position_dipole_correction`), the term that completes the
+          commutator ``i[H, r]`` when the position operator is no longer reduced
+          to the orbital centres.  ``None`` falls back to
+          ``attr['position_dipoles']`` (False if unset).
+          position_dipole_level (str): ``'full'`` (Löwdin-orthogonalised basis)
+          or ``'intra-atomic'`` (on-site blocks only).
+          nonlocal_velocity, nonlocal_velocity_inject, nonlocal_velocity_sign:
+          the non-local pseudopotential velocity correction was removed in
+          October 2026 (it double counted ``V_NL``, already inside the PAO
+          Hamiltonian).  Any value other than ``None``/``False`` raises
+          ``ValueError`` pointing to ``position_dipoles``.
 
         Returns:
           None
@@ -1895,292 +1975,139 @@ class PAOFLOW:
 
         self.report_module_time('Gradient')
 
-        # ---- Optional non-local pseudopotential velocity correction ----
-        # Enable via the ``nonlocal_velocity`` kwarg (preferred) or
-        # ``attr['nonlocal_velocity'] = True`` (legacy).  Default off, so
-        # this is a no-op for legacy runs.  See
-        # ``TODOs/nonlocal_velocity_correction.md`` and
-        # :mod:`PAOFLOW.hamiltonian.nonlocal_velocity` for the physics.
-        # Explicit kwargs take precedence over the corresponding ``attr``
-        # entries; the injection sign, when unset, resolves to the
-        # calibrated per-path default (+1 scalar / ad-hoc-SO, -1
-        # fully-relativistic jm-kspace) inside
-        # :meth:`nonlocal_velocity_correction`.
-        if nonlocal_velocity is None:
-            nlv_enabled = bool(attr.get('nonlocal_velocity', False))
-        else:
-            nlv_enabled = bool(nonlocal_velocity)
-
-        if nonlocal_velocity_inject is not None:
-            nlv_inject = bool(nonlocal_velocity_inject)
-        elif 'nonlocal_velocity_inject' in attr:
-            nlv_inject = bool(attr['nonlocal_velocity_inject'])
-        else:
-            # Enabling the correction injects it by default; building Delta_p
-            # without injecting is a diagnostic-only mode.
-            nlv_inject = nlv_enabled
-
-        if nonlocal_velocity_sign is not None:
-            nlv_sign = int(nonlocal_velocity_sign)
-        elif attr.get('nonlocal_velocity_sign', None) is not None:
-            nlv_sign = int(attr['nonlocal_velocity_sign'])
-        else:
-            nlv_sign = None
-
-        if nlv_enabled:
-            # --- Preserve the BARE band group velocity for adaptive smearing ---
-            # The Yates adaptive width uses |grad_k(E_n - E_m)|, taken from the
-            # diagonal of the eigenbasis velocity matrix (the band group
-            # velocity). By Hellmann-Feynman nabla_k E_n = <n|dH/dk|n> equals
-            # that diagonal ONLY for the bare gradient dHksp. The non-local
-            # velocity correction is an interband position-commutator term;
-            # once it is folded into dHksp below, the diagonal of pksp is no
-            # longer the bare group velocity, which inflates deltakp/deltakp2
-            # and produces a spurious epsilon spike near omega -> 0. Build pksp
-            # from the bare dHksp first and stash its diagonal so
-            # do_adaptive_smearing can use the uncontaminated group velocity.
-            do_momentum(self.data_controller)
-            nb = arrays['pksp'].shape[2]
-            bdiag = np.arange(nb)
-            arrays['velkp_bare'] = np.ascontiguousarray(arrays['pksp'][:, :, bdiag, bdiag, :])
-
-            self.nonlocal_velocity_correction(
-                inject=nlv_inject,
-                sign=nlv_sign,
+        if (
+            nonlocal_velocity
+            or nonlocal_velocity_inject
+            or nonlocal_velocity_sign is not None
+            or attr.get('nonlocal_velocity')
+        ):
+            raise ValueError(
+                'The non-local pseudopotential velocity correction was removed in October 2026: '
+                'the PAO velocity i[H, r] already contains V_NL and the term double counted it. '
+                'Use gradient_and_momenta(position_dipoles=True) instead '
+                '(docs/internals/position-dipoles.md).'
             )
+        if position_dipoles is None:
+            dipoles_enabled = bool(attr.get('position_dipoles', False))
+        else:
+            dipoles_enabled = bool(position_dipoles)
+        if dipoles_enabled:
+            if 'velkp_bare' not in arrays:
+                # the bare group velocities for the adaptive smearing (see above)
+                do_momentum(self.data_controller)
+                nb = arrays['pksp'].shape[2]
+                bdiag = np.arange(nb)
+                arrays['velkp_bare'] = np.ascontiguousarray(arrays['pksp'][:, :, bdiag, bdiag, :])
+            self.position_dipole_correction(level=position_dipole_level)
 
         ### DEV: Proposed to remove this and calculate pksp or velkp when required
         # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
         do_momentum(self.data_controller)
         self.report_module_time('Momenta')
 
-    def nonlocal_velocity_correction(
+    def position_dipole_correction(
         self,
         *,
-        q_max: float = 15.0,
-        n_q: int = 300,
+        level: str = 'full',
+        q_max: float = 20.0,
+        n_q: int = 600,
         pao_tol: float = 1.0e-3,
-        units: str = 'rydberg',
-        inject: bool = False,
-        sign: int = None,
+        inject: bool = True,
     ):
-        """Assemble the non-local pseudopotential velocity correction.
+        r"""Position dipoles of the PAO orbitals in the velocity operator.
 
-        Computes the operator
-
-        .. math::
-           \\Delta p_\\alpha(\\mathbf{k})
-             = \\frac{m}{i\\hbar}\\,\\sum_I\\!\\left[
-                  P_I^{\\dagger}\\,D^I\\,P_I^{\\alpha}
-                - (P_I^{\\alpha})^{\\dagger}\\,D^I\\,P_I
-                \\right]
-
-        in the PAO basis on the current FFT k-grid and stores it under
-        ``arry['Delta_pksp']`` with shape ``(nktot, 3, nawf, nawf)``,
-        complex.
+        Builds :math:`\mathbf d(\mathbf k)` of the Löwdin-orthonormal PAO basis
+        (:mod:`PAOFLOW.hamiltonian.position_dipoles`) on the FFT k-grid and adds
+        :math:`-\,i[H(\mathbf k), \mathbf d(\mathbf k)]` to ``arrays['dHksp']``
+        (which is minus the velocity), so that the momenta of
+        :meth:`gradient_and_momenta` and everything built on them
+        (:meth:`dielectric_tensor`, :meth:`anomalous_Hall`, :meth:`spin_Hall`, ...)
+        carry the full commutator :math:`i[H, \mathbf r]` instead of the
+        orbital-centre approximation.  Scalar-relativistic, ad-hoc spin-orbit and
+        fully relativistic ``(j, m_j)`` bases are handled
+        (:func:`~PAOFLOW.hamiltonian.position_dipoles.position_dipoles_on_grid`).
 
         Parameters
         ----------
-        q_max, n_q : float, int
-            Radial Bessel transform quadrature parameters passed to
-            :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.build_nl_real_space_tables`.
-        pao_tol : float
-            Cutoff tolerance used when enumerating the (β-site, PAO-site,
-            :math:`\\Delta\\mathbf{R}`) pair list.
-        units : {'hartree', 'rydberg'}
-            Units of the raw operator stored in ``arry['Delta_pksp']``.
-            ``'rydberg'`` (default) returns :math:`\\Delta p_\\alpha` in
-            Ry/Bohr; ``'hartree'`` returns Ha/Bohr.
+        level : {'full', 'intra-atomic'}, optional
+            Löwdin-orthogonalised basis (default) or on-site blocks only.
+        q_max, n_q, pao_tol : optional
+            Radial-table parameters.
         inject : bool, optional
-            **Experimental — sign provisional, awaiting integration
-            calibration.**  When ``True`` the correction is additively
-            applied to ``arry['dHksp']`` (which is in eV·Bohr) using
+            ``False`` only builds the tables (``'_PD_tables'``) without touching ``dHksp``.
 
-            .. math::
-               \\Delta H_{\\mathrm{ksp}} \\mathrel{+}= -\\,\\lambda\\,
-                  \\Delta p_\\alpha,
-
-            with :math:`\\lambda = 13.605693122994` eV/Ry for ``'rydberg'``
-            or :math:`2\\lambda` eV/Ha for ``'hartree'``.  The minus sign
-            reflects PAOFLOW's internal convention
-            ``pksp = -\\langle n|p|m\\rangle`` (confirmed by
-            ``writers/write4bt2.py`` which exports ``mommat = -np.real(pksp)``
-            and by the cubium Hellmann-Feynman test).  Pin in Phase 4
-            will compare against ``epsilon.x`` on Si/Cu and may flip the
-            sign; the conversion factor itself is exact.
-        sign : int or None, optional
-            ``+1``, ``-1``, or ``None`` (default).  When ``None`` the
-            calibrated default for the active path is used: ``+1`` for the
-            scalar / ad-hoc-SO path (calibrated against ``epsilon.x`` for
-            Cu) and ``-1`` for the fully-relativistic ``(j, m_j)``-kspace
-            path (the jm builder carries the opposite covariance/phase
-            convention, validated against QE ``epsilon.x`` and SHC for
-            Pt_REL).  Forwarded to
-            :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.inject_into_dHksp`
-            when ``inject=True``.  Also configurable via
-            ``attr['nonlocal_velocity_sign']`` for the
-            ``gradient_and_momenta`` gate; set it explicitly to override
-            the per-path default.
+        Returns
+        -------
+        None
+            Modifies ``arrays['dHksp']`` in place; caches the tables under
+            ``'_PD_tables'`` / ``'_PD_on_site'`` and the PAO catalog under
+            ``'_NL_pao_catalog'``.
 
         Notes
         -----
-        Norm-conserving (KB) pseudopotentials only.  Caches the loaded
-        :class:`~PAOFLOW.hamiltonian.nonlocal_velocity.BetaCatalog`,
-        :class:`~PAOFLOW.hamiltonian.nonlocal_velocity.PAOCatalog`, and
-        :class:`~PAOFLOW.hamiltonian.nonlocal_velocity.NLRealSpaceTables`
-        on the data controller (keys ``'_NL_beta_catalog'``,
-        ``'_NL_pao_catalog'``, ``'_NL_pairs'``, ``'_NL_tables'``) so a
-        repeat call is cheap.
+        The PAO Hamiltonian already contains the non-local pseudopotential, so
+        with the dipoles the commutator is complete (Si: 0.99--1.01 of the exact
+        plane-wave :math:`\varepsilon`).  The former non-local correction, which
+        double counted it (0.87 with both terms), was removed in October 2026.
         """
         import numpy as np
 
-        from .hamiltonian.nonlocal_velocity import (
-            build_jm_transformation_matrix,
-            build_nl_real_space_tables,
-            compute_nonlocal_velocity_jm_on_grid,
-            compute_nonlocal_velocity_on_grid,
-            enumerate_nl_pairs,
-            inject_into_dHksp,
-            load_beta_projectors,
-            load_pao_orbitals,
-            rotate_dp_to_jm,
+        from .hamiltonian.position_dipoles import (
+            inject_dipole_velocity_into_dHksp,
+            position_dipoles_on_grid,
         )
 
         arry, attr = self.data_controller.data_dicts()
-        import os as _os
-
-        # Path selection for fully-relativistic UPFs (dftSO=True, not the
-        # ad-hoc SOC path).  Default is Option A: build Delta_p directly in
-        # the (j, m_j)-coupled basis used by dHksp, preserving the
-        # j-dependence of the NL operator.  Two legacy paths remain
-        # reachable for comparison:
-        #   * NL_SCALAR_TILE=1  -- inject the scalar Delta_p
-        #     block-diagonally in spin (the previous default; reproduces
-        #     QE epsilon.x for cubic Pt_REL but is only an approximation).
-        #   * NL_JM_ROTATION=1  -- Phase D scalar->jm spin-trace rotation
-        #     (build_jm_transformation_matrix + rotate_dp_to_jm); breaks
-        #     cubic isotropy, retained only for diagnostics.
-        fully_rel = bool(attr.get('dftSO', False)) and not bool(attr.get('adhoc_SO', False))
-        scalar_tile = _os.environ.get('NL_SCALAR_TILE') == '1'
-        jm_rotation = _os.environ.get('NL_JM_ROTATION') == '1'
-        jm_kspace = fully_rel and not scalar_tile and not jm_rotation
-
-        # Resolve the calibrated default injection sign per path when the
-        # caller left ``sign`` unset.  The fully-relativistic jm-kspace
-        # builder carries the opposite covariance/phase convention from the
-        # scalar path (see TODOs/nonlocal_velocity_correction.md), so it
-        # needs ``-1`` to match QE epsilon.x and SHC for Pt_REL; the scalar
-        # / ad-hoc-SO path keeps the Cu-calibrated ``+1``.
-        if sign is None:
-            sign = -1 if jm_kspace else +1
-        sign = int(sign)
         try:
-            if '_NL_beta_catalog' not in arry:
-                arry['_NL_beta_catalog'] = load_beta_projectors(self.data_controller)
-            if '_NL_pao_catalog' not in arry:
-                arry['_NL_pao_catalog'] = load_pao_orbitals(self.data_controller)
-            beta_cat = arry['_NL_beta_catalog']
-            pao_cat = arry['_NL_pao_catalog']
+            if 'E_k' not in arry or 'v_k' not in arry:
+                raise RuntimeError('position_dipole_correction needs pao_eigh before it.')
 
-            if '_NL_tables' not in arry:
-                a_cart = np.asarray(arry['a_vectors']) * float(attr['alat'])
-                pairs = enumerate_nl_pairs(beta_cat, pao_cat, a_cart, pao_tol=pao_tol)
-                arry['_NL_pairs'] = pairs
-                arry['_NL_tables'] = build_nl_real_space_tables(
-                    beta_cat, pao_cat, pairs, q_max=q_max, n_q=n_q
-                )
-            tables = arry['_NL_tables']
-
-            def _build_dP(kgrid_slice):
-                if jm_kspace:
-                    # Option A: Delta_p directly in the (j, m_j) basis
-                    # (shape (nk, 3, n_rel, n_rel), n_rel = 2 * nawf_scalar).
-                    return compute_nonlocal_velocity_jm_on_grid(
-                        beta_cat,
-                        pao_cat,
-                        tables,
-                        kgrid_slice,
-                        float(attr['alat']),
-                        units=units,
-                    )
-                return compute_nonlocal_velocity_on_grid(
-                    beta_cat,
-                    pao_cat,
-                    tables,
+            def _build(kgrid_slice):
+                return position_dipoles_on_grid(
+                    self.data_controller,
                     kgrid_slice,
-                    float(attr['alat']),
-                    units=units,
+                    level=level,
+                    q_max=q_max,
+                    n_q=n_q,
+                    pao_tol=pao_tol,
                 )
 
-            # Under MPI, ``dHksp`` is k-scattered along axis 0 (see
-            # :meth:`gradient_and_momenta`).  ``dP`` must end up partitioned
-            # the same way via :func:`scatter_full`.  Rather than building the
-            # whole grid serially on rank 0, each rank assembles a contiguous
-            # slice of the global k-grid in parallel; the slices are gathered
-            # on rank 0 (in global order, matching the un-scattered dHksp), and
-            # then re-scattered with :func:`scatter_full` so the per-rank
-            # layout matches dHksp exactly.  The k-grid assembly is independent
-            # per k-point, so a sliced build is bit-identical to the full one.
-            from .utils.communication import (
-                gather_array,
-                load_balancing,
-                scatter_full,
-            )
+            from .utils.communication import gather_array, load_balancing, scatter_full
 
             if attr.get('mpisize', 1) > 1:
                 kgrid = np.asarray(arry['kgrid'])
                 nktot = kgrid.shape[1]
                 ks, ke = load_balancing(self.size, self.rank, nktot)
-                dP_part = np.ascontiguousarray(_build_dP(kgrid[:, ks:ke]))
+                part = np.ascontiguousarray(_build(kgrid[:, ks:ke]))
+                full = (
+                    np.zeros((nktot,) + part.shape[1:], dtype=part.dtype)
+                    if self.rank == 0
+                    else None
+                )
+                gather_array(full, part)
                 if self.rank == 0:
-                    dP = np.zeros((nktot,) + dP_part.shape[1:], dtype=dP_part.dtype)
+                    local = scatter_full(np.ascontiguousarray(full), attr['npool'])
                 else:
-                    dP = None
-                gather_array(dP, dP_part)
-                if self.rank == 0:
-                    dP_local = scatter_full(np.ascontiguousarray(dP), attr['npool'])
-                else:
-                    dP_local = scatter_full(None, attr['npool'])
+                    local = scatter_full(None, attr['npool'])
             else:
-                dP_local = _build_dP(arry['kgrid'])
-
-            # Legacy Phase D: rotate the scalar Delta_p into the (j, m_j)
-            # relativistic basis used by ``dHksp`` via a spin-trace (gated
-            # behind NL_JM_ROTATION=1; the Option A jm-kspace builder above
-            # is the default and does not use this path).
-            if jm_rotation:
-                if '_NL_jm_T' not in arry:
-                    if 'atomic_basis' not in arry:
-                        raise RuntimeError(
-                            'nonlocal_velocity_correction: jm rotation requires '
-                            "arry['atomic_basis'] (the relativistic basis); "
-                            'run projections() before this method.'
-                        )
-                    basis_scalar = [
-                        {
-                            'atom': pao_cat.sites[o.site_index].label,
-                            'label': o.label,
-                            'l': o.l,
-                        }
-                        for o in pao_cat.basis
-                    ]
-                    arry['_NL_jm_T'] = build_jm_transformation_matrix(
-                        arry['atomic_basis'], basis_scalar
-                    )
-                dP_local = rotate_dp_to_jm(dP_local, arry['_NL_jm_T'])
-
-            arry['Delta_pksp'] = dP_local
+                local = _build(arry['kgrid'])
 
             if inject:
-                inject_into_dHksp(arry['dHksp'], dP_local, units=units, sign=sign)
+                inject_dipole_velocity_into_dHksp(arry['dHksp'], arry['E_k'], arry['v_k'], local)
         except Exception as e:
-            self.report_exception('nonlocal_velocity_correction')
+            self.report_exception('position_dipole_correction')
             if attr.get('abort_on_exception', True):
                 raise e
 
-        self.report_module_time('NL velocity correction')
+        self.report_module_time('Position dipoles')
 
-    def adaptive_smearing(self, smearing='gauss', afac=None):
+    def adaptive_smearing(
+        self,
+        smearing: str = 'gauss',
+        afac: float | None = None,
+        min_width: float | None = None,
+        max_width: float | None = None,
+    ) -> None:
         """
         Calculate the Adaptive Smearing parameters
         Populates DataController with 'deltakp' and 'deltakp2'
@@ -2188,6 +2115,11 @@ class PAOFLOW:
         Arguments:
             smearing (str): Smearing type (m-p and gauss)
             afac   (float): Smearing control. Small values (<0.01) are equivalent to no smearing
+            min_width (float): Lower bound of the widths in eV (None, the default: no floor). The
+                Yates widths vanish at the band extrema and are tiny on flat bands; a state
+                narrower than the energy grid of a later dos(), doping() or transport() call drops
+                out of the sums, so a floor at or above that grid spacing restores the count
+            max_width (float): Upper bound of the widths in eV (None, the default: no cap)
 
         Returns:
             None
@@ -2203,7 +2135,9 @@ class PAOFLOW:
                 % str(smearing)
             )
         try:
-            do_adaptive_smearing(self.data_controller, smearing, afac)
+            do_adaptive_smearing(
+                self.data_controller, smearing, afac, min_width=min_width, max_width=max_width
+            )
         except Exception as e:
             self.report_exception('adaptive_smearing')
             if attr['abort_on_exception']:
@@ -2390,6 +2324,7 @@ class PAOFLOW:
         n_jobs : int, default 1
             Number of parallel worker processes used for the angle sweep.
             Ignored under MPI, which distributes angles across ranks instead.
+            Capped at the available cores otherwise.
         angle_timeout : float or None, default None
             Seconds allowed for any single angle when ``n_jobs`` exceeds 1.
             ``None`` waits indefinitely. Set it above the expected per-angle
@@ -3244,7 +3179,7 @@ class PAOFLOW:
         emin=-1.0,
         emax=1.0,
         ne=1000,
-        doping_conc=0.0,
+        doping_conc=None,
         core_electrons=0.0,
         fname='doping_',
     ):
@@ -3272,8 +3207,11 @@ class PAOFLOW:
 
         if 'delta' not in attr:
             attr['delta'] = delta
-        if 'doping_conc' not in attr:
+        # An explicit doping_conc always wins; otherwise keep a stored value (or 0).
+        if doping_conc is not None:
             attr['doping_conc'] = doping_conc
+        elif 'doping_conc' not in attr:
+            attr['doping_conc'] = 0.0
         if 'core_electrons' not in attr:
             attr['core_electrons'] = core_electrons
 
@@ -3297,7 +3235,7 @@ class PAOFLOW:
         ne=500,
         scattering_channels=[],
         scattering_weights=[],
-        tau_dict={},
+        tau_dict=None,
         do_hall=False,
         write_to_file=True,
         save_tensors=False,
@@ -3313,9 +3251,14 @@ class PAOFLOW:
             emax (float): The maximum energy in the range
             ne (float): The number of energy increments in [emin,emax]
             fit (bool): fit paoflow output to experiments
-            scattering_channels (list): List of strings specifying a built in model and/or TauModel objects to evaluate
+            scattering_channels (list): Built-in model names, TauModel objects and/or
+                ScatteringChannel objects (PAOFLOW.boltzmann.scattering_channels, e.g.
+                TransportSpectralChannel.from_npz('output/eliashberg.npz') for
+                electron-phonon scattering in metals, ResidualResistivity, FermiLiquidRate),
+                combined by Matthiessen's rule
             scattering_weights (list): List of coefficients weighting components of the harmonic sum when computing tau
-            tau_dict (dict): Dictionary housing parameters required for calculating Tau with built-in models
+            tau_dict (dict): Parameters of the built-in models; a dict passed here replaces any
+                stored one (None keeps it)
             do_hall (bool): Set True to calculate hall coefficient
             write_to_file (bool): Set True to write tensors to file
             save_tensors (bool): Set True to save the tensors into the data controller
@@ -3326,8 +3269,10 @@ class PAOFLOW:
         from .boltzmann.do_transport import do_transport
 
         arrays, attr = self.data_controller.data_dicts()
-        if 'tau_dict' not in attr:
+        if tau_dict is not None:
             attr['tau_dict'] = tau_dict
+        elif 'tau_dict' not in attr:
+            attr['tau_dict'] = {}
 
         ene = np.linspace(emin, emax, ne)
         temps = np.linspace(tmin, tmax, nt)
@@ -3373,6 +3318,7 @@ class PAOFLOW:
         emis_angles=(0.0, 30.0, 60.0),
         emis_ntheta=90,
         emis_temperature=300.0,
+        intraband=True,
     ):
         r"""Compute the frequency-dependent dielectric tensor.
 
@@ -3438,6 +3384,11 @@ class PAOFLOW:
         intrasmear : float, optional
             Intraband Drude broadening :math:`\eta` (eV). QE input
             ``intrasmear``. Default 0.05.
+        intraband : bool, optional
+            Include the intraband (Drude) term of metals (default ``True``).
+            ``False`` gives the interband dielectric function, to be combined
+            with an ab initio (extended) Drude term
+            (:func:`PAOFLOW.response.drude.extended_drude_dielectric`).
         emin, emax : float, optional
             Frequency window (eV).
         ne : int, optional
@@ -3445,7 +3396,7 @@ class PAOFLOW:
         d_tensor : list or {'all', 'diag', 'offdiag'}, optional
             Tensor components to compute. ``'diag'`` -> ``[[0,0],[1,1],[2,2]]``,
             ``'offdiag'`` -> the six off-diagonal pairs, or pass an explicit
-            list such as ``[[0,0],[1,2]]``.
+            list such as ``[[0,0],[1,2]]``. Default (None): ``'diag'``.
         degauss : float, optional
             Fermi-Dirac smearing width (eV) used to evaluate occupations
             and (for metals) the Drude :math:`-\partial f/\partial E`
@@ -3518,10 +3469,13 @@ class PAOFLOW:
         if 'delta' not in attr:
             attr['delta'] = delta
         attr['intrasmear'] = intrasmear
+        attr['intraband'] = bool(intraband)
         attr['emissivity'] = emissivity
         attr['emis_angles'] = np.atleast_1d(np.array(emis_angles, dtype=float))
         attr['emis_ntheta'] = int(emis_ntheta)
         attr['emis_temperature'] = np.atleast_1d(np.array(emis_temperature, dtype=float))
+        if d_tensor is None:
+            d_tensor = 'diag'  # the diagonal components (None used to crash)
         if d_tensor == 'all':
             pass
         elif d_tensor == 'diag':
@@ -3543,6 +3497,280 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Dielectric Tensor')
+
+    def nonlinear_optics(
+        self,
+        nk,
+        emin=0.0,
+        emax=4.0,
+        ne=401,
+        eta=0.05,
+        shift_current=True,
+        injection_current=True,
+        second_harmonic=True,
+        components='all',
+        scissor=0.0,
+        temperature=0.0,
+        fermi_energy=None,
+        smearing='gauss',
+        adaptive_smearing=None,
+        degeneracy_tol=1.0e-2,
+        twoD=False,
+        slab_height=None,
+        orbital_positions=None,
+        nelec=None,
+        kblock=128,
+        hopping_cutoff=None,
+        shg_bin=None,
+        position_dipoles=False,
+        symmetry=True,
+    ):
+        r"""Second-order optical responses: shift and injection currents, second-harmonic generation.
+
+        Evaluates, on a uniform ``nk`` grid interpolated from the real-space PAO Hamiltonian
+        ``HRs`` (Wigner-Seitz interpolation, no stored k-grid tensors), the band energies, the
+        interband position matrix :math:`r^a_{nm} = -i v^a_{nm}/\omega_{nm}`, its generalized
+        derivative :math:`r^b_{nm;a}` (sum rule over all PAO bands, exact in the tight-binding
+        approximation) and the velocity differences, and from them
+
+        * the **shift current** :math:`\sigma^{abc}(\omega)` (normal, T-even) and the magnetic
+          shift current (T-odd), :math:`J^a = \sigma^{abc}E^b(\omega)E^c(-\omega)`
+          (+ :math:`\sigma_M^{abc}\,\mathrm{Im}[E^bE^{c*}]`);
+        * the **injection currents** :math:`dJ^a/dt = \eta_M^{abc}\mathrm{Re}[E^bE^{c*}]
+          + \eta_C^{abc}\mathrm{Im}[E^bE^{c*}]` (magnetic, T-odd; circular, T-even);
+        * the **SHG susceptibility** :math:`\chi^{abc}(-2\omega;\omega,\omega)`,
+          :math:`P^a(2\omega) = \epsilon_0\chi^{abc}E^bE^c`, in the low-frequency convergent
+          form of Chen *et al.* (2022) (Rashkeev 1998 / Wang 2017 with the T-odd term).
+
+        Call it after :meth:`pao_hamiltonian` (and :meth:`add_external_fields`) and before
+        :meth:`interpolated_hamiltonian` or :meth:`pao_eigh`, which release ``HRs``.
+
+        Outputs (written by ``data_controller``, two columns: photon energy (eV), value):
+
+        * ``shift_<abc>.dat``, ``shiftm_<abc>.dat`` -- :math:`\mu`\ A/V\ :sup:`2`
+          (2D: nm :math:`\mu`\ A/V\ :sup:`2`);
+        * ``injectc_<abc>.dat``, ``injectm_<abc>.dat`` -- A V\ :sup:`-2` s\ :sup:`-1`
+          (2D: nm A V\ :sup:`-2` s\ :sup:`-1`);
+        * ``shgr_<abc>.dat``, ``shgi_<abc>.dat``, ``shga_<abc>.dat`` -- Re, Im and
+          :math:`|\chi|` in pm/V (2D: pm\ :sup:`2`/V).
+
+        With ``nspin = 2`` the files hold the sum of the two channels and ``_0`` / ``_1``
+        suffixed copies hold each channel.
+
+        Parameters
+        ----------
+        nk : sequence of int
+            Dense k-grid ``(n1, n2, n3)`` (``(n1, n2, 1)`` for 2D).
+        emin, emax, ne : float, float, int
+            Photon-energy grid (eV).
+        eta : float
+            Width of the :math:`\delta` functions (shift, injection) and imaginary part added
+            to every SHG resonance denominator (eV).
+        shift_current, injection_current, second_harmonic : bool
+            Responses to compute.
+        components : 'all', 'diag', or sequence of ``'abc'`` strings / index triples
+            Tensor components (``a``: current or polarisation direction; ``b, c``: fields).
+        scissor : float
+            Rigid shift of the conduction bands (eV) in the resonance energies and in the
+            explicit :math:`1/\omega_{mn}` factors; the matrix elements keep the DFT eigenvectors.
+        temperature : float
+            Electronic temperature (K); 0 gives step occupations (``nelec`` / spin factor bands).
+        fermi_energy : float, optional
+            Chemical potential (eV) for finite temperatures or metals (default: the mid-gap).
+        smearing : {'gauss', 'lorentz'}
+            Shape of the :math:`\delta` functions.
+        adaptive_smearing : float, optional
+            Yates prefactor ``a`` of the per-pair widths :math:`a|\mathbf v_n - \mathbf v_m|\Delta k`,
+            floored at ``eta``.
+        degeneracy_tol : float
+            Pairs closer than this (eV) are skipped in :math:`r` and in the band sums (10 meV:
+            the nearly degenerate pairs of DFT-derived Hamiltonians otherwise leak numerical
+            asymmetries into symmetry-forbidden components).
+        twoD : bool
+            Multiply the responses by the slab height (sheet responses).
+        slab_height : float, optional
+            Height of the 2D cell (bohr; default :math:`|\mathbf a_3|`).
+        orbital_positions : ndarray ``(nawf, 3)``, optional
+            Orbital centres in crystal coordinates (default: from the PAO basis, or from the
+            model's ``tau`` and ``naw``).
+        nelec : float, optional
+            Electrons per cell (default ``attr['nelec']``).
+        kblock : int
+            k-points per block.
+        hopping_cutoff : float, optional
+            Drop real-space cells with ``max |H(n)|`` below it (eV).
+        shg_bin : float, optional
+            Bin of the SHG transition-energy histograms (eV; default ``eta / 5``).
+        position_dipoles : bool or {'full', 'intra-atomic'}, optional
+            Go beyond the tight-binding position operator: the Löwdin position dipoles of
+            the PAO basis (:func:`~PAOFLOW.hamiltonian.position_dipoles.position_dipole_operator`,
+            internal projections, scalar-relativistic) enter :math:`r` and :math:`r_{;a}`.
+            ``True`` is the ``'full'`` level. Default ``False`` (tight-binding approximation).
+        symmetry : bool or array_like, optional
+            Reduce the dense grid to its irreducible wedge with the point-group operations of
+            the crystal and symmetrise the tensors once at the end (exact for the covariant
+            integrands; GaAs: 24 times fewer k-points). ``True`` uses the operations read from
+            Quantum ESPRESSO (``arrays['sym_rot']``, the time-reversal-combined ones excluded)
+            and does nothing when they are absent (models, VASP); an array ``(nops, 3, 3)`` of
+            Cartesian matrices is accepted instead (they must be lattice symmetries). ``False``
+            runs the full grid.
+
+        Returns
+        -------
+        dict
+            The spectra (``'energy_ev'``, ``'components'``, ``'shift'``, ``'shiftm'``,
+            ``'injectc'``, ``'injectm'``, ``'shg'``) summed over the spin channels, and the run
+            metadata (``'nocc'``, ``'gap_ev'``, ``'direct_gap_ev'``, ...); ``None`` on failure
+            when ``abort_on_exception`` is off.
+
+        Notes
+        -----
+        Units and conventions follow :mod:`PAOFLOW.response.nonlinear_optics`; see
+        ``docs/internals/nonlinear-optics.md`` for the formulas, the sign of the curvature term
+        in the sum rule, the histogram scheme of the SHG and the validation on GaAs and
+        tight-binding models.
+        """
+        import numpy as np
+
+        from .hamiltonian.bloch_derivatives import orbital_positions_from_data
+        from .response.nonlinear_optics import nonlinear_optical_spectra, write_nonlinear_outputs
+
+        arrays, attr = self.data_controller.data_dicts()
+        total = None
+        try:
+            if 'HRs' not in arrays:
+                raise KeyError(
+                    "nonlinear_optics needs 'HRs': call it after pao_hamiltonian() and before "
+                    'interpolated_hamiltonian() / pao_eigh() (or keep free_HRs=False).'
+                )
+            want = tuple(
+                name
+                for name, flag in (
+                    ('shift', shift_current),
+                    ('injection', injection_current),
+                    ('shg', second_harmonic),
+                )
+                if flag
+            )
+            if not want:
+                raise ValueError('nothing to compute: enable at least one response')
+            HRs = arrays['HRs']
+            at = np.asarray(arrays['a_vectors'], dtype=float)
+            alat = float(attr['alat'])
+            volume = float(attr['omega']) if 'omega' in attr else alat**3 * abs(np.linalg.det(at))
+            nelec_value = float(attr['nelec']) if nelec is None else float(nelec)
+            nspin = HRs.shape[-1]
+            spin_factor = 2.0 if (nspin == 1 and not attr.get('dftSO', False)) else 1.0
+            positions = (
+                np.asarray(orbital_positions, dtype=float)
+                if orbital_positions is not None
+                else orbital_positions_from_data(self.data_controller)
+            )
+            if positions is None and self.rank == 0:
+                print(
+                    'WARNING: no orbital positions found; all orbitals are placed at the origin '
+                    '(pass orbital_positions for a multi-site cell).'
+                )
+            energy = np.linspace(emin, emax, ne)
+            slab = None
+            if twoD:
+                slab = float(slab_height) if slab_height else alat * float(np.linalg.norm(at[2]))
+            ops_cryst = None
+            if symmetry is not False and symmetry is not None:
+                from .utils.point_groups import fractional_k_from_cartesian
+
+                if symmetry is True:
+                    if 'sym_rot' in arrays and arrays['sym_rot'] is not None:
+                        rot = np.asarray(arrays['sym_rot'], dtype=float)
+                        keep = np.ones(rot.shape[0], dtype=bool)
+                        if 'sym_TR' in arrays and arrays['sym_TR'] is not None:
+                            keep = ~np.asarray(arrays['sym_TR'], dtype=bool)
+                        ops_cryst = rot[keep]
+                    elif self.rank == 0 and attr.get('verbose', False):
+                        print('Nonlinear optics: no symmetry operations found, full grid')
+                else:
+                    cart = np.asarray(symmetry, dtype=float).reshape(-1, 3, 3)
+                    ops_cryst = fractional_k_from_cartesian(
+                        cart, np.asarray(arrays['b_vectors'], dtype=float)
+                    )
+            dipoles = None
+            if position_dipoles:
+                from .hamiltonian.position_dipoles import position_dipole_operator
+
+                level = position_dipoles if isinstance(position_dipoles, str) else 'full'
+                dipoles = position_dipole_operator(
+                    self.data_controller, np.asarray(arrays['b_vectors'], dtype=float), alat,
+                    level=level,
+                )  # fmt: skip
+                if self.rank == 0 and attr.get('verbose', False):
+                    print('Nonlinear optics: position dipoles (%s) in r and r_{;a}' % level)
+            per_spin = []
+            for ispin in range(nspin):
+                per_spin.append(
+                    nonlinear_optical_spectra(
+                        HRs,
+                        at,
+                        alat,
+                        volume,
+                        positions,
+                        nelec_value,
+                        nk,
+                        energy,
+                        components=components,
+                        eta=eta,
+                        smearing=smearing,
+                        adaptive_smearing=adaptive_smearing,
+                        scissor=scissor,
+                        temperature=temperature,
+                        fermi_energy=fermi_energy,
+                        degeneracy_tol=degeneracy_tol,
+                        spin_factor=spin_factor,
+                        ispin=ispin,
+                        kblock=kblock,
+                        want=want,
+                        shg_bin=shg_bin,
+                        hopping_cutoff=hopping_cutoff,
+                        position_dipoles=dipoles,
+                        symmetry_ops_cryst=ops_cryst,
+                        comm=self.comm,
+                        progress=bool(attr.get('verbose', False)),
+                    )  # fmt: skip
+                )
+            total = dict(per_spin[0])
+            if nspin == 2:
+                for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg'):
+                    if key in total:
+                        total[key] = per_spin[0][key] + per_spin[1][key]
+                for ispin, result in enumerate(per_spin):
+                    write_nonlinear_outputs(
+                        self.data_controller, result, slab, suffix='_%d' % ispin
+                    )
+            written = write_nonlinear_outputs(self.data_controller, total, slab)
+            attr['nonlinear_optics'] = {
+                'nk': tuple(int(n) for n in nk), 'eta_ev': float(eta), 'scissor_ev': float(scissor),
+                'components': list(total['components']), 'nocc': int(total['nocc']),
+                'gap_ev': float(total['gap_ev']), 'twoD': bool(twoD), 'slab_height_bohr': slab,
+                'position_dipoles': (level if position_dipoles else False),
+                'symmetry': total.get('symmetry'),
+            }  # fmt: skip
+            if self.rank == 0:
+                sym = total.get('symmetry')
+                print(
+                    'Nonlinear optics: %d occupied bands, gap %.3f eV (direct %.3f eV), '
+                    'scissor %.3f eV, %d k-points%s, %s; wrote %d files'
+                    % (total['nocc'], total['gap_ev'], total['direct_gap_ev'], scissor,
+                       int(np.prod(nk)),
+                       (' (%d irreducible, %d operations)' % (sym['k_irreducible'], sym['operations'])
+                        if sym else ''),
+                       ', '.join(want), len(written))
+                )  # fmt: skip
+        except Exception as e:
+            self.report_exception('nonlinear_optics')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Nonlinear Optics')
+        return total
 
     def jdos(self, delta=0.1, emin=0.0, emax=10.0, ne=501, jdos_smeartype='gauss'):
         """
@@ -4254,7 +4482,7 @@ class PAOFLOW:
         basispath,
         configuration='extended',
         pthr=0.95,
-        nonlocal_velocity=True,
+        position_dipoles=True,
         nfft=None,
         e_static=0.05,
         eps_outdir='eps',
@@ -4267,8 +4495,8 @@ class PAOFLOW:
         """Dielectric tensor of one displaced cell via the PAO pipeline.
 
         Mirrors the standard PAOFLOW optical workflow (internal projections ->
-        PAO Hamiltonian -> non-local velocity -> dielectric tensor) on the
-        displaced-cell SCF save.
+        PAO Hamiltonian -> velocity with position dipoles -> dielectric tensor)
+        on the displaced-cell SCF save.
 
         When ``energies`` is ``None`` the static ``(3, 3)`` dielectric tensor
         (``epsilon_1`` at ``omega -> 0``) is returned (non-resonant Raman).
@@ -4299,7 +4527,7 @@ class PAOFLOW:
         if nfft is not None:
             pf.interpolated_hamiltonian(nfft1=nfft[0], nfft2=nfft[1], nfft3=nfft[2])
         pf.pao_eigh()
-        pf.gradient_and_momenta(nonlocal_velocity=nonlocal_velocity)
+        pf.gradient_and_momenta(position_dipoles=position_dipoles)
         pf.adaptive_smearing()
 
         d_tensor = [[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]]
@@ -4335,7 +4563,7 @@ class PAOFLOW:
         basispath=None,
         configuration='extended',
         pthr=0.95,
-        nonlocal_velocity=True,
+        position_dipoles=True,
         nfft=None,
         e_static=0.05,
         method='static',
@@ -4405,8 +4633,9 @@ class PAOFLOW:
                 internal PAO projections in the analyse phase.
             configuration (str): PAO basis configuration (default ``'extended'``).
             pthr (float): Projectability threshold for the analyse phase.
-            nonlocal_velocity (bool): Use the non-local velocity correction in
-                the dielectric tensor (recommended).
+            position_dipoles (bool): Add the PAO position dipoles to the velocity
+                operator of the dielectric tensor (recommended; replaces the former
+                non-local velocity correction).
             nfft (tuple, optional): Double-grid interpolation ``(n1, n2, n3)``.
             e_static (float): Upper energy (eV) of the 2-point grid used to read
                 the static dielectric tensor (``epsilon_1`` at ``omega -> 0``;
@@ -4593,7 +4822,7 @@ class PAOFLOW:
                         basispath,
                         configuration=configuration,
                         pthr=pthr,
-                        nonlocal_velocity=nonlocal_velocity,
+                        position_dipoles=position_dipoles,
                         nfft=nfft,
                         energies=res_energies,
                         lifetime=lifetime,
@@ -4617,7 +4846,7 @@ class PAOFLOW:
                         basispath,
                         configuration=configuration,
                         pthr=pthr,
-                        nonlocal_velocity=nonlocal_velocity,
+                        position_dipoles=position_dipoles,
                         nfft=nfft,
                         e_static=e_static,
                     )
@@ -4979,6 +5208,37 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Quasi-Harmonic')
+
+    def arpes(self, experiment, self_energy=None, ispin=0, basis=None):
+        """ARPES intensity map of the PAO Hamiltonian (:mod:`PAOFLOW.arpes`).
+
+        Photoemission matrix elements of the PAO Bloch states with a plane-wave final
+        state (chinook formalism, Day et al. 2019), the spectral function with an
+        optional band-resolved self-energy, the Fermi factor and the resolution.
+        Call after ``projections`` and ``pao_hamiltonian``.
+
+        Arguments:
+            experiment (PAOFLOW.arpes.ArpesExperiment): Photon energy, work function,
+                inner potential, temperature, polarisation, energy window, momentum
+                mesh or path, resolution, radial-function choice.
+            self_energy (optional): ``None`` (bare bands), a constant ``-i Gamma``, a
+                ``PAOFLOW.arpes.GridSelfEnergy``, an array ``(N, nb, nw)`` or a callable
+                ``f(w, energies, kpoints, bands)`` such as
+                ``PAOFLOW.elphon.self_energy.TabulatedSelfEnergy`` of a Fan-Migdal run.
+            ispin (int): Spin channel of ``HRs``.
+            basis (optional): A prepared ``PhotoemissionBasis`` (e.g. with slab depths or
+                cross sections); default built from the projection basis.
+
+        Returns:
+            PAOFLOW.arpes.IntensityMap: Raw and broadened intensities, the window bands
+            and their matrix-element weights; ``save`` writes an ``.npz`` file.
+        """
+        from .arpes import BlochHamiltonian, PhotoemissionBasis, simulate
+
+        if basis is None:
+            basis = PhotoemissionBasis.from_data_controller(self.data_controller)
+        bloch = BlochHamiltonian.from_data_controller(self.data_controller, ispin=ispin)
+        return simulate(experiment, basis, bloch, self_energy)
 
     def electron_phonon(
         self,

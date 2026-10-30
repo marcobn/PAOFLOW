@@ -484,6 +484,118 @@ def build_aewfc_basis(data_controller):
     return basis, shells
 
 
+def build_basis_from_sources(data_controller, pseudo_labels):
+    """Basis with the shells of ``arry['configuration']`` taken from two sources, atom by atom.
+
+    The shells listed in ``pseudo_labels[element]`` come from the ``PP_PSWFC`` pseudo-orbitals
+    of the UPF (the pseudo-atom's own solutions, consistent with the augmented metric of
+    ultrasoft / PAW pseudopotentials), the others from ``basispath/<elem>/<shell>.dat``. The
+    records are ordered atom by atom in the order of ``arry['configuration'][element]``, as the
+    symmetry expansion (``pao_sym``) and ``arry['shells']`` require. When a species mixes the
+    two sources its pseudo-orbitals are resampled (cubic spline) on the radial mesh of its
+    tables, so that every shell of a species shares one mesh (the position-dipole tables of
+    ``hamiltonian/position_dipoles.py`` require it).
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Required arrays: ``atoms``, ``tau``, ``species``, ``configuration``; attributes
+        ``ecutrho``, ``omega``, ``verbose``, ``dftSO``, ``fpath``, ``basispath``.
+    pseudo_labels : dict
+        ``{element: [shell labels taken from the UPF]}``.
+
+    Returns
+    -------
+    basis : list of dict
+        Same schema as :func:`build_pswfc_basis_all`.
+    shells : dict
+        ``{species: [l, ...]}``.
+
+    Raises
+    ------
+    NotImplementedError
+        With spin-orbit coupling (the ``jm`` bookkeeping of a mixed set is not implemented).
+    """
+    arry, attr = data_controller.data_dicts()
+    if attr.get('dftSO'):
+        raise NotImplementedError(
+            'a basis mixing UPF pseudo-orbitals and tables needs a scalar-relativistic run'
+        )
+    verbose = attr['verbose']
+    qmesh = np.arange(0, np.sqrt(attr['ecutrho']) + 4, 0.01)
+    volume = attr['omega']
+    from scipy.interpolate import CubicSpline
+
+    arry['jchia'] = {}
+    upf_cache = {}
+    per_atom, tasks = [], []
+    for na in range(len(arry['atoms'])):
+        atom = arry['atoms'][na]
+        elem = re.split(r'\d+', atom)[0]
+        tau = arry['tau'][na]
+        wanted = list(arry['configuration'][elem])
+        from_upf = {lbl.upper() for lbl in pseudo_labels.get(elem, [])}
+        table_mesh = None
+        for label in wanted:  # the common mesh of the species: that of its tables, if any
+            if label.upper() not in from_upf:
+                table_mesh = np.loadtxt(os.path.join(attr['basispath'], elem, '%s.dat' % label))[
+                    :, 0
+                ]
+                break
+        records = []
+        for label in wanted:
+            l = 'SPDF'.find(label[1].upper())
+            assert l != -1, label
+            if label.upper() in from_upf:
+                if elem not in upf_cache:
+                    upf_cache[elem] = read_pswfc_from_upf(data_controller, elem)
+                r_grid, pswfc, pseudo = upf_cache[elem]
+                match = [pao for pao in pswfc if pao['label'].upper() == label.upper()]
+                if not match:
+                    raise RuntimeError('%s: no pseudo-orbital %s in %s' % (elem, label, pseudo))
+                wfc = np.asarray(match[0]['wfc'], dtype=float)
+                if table_mesh is not None:
+                    spline = CubicSpline(r_grid, wfc, extrapolate=False)
+                    wfc = np.nan_to_num(spline(table_mesh), nan=0.0)
+                    r_use = np.asarray(table_mesh, dtype=float)
+                else:
+                    r_use = np.asarray(r_grid, dtype=float)
+                source = pseudo
+            else:
+                path = os.path.join(attr['basispath'], elem, '%s.dat' % label)
+                data = np.loadtxt(path)
+                r_use, wfc, source = data[:, 0], data[:, 1], path
+            if verbose and rank == 0:
+                print('atom: %-2s  %s from %s' % (atom, label, source))
+            records.append((label, l, r_use, wfc, len(tasks)))
+            tasks.append((r_use, wfc, l))
+        per_atom.append((atom, tau, records))
+    wfc_g_list = _parallel_radialfft(tasks, qmesh, volume)
+    basis, shells = [], {}
+    for atom, tau, records in per_atom:
+        ash = []
+        for label, l, r_use, wfc, itask in records:
+            ash.append(l)
+            for m in range(1, 2 * l + 2):
+                basis.append(
+                    {
+                        'atom': atom,
+                        'tau': tau,
+                        'l': l,
+                        'm': m,
+                        'label': label,
+                        'r': r_use,
+                        'wfc': np.array(wfc, dtype=float),
+                        'qmesh': qmesh,
+                        'wfc_g': wfc_g_list[itask],
+                    }
+                )
+        if atom not in shells:
+            shells[atom] = ash
+            arry['jchia'][atom] = []
+    return basis, shells
+
+
 def build_mixed_basis(data_controller):
     """Construct a mixed basis: pseudo-atomic wavefunctions + AE polarization.
 
@@ -720,7 +832,7 @@ def fft_wfc_R2G(wfc, igwx, mill, omega):
     return wfcg
 
 
-def read_QE_wfc(data_controller, ik, ispin):
+def read_QE_wfc(data_controller, ik, ispin, orthonormalize=True):
     """Read Quantum ESPRESSO wavefunction coefficients from a Fortran binary ``wfc*.dat`` file.
 
     Parameters
@@ -732,6 +844,11 @@ def read_QE_wfc(data_controller, ik, ispin):
         Zero-based k-point index.
     ispin : int
         Spin index (0 = down, 1 = up for ``nspin = 2``).
+    orthonormalize : bool, optional
+        Loewdin-orthonormalise the bands with the plain plane-wave overlap (default). Pass
+        ``False`` when the overlap operator of the pseudopotentials is applied explicitly
+        (ultrasoft / PAW, :mod:`PAOFLOW.projection.augmentation`): the stored coefficients are
+        then used as they are, since they are orthonormal in the augmented metric.
 
     Returns
     -------
@@ -743,6 +860,17 @@ def read_QE_wfc(data_controller, ik, ispin):
         ``'nbnd'``, ``'ispin'``.
     """
     arry, attr = data_controller.data_dicts()
+    if attr.get('unfold_kpoints', False):
+        # nscf on the irreducible wedge: the block at this full-grid k is rotated from its
+        # irreducible representative (same Loewdin step below as for a stored block).
+        from ..elphon.wavefunction_symmetry import provider_for
+
+        gkspace, wfc = provider_for(attr['fpath'], attr['nspin']).gkspace_wfc(ik, ispin)
+        if orthonormalize:
+            wfc['wfc'] = loewdin_orthonormalize(wfc['wfc'])
+        else:
+            wfc['wfc'] = np.asarray(wfc['wfc'])
+        return gkspace, wfc
     if attr['nspin'] == 1 or attr['nspin'] == 4:
         wfcfile = f'wfc{ik + 1}'
     elif attr['nspin'] == 2 and ispin == 0:
@@ -812,22 +940,39 @@ def read_QE_wfc(data_controller, ik, ispin):
         except:
             raise Exception('no wfc file found')
 
-    # Symmetric (Loewdin) orthonormalisation of the DFT bands.  The overlap is a
-    # single Hermitian GEMM rather than an nbnd**2 Python loop, and the inverse
-    # square root reuses the eigendecomposition instead of calling sqrtm (~13x
-    # faster overall at nbnd=400). See ortho_atwfc_k for the same identity:
-    # solve(sqrtm(ovp).T, wfc) == (ovp^-1/2).conj() @ wfc for Hermitian ovp.
+    # ``scalef`` is deliberately not applied: Loewdin orthonormalisation makes
+    # ``owfc`` independent of any global scale on the input (and QE writes it as 1).
+    owfc = loewdin_orthonormalize(wfc) if orthonormalize else np.asarray(wfc)
+    gkspace = {'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': gamma_only}
+    return gkspace, {'wfc': owfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin}
+
+
+def loewdin_orthonormalize(wfc) -> np.ndarray:
+    """Symmetric (Loewdin) orthonormalisation of the DFT bands, ``(S^-1/2)^* wfc``.
+
+    Parameters
+    ----------
+    wfc : array_like, shape ``(nbnd, npw)``
+        Plane-wave coefficients (rows = bands).
+
+    Returns
+    -------
+    np.ndarray, shape ``(nbnd, npw)``, complex
+        Orthonormal rows spanning the same space.
+
+    Notes
+    -----
+    The overlap is a single Hermitian GEMM rather than an ``nbnd**2`` Python loop, and the
+    inverse square root reuses the eigendecomposition instead of calling ``sqrtm`` (~13x
+    faster overall at ``nbnd = 400``).  See :func:`ortho_atwfc_k` for the same identity:
+    ``solve(sqrtm(ovp).T, wfc) == (ovp^-1/2).conj() @ wfc`` for Hermitian ``ovp``.
+    """
     wfc = np.asarray(wfc)
     ovp = wfc.conj() @ wfc.T
     eigs, eigv = np.linalg.eigh(ovp)
     assert np.all(eigs >= -1e-12)
     inv_sqrt = 1.0 / np.sqrt(np.clip(eigs, 1e-30, None))
-    owfc = ((eigv.conj() * inv_sqrt) @ eigv.T) @ wfc
-
-    # ``scalef`` is deliberately not applied: Loewdin orthonormalisation makes
-    # ``owfc`` independent of any global scale on the input.
-    gkspace = {'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': gamma_only}
-    return gkspace, {'wfc': owfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin}
+    return ((eigv.conj() * inv_sqrt) @ eigv.T) @ wfc
 
 
 def calc_ylmg(k_plus_G, q):
@@ -1161,19 +1306,52 @@ def calc_atwfc_k(basis, gkspace, dftSO=False):
     return np.array(atwfc_k)
 
 
-def ortho_atwfc_k(atwfc_k):
+def loewdin_factor(ovp):
+    """The matrix ``X`` that Loewdin-orthonormalises functions with Gram matrix ``ovp``.
+
+    Parameters
+    ----------
+    ovp : np.ndarray, shape ``(n, n)``, complex
+        Hermitian overlap matrix :math:`O_{ij} = \\langle i | j \\rangle` (plain or augmented).
+
+    Returns
+    -------
+    np.ndarray, shape ``(n, n)``, complex
+        ``X = (O^{-1/2})^*``: with the functions as rows of ``f``, ``X @ f`` are the
+        orthonormal combinations :math:`\\tilde f_i = \\sum_j (O^{-1/2})_{ji} f_j`, whose Gram
+        matrix ``X^* @ ovp @ X^T`` is the identity.
+
+    Notes
+    -----
+    Symmetric (Loewdin) orthogonalisation via ``eigh`` on the Hermitian overlap, which is
+    faster and more stable than ``scipy.linalg.sqrtm`` on a general complex matrix. The
+    original behaviour is ``oatwfc = solve(X.T, atwfc)`` with ``X = sqrtm(ovp)``; for a
+    Hermitian ``X`` this equals ``(ovp^{-1/2}).conj() @ atwfc``, built from the
+    eigendecomposition as ``ovp^{-1/2} = U Λ^{-1/2} U^H`` and ``(ovp^{-1/2})^* = U^* Λ^{-1/2} U^T``.
+    """
+    eigs, eigv = np.linalg.eigh(ovp)
+    assert np.all(eigs >= -1e-12)
+    inv_sqrt = 1.0 / np.sqrt(np.clip(eigs, 1e-30, None))
+    return (eigv.conj() * inv_sqrt) @ eigv.T
+
+
+def ortho_atwfc_k(atwfc_k, overlap=None):
     """Orthonormalise atomic wavefunctions at a k-point via symmetric orthogonalisation.
 
     Parameters
     ----------
     atwfc_k : np.ndarray, shape ``(natwfc, igwx)``, complex
         Atomic wavefunctions from :func:`calc_atwfc_k`.
+    overlap : np.ndarray, shape ``(natwfc, natwfc)``, optional
+        Gram matrix to orthonormalise with instead of the plain plane-wave one, e.g. the
+        augmented :math:`\\langle\\phi_i|S|\\phi_j\\rangle` of ultrasoft / PAW
+        pseudopotentials.
 
     Returns
     -------
     np.ndarray, shape ``(natwfc, igwx)``, complex
         Orthonormalised wavefunctions satisfying
-        :math:`\\langle i | j \\rangle = \\delta_{ij}`.
+        :math:`\\langle i | j \\rangle = \\delta_{ij}` in the metric of ``overlap``.
 
     Raises
     ------
@@ -1186,30 +1364,63 @@ def ortho_atwfc_k(atwfc_k):
     # Overlap matrix as a single Hermitian matmul (replaces the previous
     # Python double loop, which was the dominant per-k cost: 2.8 s of
     # 3.5 s on GaAs serial).
-    ovp = atwfc_k.conj() @ atwfc_k.T
+    ovp = atwfc_k.conj() @ atwfc_k.T if overlap is None else overlap
 
-    # Symmetric (Loewdin) orthogonalisation via eigh on the Hermitian
-    # overlap, which is faster and more stable than ``scipy.linalg.sqrtm``
-    # on a general complex matrix.
-    eigs, eigv = np.linalg.eigh(ovp)
-    assert np.all(eigs >= -1e-12)
-    inv_sqrt = 1.0 / np.sqrt(np.clip(eigs, 1e-30, None))
-    # Original behaviour is ``oatwfc = solve(X.T, atwfc)`` with
-    # ``X = sqrtm(ovp)``.  For a Hermitian X this equals
-    # ``X.conj()^{-1} @ atwfc = (ovp^{-1/2}).conj() @ atwfc``.
-    # Build that operator from the eigendecomposition:
-    #   ovp^{-1/2}        = U  Λ^{-1/2} U^H
-    #   (ovp^{-1/2}).conj = U* Λ^{-1/2} U.T
-    X = (eigv.conj() * inv_sqrt) @ eigv.T
+    X = loewdin_factor(ovp)
     oatwfc_k = X @ atwfc_k
 
     # check orthonormalisation
-    oovp = oatwfc_k.conj() @ oatwfc_k.T
+    oovp = oatwfc_k.conj() @ oatwfc_k.T if overlap is None else X.conj() @ ovp @ X.T
     diff = np.linalg.norm(oovp - np.eye(natwfc))
     if np.abs(diff) > 1e-4:
         raise RuntimeError('ortogonalization failed')
 
     return oatwfc_k
+
+
+def augmented_proj_k(data_controller, augmentation, basis, ik, ispin):
+    """Projections and atomic-orbital overlap at a k-point in the augmented metric.
+
+    The ultrasoft / PAW analogue of :func:`calc_proj_k`: the stored pseudo-wavefunctions are
+    used as they are (they are orthonormal in the metric ``S``), the atomic orbitals are
+    Loewdin-orthonormalised with :math:`\\langle\\phi|S|\\phi\\rangle` and the projections
+    are :math:`\\langle\\tilde\\phi_i|S|\\psi_n\\rangle`, as in ``projwfc.x``.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        See :func:`calc_proj_k` (QE input only).
+    augmentation : PAOFLOW.projection.augmentation.AugmentedOverlap
+        The projectors and augmentation charges of the run.
+    basis : list of dict
+        Atomic basis functions.
+    ik : int
+        Zero-based k-point index.
+    ispin : int
+        Spin index.
+
+    Returns
+    -------
+    proj_k : np.ndarray, shape ``(nbnd, natwfc)``, complex
+        Projections :math:`\\langle\\psi_{n\\mathbf k}|S|\\tilde\\phi_i\\rangle^*`
+        (same layout as :func:`calc_proj_k`).
+    Sk : np.ndarray, shape ``(natwfc, natwfc)``, complex
+        Augmented overlap of the raw atomic orbitals,
+        :math:`\\langle\\phi_\\mu|S|\\phi_\\nu\\rangle`.
+    """
+    from .augmentation import k_plus_g_vectors
+
+    _, attr = data_controller.data_dicts()
+    gkspace, wfc = read_QE_wfc(data_controller, ik, ispin, orthonormalize=False)
+    atwfc_k = calc_atwfc_k(basis, gkspace, attr['dftSO'])
+    beta = augmentation.beta(k_plus_g_vectors(gkspace))
+    becp_phi = augmentation.becp(beta, atwfc_k)  # <beta_p|phi_i>   (nproj, natwfc)
+    becp_psi = augmentation.becp(beta, wfc['wfc'])  # <beta_p|psi_n>   (nproj, nbnd)
+    Sk = augmentation.overlap(atwfc_k, atwfc_k, beta, becp_phi, becp_phi)
+    X = loewdin_factor(Sk)
+    raw = augmentation.overlap(atwfc_k, wfc['wfc'], beta, becp_phi, becp_psi)  # <phi|S|psi>
+    proj_k = X.conj() @ raw
+    return proj_k.T, Sk
 
 
 def calc_proj_k(data_controller, basis, ik, ispin):
@@ -1234,6 +1445,9 @@ def calc_proj_k(data_controller, basis, ik, ispin):
         for all bands and basis functions.
     """
     arry, attr = data_controller.data_dicts()
+    augmentation = arry.get('augmentation') if attr['dft'] == 'QE' else None
+    if augmentation is not None:
+        return augmented_proj_k(data_controller, augmentation, basis, ik, ispin)[0]
     if attr['dft'] == 'QE':
         gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
     else:
@@ -1258,7 +1472,9 @@ def calc_proj_and_ovlp_k(data_controller, basis, ik, ispin):
 
     computed from the raw (un-orthogonalised) atomic wavefunctions in
     G-space.  This is the same overlap that ``projwfc.x`` writes to
-    ``atomic_proj.xml`` when ``lwrite_overlaps = .true.``
+    ``atomic_proj.xml`` when ``lwrite_overlaps = .true.`` (with ultrasoft /
+    PAW pseudopotentials both are taken in the augmented metric, see
+    :func:`augmented_proj_k`).
 
     Parameters
     ----------
@@ -1279,6 +1495,9 @@ def calc_proj_and_ovlp_k(data_controller, basis, ik, ispin):
         Raw (non-orthogonal) atomic-orbital overlap matrix.
     """
     arry, attr = data_controller.data_dicts()
+    augmentation = arry.get('augmentation') if attr['dft'] == 'QE' else None
+    if augmentation is not None:
+        return augmented_proj_k(data_controller, augmentation, basis, ik, ispin)
     if attr['dft'] == 'QE':
         gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
     else:
@@ -1592,7 +1811,7 @@ def calc_gvec_VASP(data_controller, ikpt=0):
 
 # ---------------------------------------------------------------------------
 # Per-shell change-of-basis matrices used by the relativistic NL-velocity
-# rotation (see ``hamiltonian/nonlocal_velocity.py``).  Both helpers probe
+# rotation (``_jm_shell_transform`` in ``hamiltonian/nonlocal_velocity.py``).  Both helpers probe
 # the existing ``calc_ylmg_complex_0`` / ``calc_ylmg_so`` routines with
 # one-hot inputs so they inherit PAOFLOW's tesseral/spinor conventions
 # (including the non-standard odd-|m| sign).

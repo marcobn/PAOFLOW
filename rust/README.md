@@ -7,7 +7,7 @@ implementation, producing numerically identical results (parity < 1e-12).
 
 | Crate | Importable module | Accelerates | Python fallback |
 | --- | --- | --- | --- |
-| [`paoflow_rs`](paoflow_rs/) | `paoflow_rs` | ACBN0/eACBN0 four-centre Coulomb integrals (ERIs); dielectric/JDOS response loops | `PAOFLOW.utils.pyints`; vectorised NumPy in `do_epsilon` |
+| [`paoflow_rs`](paoflow_rs/) | `paoflow_rs` | ACBN0/eACBN0 four-centre Coulomb integrals (ERIs); dielectric/JDOS response loops; the phonon-assisted absorption kernel (`elphon_indirect_absorption`, 36× over NumPy on 24 threads) | `PAOFLOW.utils.pyints`; vectorised NumPy in `do_epsilon`; NumPy `indirect_absorption_kernel` |
 
 This document is the end-to-end guide for getting a backend running on a fresh
 machine — whether you are an **end user** who just wants the speedup, or a
@@ -189,6 +189,11 @@ numerically identical, so this isolates pure timing.
 ---
 
 ## 7. Threads and oversubscription
+
+Since October 2026 every kernel shares one rayon pool (`src/pool.rs`) and PAOFLOW exports
+`PAOFLOW_RS_THREADS` from its MPI core budget when it is imported under `mpirun`
+(`PAOFLOW.utils.parallel_resources.configure_native_threads`), so N ranks on a node no longer
+start N pools over every core.  Set the variable yourself to override the budget.
 
 The batched kernels parallelise over keys with `rayon`. Thread count resolves
 as:

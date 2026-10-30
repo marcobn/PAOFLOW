@@ -32,8 +32,8 @@ Driver and worker communicate exclusively through pickle files, so there's no MP
 
 Each self-consistent iteration goes through these steps:
 
-1. QE SCF/NSCF calculation with the current `HUBBARD` card
-2. Projector augmented-wave projection via `projwfc.x`
+1. QE SCF calculation with the current `HUBBARD` card, on the full k-grid and with the number of bands the projection needs (an optional `<prefix>.nscf.in` template is run after the scf when present; the examples do without it)
+2. Projection of the Kohn–Sham states on the atomic orbitals: PAOFLOW's internal projection (`use_local_basis=True`, the default in the examples; `configuration='minimal'` uses the UPF pseudo-atomic wavefunctions and matches the `projwfc.x` projectors most closely) or, with `use_local_basis=False`, `projwfc.x`
 3. PAOFLOW bandstructure computation — H(k) and S(k)
 4. Density-matrix construction and Hartree energy evaluation
 5. Convergence check, with optional mixing
@@ -52,3 +52,24 @@ Each self-consistent iteration goes through these steps:
 ## When to Use It (and When Not To)
 
 ACBN0 works well for FM insulators and half-metals. For itinerant FM metals, metallic screening tends to cause U overestimation. Near Stoner instabilities, fixed-U scanning is a more reliable approach than self-consistent determination.
+
+## Using the eACBN0 save downstream
+
+The final save of the loop (`<outdir>/<prefix>.save`) holds the charge density
+and the Hubbard occupations (`occup.txt`); the last `scf.in` / `nscf.in` of the
+work directory carry the converged `HUBBARD (ortho-atomic)` card. Any later
+`pw.x` run on that density (an nscf on another k list, a bands run) must repeat
+the card: QE reads U and V from the input and the occupations from the save.
+PAOFLOW reads a DFT+U+V save like any other; the Hubbard potential enters the
+PAO Hamiltonian through the Kohn-Sham energies and projections, and
+`PAOFLOW.elphon.pao_electrons.hubbard_info_from_save` records the parameters
+for provenance.
+
+Two consumers in this repository: the direct dielectric function
+(`dielectric_tensor` on the eACBN0 save, `optics/dielectric.py --savedir` of
+`examples/elphon/Si`) and the electron-phonon optics / mobility drivers, which take the
+band energies and eigenvectors from the eACBN0 PAO Hamiltonian while keeping
+the PBE coupling (`--electrons-save`; see
+[Electron-phonon coupling](Electron-Phonon-Coupling.md), "Beyond-PBE
+electrons"). `examples/elphon/Si/qe/make_hubbard_nscf.py` writes the two
+nscf inputs from the converged card.

@@ -14,6 +14,7 @@ Si diamond
     celldm(1) = 10.599478,
     ecutwfc = 50.0,
     ecutrho = 200.0,
+    nbnd = 30,
  /
 
  &electrons
@@ -24,7 +25,7 @@ Si diamond
  /
 
 K_POINTS automatic
- 8 8 8 0 0 0
+ 16 16 16 0 0 0
 
 ATOMIC_SPECIES
  Si  28.086  Si.pbe-tm-new-gipaw-v2.1.UPF

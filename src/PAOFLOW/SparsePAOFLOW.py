@@ -699,12 +699,21 @@ class SparsePAOFLOW:
         ``pksp`` is never formed."""
         self._mesh_plan['velocities'] = True
 
-    def adaptive_smearing(self, smearing='gauss', afac=None):
-        """Record the adaptive-smearing prefactor for the fused mesh pass
-        (Yates widths, as ``do_adaptive_smearing``; the interband
-        ``deltakp2`` is not needed by the sparse pipeline)."""
+    def adaptive_smearing(
+        self,
+        smearing: str = 'gauss',
+        afac: float | None = None,
+        min_width: float | None = None,
+        max_width: float | None = None,
+    ) -> None:
+        """Record the adaptive-smearing prefactor and optional width bounds for
+        the fused mesh pass (Yates widths, floored at ``min_width`` and capped at
+        ``max_width`` when given, as ``do_adaptive_smearing``; the interband ``deltakp2`` is not needed by
+        the sparse pipeline)."""
         self._mesh_plan['smearing'] = smearing
         self._mesh_plan['afac'] = afac
+        self._mesh_plan['min_width'] = min_width
+        self._mesh_plan['max_width'] = max_width
 
     def plan_pdos(self, emin=-10.0, emax=2.0, ne=1000):
         """Register PDOS accumulation *before* the mesh pass runs.
@@ -756,6 +765,8 @@ class SparsePAOFLOW:
                 consumers=consumers,
                 afac=self._mesh_plan.get('afac'),
                 smearing=self._mesh_plan.get('smearing', attr.get('smearing', 'gauss')),
+                min_width=self._mesh_plan.get('min_width'),
+                max_width=self._mesh_plan.get('max_width'),
                 verbose=attr['verbose'],
                 hk_solver=self.hk_solver,
                 ehi=None if self._window is None else self._window[3],

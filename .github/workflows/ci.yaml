@@ -88,7 +88,7 @@ jobs:
 
       PAOFLOW_QE_TEST_ASSET_URL: https://github.com/marcobn/PAOFLOW/releases/download/integration-assets-v1/qe_test_assets.tar.gz
 
-      PAOFLOW_QE_TEST_ASSET_SHA256: "45412f34ebf9fd1bea9d1df958048a63793836a35e779a51c69ed8770a7955dc"
+      PAOFLOW_QE_TEST_ASSET_SHA256: "e6bdc9b230fd5fddce5293ebd2aff6d3d78df437fae443ee58714a132caeaabd"
 
     steps:
       - uses: actions/checkout@v4
@@ -187,3 +187,46 @@ jobs:
           name: transport-comparison-plots-${{ matrix.example }}
           path: /tmp/pytest-of-runner/**/*.png
           if-no-files-found: ignore
+
+  elphon-integration-tests:
+    runs-on: ubuntu-22.04
+    needs: pre-commit
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: core
+            paths: tests/integration/elphon/test_dfpt_coupling_parity.py tests/integration/elphon/test_irreducible_wedge.py tests/integration/elphon/test_long_range_sic.py tests/integration/elphon/test_pao_electrons_integration.py
+          - group: workflows
+            paths: tests/integration/elphon/test_example_workflows.py
+          - group: arpes
+            paths: tests/integration/elphon/test_arpes_self_energy.py
+    name: elphon-integration-tests (${{ matrix.group }})
+    env:
+      PAOFLOW_ELPHON_ASSET_VERSION: integration-assets-v1
+      PAOFLOW_ELPHON_ASSET_URL: https://github.com/marcobn/PAOFLOW/releases/download/integration-assets-v1/elphon_test_assets.tar.gz
+      PAOFLOW_ELPHON_ASSET_SHA256: "2a09dbbcad7af08411d61381e608b922072ba464022fc989a69336260d6ff34b"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MPI runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openmpi-bin libopenmpi-dev
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install matplotlib
+
+      - name: Run electron-phonon integration tests (${{ matrix.group }})
+        run: |
+          pytest ${{ matrix.paths }} -m "integration and not slow" -v --durations=10

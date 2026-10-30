@@ -7,25 +7,6 @@
 //! once in Python after reduction, so this returns the scalar `drude_weight`.
 
 use rayon::prelude::*;
-use std::sync::OnceLock;
-
-fn pool() -> Option<&'static rayon::ThreadPool> {
-    static POOL: OnceLock<Option<rayon::ThreadPool>> = OnceLock::new();
-    POOL.get_or_init(|| {
-        std::env::var("PAOFLOW_RS_THREADS")
-            .or_else(|_| std::env::var("PAOFLOW_ACBN0_THREADS"))
-            .ok()
-            .and_then(|s| s.trim().parse::<usize>().ok())
-            .filter(|&n| n > 0)
-            .map(|n| {
-                rayon::ThreadPoolBuilder::new()
-                    .num_threads(n)
-                    .build()
-                    .expect("failed to build PAOFLOW_RS_THREADS rayon pool")
-            })
-    })
-    .as_ref()
-}
 
 /// Per-k partial result: (epsi[ne], epsr[ne], drude_weight).
 struct Partial {
@@ -117,10 +98,7 @@ pub fn eps_loop(
         )
     };
 
-    let p = match pool() {
-        Some(pool) => pool.install(reduce),
-        None => reduce(),
-    };
+    let p = crate::pool::install(reduce);
     (p.epsi, p.epsr, p.drude)
 }
 

@@ -1,8 +1,7 @@
 """Unit tests for the Phase 3b PAO atomic-orbital catalog loader.
 
 Exercises :func:`PAOFLOW.hamiltonian.nonlocal_velocity.load_pao_orbitals`
-on the same real norm-conserving UPFs used by the β-projector loader
-tests.  Covers:
+on real norm-conserving UPFs.  Covers:
 
 * Per-species PSWFC channel inventory (l, label, occupation).
 * PAOFLOW basis ordering (channel-major, QE-indexed m sweep) and the
@@ -12,8 +11,8 @@ tests.  Covers:
   including the ``r=0`` extrapolation for ``l=0``.
 * Multi-species (MnO) site → basis mapping with correct
   ``basis_offset`` values.
-* USPP rejection and species/tau mismatch error paths (shared with the
-  β loader).
+* Ultrasoft pseudopotentials load like norm-conserving ones (only the pswfc block is read);
+  species/tau mismatch error paths.
 """
 
 from __future__ import annotations
@@ -248,7 +247,8 @@ def test_mno_pao_d_channel_m_sweep(mno_pao_catalog):
 # ----------------------------------------------------------------------
 
 
-def test_pao_loader_rejects_uspp():
+def test_pao_loader_accepts_uspp():
+    """Only the atomic orbitals are read, so an ultrasoft UPF loads like a norm-conserving one."""
     if not (USPP_DIR / USPP_UPF).exists():
         pytest.skip(f'USPP fixture missing: {USPP_DIR / USPP_UPF}')
     arrays = {
@@ -257,8 +257,12 @@ def test_pao_loader_rejects_uspp():
         'tau': np.zeros((1, 3)),
     }
     attributes = {'fpath': str(USPP_DIR)}
-    with pytest.raises(RuntimeError, match='norm-conserving'):
-        load_pao_orbitals(_StubDataController(arrays, attributes))
+    catalog = load_pao_orbitals(_StubDataController(arrays, attributes))
+    assert catalog.species['Pt'].upf.type.upper() not in ('NC',)
+    assert catalog.total_nlm == sum(2 * ch.l + 1 for ch in catalog.species['Pt'].channels)
+    assert catalog.total_nlm > 0 and all(
+        np.isfinite(ch.R_radial).all() for ch in catalog.species['Pt'].channels
+    )
 
 
 def test_pao_loader_rejects_unknown_species():

@@ -1,25 +1,19 @@
-"""Non-local pseudopotential velocity correction (Kleinman--Bylander form).
+"""PAO orbital catalog and basis-convention helpers of the velocity operator.
 
-This module assembles the data needed to evaluate
-
-.. math::
-   \\Delta p^{\\mathrm{PAO}}_\\alpha(\\mathbf{k})
-     = \\frac{m}{i\\hbar}\\,\\sum_I\\!\\left[
-         P_I^{\\dagger}\\,D^I\\,P^{\\alpha}_I
-       - (P^{\\alpha}_I)^{\\dagger}\\,D^I\\,P_I
-       \\right](\\mathbf{k}),
-
-the non-local contribution to the velocity (momentum) matrix elements that
-is otherwise missing from PAOFLOW's ``dH^{PAO}/dk`` operator (see
-``TODOs/nonlocal_velocity_correction.md`` §2 for the derivation).
-
-This file currently provides Phase 3a/3b loader infrastructure only.  The
-real-space overlap tables and k-space assembly are added in subsequent
-phases.
-
-Phase 3 covers **norm-conserving** pseudopotentials only.  Ultrasoft and
-PAW augmentation contributions (the :math:`Q_{ij}` charges) are deferred
-to a later phase.
+Historically this module held the non-local pseudopotential velocity correction
+:math:`\\Delta p = m/(i\\hbar)[V_{\\rm NL}, \\mathbf r]`, removed in October 2026: PAOFLOW's
+velocity is the commutator :math:`i[H, \\mathbf r]` of a Hamiltonian that already contains
+:math:`V_{\\rm NL}`, so the term double counted it (Si: 0.87 of the exact plane-wave
+:math:`\\varepsilon_2` with the position dipoles, Fe anomalous Hall peak :math:`\\times1.7`); the
+missing part of the orbital-centre velocity is the position-dipole term of
+:mod:`PAOFLOW.hamiltonian.position_dipoles`.  The file keeps its name and the pieces that the
+dipoles use: the PAO radial channels and per-site orbital mapping (:class:`PAOCatalog`,
+:func:`load_pao_orbitals`), the orbital cutoffs and lattice search, PAOFLOW's orbital signs
+(:func:`pao_orbital_signs`), the Löwdin transformation (:func:`lowdin_transform`) and the
+scalar-to-``(j, m_j)`` rotation (:func:`scalar_to_jm_matrix`).  The catalog needs only the
+atomic orbitals (the basis tables of the projection, or the UPF ``PP_PSWFC`` block), so any
+pseudopotential type is accepted: the norm-conserving restriction of the removed term (its
+Kleinman-Bylander projectors) went with it.
 """
 
 from __future__ import annotations
@@ -31,219 +25,6 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..inputs.read_upf import UPF
-from ._two_center import (
-    radial_bessel_transform,
-    two_center_dipole_overlap_precomputed,
-    two_center_overlap_precomputed,
-)
-
-
-@dataclass
-class BetaSpeciesData:
-    """Per-species Kleinman--Bylander projector data extracted from a UPF.
-
-    Attributes
-    ----------
-    label : str
-        Species label as it appears in ``data_arrays['species']``.
-    pseudo_file : str
-        UPF filename (basename), as recorded by Quantum ESPRESSO.
-    upf : UPF
-        Parsed UPF object.  Beta/D data live in :attr:`UPF.beta` and
-        :attr:`UPF.dion` (the latter already in Hartree).
-    r : np.ndarray, shape ``(npoints,)``
-        Radial mesh (Bohr).
-    rab : np.ndarray, shape ``(npoints,)``
-        Radial integration weights.
-    nproj : int
-        Number of KB projectors :math:`\\beta_i(r)` (no :math:`m` index).
-    lchannels : list of int
-        Angular momentum :math:`l_i` of each projector (length ``nproj``).
-    dion : np.ndarray, shape ``(nproj, nproj)``
-        Coupling matrix :math:`D_{ij}` in **Hartree**.
-    jbeta : list of (float or None)
-        Total angular momentum :math:`j_i` of each projector (length
-        ``nproj``) for fully-relativistic UPFs, or ``None`` for each
-        entry when the pseudopotential is scalar-relativistic.
-    has_spinorbit : bool
-        ``True`` when the UPF carries a ``PP_SPIN_ORB`` block (i.e. the
-        ``jbeta`` entries are populated).
-    """
-
-    label: str
-    pseudo_file: str
-    upf: UPF
-    r: np.ndarray
-    rab: np.ndarray
-    nproj: int
-    lchannels: list[int]
-    dion: np.ndarray
-    jbeta: list[float | None] = field(default_factory=list)
-    has_spinorbit: bool = False
-
-
-@dataclass
-class BetaSiteData:
-    """One entry per atomic site in the unit cell.
-
-    Attributes
-    ----------
-    index : int
-        Site index ``I`` (0-based), matching ``data_arrays['tau']``.
-    label : str
-        Species label.
-    tau : np.ndarray, shape ``(3,)``
-        Cartesian position :math:`\\boldsymbol{\\tau}_I` (Bohr).
-    species : BetaSpeciesData
-        Reference to the per-species KB data (shared across sites of the
-        same species).
-    """
-
-    index: int
-    label: str
-    tau: np.ndarray
-    species: BetaSpeciesData
-
-
-@dataclass
-class BetaCatalog:
-    """Top-level container for the loaded KB projector data.
-
-    Attributes
-    ----------
-    species : dict[str, BetaSpeciesData]
-        Per-species data, keyed by species label.
-    sites : list of BetaSiteData
-        Per-atom entries (length ``natoms``).
-    total_nproj_radial : int
-        :math:`\\sum_I n_\\beta^I`, ignoring the :math:`m` (orientation)
-        index.  The full number of (β,m) basis functions is
-        :math:`\\sum_I \\sum_i (2 l_{I,i} + 1)`; see
-        :attr:`total_nproj_lm`.
-    total_nproj_lm : int
-        :math:`\\sum_I \\sum_i (2 l_{I,i} + 1)` -- the dimension of the
-        atom-resolved projector block used to build :math:`P_I(\\mathbf{k})`.
-    """
-
-    species: dict[str, BetaSpeciesData] = field(default_factory=dict)
-    sites: list[BetaSiteData] = field(default_factory=list)
-    total_nproj_radial: int = 0
-    total_nproj_lm: int = 0
-
-
-def load_beta_projectors(data_controller) -> BetaCatalog:
-    """Load Kleinman--Bylander projectors and per-site mapping.
-
-    Parses each species' UPF (via :class:`PAOFLOW.inputs.read_upf.UPF`)
-    once, then resolves the per-atom mapping using
-    ``data_arrays['atoms']`` and ``data_arrays['tau']``.  This is the
-    Phase 3a loader for the non-local velocity correction (see
-    ``TODOs/nonlocal_velocity_correction.md`` §2.5).
-
-    Parameters
-    ----------
-    data_controller : DataController
-        Provider of ``data_arrays`` / ``data_attributes``.  Required:
-
-        - ``arrays['species']``: list of ``(label, pseudo_file)``.
-        - ``arrays['atoms']``: per-site list of species labels.
-        - ``arrays['tau']``: ``(natoms, 3)`` Cartesian positions (Bohr).
-        - ``attributes['fpath']``: directory containing the UPF files
-          (typically ``<prefix>.save``).
-
-    Returns
-    -------
-    BetaCatalog
-        Loaded species data and per-site mapping.
-
-    Raises
-    ------
-    RuntimeError
-        If any species' UPF is non-norm-conserving (USPP or PAW) -- Phase 3
-        is NC only.
-    RuntimeError
-        If a species in ``arrays['atoms']`` has no entry in
-        ``arrays['species']``.
-    """
-    arry, attr = data_controller.data_dicts()
-    fpath = attr['fpath']
-
-    # Load each unique species' UPF once.
-    species_data: dict[str, BetaSpeciesData] = {}
-    for label, pseudo_file in arry['species']:
-        if label in species_data:
-            continue
-        upf_path = os.path.join(fpath, pseudo_file)
-        upf = UPF(upf_path)
-        _require_nc(upf, label, pseudo_file)
-        lchannels = [int(b['l']) for b in upf.beta]
-        jbeta = [(float(b['j']) if b.get('j') is not None else None) for b in upf.beta]
-        species_data[label] = BetaSpeciesData(
-            label=label,
-            pseudo_file=pseudo_file,
-            upf=upf,
-            r=upf.r,
-            rab=upf.rab,
-            nproj=upf.nproj,
-            lchannels=lchannels,
-            dion=upf.dion if upf.dion is not None else np.zeros((upf.nproj, upf.nproj)),
-            jbeta=jbeta,
-            has_spinorbit=bool(getattr(upf, 'has_spinorbit', False)),
-        )
-
-    # Resolve per-site mapping.
-    atoms = arry['atoms']
-    tau = np.asarray(arry['tau'], dtype=float)
-    if tau.shape[0] != len(atoms):
-        raise RuntimeError(
-            f'tau ({tau.shape[0]} rows) does not match atoms list (length {len(atoms)}).'
-        )
-
-    sites: list[BetaSiteData] = []
-    total_radial = 0
-    total_lm = 0
-    for i, label in enumerate(atoms):
-        if label not in species_data:
-            raise RuntimeError(
-                f"Atom site {i} has species '{label}' but no matching entry in arrays['species']."
-            )
-        sp = species_data[label]
-        sites.append(BetaSiteData(index=i, label=label, tau=tau[i].copy(), species=sp))
-        total_radial += sp.nproj
-        total_lm += sum(2 * l + 1 for l in sp.lchannels)
-
-    return BetaCatalog(
-        species=species_data,
-        sites=sites,
-        total_nproj_radial=total_radial,
-        total_nproj_lm=total_lm,
-    )
-
-
-def _require_nc(upf: UPF, label: str, pseudo_file: str) -> None:
-    """Raise ``RuntimeError`` unless ``upf`` is norm-conserving.
-
-    Phase 3 of the non-local velocity correction supports NC pseudos only;
-    USPP / PAW need the additional :math:`Q_{ij}` augmentation term
-    (deferred to Phase 6).
-    """
-    # UPF v2 sets ``type`` (alias for header.pseudo_type).  UPF v1 sets
-    # ``ptype`` based on the textual flag in PP_HEADER.
-    kind = getattr(upf, 'type', None) or getattr(upf, 'ptype', None)
-    if kind is None:
-        return  # be lenient if the UPF lacks the tag entirely.
-    kind = str(kind).upper()
-    if kind != 'NC':
-        raise RuntimeError(
-            f'Non-local velocity correction (Phase 3) supports norm-conserving '
-            f"pseudopotentials only; species '{label}' uses '{pseudo_file}' "
-            f"of type '{kind}'. USPP/PAW augmentation will be added in Phase 6."
-        )
-
-
-# ---------------------------------------------------------------------------
-# PAO atomic-orbital catalog (the ket / bra of <beta_I | r_alpha | phi_mu>).
-# ---------------------------------------------------------------------------
 
 
 def qe_m_index_to_std(qe_m: int, l: int) -> int:
@@ -444,12 +225,14 @@ class PAOCatalog:
 def load_pao_orbitals(data_controller) -> PAOCatalog:
     """Load PAO atomic radial functions and the per-site basis mapping.
 
-    Phase 3b/3c loader for the non-local velocity correction.
+    The orbital catalog of the position dipoles
+    (:mod:`PAOFLOW.hamiltonian.position_dipoles`); any pseudopotential type
+    (norm-conserving, ultrasoft, PAW), since only the atomic orbitals are read.
 
     When ``data_arrays['atomic_basis']`` is present (PAOFLOW stashes it
     inside :meth:`PAOFLOW.projections` after the projector basis has
     been built), the catalog is reconstructed from those records so
-    that ``Δp`` operates on **exactly the orbitals that produced**
+    that the dipoles are those of **exactly the orbitals that produced**
     ``dHksp``.  This is required when the production run uses an
     AE / extended basis (``BASIS/<elem>/*.dat``) whose orbital count
     and radial mesh do not match the UPF pswfc set.
@@ -481,9 +264,9 @@ def load_pao_orbitals(data_controller) -> PAOCatalog:
     Raises
     ------
     RuntimeError
-        On non-NC pseudos, missing species, a tau/atoms shape mismatch,
-        or when ``atomic_basis`` records for the same species disagree
-        on the radial mesh.
+        On missing species, a tau/atoms shape mismatch, or when
+        ``atomic_basis`` records for the same species disagree on the
+        radial mesh.
     """
     arry, attr = data_controller.data_dicts()
     fpath = attr['fpath']
@@ -496,7 +279,6 @@ def load_pao_orbitals(data_controller) -> PAOCatalog:
             continue
         upf_path = os.path.join(fpath, pseudo_file)
         upf = UPF(upf_path)
-        _require_nc(upf, label, pseudo_file)
 
         if atomic_basis:
             channels, r_basis = _channels_from_atomic_basis(label, atomic_basis)
@@ -684,11 +466,6 @@ def _trapezoid_weights(r: np.ndarray) -> np.ndarray:
     return w
 
 
-# ---------------------------------------------------------------------------
-# Real-space ΔR enumeration for the <beta_I | ... | phi_J(r - dR)> tables.
-# ---------------------------------------------------------------------------
-
-
 def pao_cutoff_radius(channel: PAOChannelData, r: np.ndarray, tol: float = 1.0e-4) -> float:
     r"""Return the numerical real-space cutoff of a PAO channel.
 
@@ -728,57 +505,11 @@ def pao_cutoff_radius(channel: PAOChannelData, r: np.ndarray, tol: float = 1.0e-
     return float(r[-1])
 
 
-def site_beta_cutoff(site: BetaSiteData) -> float:
-    r"""Largest β-projector cutoff radius on a given site."""
-    cuts = [float(b['cutoff_radius']) for b in site.species.upf.beta]
-    return max(cuts) if cuts else 0.0
-
-
 def site_pao_cutoff(site: PAOSiteData, tol: float = 1.0e-4) -> float:
     r"""Largest PAO radial cutoff on a given site (via :func:`pao_cutoff_radius`)."""
     r = site.species.r
     cuts = [pao_cutoff_radius(ch, r, tol=tol) for ch in site.species.channels]
     return max(cuts) if cuts else 0.0
-
-
-@dataclass(frozen=True)
-class NLPair:
-    r"""One real-space pair entering the non-local velocity tables.
-
-    Represents the displacement :math:`\mathbf{d} = (\boldsymbol{\tau}_J +
-    \Delta\mathbf{R}) - \boldsymbol{\tau}_I` between the β-projector
-    center on site ``I`` (home cell) and the PAO orbital center on site
-    ``J`` in the periodic image ``ΔR``.
-
-    Attributes
-    ----------
-    beta_site : int
-        Site index ``I`` (β projector, home cell).
-    pao_site : int
-        Site index ``J`` (PAO orbital).
-    deltaR_lattice : tuple[int, int, int]
-        Integer lattice translation ``(n1, n2, n3)`` so that
-        :math:`\Delta\mathbf{R} = n_1 \mathbf{a}_1 + n_2 \mathbf{a}_2 +
-        n_3 \mathbf{a}_3`.
-    deltaR_cart : np.ndarray, shape ``(3,)``
-        Cartesian translation (Bohr).
-    displacement : np.ndarray, shape ``(3,)``
-        :math:`\mathbf{d} = \boldsymbol{\tau}_J + \Delta\mathbf{R} -
-        \boldsymbol{\tau}_I` (Bohr).
-    distance : float
-        :math:`\|\mathbf{d}\|` (Bohr).
-    cutoff_used : float
-        Pair cutoff :math:`r^\beta_I + r^\varphi_J + \text{pad}` that
-        kept this pair in the list.
-    """
-
-    beta_site: int
-    pao_site: int
-    deltaR_lattice: tuple
-    deltaR_cart: np.ndarray
-    displacement: np.ndarray
-    distance: float
-    cutoff_used: float
 
 
 def _lattice_search_bounds(a_cart: np.ndarray, max_radius: float) -> tuple[int, int, int]:
@@ -803,579 +534,83 @@ def _lattice_search_bounds(a_cart: np.ndarray, max_radius: float) -> tuple[int, 
     return tuple(int(np.ceil(max_radius / h)) + 1 for h in spacings)  # type: ignore[return-value]
 
 
-def enumerate_nl_pairs(
-    beta_catalog: BetaCatalog,
-    pao_catalog: PAOCatalog,
-    a_vectors_cart: np.ndarray,
-    *,
-    extra_pad: float = 0.0,
-    pao_tol: float = 1.0e-4,
-    distance_tol: float = 1.0e-8,
-) -> list[NLPair]:
-    r"""Enumerate (β-site, PAO-site, ΔR) triples within their pair cutoff.
+def pao_orbital_signs(pao_catalog: PAOCatalog) -> np.ndarray:
+    r"""Sign of every PAOFLOW orbital with respect to the real-space orbitals of the tables.
 
-    For every ordered pair (β-site ``I``, PAO-site ``J``) and every
-    integer Bravais translation ``ΔR``, the displacement
-    :math:`\mathbf{d} = \boldsymbol{\tau}_J + \Delta\mathbf{R} -
-    \boldsymbol{\tau}_I` is checked against the pair cutoff
-    :math:`r^\beta_I + r^\varphi_J + \text{pad}`.  Surviving triples are
-    returned as :class:`NLPair`.
-
-    The search box is automatically sized from the largest pair cutoff
-    via :func:`_lattice_search_bounds`, so the caller need only supply
-    the catalogs and the Cartesian lattice (Bohr).
+    PAOFLOW's atomic Bloch orbitals (``calc_atwfc_k``) are built in reciprocal space with the
+    phase :math:`i^l` and the ``calc_ylmg`` harmonics, which carry an extra ``-1`` on odd
+    ``|m|``; transformed back to real space they are :math:`(-1)^l (-1)^{|m| \bmod 2}` times
+    :math:`R(r) Y_{lm}(\hat r)` with the tesseral harmonics of
+    :mod:`PAOFLOW.hamiltonian._two_center`.  A matrix with two PAO indices built from the
+    tables therefore transforms with the product of the two signs.  Measured on the Si basis
+    (3S 3P 3D 4S 4P) against the plane-wave overlaps and Berry connection of the PAOFLOW
+    orbitals (agreement to :math:`10^{-3}` and 2 %); the odd-``|m|`` factor alone flips every
+    :math:`s`--:math:`p` and :math:`p`--:math:`d` element.
 
     Parameters
     ----------
-    beta_catalog : BetaCatalog
-        Loaded by :func:`load_beta_projectors`.
     pao_catalog : PAOCatalog
-        Loaded by :func:`load_pao_orbitals`.
-    a_vectors_cart : np.ndarray, shape ``(3, 3)``
-        Cartesian lattice vectors (Bohr).  Row ``i`` is :math:`\mathbf{a}_i`.
-        For PAOFLOW's data layout this is ``arry['a_vectors'] * attr['alat']``.
-    extra_pad : float, optional
-        Extra padding added to every pair cutoff (Bohr).
-    pao_tol : float, optional
-        Tolerance forwarded to :func:`pao_cutoff_radius`.
-    distance_tol : float, optional
-        Pairs with ``|d| < distance_tol`` are still emitted (they are the
-        on-site ``I == J`` and ``ΔR = 0`` contributions, important for
-        the non-local velocity).
 
     Returns
     -------
-    list[NLPair]
-        Pair list (no particular order beyond the outer ``I, J`` loop).
+    np.ndarray, shape ``(nawf,)``
+        ``+1`` or ``-1`` per orbital in PAOFLOW basis order.
+    """
+    return np.array(
+        [
+            (-1.0) ** orbital.l * (-1.0 if abs(orbital.m) % 2 == 1 else 1.0)
+            for orbital in pao_catalog.basis
+        ],
+        dtype=float,
+    )
+
+
+def lowdin_transform(matrix_k: np.ndarray, overlap_k: np.ndarray) -> np.ndarray:
+    r"""Transform an operator matrix from the atomic to the Löwdin-orthonormal PAO basis.
+
+    PAOFLOW's Hamiltonian, ``dHksp`` and band velocities are expressed in the symmetrically
+    orthogonalised orbitals :math:`\omega = \varphi S^{-1/2}`; a matrix computed between the
+    raw atomic orbitals :math:`\varphi` (such as the two-centre :math:`\Delta p`) must be
+    transformed as
+
+    .. math::
+
+        M^{\omega}(\mathbf k) = S^{-1/2}(\mathbf k)\, M^{\varphi}(\mathbf k)\, S^{-1/2}(\mathbf k)
+
+    before it is added to them.  For a diffuse basis this is not a small correction: on the
+    standard Si set (Bloch-overlap eigenvalues :math:`5\cdot10^{-4}` to 20) the untransformed
+    :math:`\Delta p` has its largest elements 4--5 times too small.
+
+    Parameters
+    ----------
+    matrix_k : np.ndarray, shape ``(nk, 3, n, n)`` or ``(nk, n, n)``, complex
+        Operator in the atomic-orbital Bloch basis.
+    overlap_k : np.ndarray, shape ``(nk, n, n)``, complex
+        Hermitian positive-definite Bloch overlap :math:`S(\mathbf k)` of the same orbitals,
+        in the same phase convention.
+
+    Returns
+    -------
+    np.ndarray
+        The transformed operator, same shape as ``matrix_k``.
 
     Raises
     ------
-    RuntimeError
-        If the β and PAO catalogs have differing numbers of sites
-        (they must come from the same crystal).
+    ValueError
+        If :math:`S(\mathbf k)` is not positive definite (linearly dependent orbitals).
     """
-    if len(beta_catalog.sites) != len(pao_catalog.sites):
-        raise RuntimeError(
-            f'BetaCatalog has {len(beta_catalog.sites)} sites but PAOCatalog has '
-            f'{len(pao_catalog.sites)}; both must be loaded from the same crystal.'
-        )
-    a_cart = np.asarray(a_vectors_cart, dtype=float)
-    if a_cart.shape != (3, 3):
-        raise RuntimeError(f'a_vectors_cart must have shape (3,3); got {a_cart.shape}.')
-
-    # Per-site cutoffs.
-    r_beta = [site_beta_cutoff(s) for s in beta_catalog.sites]
-    r_pao = [site_pao_cutoff(s, tol=pao_tol) for s in pao_catalog.sites]
-
-    max_pair_cut = (max(r_beta) if r_beta else 0.0) + (max(r_pao) if r_pao else 0.0) + extra_pad
-    N1, N2, N3 = _lattice_search_bounds(a_cart, max_pair_cut)
-
-    pairs: list[NLPair] = []
-    for I, beta_site in enumerate(beta_catalog.sites):
-        tau_I = beta_site.tau
-        for J, pao_site in enumerate(pao_catalog.sites):
-            tau_J = pao_site.tau
-            cut = r_beta[I] + r_pao[J] + extra_pad
-            if cut <= 0.0:
-                continue
-            cut2 = cut * cut
-            for n1 in range(-N1, N1 + 1):
-                for n2 in range(-N2, N2 + 1):
-                    for n3 in range(-N3, N3 + 1):
-                        dR = n1 * a_cart[0] + n2 * a_cart[1] + n3 * a_cart[2]
-                        d = tau_J + dR - tau_I
-                        d2 = float(d @ d)
-                        if d2 > cut2:
-                            continue
-                        pairs.append(
-                            NLPair(
-                                beta_site=I,
-                                pao_site=J,
-                                deltaR_lattice=(n1, n2, n3),
-                                deltaR_cart=dR.copy(),
-                                displacement=d.copy(),
-                                distance=float(np.sqrt(d2)),
-                                cutoff_used=cut,
-                            )
-                        )
-    return pairs
-
-
-# ---------------------------------------------------------------------------
-# Real-space ⟨β|φ⟩ and ⟨β|r_α|φ⟩ tables.
-# ---------------------------------------------------------------------------
-
-
-def n_beta_lm(site: BetaSiteData) -> int:
-    r"""Number of LM-decomposed β projectors on a site (``Σ_i (2 l_i + 1)``)."""
-    return sum(2 * int(b['l']) + 1 for b in site.species.upf.beta)
-
-
-def iter_beta_lm(site: BetaSiteData):
-    r"""Yield ``(local_lm_index, channel_index, l, m_std, qe_m)`` for the LM
-    decomposition of the KB projectors on ``site``.
-
-    Ordering matches the PAO convention used by
-    :func:`load_pao_orbitals`: channel-major, with ``qe_m = 1..2l+1``
-    sweeping inside each channel.  ``m_std`` is the standard real-Y_lm
-    magnetic index (via :func:`qe_m_index_to_std`).
-    """
-    local = 0
-    for ch_idx, b in enumerate(site.species.upf.beta):
-        l = int(b['l'])
-        for qe_m in range(1, 2 * l + 2):
-            yield local, ch_idx, l, qe_m_index_to_std(qe_m, l), qe_m
-            local += 1
-
-
-@dataclass
-class NLRealSpaceTables:
-    r"""Real-space ⟨β|φ⟩ and ⟨β|r_α|φ⟩ tables on a list of :class:`NLPair`.
-
-    For each pair ``k`` linking β-site ``I`` (home cell) to PAO-site ``J``
-    in image ``ΔR``:
-
-    * :attr:`S_bp` ``[k]`` is shape ``(n_beta_lm(I), n_pao(J))`` and
-      stores :math:`S^{(k)}_{i m_\beta,\,\mu} = \langle \beta_{I,i,m_\beta}
-      \,|\, \varphi_{J,\mu}(\cdot - \Delta\mathbf{R})\rangle`.
-    * :attr:`S_rbp` ``[k]`` is shape ``(3, n_beta_lm(I), n_pao(J))`` and
-      stores the Cartesian dipole-weighted overlap
-      :math:`\langle \beta_{I,i,m_\beta} \,|\, r_\alpha \,|\,
-      \varphi_{J,\mu}(\cdot - \Delta\mathbf{R})\rangle`,
-      already including the geometry term
-      ``M_α(d) + (τ_I)_α · S^{(k)}_{i m_\beta, \mu}``.
-
-    Both arrays are real (everything is on the real-tesseral basis).
-
-    Attributes
-    ----------
-    pairs : list[NLPair]
-        Pair list this table was built on (same order).
-    S_bp : list[np.ndarray]
-        Per-pair overlap blocks.
-    S_rbp : list[np.ndarray]
-        Per-pair dipole-weighted overlap blocks (axis 0 = Cartesian α).
-    beta_lm_per_site : list[int]
-        ``n_beta_lm(I)`` for ``I = 0..nsites-1``.
-    pao_per_site : list[int]
-        ``len(pao_site.orbitals)`` for each site.
-    """
-
-    pairs: list
-    S_bp: list
-    S_rbp: list
-    beta_lm_per_site: list
-    pao_per_site: list
-
-
-def build_nl_real_space_tables(
-    beta_catalog: BetaCatalog,
-    pao_catalog: PAOCatalog,
-    pairs: list[NLPair],
-    *,
-    q_max: float = 20.0,
-    n_q: int = 600,
-    include_dipole: bool = True,
-) -> NLRealSpaceTables:
-    r"""Build per-pair ⟨β|φ⟩ and ⟨β|r_α|φ⟩ blocks.
-
-    Loops over the (β-site, PAO-site, ΔR) triples in ``pairs`` and, for
-    each LM-decomposed β projector and each PAO orbital on the
-    corresponding sites, evaluates the two-center primitives from
-    :mod:`PAOFLOW.hamiltonian._two_center`.
-
-    Parameters
-    ----------
-    beta_catalog : BetaCatalog
-        Loaded by :func:`load_beta_projectors`.
-    pao_catalog : PAOCatalog
-        Loaded by :func:`load_pao_orbitals`.
-    pairs : list[NLPair]
-        Output of :func:`enumerate_nl_pairs`.
-    q_max, n_q : float, int
-        Radial Bessel transform quadrature parameters forwarded to
-        :func:`~PAOFLOW.hamiltonian._two_center.two_center_overlap` and
-        :func:`~PAOFLOW.hamiltonian._two_center.two_center_dipole_overlap`.
-    include_dipole : bool, optional
-        If ``False``, :attr:`NLRealSpaceTables.S_rbp` is a list of
-        empty arrays.  Useful for cheap diagnostic builds.
-
-    Returns
-    -------
-    NLRealSpaceTables
-
-    Notes
-    -----
-    Uses a precomputed radial-Bessel-transform cache: for each species
-    and radial channel the transform :math:`J(q) = \int R(r)\,j_l(qr)\,r^2\,dr`
-    is computed exactly once on a shared ``q_grid`` (likewise for the
-    modified bra :math:`g(r) = r\,R(r)` at the parity-allowed
-    :math:`L' = l \pm 1` needed by the dipole).  All subsequent pair
-    evaluations reuse these cached :math:`J`'s, cutting cost by roughly
-    two orders of magnitude versus naive recomputation.
-    """
-    beta_sites = beta_catalog.sites
-    pao_sites = pao_catalog.sites
-
-    q_grid = np.linspace(0.0, q_max, n_q)
-
-    # --- Precompute J^β_{species,ch}(q) and the modified-bra version for
-    #     the dipole on the parity-allowed L' ∈ {l-1, l+1}. ---
-    beta_J: dict[tuple[str, int], np.ndarray] = {}
-    beta_J_rmul: dict[tuple[str, int, int], np.ndarray] = {}
-    for sp_label, sp in beta_catalog.species.items():
-        r_b = sp.r
-        for ch_idx, b in enumerate(sp.upf.beta):
-            l = int(b['l'])
-            R_beta = _upf_wfc_to_radial(r_b, np.asarray(b['wfc'], dtype=float), l)
-            beta_J[(sp_label, ch_idx)] = radial_bessel_transform(r_b, R_beta, l, q_grid)
-            if include_dipole:
-                g = r_b * R_beta
-                parity = (l + 1) % 2
-                for Lp in (abs(l - 1), l + 1):
-                    if Lp % 2 != parity:
-                        continue
-                    key = (sp_label, ch_idx, Lp)
-                    if key in beta_J_rmul:
-                        continue
-                    beta_J_rmul[key] = radial_bessel_transform(r_b, g, Lp, q_grid)
-
-    # --- Precompute J^φ_{species,ch}(q). ---
-    pao_J: dict[tuple[str, int], np.ndarray] = {}
-    for sp_label, sp in pao_catalog.species.items():
-        r_p = sp.r
-        for ch_idx, ch in enumerate(sp.channels):
-            pao_J[(sp_label, ch_idx)] = radial_bessel_transform(r_p, ch.R_radial, ch.l, q_grid)
-
-    beta_lm_per_site = [n_beta_lm(s) for s in beta_sites]
-    pao_per_site = [len(s.orbitals) for s in pao_sites]
-
-    S_bp_list: list[np.ndarray] = []
-    S_rbp_list: list[np.ndarray] = []
-    beta_lm_tuples_per_site = [list(iter_beta_lm(s)) for s in beta_sites]
-
-    for pair in pairs:
-        I = pair.beta_site
-        J = pair.pao_site
-        d = pair.displacement
-        tau_I = beta_sites[I].tau
-        sp_b_label = beta_sites[I].label
-        sp_p_label = pao_sites[J].label
-        n_b = beta_lm_per_site[I]
-        n_p = pao_per_site[J]
-
-        S_block = np.zeros((n_b, n_p), dtype=float)
-        if include_dipole:
-            Sr_block = np.zeros((3, n_b, n_p), dtype=float)
-        else:
-            Sr_block = np.zeros((3, 0, 0), dtype=float)
-
-        # Per-pair scratch cache: the radial integral I_L (spherical_jn +
-        # Simpson) and the angular Y_LM(R-hat) depend only on the radial
-        # channels, L, M and the fixed ΔR of this pair -- not on the
-        # magnetic indices m_b/m_p.  Memoizing them here collapses the
-        # ~(2l_b+1)(2l_p+1) redundant recomputations per channel pair into
-        # a single evaluation (results are bit-identical).
-        pair_cache: dict = {}
-
-        for local_b, ch_b_idx, l_b, m_b, _qe_b in beta_lm_tuples_per_site[I]:
-            J_beta = beta_J[(sp_b_label, ch_b_idx)]
-            keyA_ov = ('b', sp_b_label, ch_b_idx)
-            keyA_dip = ('g', sp_b_label, ch_b_idx)
-            if include_dipole:
-                JgA_by_Lp: dict[int, np.ndarray] = {}
-                parity_b = (l_b + 1) % 2
-                for Lp in (abs(l_b - 1), l_b + 1):
-                    if Lp % 2 != parity_b:
-                        continue
-                    JgA_by_Lp[Lp] = beta_J_rmul[(sp_b_label, ch_b_idx, Lp)]
-            for entry in pao_sites[J].orbitals:
-                local_p = entry.basis_index - pao_sites[J].basis_offset
-                ch_p_idx = entry.channel_index
-                l_p = entry.l
-                m_p = entry.m
-                J_phi = pao_J[(sp_p_label, ch_p_idx)]
-                keyB = ('p', sp_p_label, ch_p_idx)
-                S_val = two_center_overlap_precomputed(
-                    J_beta,
-                    J_phi,
-                    l_b,
-                    m_b,
-                    l_p,
-                    m_p,
-                    d,
-                    q_grid,
-                    cache=pair_cache,
-                    keyA=keyA_ov,
-                    keyB=keyB,
-                )
-                S_block[local_b, local_p] = S_val
-                if include_dipole:
-                    for alpha in (0, 1, 2):
-                        M_alpha = two_center_dipole_overlap_precomputed(
-                            JgA_by_Lp,
-                            J_phi,
-                            l_b,
-                            m_b,
-                            l_p,
-                            m_p,
-                            d,
-                            alpha,
-                            q_grid,
-                            cache=pair_cache,
-                            keyA=keyA_dip,
-                            keyB=keyB,
-                        )
-                        Sr_block[alpha, local_b, local_p] = M_alpha + tau_I[alpha] * S_val
-
-        S_bp_list.append(S_block)
-        S_rbp_list.append(Sr_block)
-
-    return NLRealSpaceTables(
-        pairs=pairs,
-        S_bp=S_bp_list,
-        S_rbp=S_rbp_list,
-        beta_lm_per_site=beta_lm_per_site,
-        pao_per_site=pao_per_site,
-    )
-
-
-def _dion_lm_expanded(site: BetaSiteData) -> np.ndarray:
-    r"""Expand the radial :math:`D^I_{ij}` to the LM-decomposed basis.
-
-    For norm-conserving KB pseudos :math:`D` is diagonal in :math:`(l, m)`:
-    it couples only same-:math:`l` radial channels and is scalar in the
-    :math:`m` index.  The returned matrix has shape
-    ``(n_beta_lm(site), n_beta_lm(site))`` and is the block-diagonal
-    expansion ``D^I_{(i,m),(j,m')} = δ_{l_i l_j} δ_{m m'} D^{rad}_{ij}``
-    (in **Hartree**, the unit in which the loader stores ``dion``).
-    """
-    D_rad = site.species.dion
-    lchan = site.species.lchannels
-    offsets: list[int] = []
-    cur = 0
-    for l in lchan:
-        offsets.append(cur)
-        cur += 2 * l + 1
-    n = cur
-    D_lm = np.zeros((n, n), dtype=float)
-    for i, li in enumerate(lchan):
-        for j, lj in enumerate(lchan):
-            if li != lj:
-                continue
-            d_ij = float(D_rad[i, j])
-            if d_ij == 0.0:
-                continue
-            for m_idx in range(2 * li + 1):
-                D_lm[offsets[i] + m_idx, offsets[j] + m_idx] = d_ij
-    return D_lm
-
-
-def assemble_beta_projections_k(
-    beta_catalog: BetaCatalog,
-    pao_catalog: PAOCatalog,
-    tables: NLRealSpaceTables,
-    k_points_cart: np.ndarray,
-) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    r"""Fourier-sum the real-space ⟨β|φ⟩ and ⟨β|r_α|φ⟩ tables to k-space.
-
-    For each β-host site :math:`I` and each k-point, build
-
-    .. math::
-       P_I(\mathbf{k})_{i m_\beta,\,\mu}
-         = \sum_{\Delta\mathbf{R}} e^{i\mathbf{k}\cdot\Delta\mathbf{R}}\,
-           \langle \beta_{I,i,m_\beta}\,|\,
-                   \varphi_{J(\mu),\mu}(\cdot - \Delta\mathbf{R})\rangle,
-
-    where the sum runs over the pairs in ``tables.pairs`` that have
-    ``beta_site == I``.  The dipole variant
-    :math:`P^{\alpha}_I(\mathbf{k})` is built analogously from
-    ``tables.S_rbp`` and includes the geometry term already baked in by
-    :func:`build_nl_real_space_tables`.
-
-    Parameters
-    ----------
-    beta_catalog, pao_catalog : BetaCatalog, PAOCatalog
-    tables : NLRealSpaceTables
-        Output of :func:`build_nl_real_space_tables`.  Must have been
-        built with ``include_dipole=True``.
-    k_points_cart : np.ndarray, shape ``(nk, 3)``
-        k-points in Cartesian inverse Bohr (no implicit ``2\pi`` factor;
-        the phase used is ``exp(i k · ΔR)`` with ``ΔR`` in Bohr).
-
-    Returns
-    -------
-    P_list : list of np.ndarray
-        ``P_list[I]`` has shape ``(nk, n_beta_lm(I), nawf)`` complex.
-    Palpha_list : list of np.ndarray
-        ``Palpha_list[I]`` has shape ``(nk, 3, n_beta_lm(I), nawf)``
-        complex.
-    """
-    if any(Sr.size == 0 for Sr in tables.S_rbp):
+    eigenvalues, eigenvectors = np.linalg.eigh(overlap_k)
+    if eigenvalues.min() <= 0.0:
         raise ValueError(
-            'assemble_beta_projections_k requires tables built with include_dipole=True'
+            f'the PAO overlap S(k) is not positive definite (smallest eigenvalue '
+            f'{eigenvalues.min():.3e}): linearly dependent orbitals'
         )
-
-    k_points_cart = np.asarray(k_points_cart, dtype=float)
-    if k_points_cart.ndim != 2 or k_points_cart.shape[1] != 3:
-        raise ValueError('k_points_cart must have shape (nk, 3).')
-
-    nk = k_points_cart.shape[0]
-    nsites = len(beta_catalog.sites)
-    nawf = pao_catalog.total_nlm
-    pao_offsets = [s.basis_offset for s in pao_catalog.sites]
-
-    # Each pair contributes phase(k) * S into a fixed PAO column block of its
-    # host site I. Pre-pad every pair's block to the full nawf width, stack per
-    # site, and Fourier-sum all pairs of a site in one tensordot: phases (nk,np)
-    # x Sfull (np, n_b, nawf) -> (nk, n_b, nawf). This replaces ~10^3 large
-    # broadcast temporaries with a single BLAS contraction per site.
-    per_site: list[tuple[list, list, list]] = [([], [], []) for _ in range(nsites)]
-    for pair, S, Sr in zip(tables.pairs, tables.S_bp, tables.S_rbp):
-        off = pao_offsets[pair.pao_site]
-        sz = S.shape[1]
-        nb = S.shape[0]
-        Sfull = np.zeros((nb, nawf), dtype=float)
-        Sfull[:, off : off + sz] = S
-        Srfull = np.zeros((3, nb, nawf), dtype=float)
-        Srfull[:, :, off : off + sz] = Sr
-        dRs, Ss, Srs = per_site[pair.beta_site]
-        dRs.append(pair.deltaR_cart)
-        Ss.append(Sfull)
-        Srs.append(Srfull)
-
-    P_list: list[np.ndarray] = []
-    Palpha_list: list[np.ndarray] = []
-    for I in range(nsites):
-        nb = tables.beta_lm_per_site[I]
-        dRs, Ss, Srs = per_site[I]
-        if not Ss:
-            P_list.append(np.zeros((nk, nb, nawf), dtype=complex))
-            Palpha_list.append(np.zeros((nk, 3, nb, nawf), dtype=complex))
-            continue
-        phases = np.exp(1j * (k_points_cart @ np.asarray(dRs).T))  # (nk, npairs)
-        S_stack = np.asarray(Ss)  # (npairs, nb, nawf)
-        Sr_stack = np.asarray(Srs)  # (npairs, 3, nb, nawf)
-        P_list.append(np.tensordot(phases, S_stack, axes=(1, 0)))
-        Palpha_list.append(np.tensordot(phases, Sr_stack, axes=(1, 0)))
-
-    return P_list, Palpha_list
-
-
-def build_nonlocal_velocity_kspace(
-    beta_catalog: BetaCatalog,
-    pao_catalog: PAOCatalog,
-    tables: NLRealSpaceTables,
-    k_points_cart: np.ndarray,
-    *,
-    units: str = 'hartree',
-) -> np.ndarray:
-    r"""Assemble :math:`\Delta p_\alpha(\mathbf{k})` in the PAO basis.
-
-    Computes
-
-    .. math::
-       \Delta p_\alpha(\mathbf{k})
-         = \frac{m}{i\hbar}\,\sum_I\!\left[
-              P_I^{\dagger}(\mathbf{k})\,D^I\,P^{\alpha}_I(\mathbf{k})
-            - (P^{\alpha}_I(\mathbf{k}))^{\dagger}\,D^I\,P_I(\mathbf{k})
-            \right]
-
-    in the real-tesseral PAO basis (no spin).  The bracket is
-    anti-Hermitian, so the result is Hermitian at every k.
-
-    Parameters
-    ----------
-    beta_catalog, pao_catalog : BetaCatalog, PAOCatalog
-    tables : NLRealSpaceTables
-        Built with ``include_dipole=True``.
-    k_points_cart : np.ndarray, shape ``(nk, 3)``
-        Cartesian inverse Bohr.
-    units : {'hartree', 'rydberg'}, optional
-        Output units.  The stored :math:`D^I` is in Hartree, so in
-        atomic Hartree units (:math:`m = \hbar = 1`) the prefactor
-        :math:`m/(i\hbar) = -i`.  Selecting ``'rydberg'`` returns the
-        same operator scaled by 2 to match the Rydberg-based convention
-        used internally by ``do_gradient`` / ``do_momentum``.
-
-    Returns
-    -------
-    dP : np.ndarray, shape ``(nk, 3, nawf, nawf)``, complex
-    """
-    if units not in ('hartree', 'rydberg'):
-        raise ValueError(f"units must be 'hartree' or 'rydberg', got {units!r}")
-
-    k_points_cart = np.asarray(k_points_cart, dtype=float)
-    nk = k_points_cart.shape[0]
-    nawf = pao_catalog.total_nlm
-
-    P_list, Palpha_list = assemble_beta_projections_k(
-        beta_catalog, pao_catalog, tables, k_points_cart
+    inverse_sqrt = (eigenvectors / np.sqrt(eigenvalues)[:, None, :]) @ np.conj(
+        np.transpose(eigenvectors, (0, 2, 1))
     )
-    D_per_site = [_dion_lm_expanded(s) for s in beta_catalog.sites]
-
-    dP = np.zeros((nk, 3, nawf, nawf), dtype=complex)
-    for I, (P_I, Pa_I, D_I) in enumerate(zip(P_list, Palpha_list, D_per_site)):
-        if D_I.size == 0:
-            continue
-        # P_I:   (nk, n_b, nawf)
-        # Pa_I:  (nk, 3, n_b, nawf)
-        # D_I:   (n_b, n_b)
-        # Use BLAS matmul (multithreaded zgemm) instead of np.einsum, which
-        # falls back to single-threaded C loops for these contractions.
-        Dc = D_I.astype(complex)
-        DP = Dc @ P_I  # (nk, n_b, nawf)
-        DPa = Dc @ Pa_I  # (nk, 3, n_b, nawf)
-        Pc_T = np.conj(P_I).transpose(0, 2, 1)  # (nk, nawf, n_b)
-        Pac_T = np.conj(Pa_I).transpose(0, 1, 3, 2)  # (nk, 3, nawf, n_b)
-        term1 = Pc_T[:, None, :, :] @ DPa  # P†·D·Pa -> (nk, 3, nawf, nawf)
-        term2 = Pac_T @ DP[:, None, :, :]  # Pa†·D·P -> (nk, 3, nawf, nawf)
-        dP += term1 - term2
-
-    dP *= -1j  # m/(iℏ) in Hartree units
-    if units == 'rydberg':
-        dP *= 2.0
-
-    # PAOFLOW's projection (``calc_ylmg`` in ``do_atwfc_proj``) builds the
-    # real-Y_lm angular factors with an extra ``(-1)`` for every orbital
-    # with odd ``|m|`` (px, py, d_xz, d_yz, f_*).  ``real_spherical_harmonic``
-    # in ``_two_center.py`` uses the standard tesseral convention (no such
-    # sign).  The two extra signs cancel in ``<beta|phi>`` (squared) but not
-    # in ``<beta|r_alpha|phi>``, where they survive once per PAO.  Restore
-    # the PAOFLOW convention on the PAO indices of dP so it matches the
-    # basis in which ``dHksp`` is expressed.
-    pao_sign = np.array(
-        [-1.0 if (abs(orb.m) % 2 == 1) else 1.0 for orb in pao_catalog.basis],
-        dtype=float,
-    )
-    dP *= pao_sign[None, None, :, None] * pao_sign[None, None, None, :]
-
-    return dP
-
-
-# ---------------------------------------------------------------------------
-# Option A: fully-relativistic |j, m_j> non-local velocity correction.
-#
-# For fully-relativistic UPFs the KB operator is
-#   V_NL = sum_{n,l,j,m_j} |beta_{n,l,j,m_j}> D_{n,l,j} <beta_{n,l,j,m_j}|,
-# with j-split radial projectors beta_{n,l,j} (separate PP_RELBETA.N) and
-# spin-angular harmonics Omega_{l,j,m_j} = sum_{m_l,sigma} C^{j,m_j}_{l m_l;sigma}
-# Y_{l,m_l}|sigma>.  Delta_p is built directly in the (j,m_j)-coupled PAO basis
-# used by dHksp (n_rel = 2 n_s functions, ``assign_jm`` order), so the
-# j-dependence of the NL operator is preserved -- unlike the failed Phase D
-# scalar->jm rotation, which traced over spin and broke cubic isotropy.
-#
-# The spinless radial-tesseral overlaps S_bp / S_rbp are reused unchanged;
-# the spinor (j,m_j) structure enters only through the per-shell unitary
-#   T_l = C_l @ blkdiag(W_l, W_l),  W_l = U_l @ Sgn_l,
-# applied to BOTH the beta index (-> (j_beta, m_jbeta)) and the PAO index
-# (-> (j, m_j)), where
-#   C_l = clebsch_jm_matrix(l)       : (m_l_ylm, sigma) -> (j, m_j),
-#   U_l = tesseral_to_ylm_matrix(l)  : PAOFLOW-tesseral -> complex Y_lm,
-#   Sgn_l = diag((-1)^|m_std|)        : RSH-tesseral -> PAOFLOW-tesseral.
-# Sgn_l folds in the odd-|m| sign that ``build_nonlocal_velocity_kspace``
-# applies as ``pao_sign`` post-hoc, so no separate sign fix-up is needed here.
-# ---------------------------------------------------------------------------
+    if matrix_k.ndim == 4:
+        return inverse_sqrt[:, None] @ matrix_k @ inverse_sqrt[:, None]
+    return inverse_sqrt @ matrix_k @ inverse_sqrt
 
 
 @functools.lru_cache(maxsize=None)
@@ -1420,67 +655,6 @@ def _jm_shell_transform(l: int) -> np.ndarray:
     return np.conj(C @ W_spin)
 
 
-def _beta_jm_channel_info(site: BetaSiteData):
-    r"""Per-channel layout of the :math:`(j, m_j)` β projectors on ``site``.
-
-    Returns a list of tuples
-    ``(channel_idx, l, j, s_row0, slot0, jrow0, n_m, n_mj)`` where:
-
-    * ``s_row0`` is the row offset of the channel in the scalar
-      ``S_bp`` β block (size ``n_m = 2l+1``);
-    * ``slot0`` is the offset of the channel in the per-site β-jm
-      projector (each channel contributes ``n_mj = 2j+1`` slots);
-    * ``jrow0`` is the row offset of the channel's ``j``-block inside the
-      shell's full ``(j, m_j)`` set (``0`` for ``j = l-1/2``, ``2l`` for
-      ``j = l+1/2``).
-    """
-    sp = site.species
-    info = []
-    s_row = 0
-    slot = 0
-    for ci, (l, j) in enumerate(zip(sp.lchannels, sp.jbeta)):
-        if j is None:
-            raise RuntimeError(
-                f"Species '{sp.label}' β channel {ci} has no j value; the "
-                'jm non-local velocity path requires a fully-relativistic '
-                'UPF (PP_SPIN_ORB present).'
-            )
-        n_m = 2 * l + 1
-        n_mj = int(round(2 * j + 1))
-        jrow0 = 0 if j < l else 2 * l  # j=l-1/2 block first, else j=l+1/2
-        info.append((ci, l, float(j), s_row, slot, jrow0, n_m, n_mj))
-        s_row += n_m
-        slot += n_mj
-    return info
-
-
-def _dion_jm_expanded(site: BetaSiteData) -> np.ndarray:
-    r"""Expand the radial :math:`D^I_{ij}` to the :math:`(j, m_j)` β basis.
-
-    The returned matrix has shape ``(n_beta_jm, n_beta_jm)`` (Hartree) and
-    couples slots with the same ``(l, j)`` at equal ``m_j``:
-    ``D^{jm}_{(i,m_j),(i',m_j)} = δ_{l_i l_{i'}} δ_{j_i j_{i'}} D^{rad}_{ii'}``.
-    For Pt_REL ``PP_DIJ`` is diagonal, so this reduces to a diagonal matrix
-    carrying ``D_{n,l,j}`` per ``m_j``; the general block form is kept so
-    that pseudos with same-``(l,j)`` channel coupling are handled correctly.
-    """
-    info = _beta_jm_channel_info(site)
-    D_rad = site.species.dion
-    n = sum(t[7] for t in info)  # Σ n_mj
-    D_jm = np.zeros((n, n), dtype=float)
-    for ci, li, ji, _sr, slot_i, _jr, _nm, n_mj_i in info:
-        for cj, lj, jj, _sr2, slot_j, _jr2, _nm2, n_mj_j in info:
-            if li != lj or ji != jj:
-                continue
-            d_ij = float(D_rad[ci, cj])
-            if d_ij == 0.0:
-                continue
-            # Same (l, j) => same j-block size => same m_j range.
-            for m in range(n_mj_i):
-                D_jm[slot_i + m, slot_j + m] = d_ij
-    return D_jm
-
-
 def _pao_jm_channel_info(site: PAOSiteData):
     r"""Per-channel PAO layout for the :math:`(j, m_j)` assembly.
 
@@ -1503,162 +677,46 @@ def _pao_jm_channel_info(site: PAOSiteData):
     return info
 
 
-def assemble_beta_projections_jm(
-    beta_catalog: BetaCatalog,
-    pao_catalog: PAOCatalog,
-    tables: NLRealSpaceTables,
-    k_points_cart: np.ndarray,
-) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    r"""Fourier-sum the real-space overlaps to k-space in the
-    :math:`(j, m_j)` spinor basis.
+def scalar_to_jm_matrix(matrix_k: np.ndarray, pao_catalog: PAOCatalog) -> np.ndarray:
+    r"""Spin-double a scalar PAO matrix and rotate it to the relativistic ``(j, m_j)`` basis.
 
-    Like :func:`assemble_beta_projections_k`, but transforms both the β
-    index (to :math:`(j_\beta, m_{j\beta})`, restricted to each channel's
-    physical ``j``-block) and the PAO index (to the global relativistic
-    :math:`(j, m_j)` basis of dimension ``2 × total_nlm``).
+    Uses the same per-shell unitaries (:func:`_jm_shell_transform`) and channel layout as the
+    PAO index of :func:`assemble_beta_projections_jm`, so that e.g. the Bloch overlap
+    :math:`S(\mathbf k)` of the scalar orbitals becomes the overlap of the ``(j, m_j)`` basis
+    in which the relativistic ``dHksp`` is expressed.
 
-    Returns
-    -------
-    P_list : list of np.ndarray
-        ``P_list[I]`` has shape ``(nk, n_beta_jm(I), n_rel)`` complex.
-    Palpha_list : list of np.ndarray
-        ``Palpha_list[I]`` has shape ``(nk, 3, n_beta_jm(I), n_rel)``
-        complex.
-    """
-    if any(Sr.size == 0 for Sr in tables.S_rbp):
-        raise ValueError(
-            'assemble_beta_projections_jm requires tables built with include_dipole=True'
-        )
-
-    k_points_cart = np.asarray(k_points_cart, dtype=float)
-    if k_points_cart.ndim != 2 or k_points_cart.shape[1] != 3:
-        raise ValueError('k_points_cart must have shape (nk, 3).')
-
-    nk = k_points_cart.shape[0]
-    nsites = len(beta_catalog.sites)
-    n_rel = 2 * pao_catalog.total_nlm
-
-    beta_chan = [_beta_jm_channel_info(s) for s in beta_catalog.sites]
-    beta_jm_per_site = [sum(t[7] for t in info) for info in beta_chan]
-    pao_chan = [_pao_jm_channel_info(s) for s in pao_catalog.sites]
-
-    P_list = [np.zeros((nk, beta_jm_per_site[I], n_rel), dtype=complex) for I in range(nsites)]
-    Palpha_list = [
-        np.zeros((nk, 3, beta_jm_per_site[I], n_rel), dtype=complex) for I in range(nsites)
-    ]
-
-    for pair, S, Sr in zip(tables.pairs, tables.S_bp, tables.S_rbp):
-        I = pair.beta_site
-        J = pair.pao_site
-        phase = np.exp(1j * (k_points_cart @ pair.deltaR_cart))  # (nk,)
-        for ci, l_b, _j_b, srow0, slot0, jrow0, n_mb, n_mjb in beta_chan[I]:
-            Tb = _jm_shell_transform(l_b)  # (2 n_mb, 2 n_mb)
-            Tb_rows = Tb[jrow0 : jrow0 + n_mjb, :]  # keep β j-block rows
-            for l_p, col0, n_mp, rel_col0 in pao_chan[J]:
-                Tp = _jm_shell_transform(l_p)  # (2 n_mp, 2 n_mp)
-                Tp_h = Tp.conj().T
-                # Scalar overlap sub-block (RSH-tesseral), spin-diagonal.
-                S_sub = S[srow0 : srow0 + n_mb, col0 : col0 + n_mp]
-                ov = np.zeros((2 * n_mb, 2 * n_mp), dtype=complex)
-                ov[:n_mb, :n_mp] = S_sub
-                ov[n_mb:, n_mp:] = S_sub
-                P_sub = Tb_rows @ ov @ Tp_h  # (n_mjb, 2 n_mp) in (j,m_j)
-                P_list[I][:, slot0 : slot0 + n_mjb, rel_col0 : rel_col0 + 2 * n_mp] += (
-                    phase[:, None, None] * P_sub[None, :, :]
-                )
-                for a in range(3):
-                    Sa = Sr[a, srow0 : srow0 + n_mb, col0 : col0 + n_mp]
-                    ova = np.zeros((2 * n_mb, 2 * n_mp), dtype=complex)
-                    ova[:n_mb, :n_mp] = Sa
-                    ova[n_mb:, n_mp:] = Sa
-                    Pa_sub = Tb_rows @ ova @ Tp_h  # (n_mjb, 2 n_mp)
-                    Palpha_list[I][:, a, slot0 : slot0 + n_mjb, rel_col0 : rel_col0 + 2 * n_mp] += (
-                        phase[:, None, None] * Pa_sub[None, :, :]
-                    )
-
-    return P_list, Palpha_list
-
-
-def build_nonlocal_velocity_jm_kspace(
-    beta_catalog: BetaCatalog,
-    pao_catalog: PAOCatalog,
-    tables: NLRealSpaceTables,
-    k_points_cart: np.ndarray,
-    *,
-    units: str = 'hartree',
-) -> np.ndarray:
-    r"""Assemble :math:`\Delta p_\alpha(\mathbf{k})` in the relativistic
-    :math:`(j, m_j)` PAO basis (Option A).
-
-    Computes
-
-    .. math::
-       \Delta p_\alpha(\mathbf{k})
-         = \frac{m}{i\hbar}\,\sum_I\!\left[
-              P_I^{\dagger}\,D^{jm}_I\,P^{\alpha}_I
-            - (P^{\alpha}_I)^{\dagger}\,D^{jm}_I\,P_I
-            \right](\mathbf{k})
-
-    directly in the ``2 × total_nlm`` spinor basis used by ``dHksp`` for
-    ``dftSO=True``.  No scalar :math:`\Delta p` is formed and no spin trace
-    is taken, so the j-dependence of the NL operator is preserved.
+    Parameters
+    ----------
+    matrix_k : np.ndarray, shape ``(nk, nawf, nawf)``, complex
+        Spin-independent matrix in the scalar (tesseral) PAO basis.
+    pao_catalog : PAOCatalog
 
     Returns
     -------
-    dP : np.ndarray, shape ``(nk, 3, n_rel, n_rel)``, complex
+    np.ndarray, shape ``(nk, 2 nawf, 2 nawf)``, complex
     """
-    if units not in ('hartree', 'rydberg'):
-        raise ValueError(f"units must be 'hartree' or 'rydberg', got {units!r}")
-
-    k_points_cart = np.asarray(k_points_cart, dtype=float)
-    nk = k_points_cart.shape[0]
+    matrix_k = np.asarray(matrix_k)
+    nk = matrix_k.shape[0]
     n_rel = 2 * pao_catalog.total_nlm
-
-    P_list, Palpha_list = assemble_beta_projections_jm(
-        beta_catalog, pao_catalog, tables, k_points_cart
-    )
-    D_per_site = [_dion_jm_expanded(s) for s in beta_catalog.sites]
-
-    dP = np.zeros((nk, 3, n_rel, n_rel), dtype=complex)
-    for P_I, Pa_I, D_I in zip(P_list, Palpha_list, D_per_site):
-        if D_I.size == 0:
-            continue
-        # Use BLAS matmul (multithreaded zgemm) instead of np.einsum, which
-        # falls back to single-threaded C loops for these contractions.
-        D = D_I.astype(complex)
-        DP = D @ P_I  # (nk, n_b, n_rel)
-        DPa = D @ Pa_I  # (nk, 3, n_b, n_rel)
-        Pc_T = np.conj(P_I).transpose(0, 2, 1)  # (nk, n_rel, n_b)
-        Pac_T = np.conj(Pa_I).transpose(0, 1, 3, 2)  # (nk, 3, n_rel, n_b)
-        term1 = Pc_T[:, None, :, :] @ DPa  # P†·D·Pa -> (nk, 3, n_rel, n_rel)
-        term2 = Pac_T @ DP[:, None, :, :]  # Pa†·D·P -> (nk, 3, n_rel, n_rel)
-        dP += term1 - term2
-
-    dP *= -1j  # m/(iℏ) in Hartree units
-    if units == 'rydberg':
-        dP *= 2.0
-    # The RSH->PAOFLOW-tesseral odd-|m| sign is already folded into the
-    # per-shell transform (Sgn_l in _jm_shell_transform), so -- unlike the
-    # scalar build_nonlocal_velocity_kspace -- no pao_sign post-multiply is
-    # applied here.
-    return dP
+    out = np.zeros((nk, n_rel, n_rel), dtype=complex)
+    channels = []
+    for site in pao_catalog.sites:
+        for l_p, col0_local, n_m, rel_col0 in _pao_jm_channel_info(site):
+            channels.append((l_p, site.basis_offset + col0_local, n_m, rel_col0))
+    for l_a, col_a, n_a, rel_a in channels:
+        T_a = _jm_shell_transform(l_a)
+        for l_b, col_b, n_b, rel_b in channels:
+            T_b_h = _jm_shell_transform(l_b).conj().T
+            block = matrix_k[:, col_a : col_a + n_a, col_b : col_b + n_b]
+            doubled = np.zeros((nk, 2 * n_a, 2 * n_b), dtype=complex)
+            doubled[:, :n_a, :n_b] = block
+            doubled[:, n_a:, n_b:] = block
+            out[:, rel_a : rel_a + 2 * n_a, rel_b : rel_b + 2 * n_b] = T_a @ doubled @ T_b_h
+    return out
 
 
-def compute_nonlocal_velocity_jm_on_grid(
-    beta_catalog: BetaCatalog,
-    pao_catalog: PAOCatalog,
-    tables: NLRealSpaceTables,
-    kgrid_2pi_alat: np.ndarray,
-    alat: float,
-    *,
-    units: str = 'rydberg',
-) -> np.ndarray:
-    r"""Driver-facing wrapper around :func:`build_nonlocal_velocity_jm_kspace`.
-
-    Mirrors :func:`compute_nonlocal_velocity_on_grid` but returns the
-    correction in the relativistic ``(j, m_j)`` basis (shape
-    ``(nktot, 3, n_rel, n_rel)`` with ``n_rel = 2 × total_nlm``).
-    """
+def _kgrid_to_cart(kgrid_2pi_alat: np.ndarray, alat: float) -> np.ndarray:
+    """PAOFLOW's ``(3, nk)`` or ``(nk, 3)`` k-grid in units of 2 pi/alat -> ``(nk, 3)`` 1/bohr."""
     k_arr = np.asarray(kgrid_2pi_alat, dtype=float)
     if k_arr.ndim != 2:
         raise ValueError('kgrid_2pi_alat must be 2-D')
@@ -1666,330 +724,4 @@ def compute_nonlocal_velocity_jm_on_grid(
         k_arr = k_arr.T  # (3, nk) → (nk, 3)
     elif k_arr.shape[1] != 3:
         raise ValueError('kgrid_2pi_alat must have a length-3 axis')
-
-    k_cart = k_arr * (2.0 * np.pi / float(alat))
-    return build_nonlocal_velocity_jm_kspace(beta_catalog, pao_catalog, tables, k_cart, units=units)
-
-
-def compute_nonlocal_velocity_on_grid(
-    beta_catalog: BetaCatalog,
-    pao_catalog: PAOCatalog,
-    tables: NLRealSpaceTables,
-    kgrid_2pi_alat: np.ndarray,
-    alat: float,
-    *,
-    units: str = 'rydberg',
-) -> np.ndarray:
-    r"""Driver-facing wrapper around :func:`build_nonlocal_velocity_kspace`.
-
-    Accepts the PAOFLOW-native k-grid representation (Cartesian in
-    units of :math:`2\pi/\mathrm{alat}`, the convention written by
-    :func:`PAOFLOW.utils.get_K_grid_fft.get_K_grid_fft`) and converts it
-    to inverse Bohr internally before calling
-    :func:`build_nonlocal_velocity_kspace`.
-
-    Parameters
-    ----------
-    beta_catalog, pao_catalog, tables :
-        Outputs of :func:`load_beta_projectors`,
-        :func:`load_pao_orbitals`, :func:`build_nl_real_space_tables`.
-    kgrid_2pi_alat : np.ndarray
-        Shape ``(3, nktot)`` or ``(nktot, 3)`` — Cartesian k-points in
-        units of :math:`2\pi/\mathrm{alat}` (PAOFLOW's
-        ``arry['kgrid']`` is the ``(3, nktot)`` layout).
-    alat : float
-        Lattice parameter in Bohr.
-    units : {'hartree', 'rydberg'}
-        Forwarded to :func:`build_nonlocal_velocity_kspace`.
-
-    Returns
-    -------
-    dP : np.ndarray, complex, shape ``(nktot, 3, nawf, nawf)``
-    """
-    k_arr = np.asarray(kgrid_2pi_alat, dtype=float)
-    if k_arr.ndim != 2:
-        raise ValueError('kgrid_2pi_alat must be 2-D')
-    if k_arr.shape[0] == 3 and k_arr.shape[1] != 3:
-        k_arr = k_arr.T  # (3, nk) → (nk, 3)
-    elif k_arr.shape[1] != 3:
-        raise ValueError('kgrid_2pi_alat must have a length-3 axis')
-
-    k_cart = k_arr * (2.0 * np.pi / float(alat))
-    return build_nonlocal_velocity_kspace(beta_catalog, pao_catalog, tables, k_cart, units=units)
-
-
-# QE/CODATA Rydberg in eV (matches read_QE_xml.Hart2eV/2 = 13.60569193).
-RYDBERG_IN_EV = 13.605693122994
-
-
-def inject_into_dHksp(
-    dHksp: np.ndarray,
-    delta_pksp: np.ndarray,
-    *,
-    units: str = 'rydberg',
-    sign: int = +1,
-) -> None:
-    r"""Add the non-local velocity correction into ``dHksp`` in place.
-
-    Sign + prefactor calibrated against ``epsilon.x`` for Cu (see
-    ``example17_Cu_epsilon``); after the Y_lm convention fix on the PAO
-    indices of :math:`\Delta p` (see :func:`build_nonlocal_velocity_kspace`),
-    cubic isotropy of :math:`\varepsilon_{\alpha\alpha}` is restored
-    with ``sign=+1`` and the d→p peak position/height of the QE
-    reference is recovered.  Convention:
-
-    .. math::
-       \mathrm{dHksp}[k,\alpha,n,m,\sigma]
-          \mathrel{+}= \mathrm{sign} \cdot \lambda \cdot
-          \Delta p_\alpha(k)_{nm}
-
-    with :math:`\lambda = 13.605693122994` eV/Ry for ``units='rydberg'``
-    or :math:`2\lambda` eV/Ha for ``units='hartree'``.
-
-    The correction is broadcast across the spin axis (NC pseudos are
-    spin-diagonal at the projector level).
-
-    Parameters
-    ----------
-    dHksp : np.ndarray, shape ``(nktot, 3, nawf, nawf, nspin)``, complex
-        Modified in place.
-    delta_pksp : np.ndarray, shape ``(nktot, 3, nawf, nawf)``, complex
-        Output of :func:`compute_nonlocal_velocity_on_grid`.
-    units : {'hartree', 'rydberg'}
-        Unit of ``delta_pksp``.
-    sign : int
-        ``+1`` (default, calibrated) or ``-1``.  Override only when
-        debugging sign conventions.
-
-    Raises
-    ------
-    ValueError
-        On bad ``units``, bad ``sign``, mismatched shapes, or non-complex
-        ``dHksp``.
-    """
-    if units == 'rydberg':
-        lam = RYDBERG_IN_EV
-    elif units == 'hartree':
-        lam = 2.0 * RYDBERG_IN_EV
-    else:
-        raise ValueError(f"units must be 'rydberg' or 'hartree', got {units!r}")
-    if sign not in (-1, 1):
-        raise ValueError(f'sign must be -1 or +1, got {sign!r}')
-    if dHksp.ndim != 5 or dHksp.shape[1] != 3:
-        raise ValueError(f'dHksp must have shape (nktot, 3, nawf, nawf, nspin); got {dHksp.shape}')
-    if delta_pksp.ndim != 4 or delta_pksp.shape[1] != 3:
-        raise ValueError(
-            f'delta_pksp must have shape (nktot, 3, nawf, nawf); got {delta_pksp.shape}'
-        )
-    nawf_dH = dHksp.shape[2]
-    nawf_dP = delta_pksp.shape[2]
-    if dHksp.shape[:2] != delta_pksp.shape[:2] or dHksp.shape[3] != nawf_dH:
-        raise ValueError(
-            f'shape mismatch: dHksp[:4]={dHksp.shape[:4]} vs delta_pksp={delta_pksp.shape}'
-        )
-    if nawf_dH == nawf_dP:
-        spinor = False
-    elif nawf_dH == 2 * nawf_dP:
-        # Spin-orbit / spinor doubled basis: PAOFLOW lays out
-        # [up-orbitals ; down-orbitals] globally (see do_spin_orbit.py).
-        # For NC pseudopotentials V_NL is spin-diagonal at the projector
-        # level, so the spinor extension is block-diagonal:
-        #   Delta_p_spinor = diag(Delta_p, Delta_p)
-        spinor = True
-    else:
-        raise ValueError(
-            f'shape mismatch: dHksp[:4]={dHksp.shape[:4]} vs delta_pksp={delta_pksp.shape} '
-            f'(neither equal nawf nor 2x for spinor doubling)'
-        )
-
-    scale = sign * lam
-    nspin = dHksp.shape[-1]
-    if not spinor:
-        for ispin in range(nspin):
-            dHksp[:, :, :, :, ispin] += scale * delta_pksp
-    else:
-        n = nawf_dP
-        for ispin in range(nspin):
-            dHksp[:, :, :n, :n, ispin] += scale * delta_pksp
-            dHksp[:, :, n:, n:, ispin] += scale * delta_pksp
-
-
-# ---------------------------------------------------------------------------
-# Fully-relativistic |j, m_j> rotation of the scalar Delta_p.
-#
-# The scalar Delta_p is computed in PAOFLOW's real-tesseral basis on n_s
-# orbitals.  For dftSO=True (fully-relativistic UPF) the PAO basis is the
-# n_r = 2 n_s relativistic basis built by ``build_aewfc_basis`` in
-# ``assign_jm`` order.  ``build_jm_transformation_matrix`` assembles a
-# unitary ``T`` of shape ``(n_r, 2 n_s)`` such that
-#
-#     Delta_p_rel[alpha] = T @ (Delta_p_scalar[alpha] ⊗_global I_2) @ T.conj().T
-#
-# where the spinor-doubled scalar Delta_p uses PAOFLOW's global
-# [up-orbitals ; down-orbitals] layout (index ``i + sigma * n_s``).
-# ---------------------------------------------------------------------------
-
-
-def build_jm_transformation_matrix(atomic_basis_rel, atomic_basis_scalar):
-    """Assemble the (n_r, 2 n_s) rotation from spinor-doubled scalar PAO
-    to the relativistic :math:`|j, m_j\\rangle` PAO basis.
-
-    Parameters
-    ----------
-    atomic_basis_rel : sequence of mapping
-        Relativistic basis (``dftSO=True``) as produced by
-        :func:`PAOFLOW.projection.do_atwfc_proj.build_aewfc_basis`.
-        Each record must contain ``'atom'``, ``'label'``, ``'l'`` and
-        appear in ``assign_jm`` order: contiguous shells of size
-        ``2(2l+1)`` per ``(atom, label, l)``.
-    atomic_basis_scalar : sequence of mapping
-        Scalar (``dftSO=False``) basis matching ``atomic_basis_rel``
-        shell-by-shell.  Each record must contain ``'atom'``, ``'label'``,
-        ``'l'`` and have shells of size ``2l+1``.
-
-    Returns
-    -------
-    T : np.ndarray, shape ``(n_r, 2 * n_s)``, complex
-        Block-diagonal in (atom, shell) unitary mapping the
-        spinor-doubled scalar PAO vector (laid out as
-        ``[up_0..up_{n_s-1}, down_0..down_{n_s-1}]``) to the
-        relativistic basis (``assign_jm`` order).
-
-    Raises
-    ------
-    RuntimeError
-        On any shell mismatch between the two bases or on size
-        inconsistency (``n_r != 2 * n_s``).
-    """
-    # Lazy import to avoid a hard module-load cycle: do_atwfc_proj imports
-    # nothing from this module, but keep the dependency local for clarity.
-    from ..projection.do_atwfc_proj import (
-        clebsch_jm_matrix,
-        tesseral_to_ylm_matrix,
-    )
-
-    n_r = len(atomic_basis_rel)
-    n_s = len(atomic_basis_scalar)
-    if n_r != 2 * n_s:
-        raise RuntimeError(
-            f'build_jm_transformation_matrix: n_r={n_r} must equal 2 * n_s = {2 * n_s}.'
-        )
-
-    T = np.zeros((n_r, 2 * n_s), dtype=complex)
-
-    r_ptr = 0
-    s_ptr = 0
-    while r_ptr < n_r:
-        rec = atomic_basis_rel[r_ptr]
-        atom = rec['atom']
-        label = rec['label']
-        l = int(rec['l'])
-        n_m = 2 * l + 1
-        shell_r = 2 * n_m
-
-        if r_ptr + shell_r > n_r:
-            raise RuntimeError(
-                f'Relativistic basis exhausted mid-shell at r={r_ptr} '
-                f'(atom={atom}, label={label}, l={l}); expected '
-                f'{shell_r} entries.'
-            )
-        if s_ptr + n_m > n_s:
-            raise RuntimeError(
-                f'Scalar basis exhausted mid-shell at s={s_ptr} '
-                f'(atom={atom}, label={label}, l={l}); expected '
-                f'{n_m} entries.'
-            )
-
-        for k in range(shell_r):
-            rk = atomic_basis_rel[r_ptr + k]
-            if rk['atom'] != atom or rk['label'] != label or int(rk['l']) != l:
-                raise RuntimeError(
-                    f'Relativistic shell at r={r_ptr} is not '
-                    f'2(2l+1)={shell_r} consecutive entries of '
-                    f'(atom={atom}, label={label}, l={l}); offending '
-                    f'entry r={r_ptr + k} has (atom={rk.get("atom")}, '
-                    f'label={rk.get("label")}, l={rk.get("l")}).'
-                )
-        for k in range(n_m):
-            sk = atomic_basis_scalar[s_ptr + k]
-            if sk['atom'] != atom or sk['label'] != label or int(sk['l']) != l:
-                raise RuntimeError(
-                    f'Scalar shell at s={s_ptr} does not match '
-                    f'relativistic shell (atom={atom}, label={label}, '
-                    f'l={l}); offending entry s={s_ptr + k} has '
-                    f'(atom={sk.get("atom")}, label={sk.get("label")}, '
-                    f'l={sk.get("l")}).'
-                )
-
-        U = tesseral_to_ylm_matrix(l)  # (n_m, n_m)
-        C = clebsch_jm_matrix(l)  # (2 n_m, 2 n_m)
-
-        # Spinor-extend U in the per-shell convention used by C
-        # (sigma slowest within the shell: cols [0..n_m) are sigma=0,
-        # cols [n_m..2 n_m) are sigma=1).  This is block-diag(U, U).
-        U_spin = np.zeros((2 * n_m, 2 * n_m), dtype=complex)
-        U_spin[:n_m, :n_m] = U
-        U_spin[n_m:, n_m:] = U
-        T_shell = C @ U_spin  # (2 n_m, 2 n_m)
-
-        # Scatter into global T.  Global spinor layout is
-        # [up_0..up_{n_s-1}, down_0..down_{n_s-1}] (see inject_into_dHksp).
-        rows = slice(r_ptr, r_ptr + shell_r)
-        T[rows, s_ptr : s_ptr + n_m] = T_shell[:, :n_m]
-        T[rows, n_s + s_ptr : n_s + s_ptr + n_m] = T_shell[:, n_m:]
-
-        r_ptr += shell_r
-        s_ptr += n_m
-
-    if s_ptr != n_s:
-        raise RuntimeError(
-            f'build_jm_transformation_matrix: scalar basis has '
-            f'{n_s - s_ptr} trailing entries unmatched by relativistic shells.'
-        )
-
-    return T
-
-
-def rotate_dp_to_jm(delta_p_scalar, T):
-    """Rotate scalar Delta_p into the relativistic :math:`|j, m_j\\rangle` basis.
-
-    Given ``delta_p_scalar`` of shape ``(..., n_s, n_s)`` and the
-    transformation ``T`` of shape ``(n_r, 2 n_s)`` from
-    :func:`build_jm_transformation_matrix`, returns
-
-    .. math::
-       \\Delta p_\\mathrm{rel} = T_\\uparrow\\,\\Delta p\\,T_\\uparrow^\\dagger
-                               + T_\\downarrow\\,\\Delta p\\,T_\\downarrow^\\dagger
-
-    where ``T_up = T[:, :n_s]`` and ``T_down = T[:, n_s:]``.  This is the
-    block-diagonal spinor extension ``Delta_p_spinor = diag(Delta_p,
-    Delta_p)`` followed by the rotation ``T (...) T^H``, written out
-    without materialising the full ``(2 n_s, 2 n_s)`` block-diagonal
-    matrix.
-
-    Parameters
-    ----------
-    delta_p_scalar : np.ndarray, shape ``(..., n_s, n_s)``
-        Scalar non-local velocity correction; the leading axes are
-        broadcast (typical: ``(nk, 3)``).
-    T : np.ndarray, shape ``(n_r, 2 n_s)``
-        Per-shell block-diagonal unitary from
-        :func:`build_jm_transformation_matrix`.
-
-    Returns
-    -------
-    np.ndarray, shape ``(..., n_r, n_r)``, complex
-    """
-    n_r, two_n_s = T.shape
-    if two_n_s % 2:
-        raise ValueError(f'rotate_dp_to_jm: T has {two_n_s} columns, which is not 2 * n_s.')
-    n_s = two_n_s // 2
-    if delta_p_scalar.shape[-2:] != (n_s, n_s):
-        raise ValueError(
-            f'rotate_dp_to_jm: delta_p_scalar last two dims '
-            f'{delta_p_scalar.shape[-2:]} do not match n_s={n_s}.'
-        )
-    T_up = T[:, :n_s]
-    T_dn = T[:, n_s:]
-    dp = np.asarray(delta_p_scalar)
-    return (T_up @ dp) @ T_up.conj().T + (T_dn @ dp) @ T_dn.conj().T
+    return k_arr * (2.0 * np.pi / float(alat))

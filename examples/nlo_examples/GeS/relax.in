@@ -1,0 +1,37 @@
+ &control
+    calculation = 'relax'
+    prefix = 'ges'
+    outdir = './'
+    pseudo_dir = '../../../PSEUDOS/nc-sr-05_pbe_standard_upf/'
+    forc_conv_thr = 1.0d-4
+    etot_conv_thr = 1.0d-6
+    nstep = 80
+ /
+ &system
+    ibrav = 0
+    nat = 4
+    ntyp = 2
+    ecutwfc = 60
+    ecutrho = 240
+    assume_isolated = '2D'
+    occupations = 'fixed'
+ /
+ &electrons
+    conv_thr = 1.0d-10
+ /
+ &ions
+ /
+ATOMIC_SPECIES
+ Ge 72.630 Ge.upf
+ S  32.060 S.upf
+CELL_PARAMETERS angstrom
+   4.400  0.000  0.000
+   0.000  3.680  0.000
+   0.000  0.000 18.000
+ATOMIC_POSITIONS crystal
+ Ge 0.1135 0.25 0.4258
+ Ge 0.6135 0.75 0.5742
+ S  0.4982 0.75 0.4415
+ S  0.9982 0.25 0.5585
+K_POINTS automatic
+ 12 12 1 0 0 0

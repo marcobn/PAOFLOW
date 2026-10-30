@@ -66,6 +66,6 @@ Gaussian fits to the PP_PSWFC radial functions.
 ## Files
 
 - `main.py` — driver
-- `Si.scf.in`, `Si.nscf.in`, `Si.projwfc.in` — QE input templates
+- `Si.scf.in` — the only QE input template: the scf runs directly on the 16³ k-grid with 30 bands (no nscf step; PAOFLOW expands the irreducible wedge; the extra bands serve the 'standard' basis of the band plots) and the Hubbard occupations come from PAOFLOW's internal projection (`use_local_basis=True`, no projwfc.x)
 - `Si.pbe-tm-new-gipaw-v2.1.UPF` — Troullier-Martins NC pseudopotential
 - `tmp/` — generated QE/PAOFLOW output (created on run)

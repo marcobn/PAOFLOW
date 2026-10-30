@@ -1,0 +1,7 @@
+# Labels drawn on the sweep overlay. group = multiplet label printed by skeaf_agentic (e.g. "11,12" or "7").
+# status: assigned / tentative / unassigned (unassigned = experimental branch without calculated counterpart;
+# drawn as grey italic text without arrow). arrow_* = point on the calculated branch; text_* = label position.
+label,status,group,arrow_angle_deg,arrow_freq_T,text_angle_deg,text_freq_T,comment
+mu,assigned,"15,16",20,4500,11,7000,large electron sheet; -3 to -6 %
+beta ?,tentative,"13,14",45,222,37,185,only near 45 deg
+"kappa, delta1 at [110]: none",unassigned,,,,62,2600,

@@ -39,7 +39,7 @@ from PAOFLOW.inputs.read_upf import UPF
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SI_UPF = _REPO_ROOT / 'examples/qe_examples/example16/Si_ONCV/Si_ONCV_PBE_sr.UPF'
-_PT_UPF = _REPO_ROOT / 'examples/qe_examples/example16/Pt_REL/Pt_ONCV_PBE_fr.upf'
+_PT_UPF = _REPO_ROOT / 'examples/qe_examples/example16/Pt_ONCV/Pt_ONCV_PBE_fr.upf'
 
 
 @pytest.fixture(scope='module')
@@ -128,7 +128,7 @@ def test_solve_radial_channel_returns_normalised_states(si_upf):
 
 
 def test_pseudize_shell_returns_eigenstate_with_correct_eigenvalue(si_upf):
-    r, u, eps = pseudize_shell(si_upf, n=3, l=0, n_points=1500)
+    r, u, eps = pseudize_shell(si_upf, n=3, l=0, n_points=1500, prefer_pswfc=False)
     eps_all, U, r_all = solve_radial_channel(si_upf, l=0, n_points=1500, n_states=4)
     # pseudize_shell selects the lowest-rank S state since Si PSWFC start at n=3.
     assert np.allclose(r, r_all)
@@ -158,7 +158,7 @@ _PSWFC_L2_TOL = 0.10
 def test_si_pswfc_reproduction(si_upf, label):
     n = int(label[0])
     l = _l_from_label(label)
-    r, u_solved, eps = pseudize_shell(si_upf, n=n, l=l, n_points=2000)
+    r, u_solved, eps = pseudize_shell(si_upf, n=n, l=l, n_points=2000, prefer_pswfc=False)
     u_ref = _pswfc_u_on_uniform(si_upf, label, r)
     err = _l2_relative(u_ref, u_solved, r[1] - r[0])
     assert err < _PSWFC_L2_TOL, f'Si {label} L2 error {err:.3f} > {_PSWFC_L2_TOL}'
@@ -181,7 +181,7 @@ def test_si_pswfc_reproduction(si_upf, label):
 def test_pt_pswfc_reproduction(pt_upf, label, j):
     n = int(label[0])
     l = _l_from_label(label)
-    r, u_solved, eps = pseudize_shell(pt_upf, n=n, l=l, j=j, n_points=2000)
+    r, u_solved, eps = pseudize_shell(pt_upf, n=n, l=l, j=j, n_points=2000, prefer_pswfc=False)
     u_ref = _pswfc_u_on_uniform(pt_upf, label, r, j=j)
     err = _l2_relative(u_ref, u_solved, r[1] - r[0])
     assert err < _PSWFC_L2_TOL, f'Pt {label} j={j} L2 error {err:.3f} > {_PSWFC_L2_TOL}'
@@ -190,10 +190,10 @@ def test_pt_pswfc_reproduction(pt_upf, label, j):
 
 def test_pt_spin_orbit_splitting_signs(pt_upf):
     """j = l - 1/2 lies deeper than j = l + 1/2 for both 5P and 5D."""
-    _, _, e_p_minus = pseudize_shell(pt_upf, n=5, l=1, j=0.5)
-    _, _, e_p_plus = pseudize_shell(pt_upf, n=5, l=1, j=1.5)
-    _, _, e_d_minus = pseudize_shell(pt_upf, n=5, l=2, j=1.5)
-    _, _, e_d_plus = pseudize_shell(pt_upf, n=5, l=2, j=2.5)
+    _, _, e_p_minus = pseudize_shell(pt_upf, n=5, l=1, j=0.5, prefer_pswfc=False)
+    _, _, e_p_plus = pseudize_shell(pt_upf, n=5, l=1, j=1.5, prefer_pswfc=False)
+    _, _, e_d_minus = pseudize_shell(pt_upf, n=5, l=2, j=1.5, prefer_pswfc=False)
+    _, _, e_d_plus = pseudize_shell(pt_upf, n=5, l=2, j=2.5, prefer_pswfc=False)
     assert e_p_minus < e_p_plus, '5P_1/2 must be below 5P_3/2'
     assert e_d_minus < e_d_plus, '5D_3/2 must be below 5D_5/2'
 
@@ -285,7 +285,7 @@ def test_driver_unknown_preset_raises(tmp_path):
 
 def test_directory_driver_collects_all_upfs(tmp_path):
     """``generate_basis_for_directory`` walks every UPF in a folder."""
-    # Use the Pt_REL directory (single UPF) for a stable smoke test.
+    # Use the Pt_ONCV directory (single UPF) for a stable smoke test.
     pseudo_dir = _PT_UPF.parent
     out = generate_basis_for_directory(str(pseudo_dir), str(tmp_path), preset='minimal')
     assert 'Pt' in out

@@ -19,12 +19,18 @@ dense interpolation + Fermi-surface double delta) and
 :func:`~PAOFLOW.elphon.eph_kq.eliashberg_from_modes` (alpha^2F / lambda / Tc).
 """
 
+from __future__ import annotations
+
+import glob
 import os
+import warnings
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .elph_bloch import (
     AMU_RY,
+    RY_TO_THZ,
     kq_index_map,
     lambda_q_dense_ws_fast,
     precompute_dense_electrons,
@@ -33,6 +39,8 @@ from .elph_bloch import (
 from .eph_kq import eliashberg_from_modes
 from .qe_elph_io import (
     el_ph_mat_to_cartesian,
+    read_epw_epb,
+    read_epw_ukk,
     read_qe_ahc_gkk,
     read_qe_dyn,
     read_qe_el_ph_mat,
@@ -65,7 +73,7 @@ def _k_permutation(kpts_cryst, xk_cart, bg, ng):
     return perm
 
 
-def vertex_from_qe_elphmat(elphmat_path, A, kpts_cryst, bg, ng):
+def vertex_from_qe_elphmat(elphmat_path, A, kpts_cryst, bg, ng, long_range=None):
     """PAO-gauge real-space vertex ``g(R_e)`` from one QE ``el_ph_mat`` dump.
 
     Parameters
@@ -73,7 +81,7 @@ def vertex_from_qe_elphmat(elphmat_path, A, kpts_cryst, bg, ng):
     elphmat_path : str
         Path to ``elphmat.<iq>.dat`` (patched-QE dump).
     A : ndarray ``(nbnd, nawf, nk)``
-        PAO projection matrices ``A_{ni}(k)`` (``arry['U'][..., ispin]``), grabbed
+        PAO projection matrices ``A_{ni}(k) = <phi_i|psi_nk>`` (``arry['U'][..., ispin]``), grabbed
         after ``projectability`` and before ``pao_hamiltonian``.
     kpts_cryst : ndarray ``(nk, 3)``
         PAOFLOW coarse-grid k-points (crystal coordinates).
@@ -98,11 +106,11 @@ def vertex_from_qe_elphmat(elphmat_path, A, kpts_cryst, bg, ng):
     q_cryst = np.linalg.solve(bg.T, qe['xq'])
     ikq, _ = kq_index_map(kpts_cryst, q_cryst, ng)
     kidx = np.round(kpts_cryst * np.asarray(ng)).astype(int) % np.asarray(ng)
-    gR = vertex_pao_R(d, A, ikq, kidx, ng)
+    gR = vertex_pao_R(d, A, ikq, kidx, ng, long_range=long_range)
     return gR, q_cryst
 
 
-def vertex_from_qe_ahc(ahc_dir, iq, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk):
+def vertex_from_qe_ahc(ahc_dir, iq, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk, long_range=None):
     """PAO-gauge real-space vertex ``g(R_e)`` from one unpatched QE AHC dump.
 
     Like :func:`vertex_from_qe_elphmat`, but reads the Cartesian ``ahc_gkk``
@@ -117,7 +125,7 @@ def vertex_from_qe_ahc(ahc_dir, iq, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
     iq : int
         1-based q index (matches ``<prefix>.dyn<iq>``).
     A : ndarray ``(nbnd, nawf, nk)``
-        PAO projections.
+        PAO projections ``A_{ni}(k) = <phi_i|psi_nk>``.
     kpts_cryst : ndarray ``(nk, 3)``
         Coarse-grid k-points (crystal), nscf order.
     q_cryst : ndarray ``(3,)``
@@ -135,7 +143,281 @@ def vertex_from_qe_ahc(ahc_dir, iq, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
     d = np.transpose(ahc['el_cart'], (2, 0, 1, 3))  # (k, m, n, c), identity order
     ikq, _ = kq_index_map(kpts_cryst, q_cryst, ng)
     kidx = np.round(kpts_cryst * np.asarray(ng)).astype(int) % np.asarray(ng)
-    return vertex_pao_R(d, A, ikq, kidx, ng)
+    return vertex_pao_R(d, A, ikq, kidx, ng, long_range=long_range)
+
+
+def vertex_from_epw(
+    epmatq_q: NDArray[np.complex128],
+    A: NDArray[np.complex128],
+    kpts_cryst: NDArray[np.float64],
+    q_cryst: NDArray[np.float64],
+    ng: tuple[int, int, int],
+    ibndkept: NDArray[np.integer],
+    long_range: NDArray[np.complex128] | None = None,
+) -> NDArray[np.complex128]:
+    """PAO-gauge real-space vertex ``g(R_e)`` for one q from EPW's coarse coupling.
+
+    Parameters
+    ----------
+    epmatq_q : NDArray[np.complex128], shape ``(nbndep, nbndep, nk, 3 nat)``
+        One q slice of :func:`~PAOFLOW.elphon.qe_elph_io.read_epw_epb`
+        ``['epmatq']``: ``<psi_{m,k+q}| dV/du_c |psi_{n,k}>`` over the bands
+        kept by EPW, Cartesian displacement basis, nscf k order.
+    A : NDArray[np.complex128], shape ``(nbnd, nawf, nk)``
+        PAO projections ``A_{ni}(k) = <phi_i|psi_nk>`` on the **same** nscf save
+        that EPW read (all ``nbnd`` bands).
+    kpts_cryst : NDArray[np.float64], shape ``(nk, 3)``
+        Coarse k-points (crystal coordinates), nscf order.
+    q_cryst : NDArray[np.float64], shape ``(3,)``
+        The q-point of the slice (crystal coordinates).
+    ng : tuple of int
+        Coarse k-grid dimensions.
+    ibndkept : NDArray[np.integer], shape ``(nbndep,)``
+        0-based nscf index of each band kept by EPW
+        (:func:`~PAOFLOW.elphon.qe_elph_io.read_epw_ukk` ``['ibndkept']``).
+    long_range : NDArray[np.complex128], shape ``(nawf, nawf, 3 nat)``, optional
+        Long-range vertex of this q to subtract in the PAO gauge
+        (:func:`~PAOFLOW.elphon.elph_bloch.vertex_pao_R`).
+
+    Returns
+    -------
+    NDArray[np.complex128], shape ``(nawf, nawf, 3 nat, n1, n2, n3)``
+        The PAO-gauge vertex in the electron real-space cells.
+
+    Raises
+    ------
+    ValueError
+        If ``k + q`` does not fall on the coarse k-grid.
+
+    Notes
+    -----
+    EPW evaluates both ``psi_{k+q}`` (the stored grid point ``k + q - G``) and
+    ``psi_k`` from the nscf wavefunctions, so the band phases match those of
+    ``A`` and the rotation :func:`~PAOFLOW.elphon.elph_bloch.vertex_pao_R` is
+    consistent for every q.  The vertex is restricted to the kept bands,
+    ``g = A_{k+q}[kept]^T d A_k[kept]^*``.
+    """
+    q_cryst = np.asarray(q_cryst, dtype=float)
+    ng_arr = np.asarray(ng)
+    if not np.allclose(q_cryst * ng_arr, np.round(q_cryst * ng_arr), atol=1.0e-6):
+        raise ValueError('q = %s is not commensurate with the %s k-grid' % (q_cryst, tuple(ng)))
+    d = np.transpose(epmatq_q, (2, 0, 1, 3))  # (k, m, n, c)
+    ikq, _ = kq_index_map(kpts_cryst, q_cryst, ng)
+    kidx = np.round(kpts_cryst * ng_arr).astype(int) % ng_arr
+    return vertex_pao_R(d, A[np.asarray(ibndkept)], ikq, kidx, ng, long_range=long_range)
+
+
+def load_epw_coupling(
+    epw_dir: str,
+    nbnd: int,
+    nk: int,
+    nat: int,
+    bg: NDArray[np.float64],
+    prefix: str | None = None,
+    ukk_path: str | None = None,
+) -> dict[str, NDArray]:
+    """Load EPW's coarse Bloch coupling (``epbwrite``) with its band bookkeeping.
+
+    Parameters
+    ----------
+    epw_dir : str
+        EPW ``outdir`` holding ``prefix.epb1 ... prefix.epbN``.
+    nbnd : int
+        Number of bands of the nscf run (rows of the PAO projections ``A``).
+    nk : int
+        Number of coarse k-points.
+    nat : int
+        Number of atoms.
+    bg : NDArray[np.float64], shape ``(3, 3)``
+        Reciprocal-lattice vectors (rows, ``2 pi / alat``).
+    prefix : str, optional
+        Calculation prefix; inferred from the single ``*.epb1`` file if omitted.
+    ukk_path : str, optional
+        Path to ``prefix.ukk`` (default: ``epw_dir/prefix.ukk``).
+
+    Returns
+    -------
+    dict
+        ``epmatq`` ``(nbndep, nbndep, nk, 3 nat, nq)``, ``q_cryst`` ``(nq, 3)``,
+        ``dynq`` ``(3 nat, 3 nat, nq)``, ``ibndkept`` ``(nbndep,)``, ``nq``, and
+        the Born charges ``zstar`` ``(nat, 3, 3)`` and dielectric tensor
+        ``epsi`` ``(3, 3)`` (zero unless ph.x ran with ``epsil = .true.``).
+
+    Raises
+    ------
+    FileNotFoundError
+        If the prefix cannot be inferred or the files are missing.
+    NotImplementedError
+        If EPW packed the bands by a disentanglement window (some ``lwin`` false).
+    """
+    if prefix is None:
+        found = [
+            os.path.basename(p)[: -len('.epb1')] for p in glob.glob(os.path.join(epw_dir, '*.epb1'))
+        ]
+        if len(found) != 1:
+            raise FileNotFoundError(
+                'cannot infer the EPW prefix in %s (found %s)' % (epw_dir, found)
+            )
+        prefix = found[0]
+    ukk = read_epw_ukk(ukk_path or os.path.join(epw_dir, prefix + '.ukk'), nk)
+    if not ukk['lwin'].all():
+        raise NotImplementedError(
+            'EPW packed the bands by an outer disentanglement window (lwin has False entries); '
+            'rerun EPW without dis_win_min/dis_win_max (all bands in the window).'
+        )
+    epb = read_epw_epb(epw_dir, prefix, nbnd, nk, nat, ukk['nbndep'])
+    q_cryst = np.linalg.solve(np.asarray(bg).T, epb['xq_cart'].T).T
+    return {
+        'epmatq': epb['epmatq'],
+        'q_cryst': q_cryst,
+        'dynq': epb['dynq'],
+        'ibndkept': ukk['ibndkept'],
+        'nq': q_cryst.shape[0],
+        'zstar': epb['zstar'],
+        'epsi': epb['epsi'],
+    }
+
+
+def _dfpt_qgrid(dfpt_dir: str, prefix: str | None, bg: NDArray[np.float64]) -> tuple[int, int, int]:
+    """The q-grid of a ``ph.x`` run: ``dyn0`` when present, else the smallest grid holding every star q."""
+    from ..phonon.qe_force_constants import read_dynamical_matrix_file
+    from .dfpt_io import locate_dfpt_files
+
+    files = locate_dfpt_files(dfpt_dir, prefix)
+    if files.dyn0 is not None:
+        with open(files.dyn0) as fh:
+            head = fh.readline().split()
+        if len(head) >= 3:
+            return (int(head[0]), int(head[1]), int(head[2]))
+    qs = np.array(
+        [
+            np.linalg.solve(bg.T, q)
+            for path in files.dyn
+            for q in read_dynamical_matrix_file(path)['q_cart']
+        ]
+    )
+    grid = []
+    for d in range(3):
+        n = 1
+        while n < 64 and np.abs(qs[:, d] * n - np.rint(qs[:, d] * n)).max() > 1e-5:
+            n += 1
+        grid.append(n)
+    return tuple(grid)
+
+
+def check_long_range_terms(
+    zstar: NDArray[np.float64],
+    epsi: NDArray[np.float64],
+    allow_missing_long_range: bool = False,
+    zstar_tol: float = 0.1,
+    long_range=None,
+) -> None:
+    """Refuse couplings whose long-range part the interpolation does not treat.
+
+    The PAO interpolation Fourier-interpolates the full coupling and force
+    constants; it has no dipole (Frohlich) or quadrupole subtract-and-restore
+    step (EPW ``lpolar``).  That is exact for metals, whose free carriers screen
+    the long-range fields, but not for insulators and semiconductors.
+
+    Parameters
+    ----------
+    zstar : NDArray[np.float64], shape ``(nat, 3, 3)``
+        Born effective charges (:func:`load_epw_coupling`).
+    epsi : NDArray[np.float64], shape ``(3, 3)``
+        High-frequency dielectric tensor; zero when ph.x did not compute it.
+    allow_missing_long_range : bool, optional
+        Only warn instead of raising for polar materials (default ``False``).
+    zstar_tol : float, optional
+        Born charges below this magnitude are DFPT noise (default 0.1).
+    long_range : LongRangeModel, optional
+        The analytic model that the drivers subtract and restore
+        (:class:`~PAOFLOW.elphon.long_range.LongRangeModel`): with it a polar material is
+        accepted, and only a non-polar insulator without quadrupoles still warns.
+
+    Raises
+    ------
+    NotImplementedError
+        For a polar material (``max |Z*| > zstar_tol``) unless
+        ``allow_missing_long_range``: the dipole term diverges as ``1/|q|`` and
+        cannot be Fourier-interpolated.
+
+    Warns
+    -----
+    UserWarning
+        For a non-polar insulator or semiconductor (``epsi`` present, ``Z* = 0``,
+        e.g. Si): the dynamical-quadrupole term is not included.
+
+    Notes
+    -----
+    See ``docs/internals/long-range-elphon-plan.md`` for the planned dipole and
+    quadrupole treatment.  Under MPI the warnings are issued
+    by rank 0 only (every rank still raises).
+    """
+    max_zstar = float(np.abs(np.asarray(zstar)).max()) if np.size(zstar) else 0.0
+    has_dielectric = bool(np.any(np.asarray(epsi) != 0.0))
+    if long_range is not None:
+        if max_zstar <= zstar_tol and not long_range.has_quadrupoles and _is_root_rank():
+            warnings.warn(
+                'Non-polar insulator (Z* = 0) with a dipole-only long-range model: the dynamical '
+                'quadrupoles are not included (pass quadrupoles= to the model).',
+                stacklevel=2,
+            )
+        return
+    if max_zstar > zstar_tol:
+        message = (
+            'Polar material (max |Z*| = %.2f): the long-range dipole (Frohlich) part of the '
+            'coupling and of the force constants is not subtracted before the interpolation, '
+            'so g(q) and the phonons near Gamma (LO-TO splitting) are wrong.' % max_zstar
+        )
+        if not allow_missing_long_range:
+            raise NotImplementedError(
+                message + '  Pass allow_missing_long_range=True to run anyway.'
+            )
+        if _is_root_rank():
+            warnings.warn(message, stacklevel=2)
+    elif has_dielectric and _is_root_rank():
+        warnings.warn(
+            'Non-polar insulator (Z* = 0): the dynamical-quadrupole part of the coupling is '
+            'not treated separately, so g(q) is approximate for q close to Gamma.  This '
+            'matters mostly for carrier mobilities; for Brillouin-zone integrals such as '
+            'lambda or the phonon-assisted absorption the effect is expected to be small.',
+            stacklevel=2,
+        )
+
+
+def _is_root_rank() -> bool:
+    """``True`` on MPI rank 0 of ``COMM_WORLD`` (or without mpi4py)."""
+    try:
+        from mpi4py import MPI
+    except ImportError:
+        return True
+    return MPI.COMM_WORLD.Get_rank() == 0
+
+
+def phonon_modes_from_force_constants(
+    force_constants: NDArray[np.complex128], masses_ry: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.complex128]]:
+    """Phonon frequencies and mass-weighted eigenvectors at one q.
+
+    Parameters
+    ----------
+    force_constants : NDArray[np.complex128], shape ``(3 nat, 3 nat)``
+        Force-constant matrix ``C(q)`` (Ry/bohr^2, not divided by the masses).
+    masses_ry : NDArray[np.float64], shape ``(3 nat,)``
+        Mass of the atom of each Cartesian component (QE Rydberg units).
+
+    Returns
+    -------
+    freq_thz : NDArray[np.float64], shape ``(3 nat,)``
+        Signed frequencies (THz; negative for imaginary modes).
+    z : NDArray[np.complex128], shape ``(3 nat, 3 nat)``
+        Orthonormal eigenvectors of ``D = C / sqrt(M_a M_b)``, one per row (the
+        convention of :func:`~PAOFLOW.elphon.qe_elph_io.read_qe_dyn`).
+    """
+    inv_sqrt_m = 1.0 / np.sqrt(np.asarray(masses_ry, dtype=float))
+    D = force_constants * np.outer(inv_sqrt_m, inv_sqrt_m)
+    w2, ev = np.linalg.eigh(0.5 * (D + D.conj().T))
+    return np.sign(w2) * np.sqrt(np.abs(w2)) * RY_TO_THZ, ev.T
 
 
 def eliashberg_from_qe_coupling(
@@ -154,12 +436,19 @@ def eliashberg_from_qe_coupling(
     nk_dense=18,
     sigmas_ry=(0.02,),
     nelec=None,
+    spin_degeneracy=2.0,
     mu_star=0.10,
     ispin=0,
     isig=0,
     sigma_w_frac=0.02,
     fs_window=8.0,
     comm=None,
+    orbital_positions=None,
+    allow_missing_long_range=False,
+    save_dir=None,
+    pseudo_dir=None,
+    prefix=None,
+    basis='auto',
 ):
     """Isotropic Eliashberg properties from QE's coarse ``el_ph_mat`` (PAO route).
 
@@ -172,7 +461,8 @@ def eliashberg_from_qe_coupling(
     Parameters
     ----------
     A : ndarray ``(nbnd, nawf, nk)``
-        PAO projections (grab ``arry['U'][..., ispin]`` before ``pao_hamiltonian``).
+        PAO projections ``A_{ni}(k) = <phi_i|psi_nk>`` (grab ``arry['U'][..., ispin]``
+        before ``pao_hamiltonian``).
     HRs : ndarray ``(nawf, nawf, m1, m2, m3, nspin)``
         PAO Hamiltonian (``E_F`` at 0), from ``pao_hamiltonian``.
     kpts_cryst : ndarray ``(nk, 3)``
@@ -181,20 +471,30 @@ def eliashberg_from_qe_coupling(
         Reciprocal- and real-lattice vectors (rows).
     coupling_dir : str
         Directory holding the coupling files (``elphmat.<iq>.dat`` for
-        ``source='elphmat'``, or ``ahc_gkk_iq<iq>.bin`` for ``source='ahc'``).
-    q_weights : array_like ``(nq,)``
+        ``source='elphmat'``, ``ahc_gkk_iq<iq>.bin`` for ``source='ahc'``, or
+        EPW's ``prefix.epb*`` and ``prefix.ukk`` for ``source='epw'``).
+    q_weights : array_like ``(nq,)`` or None
         Star sizes of the irreducible q-points (need not be normalised).  For a
         full un-reduced q-grid (e.g. the 27-point AHC output) use all ones.
+        For ``source='epw'``, ``None`` selects unit weights over EPW's full grid.
     ng : tuple(int, int, int)
         Coarse coupling k-grid (== SCF grid).
-    dyn_paths : sequence of str
+    dyn_paths : sequence of str or None
         One QE ``*.dyn`` file per q (for frequencies/eigenvectors; also supplies
-        the q-point for ``source='ahc'``).
+        the q-point for ``source='ahc'``).  Unused for ``source='epw'``, whose
+        q-points and force constants come from the ``.epb`` files.
     elphmat_fmt : str, optional
         Filename template for the patched dumps (``%d`` is the 1-based q index).
-    source : {'elphmat', 'ahc'}, optional
-        Coupling input: the patched ``el_ph_mat`` dump (any pseudo) or the
-        unpatched QE AHC ``ahc_gkk`` binaries (norm-conserving only).
+    source : {'elphmat', 'ahc', 'epw', 'dfpt'}, optional
+        Coupling input: the patched ``el_ph_mat`` dump (any pseudo), the
+        unpatched QE AHC ``ahc_gkk`` binaries (norm-conserving only), EPW's
+        coarse Bloch coupling (``epbwrite``; any pseudo), or the native vertex
+        computed from the ``ph.x`` outputs in ``coupling_dir`` and the nscf
+        wavefunctions of ``save_dir`` (``'dfpt'``, norm-conserving;
+        :class:`~PAOFLOW.elphon.dfpt_vertex.CoarseVertexSetup`).  Only ``'epw'``
+        and ``'dfpt'`` evaluate ``psi_{k+q}`` from the same nscf save as ``A``;
+        the other ph.x sources recompute it with arbitrary band phases, which
+        breaks the k-interpolation for q != 0.
     masses_amu : array_like ``(natom,)``, optional
         Atomic masses (amu); required to mass-weight the phonon eigenvectors.
     nk_dense : int, optional
@@ -203,6 +503,9 @@ def eliashberg_from_qe_coupling(
         Fermi-surface smearing(s) (Ry); ``isig`` selects which one is reported.
     nelec : float, optional
         Valence electrons for the dense-grid Fermi-level recompute.
+    spin_degeneracy : float, optional
+        2 for scalar bands, 1 for spinors (spin-orbit coupling): sets the Fermi
+        level of ``nelec`` electrons on the dense grid.
     mu_star : float, optional
         Coulomb pseudopotential for ``Tc``.
     ispin, isig : int, optional
@@ -221,6 +524,18 @@ def eliashberg_from_qe_coupling(
         diagonalisation is computed redundantly on every rank (the cache is
         needed by all q and is too large to broadcast cheaply); only the
         per-q vertex interpolation is parallelised.
+    orbital_positions : ndarray ``(nawf, 3)``, optional
+        PAO orbital centres in crystal coordinates
+        (:func:`~PAOFLOW.elphon.elph_bloch.pao_orbital_positions`).  When given,
+        the electrons and the vertex are interpolated with orbital-pair
+        Wigner-Seitz images, required for symmetric interpolation in cells with
+        several atoms; ``None`` keeps the single-site images.
+    allow_missing_long_range : bool, optional
+        For ``source='epw'`` and ``'dfpt'``, run a polar material without the
+        long-range dipole term instead of raising (:func:`check_long_range_terms`).
+    save_dir, pseudo_dir, prefix, basis
+        ``source='dfpt'`` options (see
+        :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`).
 
     Returns
     -------
@@ -229,21 +544,57 @@ def eliashberg_from_qe_coupling(
         extra keys ``'lambda_qv'``, ``'omega_qv_thz'`` (both ``(nq, nmode)``) and
         ``'dos_ef'`` (``(nq,)``, states/spin/Ry per q).
     """
-    q_weights = np.asarray(q_weights, dtype=float)
     sigmas_ry = np.atleast_1d(np.asarray(sigmas_ry, dtype=float))
-    nq = q_weights.size
     if masses_amu is None:
         raise ValueError('masses_amu is required to mass-weight the phonon eigenvectors')
     masses_amu = np.asarray(masses_amu, dtype=float)
     mass_flat_ry = np.repeat(masses_amu, 3) * AMU_RY  # (3*natom,)
     nbnd, nk = int(A.shape[0]), int(A.shape[2])
     nmodes = int(mass_flat_ry.size)
+    epw = None
+    dfpt = None
+    if source == 'dfpt':
+        from .dfpt_vertex import CoarseVertexSetup
+        from .do_pao_eph_dense_q import phonon_interp_from_dyn
+
+        if save_dir is None:
+            raise ValueError("source='dfpt' needs save_dir, the nscf save of the projections")
+        dfpt = CoarseVertexSetup(
+            save_dir,
+            coupling_dir,
+            _dfpt_qgrid(coupling_dir, prefix, bg),
+            prefix=prefix,
+            pseudo_dir=pseudo_dir,
+        )
+        eps, zst = dfpt.long_range_tensors()
+        check_long_range_terms(zst, eps, allow_missing_long_range)
+        dfpt_phonons = phonon_interp_from_dyn(list(dfpt.files.dyn), dfpt.qgrid, bg, at, None)
+        kidx = np.round(np.asarray(kpts_cryst, dtype=float) * np.asarray(ng)).astype(
+            int
+        ) % np.asarray(ng)
+        if q_weights is None:
+            q_weights = np.ones(len(dfpt.members))
+    if source == 'epw':
+        # EPW already unfolded the irreducible q to the full coarse grid.
+        epw = load_epw_coupling(coupling_dir, nbnd, nk, masses_amu.size, bg)
+        check_long_range_terms(epw['zstar'], epw['epsi'], allow_missing_long_range)
+        if q_weights is None:
+            q_weights = np.ones(epw['nq'])
+    q_weights = np.asarray(q_weights, dtype=float)
+    nq = q_weights.size
+    if epw is not None and nq != epw['nq']:
+        raise ValueError('q_weights has %d entries, EPW provides %d q-points' % (nq, epw['nq']))
+    if dfpt is not None and nq != len(dfpt.members):
+        raise ValueError(
+            'q_weights has %d entries, the ph.x grid has %d q-points' % (nq, len(dfpt.members))
+        )
 
     # Diagonalise the dense electron spectrum ONCE; every q reuses it (E(k+q) /
     # V(k+q) are index shifts), so the per-q cost is only the vertex interpolation.
     electrons = precompute_dense_electrons(
-        HRs, at, nk_dense, sigmas_ry, nelec, tuple(ng), ispin=ispin, fs_window=fs_window
-    )
+        HRs, at, nk_dense, sigmas_ry, nelec, tuple(ng), ispin=ispin, fs_window=fs_window,
+        orbital_positions=orbital_positions, spin_degeneracy=spin_degeneracy,
+    )  # fmt: skip
 
     # Distribute the embarrassingly parallel per-q loop across MPI ranks: each q
     # writes a disjoint slice of the (zero-initialised) output arrays, so a single
@@ -262,23 +613,36 @@ def eliashberg_from_qe_coupling(
     om_qv = np.zeros((nq, nmodes), dtype=float)
     dos_ef = np.zeros(nq, dtype=float)
     for iq in range(qstart, qstop):
-        dyn = read_qe_dyn(dyn_paths[iq])
-        if source == 'ahc':
-            q_cryst = np.linalg.solve(bg.T, np.asarray(dyn['q'], dtype=float))
-            gR = vertex_from_qe_ahc(
-                coupling_dir, iq + 1, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
+        if source == 'dfpt':
+            member = dfpt.members[iq]
+            q_cryst = member.q_cryst
+            gR = dfpt.pao_vertex_at_q(member, A, kidx, tuple(ng), basis)
+            freq_thz, z = dfpt_phonons(q_cryst)
+        elif source == 'epw':
+            q_cryst = epw['q_cryst'][iq]
+            gR = vertex_from_epw(
+                epw['epmatq'][..., iq], A, kpts_cryst, q_cryst, ng, epw['ibndkept']
             )
+            freq_thz, z = phonon_modes_from_force_constants(epw['dynq'][:, :, iq], mass_flat_ry)
         else:
-            path = os.path.join(coupling_dir, elphmat_fmt % (iq + 1))
-            gR, q_cryst = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng)
-        z = dyn['eigenvectors'].reshape(dyn['freq_thz'].size, -1)  # (nmode, 3*natom)
+            dyn = read_qe_dyn(dyn_paths[iq])
+            freq_thz = dyn['freq_thz']
+            z = dyn['eigenvectors'].reshape(freq_thz.size, -1)  # (nmode, 3*natom)
+            if source == 'ahc':
+                q_cryst = np.linalg.solve(bg.T, np.asarray(dyn['q'], dtype=float))
+                gR = vertex_from_qe_ahc(
+                    coupling_dir, iq + 1, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
+                )
+            else:
+                path = os.path.join(coupling_dir, elphmat_fmt % (iq + 1))
+                gR, q_cryst = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng)
         zmass = z / np.sqrt(mass_flat_ry)[None, :]
-        res = lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, dyn['freq_thz'])
+        res = lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freq_thz)
         lam = res['lambda_qnu'][isig].copy()
         if np.linalg.norm(q_cryst - np.round(q_cryst)) < 1.0e-6:
             lam[:] = 0.0  # zero the Gamma acoustic blow-up (QE convention)
         lam_qv[iq] = lam
-        om_qv[iq] = np.abs(dyn['freq_thz'])
+        om_qv[iq] = np.abs(freq_thz)
         dos_ef[iq] = res['dos_ef'][isig]
 
     if size > 1:

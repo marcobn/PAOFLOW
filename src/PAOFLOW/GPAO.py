@@ -147,6 +147,86 @@ class GPAO:
                 sym_points = read_band_path_PAO(sym_points)
         plot_bands(bands_list, sym_points, title, label, y_lim, cols, labels, legend)
 
+    def plot_arpes(
+        self,
+        intensity_map,
+        fname=None,
+        cut='band_map',
+        value=0.0,
+        path_labels=None,
+        title=None,
+        cmap='Greys_r',
+        broadened=True,
+        ax=None,
+    ):
+        """Plot an ARPES simulation (``PAOFLOW.arpes.IntensityMap``).
+
+        Arguments:
+          intensity_map (IntensityMap): Result of ``PAOFLOW.arpes`` / ``PAOFLOW.arpes.simulate``.
+          fname (str): File name of the figure (``None`` shows it).
+          cut (str): ``'band_map'`` (energy vs the path index, or vs ``k_x`` at ``k_y = value``
+            for a mesh), ``'constant_energy'`` (``k_x``-``k_y`` map at the energy ``value``),
+            ``'edc'`` (energy distribution curve at k-point index ``value``).
+          value (float or int): Energy (eV), ``k_y`` (1/A) or k index of the cut.
+          path_labels (tuple): ``(indices, labels)`` of the high-symmetry points of a path.
+          title (str): A title.
+          cmap (str): Colour map.
+          broadened (bool): Resolution-broadened (``True``) or raw intensity.
+          ax (matplotlib axis): Draw into an existing axis.
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        own_figure = ax is None
+        if own_figure:
+            fig, ax = plt.subplots(figsize=(5.0, 4.0), constrained_layout=True)
+        data = intensity_map.intensity if broadened else intensity_map.raw
+        w = intensity_map.w
+        if cut == 'edc':
+            ax.plot(w, data[int(value)], color='k')
+            ax.set_xlabel('E - E$_F$ (eV)')
+            ax.set_ylabel('intensity (arb. units)')
+        elif cut == 'constant_energy':
+            if intensity_map.grid is None:
+                raise ValueError('a constant-energy map needs a momentum mesh')
+            iw = int(np.argmin(np.abs(w - value)))
+            cube = intensity_map.as_grid(broadened)
+            kx, ky = intensity_map.axes['kx'], intensity_map.axes['ky']
+            ax.pcolormesh(kx, ky, cube[:, :, iw].T, cmap=cmap, shading='auto')
+            ax.set_xlabel('k$_x$ (1/Å)')
+            ax.set_ylabel('k$_y$ (1/Å)')
+            ax.set_aspect('equal')
+        elif cut == 'band_map':
+            if intensity_map.grid is not None:
+                ky = intensity_map.axes['ky']
+                iy = int(np.argmin(np.abs(ky - value)))
+                image = intensity_map.as_grid(broadened)[:, iy, :]
+                x = intensity_map.axes['kx']
+                ax.set_xlabel('k$_x$ (1/Å)')
+            else:
+                image = data
+                x = np.arange(data.shape[0])
+                ax.set_xlabel('k-path')
+                if path_labels is not None:
+                    ax.set_xticks(path_labels[0])
+                    ax.set_xticklabels(path_labels[1])
+                    for idx in path_labels[0]:
+                        ax.axvline(idx, color='0.6', lw=0.6)
+            ax.pcolormesh(x, w, image.T, cmap=cmap, shading='auto')
+            ax.axhline(0.0, color='w', lw=0.5, ls='--')
+            ax.set_ylabel('E - E$_F$ (eV)')
+        else:
+            raise ValueError("cut must be 'band_map', 'constant_energy' or 'edc'")
+        if title is not None:
+            ax.set_title(title)
+        if own_figure:
+            if fname is None:
+                plt.show()
+            else:
+                fig.savefig(fname, dpi=200)
+                plt.close(fig)
+        return ax
+
     def plot_berry(
         self,
         fname,
@@ -414,6 +494,61 @@ class GPAO:
                 labels.append(tag)
             plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend)
 
+    def plot_ohc(
+        self,
+        fname,
+        title='OHC vs Energy',
+        x_lim=None,
+        y_lim=None,
+        cols=None,
+        legend=True,
+    ):
+        """
+        Plot the orbital Hall conductivity vs energy.
+
+        PAOFLOW writes one ``ohcEf_{spol}_{ipol}{jpol}.dat`` file per requested
+        tensor element (two columns: energy and conductivity), the orbital
+        counterpart of the spin Hall files.  Pass a single file name to plot one
+        component, or a list of file names to overlay several components.
+
+        Arguments:
+          fname (str or list): File name or list of file names (including relative path)
+          title (str): A title for the plot
+          x_lim (tuple): Pair of axis limits (x_min, x_max)
+          y_lim (tuple): Pair of axis limits (y_min, y_max)
+          cols (list): A 3-tuple (R,G,B) or list of them, one for each tensor element.
+          legend (bool): Show the legend when several components are plotted.
+        """
+        import numpy as np
+
+        from .inputs.read_pao_output import read_dos_PAO
+
+        x_label = 'Energy (eV)'
+        y_label = r'$\sigma^{L}$ ($\Omega$cm)$^{-1}$'
+
+        if isinstance(fname, str):
+            from .graphics.plot_functions import plot_dos
+
+            es, ohc = read_dos_PAO(fname)
+            if y_lim is None:
+                y_lim = 1.1 * np.array([np.min(ohc), np.max(ohc)])
+            plot_dos(es, ohc, title, x_lim, y_lim, False, cols, x_label, y_label)
+
+        elif isinstance(fname, list):
+            from .graphics.plot_functions import plot_shc_tensor
+
+            es = None
+            data = []
+            labels = []
+            if not isinstance(cols, list):
+                cols = [cols] * len(fname)
+            for fn in fname:
+                tag = fn.split('.')[-2][-4:]
+                es, ohc = read_dos_PAO(fn)
+                data.append(ohc)
+                labels.append(tag)
+            plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend)
+
     def plot_ahc(
         self,
         fname,
@@ -557,6 +692,13 @@ class GPAO:
         'sigmai': (r'Im $\sigma$', r'$\sigma$ (S/m)'),
         'emish': ('Hemispherical emissivity', 'Emissivity'),
         'emist': ('Total emissivity', 'Emissivity'),
+        'shift': (r'$\sigma_{\rm shift}$', r'Shift current ($\mu$A/V$^2$)'),
+        'shiftm': (r'$\sigma_{\rm shift}^{M}$', r'Magnetic shift current ($\mu$A/V$^2$)'),
+        'injectc': (r'$\eta_C$', r'Circular injection (A V$^{-2}$ s$^{-1}$)'),
+        'injectm': (r'$\eta_M$', r'Magnetic injection (A V$^{-2}$ s$^{-1}$)'),
+        'shgr': (r'Re $\chi^{(2)}$', r'$\chi^{(2)}$ (pm/V)'),
+        'shgi': (r'Im $\chi^{(2)}$', r'$\chi^{(2)}$ (pm/V)'),
+        'shga': (r'$|\chi^{(2)}|$', r'$\chi^{(2)}$ (pm/V)'),
     }
 
     def plot_optical(
@@ -1068,3 +1210,264 @@ class GPAO:
             units=units,
             filename=filename,
         )
+
+    def plot_migdal_eliashberg(
+        self,
+        npz_file: str,
+        temps: list[float] | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+        real_axis_max_mev: float = 60.0,
+    ) -> None:
+        """Plot the isotropic Migdal-Eliashberg results (gap, Z, real axis, Delta(T), Tc).
+
+        Parameters
+        ----------
+        npz_file : str
+            ``migdal_eliashberg.npz`` written by
+            :func:`PAOFLOW.elphon.migdal_eliashberg.write_me_outputs`.
+        temps : list of float, optional
+            Temperatures (K) shown in the frequency-resolved panels; defaults to
+            up to four temperatures with a non-zero gap.
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+        real_axis_max_mev : float, optional
+            Upper frequency (meV) of the real-axis panels (default 60), capped
+            at ``wscut``.
+
+        Returns
+        -------
+        None
+            Shows the figure (:func:`PAOFLOW.graphics.plot_functions.plot_migdal_eliashberg`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_migdal_eliashberg
+
+        with np.load(npz_file) as data:
+            plot_migdal_eliashberg(
+                dict(data),
+                temps=temps,
+                title=title,
+                filename=filename,
+                real_axis_max_mev=real_axis_max_mev,
+            )
+
+    def plot_phonon_assisted_absorption(
+        self,
+        npz_file: str,
+        eta_ev: float = 0.05,
+        temperature: float | None = None,
+        epw_indabs_file: str | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot the phonon-assisted and direct optical absorption.
+
+        Parameters
+        ----------
+        npz_file : str
+            ``absorption.npz`` written by
+            :func:`PAOFLOW.elphon.phonon_assisted_absorption.write_absorption_outputs`.
+        eta_ev : float, optional
+            Intermediate-state broadening (eV) shown (closest computed value).
+        temperature : float, optional
+            Temperature (K) of the dielectric-function panel (default: the first).
+        epw_indabs_file : str, optional
+            EPW ``epsilon2_indabs_<T>K.dat`` overlaid for comparison.
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+
+        Returns
+        -------
+        None
+            Shows the figure
+            (:func:`PAOFLOW.graphics.plot_functions.plot_phonon_assisted_absorption`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_phonon_assisted_absorption
+
+        with np.load(npz_file) as data:
+            plot_phonon_assisted_absorption(
+                dict(data), eta_ev=eta_ev, temperature=temperature,
+                epw_indabs_file=epw_indabs_file, title=title, filename=filename,
+            )  # fmt: skip
+
+    def plot_thermal_emissivity(
+        self,
+        npz_file: str,
+        temps: list[float] | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot the spectral and total hemispherical emissivity versus temperature.
+
+        Parameters
+        ----------
+        npz_file : str
+            ``emissivity.npz`` written by
+            :func:`PAOFLOW.elphon.phonon_assisted_absorption.write_emissivity_outputs`.
+        temps : list of float, optional
+            Temperatures (K) of the spectral panel (default: up to five).
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+
+        Returns
+        -------
+        None
+            Shows the figure
+            (:func:`PAOFLOW.graphics.plot_functions.plot_thermal_emissivity`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_thermal_emissivity
+
+        with np.load(npz_file) as data:
+            plot_thermal_emissivity(dict(data), temps=temps, title=title, filename=filename)
+
+    def plot_metal_transport(
+        self,
+        eliashberg_npz: str,
+        resistivity_file: str,
+        experiment_file: str | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot alpha^2F, alpha^2F_tr and the resistivity of a metal.
+
+        Parameters
+        ----------
+        eliashberg_npz : str
+            ``eliashberg.npz`` of ``main.elphon.py --transport``.
+        resistivity_file : str
+            ``resistivity.dat`` of ``transport.elphon.py`` (T, total and per-channel
+            resistivity in micro-ohm cm; channel names in the header).
+        experiment_file : str, optional
+            Two columns: temperature (K), measured resistivity (micro-ohm cm).
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+
+        Returns
+        -------
+        None
+            Shows the figure
+            (:func:`PAOFLOW.graphics.plot_functions.plot_metal_transport`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_metal_transport
+
+        names = None
+        with open(resistivity_file, encoding='utf-8') as handle:
+            header = handle.readline()
+        if ':' in header:
+            names = [n.strip() for n in header.split(':', 1)[1].split(',') if n.strip()]
+        experiment = np.loadtxt(experiment_file) if experiment_file else None
+        with np.load(eliashberg_npz) as data:
+            plot_metal_transport(
+                dict(data), np.loadtxt(resistivity_file), names, experiment, title, filename
+            )
+
+    def plot_carrier_mobility(
+        self,
+        mobility_file: str,
+        scattering_npz: str | None = None,
+        temperature_k: float = 300.0,
+        experiment_file: str | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot the phonon-limited mobilities (SERTA/MRTA) and the scattering rates.
+
+        Parameters
+        ----------
+        mobility_file : str
+            ``mobility.dat`` of :func:`PAOFLOW.elphon.carrier_scattering.write_mobility_outputs`.
+        scattering_npz : str, optional
+            ``carrier_scattering.npz`` of the same run; adds the rates panel.
+        temperature_k : float, optional
+            Temperature of the rates panel.
+        experiment_file : str, optional
+            Three columns: temperature (K), measured electron and hole mobilities
+            (cm^2/(V s)); NaN skips a value.
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+
+        Returns
+        -------
+        None
+            Shows the figure
+            (:func:`PAOFLOW.graphics.plot_functions.plot_carrier_mobility`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_carrier_mobility
+
+        experiment = np.loadtxt(experiment_file) if experiment_file else None
+        scattering = None
+        if scattering_npz is not None:
+            with np.load(scattering_npz) as data:
+                scattering = dict(data)
+        plot_carrier_mobility(
+            np.loadtxt(mobility_file), scattering, temperature_k, experiment, title, filename
+        )
+
+    def plot_migdal_eliashberg_aniso(
+        self,
+        npz_file: str,
+        temps: list[float] | None = None,
+        iso_npz_file: str | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+        distribution_scale: float = 3.0e-3,
+    ) -> None:
+        """Plot the anisotropic Migdal-Eliashberg results (gap distributions, DOS, lambda_nk).
+
+        Parameters
+        ----------
+        npz_file : str
+            ``migdal_eliashberg_aniso.npz`` written by
+            :func:`PAOFLOW.elphon.anisotropic_eliashberg.write_me_aniso_outputs`.
+        temps : list of float, optional
+            Temperatures (K) shown in the distribution and quasiparticle-DOS
+            panels; defaults to up to four temperatures with a non-zero gap.
+        iso_npz_file : str, optional
+            Isotropic ``migdal_eliashberg.npz``, whose gap is drawn for comparison.
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+        distribution_scale : float, optional
+            Horizontal scale (K per 1/eV^2) of the gap distributions drawn at
+            each temperature (default 3e-3, as EPW tutorial 04).
+
+        Returns
+        -------
+        None
+            Shows the figure
+            (:func:`PAOFLOW.graphics.plot_functions.plot_migdal_eliashberg_aniso`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_migdal_eliashberg_aniso
+
+        iso_data = None
+        if iso_npz_file is not None:
+            with np.load(iso_npz_file) as iso:
+                iso_data = dict(iso)
+        with np.load(npz_file) as data:
+            plot_migdal_eliashberg_aniso(
+                dict(data), temps=temps, iso_data=iso_data, title=title, filename=filename,
+                distribution_scale=distribution_scale,
+            )  # fmt: skip

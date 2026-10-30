@@ -1,0 +1,36 @@
+# Canonical LK table. Torque rows TRANSCRIBED from slide text (slides 26, 34, 43, 53) of the MagLab 2026 deck;
+# VSM [110] rows from EXP/exp_peaks.csv. Not refitted. freq_err_T = FFT resolution quoted in the deck.
+direction,exp_angle_deg,day,label,freq_T,freq_err_T,mstar_me,mstar_err_me,observed,source
+[001],0,3,gamma,11.0,5.0,0.56,0.15,yes,torque MagLab2026 pptx slide 26
+[001],0,3,beta1,102.0,5.0,0.82,0.1,yes,torque MagLab2026 pptx slide 26
+[001],0,3,beta2,114.0,5.0,0.69,0.05,yes,torque MagLab2026 pptx slide 26
+[001],0,3,sigma1,478.0,5.0,1.64,0.08,yes,torque MagLab2026 pptx slide 26
+[001],0,3,sigma2,586.0,5.0,1.42,0.11,yes,torque MagLab2026 pptx slide 26
+[001],0,3,delta,977.0,5.0,1.25,0.2,yes,torque MagLab2026 pptx slide 26
+[001],0,3,mu,3672.0,5.0,2.046,0.044,yes,torque MagLab2026 pptx slide 26
+[001],0,5,gamma,11.0,5.0,0.505,0.079,yes,torque MagLab2026 pptx slide 43 (marked '?')
+[001],0,5,beta1,98.0,5.0,0.68,0.12,yes,torque MagLab2026 pptx slide 43
+[001],0,5,beta2,113.0,5.0,0.722,0.057,yes,torque MagLab2026 pptx slide 43
+[001],0,5,sigma1,463.0,5.0,1.14,0.1,yes,torque MagLab2026 pptx slide 43
+[001],0,5,sigma2,585.0,5.0,1.06,0.12,yes,torque MagLab2026 pptx slide 43
+[001],0,5,delta,983.0,5.0,2.24,0.5,yes,torque MagLab2026 pptx slide 43
+[001],0,5,mu,3666.0,5.0,7.45,1.06,yes,torque MagLab2026 pptx slide 43
+[11y],45,5,gamma,17.0,5.0,0.407,0.055,yes,torque MagLab2026 pptx slide 53 (marked '?')
+[11y],45,5,beta,256.0,5.0,1.12,0.05,yes,torque MagLab2026 pptx slide 53
+[11y],45,5,sigma1,512.0,5.0,1.32,0.14,yes,torque MagLab2026 pptx slide 53
+[11y],45,5,sigma2,578.0,5.0,1.112,0.034,yes,torque MagLab2026 pptx slide 53
+[11y],45,5,kappa1,671.0,5.0,1.097,0.044,yes,torque MagLab2026 pptx slide 53
+[11y],45,5,kappa2,716.0,5.0,1.201,0.057,yes,torque MagLab2026 pptx slide 53
+[11y],45,5,delta,1245.0,5.0,1.56,0.15,yes,torque MagLab2026 pptx slide 53
+[11y],45,5,mu,5804.0,5.0,9.5,1.1,yes,torque MagLab2026 pptx slide 53
+[110],90,3,gamma,22.7,5.0,0.581,0.043,yes,torque MagLab2026 pptx slide 34
+[110],90,3,beta1,312.6,5.0,0.706,0.04,yes,torque MagLab2026 pptx slide 34
+[110],90,3,beta2,415.0,5.0,0.857,0.038,yes,torque MagLab2026 pptx slide 34
+[110],90,3,kappa,1370.0,5.0,1.35,0.1,yes,torque MagLab2026 pptx slide 34
+[110],90,3,delta1,1603.0,5.0,2.58,0.38,yes,torque MagLab2026 pptx slide 34
+[110],90,3,delta2,2194.0,5.0,6.6,0.92,yes,torque MagLab2026 pptx slide 34
+[110]-VSM,90,,gamma,16.5,2.5,0.285,,yes,VSM Rossana
+[110]-VSM,90,,beta,292.0,2.5,0.6,,yes,VSM Rossana
+[110]-VSM,90,,alpha,488.0,2.5,0.575,,yes,VSM Rossana
+[110]-VSM,90,,epsilon,574.0,2.5,0.92,,yes,VSM Rossana
+[110]-VSM,90,,delta,908.0,2.5,1.07,,yes,VSM Rossana
