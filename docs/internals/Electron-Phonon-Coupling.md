@@ -1113,6 +1113,32 @@ and the ARPES module (`PAOFLOW.arpes`, see [arpes.md](arpes.md)):
   the Fermi level of each temperature;
 - `TabulatedSelfEnergy.from_result(result, kpoints)` feeds it to `PAOFLOW.arpes.simulate`.
 
+### Quantum-oscillation masses (de Haas–van Alphen)
+
+The cyclotron mass of an extremal orbit measured by the Lifshitz–Kosevich temperature damping is
+the quasiparticle one, $m^*_{\rm LK} = m^*_{\rm band}(1 + \lambda_{\rm orbit})$, while the frequency
+is that of the bare Fermi surface. `PAOFLOW.agentic.qo_analysis.mass_enhancement.enhanced_masses(
+skeaf_dir, fs_coupling, alat_bohr, sym_rots)` takes the orbits of a `PAOFLOW.pyskeaf(verbose=True)`
+sweep (frequencies, band masses and the orbit outlines in Cartesian Å⁻¹) and the state-resolved
+$\lambda_{n\mathbf k}$ of `fs_coupling.npz` (the anisotropic Migdal–Eliashberg run), unfolds the
+irreducible states to the full dense grid with the crystal rotations (or the lattice point group),
+looks every outline point up at its nearest grid point (and, when that point has no state inside
+the Fermi window, the state closest to $E_F$ among the 26 neighbours) and averages
+$\lambda_{n\mathbf k}$ along the orbit with the arclength weight (the exact weight is
+$1/|v_\perp|$; the min–max spread of $\lambda$ on the orbit is reported). The sheet number of
+pyskeaf (`Fermi_surf_band_<i>.bxsf`) is mapped to the PAO band index of the coupling through the
+`BAND:` entries of `FermiSurf_<spin>.bxsf` (`sheet_band_indices`, overridable with `band_map=`).
+Driver: `examples/elphon/Pb/.../dhva.py`; the matched column of `masses.md` is the arclength fraction
+of the orbit with a window state. Validated on lead with spin–orbit coupling (October 2026): the
+eleven cyclotron masses of Anderson and Gold's compilation (Phys. Rev. 139, A1459 (1965)) are
+reproduced within ±13 % with $\lambda_{\rm orbit}$ = 1.23–1.30 on the second-zone hole surface and
+1.51–1.61 on the third-zone tubes, the frequencies within 3–20 %. Two defects fixed on October 30
+2026: the pyskeaf outlines were displaced by $R(\theta,\phi)\,(M, M, 0)$ ($M$ the longest reciprocal
+vector: the contour used the slice-grid corner as origin while the centroid used the slicing-frame
+origin; `pyskeaf/runner.py`, test `tests/unit/pyskeaf/test_outline_origin.py`), and the sheet number
+had been used as the PAO band index (test in `tests/unit/agentic/qo_analysis/test_mass_enhancement.py`).
+Outline files written before the fix can be corrected by subtracting that vector per orbit.
+
 ## Screening correction of the coupling (Poncé 2018)
 
 DFT underestimates the gap of a semiconductor, so DFPT overscreens the phonon

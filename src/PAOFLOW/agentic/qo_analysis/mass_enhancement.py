@@ -206,22 +206,61 @@ class FermiSurfaceLambda:
             self.energy[flat, band] = energy
         self.nstates_full = int(np.isfinite(self.lam).sum())
 
-    def lookup(self, k_cryst: NDArray[np.float64], band: int | None = None) -> NDArray[np.float64]:
+    def lookup(
+        self, k_cryst: NDArray[np.float64], band: int | None = None, neighbours: int = 1
+    ) -> NDArray[np.float64]:
         """:math:`\\lambda_{n\\mathbf{k}}` at the grid points nearest to ``k_cryst`` ``(n, 3)``.
 
-        With ``band=None`` the state closest to the Fermi level at that grid point
-        is used.  NaN where the grid point carries no Fermi-window state.
+        Parameters
+        ----------
+        k_cryst : ndarray ``(n, 3)``
+            Crystal coordinates of the points (any cell; reduced modulo the grid).
+        band : int or None
+            PAO band index (0-based) of the sheet; ``None`` takes, at every point, the
+            state closest to the Fermi level among all bands.
+        neighbours : int
+            Search radius in grid steps around the nearest grid point: with 0 only
+            that point is used; with 1 (default) the 26 surrounding points are
+            examined when the nearest point carries no state of the band, and the
+            state closest to the Fermi level among them is taken (nearer shells
+            first).  A point of the Fermi surface lies within half a grid step of
+            its nearest grid point, whose band energy can exceed the Fermi window
+            of the coupling (``fsthick_ev``) when the Fermi velocity is large; the
+            neighbours recover those points.
+
+        Returns
+        -------
+        ndarray ``(n,)``
+            :math:`\\lambda_{n\\mathbf{k}}`; NaN where no examined grid point carries a
+            Fermi-window state of the band.
         """
-        k_int = np.rint(np.asarray(k_cryst, dtype=float) * self.nk).astype(int) % self.nk
-        flat = (k_int[:, 0] * self.nk + k_int[:, 1]) * self.nk + k_int[:, 2]
+        k_int = np.rint(np.asarray(k_cryst, dtype=float) * self.nk).astype(int)
+        r = int(neighbours)
+        steps = np.arange(-r, r + 1)
+        offsets = np.stack(np.meshgrid(steps, steps, steps, indexing='ij'), axis=-1).reshape(-1, 3)
+        shell = np.max(np.abs(offsets), axis=1)  # 0 for the nearest point, 1 for its cube, ...
+        kk = (k_int[:, None, :] + offsets[None, :, :]) % self.nk  # (n, m, 3)
+        flat = (kk[..., 0] * self.nk + kk[..., 1]) * self.nk + kk[..., 2]  # (n, m)
         if band is not None:
             if band >= self.nbands:
-                return np.full(flat.size, np.nan)
-            return self.lam[flat, band]
-        energies = np.where(np.isfinite(self.energy[flat]), np.abs(self.energy[flat]), np.inf)
-        best = np.argmin(energies, axis=1)
-        out = self.lam[flat, best]
-        out[~np.isfinite(energies[np.arange(flat.size), best])] = np.nan
+                return np.full(flat.shape[0], np.nan)
+            energies = self.energy[flat, band]  # (n, m)
+            lam = self.lam[flat, band]
+            shells = np.broadcast_to(shell[None, :], energies.shape)
+        else:
+            energies = self.energy[flat]  # (n, m, nbands)
+            lam = self.lam[flat]
+            shells = np.broadcast_to(shell[None, :, None], energies.shape)
+            energies = energies.reshape(flat.shape[0], -1)
+            lam = lam.reshape(flat.shape[0], -1)
+            shells = shells.reshape(flat.shape[0], -1)
+        # nearer shells first, then the state closest to the Fermi level
+        scale = 1.0e3 * (self.fsthick_ev if np.isfinite(self.fsthick_ev) else 1.0) + 1.0e3
+        cost = np.where(np.isfinite(energies), shells * scale + np.abs(energies), np.inf)
+        best = np.argmin(cost, axis=1)
+        rows = np.arange(flat.shape[0])
+        out = lam[rows, best].astype(float)
+        out[~np.isfinite(cost[rows, best])] = np.nan
         return out
 
 
@@ -242,6 +281,7 @@ def orbit_lambda(
     fsl: FermiSurfaceLambda,
     alat_bohr: float,
     band: int | None = None,
+    neighbours: int = 1,
 ) -> dict[str, float]:
     """Arclength-averaged :math:`\\lambda_{n\\mathbf{k}}` along one orbit.
 
@@ -256,6 +296,8 @@ def orbit_lambda(
     band : int or None
         PAO band index (0-based) of the orbit's sheet; ``None`` takes the state
         nearest to the Fermi level at each grid point.
+    neighbours : int
+        Grid search radius of :meth:`FermiSurfaceLambda.lookup`.
 
     Returns
     -------
@@ -268,7 +310,7 @@ def orbit_lambda(
     closed = np.vstack([pts, pts[:1]])
     seg = np.linalg.norm(np.diff(closed, axis=0), axis=1)
     weight = 0.5 * (seg + np.roll(seg, 1))  # arclength attributed to each vertex
-    lam = fsl.lookup(cartesian_to_crystal(pts, fsl.at, alat_bohr), band)
+    lam = fsl.lookup(cartesian_to_crystal(pts, fsl.at, alat_bohr), band, neighbours)
     ok = np.isfinite(lam)
     total = weight.sum()
     if not ok.any() or total <= 0.0:
@@ -294,6 +336,43 @@ def _outline_path(frequency_file: Path) -> Path:
     )
 
 
+_BAND_LINE_RE = re.compile(r'^\s*BAND\s*:\s*(\d+)', re.IGNORECASE)
+
+
+def sheet_band_indices(skeaf_dir: str | Path) -> dict[int, int] | None:
+    """PAO band index (0-based) of every Fermi-surface sheet of a PAOFLOW BXSF run.
+
+    ``PAOFLOW.fermi_surface`` writes ``FermiSurf_<spin>.bxsf`` with one ``BAND: n``
+    block (1-based PAO band number) per band that crosses the energy window, in
+    the order of the ``Fermi_surf_band_<i>.bxsf`` sheet files that pyskeaf numbers
+    1, 2, ...; the coupling file of the dense-q run labels its states with the
+    0-based PAO band index.
+
+    Parameters
+    ----------
+    skeaf_dir : str or Path
+        The pyskeaf output folder (holds the ``FermiSurf_*.bxsf`` of the run).
+
+    Returns
+    -------
+    dict or None
+        ``{sheet: pao_band}`` with ``sheet`` 1-based and ``pao_band`` 0-based, or
+        ``None`` when the folder holds no ``FermiSurf_*.bxsf``.
+    """
+    files = sorted(Path(skeaf_dir).glob('FermiSurf_*.bxsf'))
+    if not files:
+        return None
+    numbers = []
+    with open(files[0]) as handle:
+        for line in handle:
+            match = _BAND_LINE_RE.match(line)
+            if match:
+                numbers.append(int(match.group(1)))
+    if not numbers:
+        return None
+    return {sheet: pao - 1 for sheet, pao in enumerate(numbers, start=1)}
+
+
 def enhanced_masses(
     skeaf_dir: str | Path,
     fs_coupling: dict[str, Any] | str | Path,
@@ -303,6 +382,8 @@ def enhanced_masses(
     bands: list[int] | None = None,
     angle_tolerance_deg: float = 1e-3,
     frequency_tolerance: float = 0.02,
+    band_map: dict[int, int] | None = None,
+    neighbours: int = 1,
 ) -> pd.DataFrame:
     """Band masses and electron-phonon-enhanced masses of every pyskeaf orbit.
 
@@ -324,21 +405,32 @@ def enhanced_masses(
     angle_tolerance_deg, frequency_tolerance
         Matching of an outline to its row of the frequency table (same angle,
         relative frequency difference).
+    band_map : dict or None
+        ``{sheet: pao_band}`` (sheet 1-based, PAO band 0-based).  ``None`` reads it
+        from the ``FermiSurf_*.bxsf`` of ``skeaf_dir`` (:func:`sheet_band_indices`)
+        and, when that file is absent, takes ``pao_band = sheet - 1`` (a BXSF whose
+        first sheet is the first band).
+    neighbours : int
+        Grid search radius of :meth:`FermiSurfaceLambda.lookup`.
 
     Returns
     -------
     pandas.DataFrame
-        One row per orbit: ``band`` (BXSF numbering), ``azimuthal_deg``, ``polar_deg``,
-        ``freq_kT``, ``carrier``, ``mstar_band`` (|m*| of pyskeaf, in m_e),
-        ``lambda_orbit``, ``lambda_min``, ``lambda_max``, ``matched_fraction``,
-        ``mstar_enhanced`` = ``mstar_band`` (1 + ``lambda_orbit``), ``num_copies``.
+        One row per orbit: ``band`` (BXSF numbering), ``pao_band`` (0-based index of
+        the coupling), ``azimuthal_deg``, ``polar_deg``, ``freq_kT``, ``carrier``,
+        ``mstar_band`` (|m*| of pyskeaf, in m_e), ``lambda_orbit``, ``lambda_min``,
+        ``lambda_max``, ``matched_fraction``, ``mstar_enhanced`` = ``mstar_band``
+        (1 + ``lambda_orbit``), ``num_copies``.
     """
     fsl = FermiSurfaceLambda(fs_coupling, sym_rots)
     files = find_frequency_files(skeaf_dir, fermi_token)
     if bands:
         files = {b: p for b, p in files.items() if b in set(bands)}
+    if band_map is None:
+        band_map = sheet_band_indices(skeaf_dir) or {}
     rows = []
     for band, freq_file in sorted(files.items()):
+        pao_band = int(band_map.get(int(band), int(band) - 1))
         table = read_frequency_table(freq_file)
         outline_file = _outline_path(Path(freq_file))
         if table.empty:
@@ -363,10 +455,13 @@ def enhanced_masses(
             if rel.iloc[j] > frequency_tolerance:
                 continue
             row = cand.iloc[j]
-            stats = orbit_lambda(orbit['points'], fsl, alat_bohr, band=int(band) - 1)
+            stats = orbit_lambda(
+                orbit['points'], fsl, alat_bohr, band=pao_band, neighbours=neighbours
+            )
             rows.append(
                 {
                     'band': int(band),
+                    'pao_band': pao_band,
                     'azimuthal_deg': float(row.azimuthal_deg),
                     'polar_deg': float(row.polar_deg),
                     'freq_kT': float(row.freq_kT),
@@ -380,8 +475,9 @@ def enhanced_masses(
                     'num_copies': int(row.num_orbit_copies),
                 }
             )
-    columns = ['band', 'azimuthal_deg', 'polar_deg', 'freq_kT', 'carrier', 'mstar_band', 'lambda_orbit',
-               'lambda_min', 'lambda_max', 'matched_fraction', 'mstar_enhanced', 'num_copies']  # fmt: skip
+    columns = ['band', 'pao_band', 'azimuthal_deg', 'polar_deg', 'freq_kT', 'carrier', 'mstar_band',
+               'lambda_orbit', 'lambda_min', 'lambda_max', 'matched_fraction', 'mstar_enhanced',
+               'num_copies']  # fmt: skip
     return pd.DataFrame(rows, columns=columns)
 
 
@@ -403,12 +499,13 @@ def write_mass_table(
             'on the coupling grid.'
         ),
         '',
-        '| band | azimuthal (°) | polar (°) | F (kT) | carrier | m*_band | λ_orbit (min–max) | matched | m*_LK | copies |',
-        '|---|---|---|---|---|---|---|---|---|---|',
+        '| sheet | PAO band | azimuthal (°) | polar (°) | F (kT) | carrier | m*_band | λ_orbit (min–max) | matched | m*_LK | copies |',
+        '|---|---|---|---|---|---|---|---|---|---|---|',
     ]
     for _, r in table.iterrows():
+        pao = int(r.pao_band) if 'pao_band' in table.columns else int(r.band) - 1
         lines.append(
-            f'| {r.band:d} | {r.azimuthal_deg:.2f} | {r.polar_deg:.2f} | {r.freq_kT:.4f} | {r.carrier} | '
+            f'| {r.band:d} | {pao:d} | {r.azimuthal_deg:.2f} | {r.polar_deg:.2f} | {r.freq_kT:.4f} | {r.carrier} | '
             f'{r.mstar_band:.3f} | {r.lambda_orbit:.3f} ({r.lambda_min:.2f}–{r.lambda_max:.2f}) | '
             f'{r.matched_fraction:.2f} | {r.mstar_enhanced:.3f} | {r.num_copies:d} |'
         )

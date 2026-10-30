@@ -23,6 +23,7 @@ below; the figures are produced by `make_report_figures.py` from the same files.
 | gapped graphene (TB) | D3h relations σ^{yyy} = −σ^{yxx} = −σ^{xxy}, σ^{xxx} = 0; same for χ | exact (relative deviations 1e-15, forbidden 4e-16 of the peak) | analytic | pass |
 | GaAs | \|χ_xyz\| at the lowest photon energy (scissor 0.86 eV, 40³) | **178 pm/V (norm-conserving, with position dipoles)**, 193 pm/V (PAW, dipoles with the PAW augmentation; 158 without it); tight-binding position operator: 103 (norm-conserving), 98 (PAW) | 166–180 pm/V measured at 0.12 eV; 207–245 pm/V TDDFT + scissor (0.7–0.9 eV) | within the measured range with the dipoles; 35–45 % low without (§3.2) |
 | GaAs | \|χ_xyz\| at 1.5 eV; at 3 eV; peak | norm-conserving with dipoles 628; 393; 677 pm/V at 2.54 eV (tight binding 305; 206; 492); PAW with dipoles 572; 526; 855 at 2.63 eV (tight binding 416; 397; 725) | hundreds of pm/V between 1.5 and 3 eV (E1 region) | order of magnitude and shape plausible; the resonance region is not converged at 60³ |
+| GaAs | \|χ_xyz(−2ω; ω, ω)\| spectrum, 2–5 eV two-photon energy, vs Bergfeld & Daum 2003 (Fig. 4) | with the position dipoles: geometric-mean ratio model / experiment 1.04 (norm-conserving) and 1.05 (PAW), rms 0.09 dex (≈ 23 %) over 211 bulk points; E1 two-photon peak 658 / 679 pm/V at 3.10 eV; tight-binding position operator: ratio 0.58 | 743 ± 42 pm/V at 2.90 eV (E1), plateau 420–480 pm/V (3.5–4.3 eV), minimum 340 at 4.6 eV; Hughes–Sipe 1996 ratio 0.77, Adolph–Bechstedt 1998 ratio 1.51 on the same data | on the measurement over the whole range with the dipoles, closer than both published calculations; the E1 resonance 0.2 eV too high (rigid scissor), −10 % at the peak (§3.2) |
 | GaAs | σ_xyz shift current | norm-conserving with dipoles −41 µA/V² at 3.9 eV, −3.5 at 2.0 eV (tight binding −28, −2.3); PAW with dipoles −38 and −4.5 (tight binding −32, −3.6) | tens of µA/V² (Nastos–Sipe 2006, Ibañez-Azpiroz 2018) | order of magnitude |
 | GaAs | symmetry audit (current code) | norm-conserving 40³: every T_d relation to 1e-10 of the peak (χ_yzx = χ_xyz, σ_yzx = σ_xyz, forbidden χ_xxx and σ_xxx, T-odd files), circular injection 1e-5 of its scale; wedge-reduced run identical to the full grid to 1e-10. Before October 28: SHG 1–10 % (degenerate gauge), first PAW runs 2–5 % (projections) | — | exact |
 | monolayer GeS | sheet shift current peaks σ^{xxx}, σ^{xyy}, σ^{yxy} | 46, 48, 26 nm µA/V² (2.84, 2.83, 2.05 eV) | 100–150 µA/V² quoted per layer thickness (Rangel 2017, later works) → ≈ 75 µA/V² here for 0.6 nm | order of magnitude |
@@ -107,6 +108,53 @@ gives 348 → 390 pm/V. Published spectra (Rashkeev 1998, Nastos 2005, Wang 2017
 measurements of Bergfeld and Daum 2003) show |χ| of several hundred pm/V between 1.5 and 3 eV
 with the strongest structure near the E1 transitions; the shape is reproduced at the level of
 the broadening. Quoting the resonance region needs 100³ or a larger η.
+
+**SHG spectrum against Bergfeld & Daum 2003 (added October 29 2026).** The measured
+|χ_xyz(−2ω; ω, ω)| of semi-insulating GaAs(001) (S. Bergfeld and W. Daum, Phys. Rev. Lett. 90,
+036801 (2003), Fig. 3: 239 points between 1.86 and 4.95 eV of *two-photon* energy 2ħω, absolute
+scale from α-quartz, four printed error bars) was read from the vector paths of the PDF (exact
+rendering, tick residuals 0.03 pt) into `GaAs/data/bergfeld_daum_2003_fig3.csv` with its
+provenance, together with the Hughes–Sipe 1996 and Adolph–Bechstedt 1998 spectra as the authors
+redrew them on an E1/E2-matched energy scale (`GaAs/data/hughessipe1996_fig3.csv`,
+`adolphbechstedt1998_fig3.csv`). The PAOFLOW files are against the fundamental ħω, so the
+model is read at ħω = E/2.
+
+![gaas_bd](figures/fig4_gaas_bergfeld_daum.png)
+
+*Fig. 4. (a) |χ_xyz| against the two-photon energy: experiment (circles, error bars), the two
+published calculations on the authors' modified energy scale (grey), PAOFLOW 40³ with the
+position dipoles (norm-conserving blue, PAW with the augmented projections orange) and without
+(thin dashed); E1, E1+Δ1, E0′, E2 of GaAs at 300 K marked; the 3.35 eV feature is a
+surface-oxide transition (shaded). (b) Model / experiment on the same abscissa.*
+
+| model | 2.0–2.7 eV | E1 2.7–3.25 | 3.5–4.3 | 4.3–5.0 | bulk 2–5 (rms dex) | E1 peak (pm/V, eV) |
+|---|---|---|---|---|---|---|
+| norm-conserving + dipoles (`paoflow_nc/output_nk40_dip`) | 1.25 | 0.89 | 1.07 | 0.96 | 1.04 (0.088) | 658 at 3.10 |
+| PAW, augmented projections + dipoles (`paoflow/output_nk40_mixed_augdip`) | 1.27 | 0.91 | 1.04 | 0.99 | 1.05 (0.091) | 679 at 3.10 |
+| norm-conserving, tight-binding r (`paoflow_nc/output_nk40_c2`) | 0.72 | 0.45 | 0.60 | 0.56 | 0.58 (0.262) | 319 at 3.08 |
+| Hughes–Sipe 1996 (LDA + scissors, rescaled) | 0.91 | 0.70 | 0.82 | 0.64 | 0.77 (0.135) | 450 at 3.15 |
+| Adolph–Bechstedt 1998 (quasiparticle, rescaled) | 1.41 | 1.24 | 1.89 | 1.46 | 1.51 (0.220) | 834 at 2.95 |
+| experiment | | | | | | 743 ± 42 at 2.90 |
+
+*Geometric-mean ratio model / experiment per window (the surface feature 3.25–3.45 eV excluded
+from the bulk window); 40³, η 0.05 eV, scissor 0.86 eV; symmetry error bar of the runs below
+1e-8.*
+
+With the position dipoles the computed spectrum sits on the measured one over the whole 2–5 eV
+range (ratio 1.04–1.05, rms 23 %), the two pseudopotential routes agreeing to 3 %; neither
+published spectrum does as well on this scale (HS 23 % low on average and 30 % low at E1, AB 51 %
+high on average and 89 % high on the plateau). The E1 two-photon peak is 9–11 % low (just outside
+the printed bar) and 0.20 eV too high: the global best rigid shift is only +0.03 eV, so the
+scissor fixed at E0 (Γ) overshoots the L-point E1 transitions, as it does for HS (3.15 eV after
+the authors' rescaling); a band-dependent correction (G0W0 or eACBN0 electrons) or an E1/E2
+rescaling as Bergfeld & Daum applied to the theory curves would move it. Below 2.7 eV the model
+is 25 % high, where the measurement is least reproducible (EL2 defects, the authors' own caveat);
+the plateau is reproduced to 4–7 % and the E0′/E2 valley at 4.6 eV with its rise to 5 eV (which AB
+get wrong) is reproduced, with single-point excursions up to ×1.7–1.9 from structures that η =
+0.05 eV does not smooth at 40³. Without the dipoles the whole spectrum is ×0.58–0.65, as for the
+static value. Scripts, overlay check and the per-window metrics:
+`agentic/nlo/projects/GaAs_SHG_BergfeldDaum2003/` (not bundled; `digitize_sources.py`,
+`analysis.py`, `plot_figures.py`, `tables/summary.md`).
 
 **Shift current.** σ_xyz starts at the scissored gap (1.4 eV), stays within a few µA/V² up to
 2.5 eV and reaches −27 (60³) to −30 (40³) µA/V² at 3.9–4 eV; the order of magnitude agrees with
@@ -338,3 +386,21 @@ cd ../GaAs   && ln -s ../../qe_examples/example10/GaAs.save . && mpirun -np 8 py
 cd ../GeS    && (QE scf/nscf, paoflow-genbasis-ps as in README) && mpirun -np 8 python main.py
 cd .. && python make_report_figures.py
 ```
+
+## 7. Additional comments on method for GaAs
+
+Here is what the code and the literature say on each point, so you can answer the collaborator with specifics.
+
+**1. Formalism and the term decomposition**
+
+Yes, the same family. PAOFLOW's χ⁽²⁾(−2ω; ω, ω) is the length-gauge expression of Sipe and co-workers (Aversa–Sipe 1995, Sipe–Shkrebtii 2000) with the generalized derivative r_nm;a from the sum rule, in the divergence-free regrouping of Rashkeev 1998 as written by Chen et al. 2022 (their Eqs. C1–C3): a three-band term (Sipe's "interband" χ_e, denominator ω_ln − ω_ml) and a group of two-band terms in r_nm;a and Δ_nm (Sipe's intraband and modulation parts combined, χ_i, including the T-odd quantum-metric piece). Internally the kernel accumulates the three-band term and the two-band terms separately into transition-energy histograms, then sums them into `shgr/shgi/shga` files. Writing the groups out separately (three-band, and the two-band terms split by origin so they can be mapped onto the interband / intraband / modulation columns that ABINIT's `optic` prints) is a small change: a few extra histograms and output files. With the collaborator's table of term correspondences, a contribution-by-contribution comparison with ABINIT is feasible, and I would start it on the unscissored LDA spectra first, where the only differences are basis and k-sampling.
+
+**2. Functional**
+
+Both GaAs sets are PBE: the PAW runs use the PSlibrary 1.0.0 PBE Ga/As potentials of example10 (60 Ry), the norm-conserving runs the PseudoDojo nc-sr-05 PBE standard set (90 Ry, As 3d in valence). Nothing in the pipeline is tied to PBE; an LDA pair for a like-for-like comparison with the 20 zincblende structures costs a QE scf + 16³ nscf (minutes) and a 40³ PAOFLOW run (15 min on 8 ranks) per compound, plus LDA pseudopotentials, which the repository does not ship.
+
+**3. Scissors and the matrix elements**
+
+The collaborator's concern is exactly the point Nastos, Olejnik, Schwarz and Sipe settled in 2005: in the length gauge r_nm and r_nm;a must be evaluated from the Kohn–Sham momentum matrix elements and eigenvalues, with the scissors entering only through the shifted energies; building them from scissored quantities violates sum rules and changes χ⁽²⁾ by about 39 % for GaAs ([PRB 72, 045223](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.72.045223)). Hughes and Sipe 1996 state in their abstract that their scissors "produces a change in the velocity matrix elements", so they did rescale the velocities ([PRB 53, 10751](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.53.10751)); Nastos et al. say "previous calculations" implemented the correction incorrectly without naming them. A 2026 preprint compares the two schemes across codes: scheme-L (Levine 1989: the scissors inserted into the generalized-derivative denominators too, used by CASTEP and ABINIT) and scheme-N (Nastos 2005: the uncorrected sum rule, used by GPAW, ArchNLO, HopTB), and finds scheme-N 15 to 25 % larger in magnitude with the same line shape ([arXiv:2603.05347](https://arxiv.org/abs/2603.05347)).
+
+PAOFLOW implements scheme-N: r_nm = v_nm/(iω_nm) and r_nm;a come from the DFT eigenvectors and the unscissored sum rule, while the scissor shifts every resonance denominator and the explicit 1/ω_mn factors (unit test: the δ-spectra shift rigidly). That is consistent with what we see against Bergfeld and Daum: our scheme-N spectrum sits on the measurement over 2 to 5 eV while the Hughes–Sipe curve is 23 % low, and it also means a comparison with ABINIT carries a 15 to 25 % scheme offset on top of LDA versus PBE. Adding a scheme-L switch to PAOFLOW for a direct check is a modest change if the collaborator wants the sensitivity quantified on our side.

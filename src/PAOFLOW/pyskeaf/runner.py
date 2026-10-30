@@ -290,8 +290,12 @@ def _compute_outline(
     subtractor = np.round(centroid_ruc_frac)
     shift_bz = bxsf.recip_ang.T @ subtractor  # in Å⁻¹
 
-    # Contour in slicing-frame; promote to (n, 3) by inserting z'.
-    xy = slice_orbit.contour_xy  # (n, 2)
+    # Contour in slicing-frame; promote to (n, 3) by inserting z'.  The contour
+    # coordinates of find_closed_orbits_in_slice start at the first grid point
+    # (x = (i - 1) dk), while the slicing frame has its origin one maxlreciplat
+    # inside the supercell (X' = ((i - 1)/(numint - 1) - 1) M, see slice_ops):
+    # shift by -M so that the points share the origin of the centroid above.
+    xy = slice_orbit.contour_xy - M  # (n, 2)
     n = xy.shape[0]
     pts3 = np.column_stack([xy, np.full(n, cz_slc)])  # (n, 3)
     bz_pts = pts3 @ R.T  # (n, 3) Å⁻¹

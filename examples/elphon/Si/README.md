@@ -372,8 +372,18 @@ interpolation), fixed 10 meV smearing, intrinsic carriers, e / h in cm²/Vs:
 
 The electron mobility is converged at about 1300 cm²/Vs at 300 K (Poncé *et al.* 2018: 1343),
 the hole mobility still rises with the grid (495 → 541; reference 722, experiment 470–500).
-The dynamical quadrupoles (section 7) are the next-order long-range term that Si needs at
-small q; the same series with `--quadrupoles coupling/quadrupole.fmt` is pending.
+The same series with the dynamical quadrupoles (section 7, `--quadrupoles coupling/quadrupole.fmt`,
+Q_x,yz = 14.42 e bohr²), run on October 29 2026:
+
+| k = q grid | 300 K SERTA | 300 K MRTA | 200 K MRTA | 400 K MRTA | wall (8 ranks) |
+|---|---|---|---|---|---|
+| 60³ | 1237 / 452 | 1248 / 454 | 3024 / 979 | 660 / 260 | 1.8 h |
+| 72³ | 1265 / 472 | 1291 / 476 | 3155 / 1072 | 680 / 267 | 2.0 h |
+| 84³ | 1237 / 492 | 1268 / 498 | 3128 / 1140 | 668 / 277 | 2.5 h |
+
+The quadrupole term lowers the electron mobility by 4 % and the hole mobility by 8 % on every
+grid and temperature (Poncé *et al.* 2021 report 4 % and 5 % for Si); the Poncé screening
+correction (`--screening-eps 11.94`) on top lowers them by a further 10 % and 14 % (60³: 1123 / 390).
 
 `--doping 1e18` gives n_e = 1.0·10¹⁸ cm⁻³ and the intrinsic μ_e, as expected in the
 non-degenerate regime. The calculation is phonon-limited only; add the ionized-impurity
