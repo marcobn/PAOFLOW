@@ -161,11 +161,9 @@ def do_dos_adaptive(data_controller, emin, emax, ne):
         data_controller.broadcast_single_array('dosdk', dtype=float)
 
 
-
-
-
 def renorm_Ef(data_controller, emin, emax, ne):
     from scipy.integrate import cumulative_trapezoid
+
     arry, attr = data_controller.data_dicts()
 
     nelec = attr['nelec']
@@ -178,17 +176,14 @@ def renorm_Ef(data_controller, emin, emax, ne):
     dos = arry['dos']
 
     # Integrated DOS
-    cumulative_dos = cumulative_trapezoid(
-        dos, ene, initial=0.0
-    )
+    cumulative_dos = cumulative_trapezoid(dos, ene, initial=0.0)
 
     # Account for spin degeneracy if needed
     cumulative_dos *= attr.get('spin_degeneracy', 2)
 
     if not (cumulative_dos[0] <= nelec <= cumulative_dos[-1]):
         raise ValueError(
-            f"nelec={nelec}, but integrated DOS only reaches "
-            f"{cumulative_dos[-1]:.6f}"
+            f'nelec={nelec}, but integrated DOS only reaches ' f'{cumulative_dos[-1]:.6f}'
         )
 
     # Energy at which cumulative DOS = nelec

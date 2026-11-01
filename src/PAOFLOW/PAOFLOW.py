@@ -1073,7 +1073,6 @@ class PAOFLOW:
         """
 
         # IMPLEMENT HERE< AUTOMATIC SHELLS AND SOC strenght CALLING {"M":[0,0,0,1,0,0]}
-        import scipy.linalg as la
         from .SocFitter import build_automatic_adhoc_soc
         from .hamiltonian.do_spin_orbit import do_spin_orbit_H
         from .utils.soc_header import soc_header
@@ -2210,7 +2209,16 @@ class PAOFLOW:
                 raise e
         self.report_module_time('Adaptive Smearing')
 
-    def dos(self, do_dos=True, do_pdos=True, delta=0.01, emin=-10.0, emax=2.0, ne=1000,do_renorm_Ef=False):
+    def dos(
+        self,
+        do_dos=True,
+        do_pdos=True,
+        delta=0.01,
+        emin=-10.0,
+        emax=2.0,
+        ne=1000,
+        do_renorm_Ef=False,
+    ):
         """
         Calculate the Density of States and Projected Density of States
           If Adaptive Smearing has been performed, the Adaptive DoS will be calculated
@@ -2244,7 +2252,7 @@ class PAOFLOW:
                 if do_renorm_Ef:
                     from .spectrum.do_dos import renorm_Ef
 
-                    renorm_Ef(self.data_controller, emin, emax, ne)                    
+                    renorm_Ef(self.data_controller, emin, emax, ne)
             else:
                 if 'deltakp' not in arrays:
                     if do_dos:
@@ -2258,7 +2266,7 @@ class PAOFLOW:
                     if do_renorm_Ef:
                         from .spectrum.do_dos import renorm_Ef
 
-                        renorm_Ef(self.data_controller, emin, emax, ne)   
+                        renorm_Ef(self.data_controller, emin, emax, ne)
                 else:
                     if do_dos:
                         from .spectrum.do_dos import do_dos_adaptive
@@ -2271,7 +2279,7 @@ class PAOFLOW:
                     if do_renorm_Ef:
                         from .spectrum.do_dos import renorm_Ef
 
-                        renorm_Ef(self.data_controller, emin, emax, ne) 
+                        renorm_Ef(self.data_controller, emin, emax, ne)
         except Exception as e:
             self.report_exception('dos')
             if attr['abort_on_exception']:
