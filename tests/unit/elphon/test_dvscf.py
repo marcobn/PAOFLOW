@@ -238,3 +238,37 @@ def test_project_dV_good_removes_complement_coupling():
     assert np.allclose(dVg[:, 2:, :, :, :, :], 0.0, atol=1e-10)
     # Projecting again is idempotent.
     np.testing.assert_allclose(dvscf_fd.project_dV_good(dVg, Pg), dVg, atol=1e-10)
+
+
+def test_compute_dV_fixed_basis_projects_displaced_cells_on_reference_positions(
+    tmp_path, monkeypatch
+):
+    """``fixed_basis=True`` passes the reference ``tau`` to every displaced build."""
+    edir = tmp_path / 'elphon'
+    vec = _write_manifest(str(edir), distance=0.06, plusminus=True)
+    dc = _StubController(tmp_path)
+    ref_tau = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.0]])
+    seen = {}
+
+    def _build(savedir, **kwargs):
+        prefix = os.path.basename(os.path.dirname(savedir)).replace('tmp_', '')
+        seen[prefix] = kwargs.get('positions')
+        hrs = {'Al1_ref': 1.0, 'Al1_disp001': 5.0, 'Al1_disp002': 2.0}[prefix]
+        hrs = np.full((2, 2, 1, 1, 1, 1), hrs)
+        if kwargs.get('return_symmetry_inputs'):
+            return hrs, {'tau': ref_tau}
+        return hrs
+
+    monkeypatch.setattr(dvscf_fd, 'build_supercell_HRs', _build)
+    result = compute_dV(dc, elphon_dir='elphon', fixed_basis=True)  # default: no projection
+    assert result['fixed_basis'] is True and result['project_good_subspace'] is False
+    assert seen['Al1_ref'] is None  # the reference defines the basis
+    np.testing.assert_allclose(seen['Al1_disp001'], ref_tau)
+    np.testing.assert_allclose(seen['Al1_disp002'], ref_tau)
+    norm = float(np.linalg.norm(vec))
+    np.testing.assert_allclose(result['directional'][0]['dV'], (5.0 - 2.0) / (2.0 * norm))
+
+    seen.clear()
+    result = compute_dV(dc, elphon_dir='elphon', project_good_subspace=False, fixed_basis=False)
+    assert result['fixed_basis'] is False and result['project_good_subspace'] is False
+    assert seen['Al1_disp001'] is None and seen['Al1_disp002'] is None

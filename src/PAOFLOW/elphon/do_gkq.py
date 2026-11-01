@@ -91,6 +91,8 @@ def assemble_eph_tensor(
     shift_type=1,
     enforce_asr=True,
     symmetry_expand='auto',
+    fixed_basis=True,
+    project_good_subspace=None,
 ):
     """Build the primitive Cartesian electron-phonon real-space tensor.
 
@@ -110,6 +112,12 @@ def assemble_eph_tensor(
         If ``True`` (default), impose the translational acoustic sum rule on the
         assembled tensor via :func:`enforce_acoustic_sum_rule`.  The pre-
         enforcement residual is reported in the returned ``'asr_residual'``.
+    fixed_basis : bool, optional
+        Passed to :func:`~PAOFLOW.elphon.dvscf_fd.compute_dV` when the derivatives
+        are not on the controller yet: project the displaced cells on orbitals
+        centred at the reference positions (default ``True``).
+    project_good_subspace : bool, optional
+        Also passed through (``None``: ``not fixed_basis``; see ``compute_dV``).
 
     Returns
     -------
@@ -131,6 +139,8 @@ def assemble_eph_tensor(
             basispath=basispath,
             pthr=pthr,
             shift_type=shift_type,
+            fixed_basis=fixed_basis,
+            project_good_subspace=project_good_subspace,
         )
     directional = result['directional']
 

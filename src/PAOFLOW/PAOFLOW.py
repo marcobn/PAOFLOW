@@ -5258,7 +5258,8 @@ class PAOFLOW:
         displacement_mode='symmetry',
         pthr=0.95,
         shift_type=1,
-        project_good_subspace=True,
+        project_good_subspace=None,
+        fixed_basis=True,
     ):
         """Electron-phonon coupling via finite differences of the PAO H (Stage S7).
 
@@ -5324,6 +5325,18 @@ class PAOFLOW:
                 along x, y and z (full Cartesian derivative directly, more runs).
             pthr (float): Projectability threshold for the analyse phase.
             shift_type (int): Hamiltonian shift scheme for the analyse phase.
+            project_good_subspace (bool, optional): Project the derivative onto
+                the projectable subspace of the reference supercell before the
+                fold. ``None`` (default) means ``not fixed_basis``: required with a
+                moving basis, harmful with the fixed one (the projector is not
+                smooth in k and the interpolated vertex overestimates lambda).
+            fixed_basis (bool): Centre the PAO orbitals of every displaced
+                supercell at the *reference* positions (default ``True``), so the
+                finite difference is the matrix of ``dV/du`` in a fixed basis: the
+                DFPT vertex in the PAO gauge up to projectability.  ``False``
+                differentiates the hopping parameters of a basis that follows the
+                atoms, which adds the basis-rotation term ``[H, dU]`` (off-diagonal
+                elements ``(eps_n - eps_m) <m|dU|n>``) to the vertex.
 
         Returns:
             None
@@ -5374,6 +5387,7 @@ class PAOFLOW:
                 pthr=pthr,
                 shift_type=shift_type,
                 project_good_subspace=project_good_subspace,
+                fixed_basis=fixed_basis,
             )
 
         except Exception as e:

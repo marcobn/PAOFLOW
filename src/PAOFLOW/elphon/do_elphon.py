@@ -65,7 +65,8 @@ def run_eph(
     basispath=None,
     pthr=0.95,
     shift_type=1,
-    project_good_subspace=True,
+    project_good_subspace=None,
+    fixed_basis=False,
     **kwargs,
 ):
     """Analyse phase (P1): rebuild ``HRs`` per displaced cell -> ``dV``.
@@ -81,4 +82,5 @@ def run_eph(
         pthr=pthr,
         shift_type=shift_type,
         project_good_subspace=project_good_subspace,
+        fixed_basis=fixed_basis,
     )

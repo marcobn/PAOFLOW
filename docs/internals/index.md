@@ -73,6 +73,8 @@ nonlinear-optics
 nonlinear-optics-phase2-plan
 dfpt-coupling-port
 long-range-elphon-plan
+finite-difference-vertex
+special-displacement-plan
 arpes-chinook-plan
 arpes
 elphon-examples-layout-plan
