@@ -56,7 +56,15 @@ def _cfg(**kw):
         metal=True,
         pw_template_text=PB_SCF,
         pseudo_dir='../',
-        workflows=['phonons', 'coupling', 'superconductivity', 'optics', 'transport', 'arpes'],
+        workflows=[
+            'phonons',
+            'coupling',
+            'superconductivity',
+            'optics',
+            'transport',
+            'arpes',
+            'thermal',
+        ],
         superconductivity=dict(
             nk=12,
             nq=6,
@@ -87,6 +95,15 @@ def _cfg(**kw):
             temps_k=[10.0],
             segment_ev=0.12,
         ),  # fmt: skip
+        thermal=dict(
+            temps_k=[0.0, 300.0],
+            supercell=(2, 2, 2),
+            kgrid=(3, 3, 3),
+            nbnd_per_atom=12,
+            seeds=[0],
+            path='G-X',
+            sym_points=None,
+        ),  # fmt: skip
         phonons=dict(units='cm-1', mesh=(8, 8, 8), sigma=3.0),
         coupling=dict(nk=12, direction=(1.0, 0.0, 0.0)),
     )
@@ -113,6 +130,7 @@ def test_render_system_py_executes_to_an_elphon_system(tmp_path):
     assert ns['SUPERCONDUCTIVITY']['nk'] == 12 and ns['TRANSPORT']['thickness_um'] == float('inf')
     assert ns['OPTICS']['dielectric'] == {'nfft': 24, 'intraband': True}
     assert ns['PHONONS'] == {'units': 'cm-1', 'mesh': (8, 8, 8), 'sigma': 3.0}
+    assert ns['THERMAL']['supercell'] == (2, 2, 2) and ns['THERMAL']['sym_points'] is None
 
 
 def test_qe_inputs_dfpt_irreducible_wedge_and_epsil():
@@ -193,7 +211,7 @@ def test_write_system_folder_copies_the_templates_and_every_driver_parses_help(
     # every driver loads system.py and parses --help without touching QE data
     drivers = [p for p in written if p.endswith('.py') and 'qe/' not in p and p.endswith('.py')]
     drivers = [p for p in drivers if os.path.basename(p) != 'system.py']
-    assert len(drivers) == 11
+    assert len(drivers) == 12
     for path in drivers:
         monkeypatch.setattr(sys, 'argv', [path, '--help'])
         with pytest.raises(SystemExit) as info:

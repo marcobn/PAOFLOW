@@ -4,7 +4,7 @@ The folder has the layout of ``examples/elphon/<System>``: ``system.py`` (the on
 values, an :class:`~PAOFLOW.elphon.workflows.ElphonSystem` plus the per-workflow defaults),
 ``qe/`` (scf, ``ph.x``, nscf and, optionally, optics-nscf inputs with ``run_qe.sh``) and one
 subfolder per selected workflow (``phonons/``, ``coupling/``, ``superconductivity/``,
-``optics/``, ``transport/``, ``arpes/``) holding copies of the drivers of
+``optics/``, ``transport/``, ``arpes/``, ``thermal/``) holding copies of the drivers of
 ``PAOFLOW/gen/elphon_templates`` (the same files as the examples).
 """
 
@@ -38,6 +38,7 @@ WORKFLOWS: dict[str, tuple[str, ...]] = {
     'transport': ('transport/mobility.py', 'transport/plot_mobility.py'),
     'transport-metal': ('transport/resistivity.py', 'transport/plot_resistivity.py'),
     'arpes': ('arpes/arpes.py',),
+    'thermal': ('thermal/zg.py',),
 }
 QE_HELPERS = ('qe/kmesh.py',)
 
@@ -177,6 +178,24 @@ ARPES_COMMENTS = {
     'adaptive_smearing': 'adaptive widths a |v| dq of the Fan-Migdal run (metals)',
     'intensity_power': 'power scale of the band maps (weak bands next to strong ones)',
 }
+THERMAL_COMMENTS = {
+    'temps_k': 'temperatures (K) of the ZG supercells',
+    'supercell': 'ZG supercell (diagonal, in primitive cells)',
+    'kgrid': 'k-grid of the supercell scf (None: the coarse grid divided by the supercell)',
+    'nbnd_per_atom': 'bands per atom of the supercell scf (above the PAO orbitals per atom)',
+    'force_constants': 'q2r.x force constants (None: phonons/output/<prefix>.fc of phonons.py)',
+    'seeds': 'seeds of the sign search: one cell per seed and temperature (ensemble average)',
+    'error_thresh': 'accepted relative error of the mean-square displacements (ZG.x error_thresh)',
+    'reference': 'also the undisplaced supercell (offset of the supercell bands)',
+    'path': 'k-path of the unfolded spectral function',
+    'sym_points': 'its points in the primitive reciprocal basis (None: the lattice defaults)',
+    'nk_per_seg': 'k-points per path segment',
+    'energy_window': '(E_min, E_max, n) of the spectral function (eV, relative to E_F)',
+    'broadening_ev': 'Gaussian width of the spectral function (eV)',
+    'crossing_ev': 'energy (eV) at which the width of the crossing band is measured',
+    'half_window_ev': 'half width (eV) of the window of the peak and moment analysis',
+    'dielectric': 'dielectric function of the ZG cells (nfft, emin, emax, ne, delta; None: skip)',
+}
 PHONONS_COMMENTS = {
     'units': "'cm-1' or 'THz'",
     'mesh': 'q-mesh of the DOS',
@@ -198,7 +217,7 @@ def render_system_py(cfg: dict[str, Any]) -> str:
         ``nelec``, ``basisdir``, ``configuration``, ``pthr``, ``long_range``,
         ``quadrupoles`` (path or ``None``), ``cache_dir``, ``spin_degeneracy`` and the
         optional dictionaries ``superconductivity``, ``optics``, ``transport``, ``arpes``,
-        ``phonons``, ``coupling`` (missing ones are written empty).
+        ``thermal``, ``phonons``, ``coupling`` (missing ones are written empty).
 
     Returns
     -------
@@ -249,6 +268,7 @@ def render_system_py(cfg: dict[str, Any]) -> str:
         ('OPTICS', OPTICS_COMMENTS),
         ('TRANSPORT', TRANSPORT_COMMENTS),
         ('ARPES', ARPES_COMMENTS),
+        ('THERMAL', THERMAL_COMMENTS),
         ('PHONONS', PHONONS_COMMENTS),
         ('COUPLING', COUPLING_COMMENTS),
     ):
@@ -601,7 +621,15 @@ def collect_elphon_system(args, workdir: str) -> dict[str, Any]:
         if cfg['metal']
         else ['optics', 'transport', 'arpes']
     )
-    choices = ['phonons', 'coupling', 'superconductivity', 'optics', 'transport', 'arpes']
+    choices = [
+        'phonons',
+        'coupling',
+        'superconductivity',
+        'optics',
+        'transport',
+        'arpes',
+        'thermal',
+    ]
     cfg['workflows'] = ask_workflows(pd.ask, choices, default)
     cfg['optics_nscf'] = False
     if 'superconductivity' in cfg['workflows']:
@@ -612,6 +640,8 @@ def collect_elphon_system(args, workdir: str) -> dict[str, Any]:
         _collect_transport(cfg, pd, kg)
     if 'arpes' in cfg['workflows']:
         _collect_arpes(cfg, pd, kg)
+    if 'thermal' in cfg['workflows']:
+        _collect_thermal(cfg, pd, kg)
     if 'phonons' in cfg['workflows']:
         cfg['phonons'] = dict(units='cm-1', mesh=(24, 24, 24), sigma=3.0)
     if 'coupling' in cfg['workflows']:
@@ -878,6 +908,42 @@ def _collect_arpes(cfg, pd, kg: int) -> None:
     )
 
 
+def _collect_thermal(cfg, pd, kg: int) -> None:
+    metal = cfg.get('metal', False)
+    temps = _floats(pd.ask('Thermal (ZG supercells): temperatures (K), comma-separated', '0, 300'))
+    dims = pd.ask_int('ZG supercell per axis (3 for tests, 4 and more for production)', 3)
+    kgrid = pd.ask_int('k-grid per axis of the supercell scf', max(1, -(-kg // dims)))
+    nat = pd._read_namelist_value(cfg.get('pw_template_text') or '', 'nat')
+    try:
+        nat = max(1, int(float(str(nat).strip(' ,\'"'))))
+    except (TypeError, ValueError):
+        nat = 1
+    default_bands = int(np.ceil(cfg['nbnd'] / nat)) if cfg.get('nbnd', 0) > 0 else 12
+    nbnd_per_atom = pd.ask_int(
+        'Bands per atom of the supercell scf (above the PAO orbitals per atom)',
+        max(4, default_bands),
+    )
+    nconf = pd.ask_int('Configurations per temperature (seeds of the sign search)', 1)
+    cfg['thermal'] = dict(
+        temps_k=temps or [0.0, 300.0],
+        supercell=(dims,) * 3,
+        kgrid=(kgrid,) * 3,
+        nbnd_per_atom=nbnd_per_atom,
+        force_constants=None,
+        seeds=list(range(max(1, nconf))),
+        error_thresh=0.05,
+        reference=True,
+        path='G-X' if metal else 'L-G-X',
+        sym_points=None,
+        nk_per_seg=100,
+        energy_window=(-0.3, 0.3, 601) if metal else (-2.0, 3.0, 1001),
+        broadening_ev=0.005 if metal else 0.02,
+        crossing_ev=0.0,
+        half_window_ev=0.25 if metal else 0.5,
+        dielectric=None if metal else dict(nfft=24, emin=0.05, emax=6.0, ne=1200, delta=0.05),
+    )
+
+
 def main_elphon(args, workdir: str) -> int:
     """Run the electron-phonon generator: prompts, then the system folder.
 
@@ -945,6 +1011,11 @@ def main_elphon(args, workdir: str) -> int:
             )
         elif name == 'arpes':
             print('  3) mpirun -np N python arpes/arpes.py')
+        elif name == 'thermal':
+            print(
+                '  3) python thermal/zg.py --write; (cd thermal/zg && NP=8 bash run_zg.sh); '
+                'mpirun -np N python thermal/zg.py --spectral --plot'
+            )
     print(
         '  (every driver reads %s/system.py; outputs go to <workflow>/output/, the vertex cache to cache/)'
         % os.path.basename(cfg['out'])

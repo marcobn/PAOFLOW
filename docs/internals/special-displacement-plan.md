@@ -153,10 +153,10 @@ scf runs, embarrassingly parallel.
 
 | step | content | estimate |
 |---|---|---|
-| M1 | `special_displacement.py` with the unit tests of §5.1; conventions documented | 1 day |
-| M2 | `ZG.x` cross-check on Pb and Si force constants (music) | ½ day |
-| M3 | `PAOFLOW.special_displacement`, `workflows/thermal.py`, driver template, generator menu | 1 day |
-| M4 | Pb: ZG cells 3³/4³/6³ at 0, 100, 300 K on the music GPU; unfolded bands and spectral width vs the plateau; ZG + fixed-basis FD vertex λ(T) (§9); docs page and `examples/elphon/Pb/thermal` | 2 days of runs, 1 day of writing |
+| M1 | `special_displacement.py` with the unit tests of §5.1; conventions documented | **done 1 Nov 2026** (`phonon/special_displacement.py`, 14 tests: q-sets, amplitudes, sign table and sequence, weighted error, exact MSD identity, phonopy cell, q2r reader, QE input writer) |
+| M2 | `ZG.x` cross-check on Pb and Si force constants (music) | **done for Pb, 1 Nov 2026** (`prim444/`: ph.x 4³ + q2r, ZG.x dim 4 at 0 and 300 K): sets A+B 36/8/28 in both; vibrational potential energy 0.023520 vs 0.023505 Ry (0 K) and 0.180641 vs 0.180640 Ry (300 K); rms displacement 0.1298 vs 0.1298 and 0.3880 vs 0.3884 bohr; per-component ⟨u²⟩ of the ZG.x cell within 4 % of the thermal value, ours within 5 % after the sign search (error 0.049 / 0.046 in 4 / 91 attempts; the first sequence gives 0.13 against ZG.x's 0.05, the row order of the sign table differs). Default `error_thresh` set to 0.05. |
+| M3 | `PAOFLOW.special_displacement`, `workflows/thermal.py`, driver template, generator menu | phase 1 done 1 Nov 2026 (`PAOFLOW.special_displacement(temperatures, supercell_matrix, force_constants_file=...)` writes `zg/<prefix>_zg_T<T>K.in` + `zg.json` + `.npz`); `elphon/workflows/thermal.py` done the same day: `thermal_spectral_function` (primitive + ZG saves → `unfold_bands` → `A(k, E; T)` with Gaussian broadening, npz), `peak_width_at_crossing`, `plot_thermal_spectral_function`, `thermal_dielectric`; driver template `thermal/zg.py` (write / spectral / dielectric / plot phases, seed ensemble, reference cell), `THERMAL` dictionary, `paoflow-gen elphon` menu entry, `examples/elphon/Pb/thermal`, docs page `special-displacement.md` done 1 Nov 2026 (evening) |
+| M4 | Pb: ZG cells 3³/4³ at 0, 100, 300 K generated (`Pb_fd_test/zg_runs/{zg333,zg444}`, errors 0.05–0.056, rms u 0.13/0.23/0.39 bohr; 4³ scf on the GPU started 1 Nov 12:28, 12 bands per atom, 3³ k) and 6³ later; first 3³ results: a single 27-atom configuration gives one sharp unfolded peak per k shifted by +24/+63/+143 meV (0/100/300 K) rather than a width, so the spectral width needs the ensemble (several sign sequences; q-point shuffle added to the search) and the undisplaced reference cell for the method offset; unfolded bands and spectral width vs the plateau; ZG + fixed-basis FD vertex λ(T) (§9); docs page and `examples/elphon/Pb/thermal` | 2 days of runs, 1 day of writing |
 | M5 | Si: ZPR and $\varepsilon_2(\omega;T)$ vs the HBB kernel with the adiabatic switch | later |
 
 ## 8. Risks and open points
@@ -216,6 +216,64 @@ Pieces to add on top of §4, in order:
 5. **MD snapshots.** Readers for QE (and later VASP) trajectories into the `reference_cell` mode; averaging of
    the mode-resolved λ over snapshots; the ZG cell as the single representative configuration against which the
    snapshot average is checked.
+
+Findings of 1 Nov 2026 (evening) that fix the implementation of items 1–2:
+
+- Item 1 needs no new mode: the ZG cell (or an MD snapshot) is the *unit cell* of a fresh PAOFLOW run on its
+  save, `electron_phonon(supercell_matrix=1, displacement_mode='cartesian', is_plusminus=True)`. With the
+  identity supercell phonopy finds no symmetry in the displaced cell, every atom is displaced along ±x, ±y, ±z
+  (6N inputs; checked on the Al stub: 6 inputs for one atom), `compute_dV(fixed_basis=True)` centres the orbitals
+  at the reference's own (ZG) positions and `assemble_eph_tensor` folds with the identity, so `g_R` is already the
+  Cartesian tensor of the N-atom cell on its own k-grid with a single `R_p`. The generated inputs carry no
+  `nosym`/`noinv`, and none is needed: the displaced cells have no point symmetry, and the time-reversal-reduced
+  k list of `pw.x` is expanded by `pao_hamiltonian(expand_wedge=True)` in `build_supercell_HRs`, the path the
+  ZG cells already took (36 of 64 k, exact unfolded sum rules); the validated 2×2×2 test had both flags only
+  because its k-by-k band-element diagnostics wanted an explicit full list (twice the scf cost).
+  First run queued on music (`fd_zg/`): the 2³ ZG cell at T = 0 (zero-point displacements, 8 atoms, 6³ k,
+  192 bands) → 48 displaced cells + reference on the GPU after the 4³ series.
+- Item 2, what exists and what is missing: `arry['elphon_g_R']` has no consumer; the validation wrote the
+  vertex by hand into the dense driver's cache (`fd_lambda.py`). The bridge is a small function
+  `g_R → g(R_e, R_p)` in the cache layout `(nawf, nawf, 3N, R_e grid, R_p grid)`, Ry/bohr, with the cache
+  convention $d(\mathbf k, \mathbf q) = \sum e^{+2\pi i(\mathbf k\cdot\mathbf R_e + \mathbf q\cdot\mathbf R_p)} g$, i.e.
+  $g(\mathbf R_e) = dV(-\mathbf R_e)$ of the `HRs = ifftn(Hks)` convention (index flip on the FFT grid), stored
+  under `dense_vertex_cache_key(coupling_dir, 'dfpt', (1,1,1), ng, masses, A.shape, basis_tag)` (the key walks
+  `coupling_dir` for dvscf/dyn files, none for this source) so that the unchanged `eliashberg.py` driver of a
+  system folder built on the reference save (`qgrid=(1,1,1)`, `coarse_grid` = the cell's k-grid, `nelec` = N
+  times the primitive value) reads it. The phonons: the dense driver takes a `phonon_at_q` callable
+  (`_phonon_interp_from_force_constants(Cgrid, masses_ry, (1,1,1), at, positions)` with the Γ force-constant
+  matrix of the cell), which the finite-difference forces of the same displaced runs provide (the zero-point /
+  thermal IFCs of the A-SDM step) or the harmonic primitive force constants folded to the cell; there is no
+  writer of QE `dyn` files in PAOFLOW, so the callable route is the one to use. The Γ zeroing
+  (`do_pao_eph_dense_q.py:856`, `do_pao_eph.py:643`) zeroes **all** modes at Γ, which for a multi-atom cell drops
+  the optical modes at one q of the grid (a 1/N_q error today, fatal for the supercell route): add a
+  `gamma_modes` option (`'all'` keeps today's numbers, `'acoustic'` zeroes only ω < min_freq_thz at Γ) and
+  pass `'acoustic'` from the supercell route; switching the default changes the multi-atom references at the
+  1/N_q level and is the user's call.
+
+Result of the first run (1 Nov 2026, night): the zero-point 2³ ZG cell with 48 Cartesian displaced cells. Folding the
+8 per-atom fixed-basis derivatives into the primitive orbital-basis cache (sub-cell phases, good-subspace projection
+in the supercell; the fold is exact to 4e-7 on translates of the ideal derivative) gives a vertex 30 % smaller in norm
+and λ = 0.73 against 2.20 (ideal, same recipe): **not physical and not usable**. Cause: the completion part η·Q of the
+PAO Hamiltonian (79 % of the raw derivative norm, 95 % of the orbital-basis difference between the ideal FD and DFPT
+caches, harmless for λ in the ideal cell because it is coherent and stays out of the Fermi window) is scrambled by the
+disorder, incoherent across atoms (0.3 overlap after projection; the ZG reference Hamiltonian is 55 % non-translation-
+invariant) and leaks into the Fermi window through the R-interpolation. The physics is fine: in the band basis of the
+cell, the Bloch-phonon vertex Σ_κ e^{iq·T_κ}⟨m|dV_κ|n⟩ within ±1 eV of E_F agrees with the ideal cell to 2–5 % at every
+q ≠ 0 (the zero-point effect on Pb's Fermi-window coupling). Therefore item 1 must feed item 2 directly: the vertex of a
+disordered reference lives in the band basis of the cell at q = Γ (Fermi window), never in the primitive orbital-basis
+cache. See `Workspace/PAOFLOW/validation/Pb_fd_fixed_basis/README.md` and `scripts/fd_zg/diag_zg10.py` (the kernel of
+the supercell-native vertex). A plain-language account of the cells, the fixed basis, the
+supercell-native route and the role of the undisplaced counterpart is in
+[finite-difference-vertex.md](finite-difference-vertex.md), "Questions and answers".
+
+Supercell-native λ, first run (2 Nov 2026, `scripts/fd_zg/supercell_lambda.py`): phonons of the 8-atom cell from the
+finite-difference forces of the same displaced runs (2–4 % from DFPT at the 2³ q), band-basis vertex at the 6³
+supercell k, Gaussian δ's. Ideal and zero-point cells agree within 1 % for smearings ≥ 0.2 eV (0.949 / 0.955 at
+0.2 eV, 0.889 / 0.885 at 0.3 eV), the phonon renormalisation contributes 0.1 %, and the ideal value matches the
+primitive driver at equal sampling (both ~0.15 at 0.05 eV on 12³ k, where Pb's Fermi surface is undersampled). The
+zero-point renormalisation of Pb's λ is at the per-cent level. Converged absolute numbers need the dense-k
+interpolation of the supercell Hamiltonian and vertex (item 2); the 300 K cell (`fd_zg300/`) is the first
+temperature-dependent vertex.
 
 Validation sequence for this combined route, all on Pb and all against numbers we already have:
 

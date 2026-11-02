@@ -115,3 +115,150 @@ vertex is not available (PAW/US with the internal projector, hybrids, DFT+U, VAS
 supercell use: the arbitrary-reference mode without fold, the Γ-mode handling in the Eliashberg drivers (all
 modes at Γ are zeroed today), the sparse vertex layout beyond ~30 atoms, and the random-displacement
 least-squares extraction that replaces the 6N Cartesian runs.
+
+## Questions and answers (1 November 2026)
+
+Three clarifications written during the zero-point test on Pb (`Workspace/PAOFLOW/validation/Pb_fd_fixed_basis`,
+`scripts/fd_zg/`), kept here for reference.
+
+### How the finite-difference calculation works, which cells are which
+
+**The idea.** The electron-phonon vertex is the derivative of the electronic Hamiltonian with respect to an atomic
+displacement, dH/du. DFPT computes that derivative analytically. The finite-difference route computes it numerically:
+take a cell, move one atom by a small step, recompute the electrons, and divide the change of the Hamiltonian by the
+step.
+
+**The three kinds of cells.**
+
+1. **The reference cell** is the geometry whose vertex you want, with no atom moved. In the validated test it is the
+   ideal Pb crystal as a 2×2×2 supercell (8 atoms, all on lattice sites). In the zero-point test it is the ZG cell at
+   T = 0 (8 atoms, each displaced by its zero-point amount). One scf of it is run, and its PAO Hamiltonian H₀ is built.
+2. **The displaced cells** are copies of the reference cell with one atom moved by +0.06 bohr or −0.06 bohr along x,
+   y or z. Each is a separate scf. In the ideal supercell, symmetry makes all 8 atoms equivalent, so only one atom is
+   displaced: 6 runs. In the ZG cell nothing is equivalent, so every atom is displaced: 8 atoms × 3 directions × 2
+   signs = 48 runs.
+3. **The primitive cell** appears only at the end, in the ideal test: the vertex of the supercell is translated back
+   into the language of the 1-atom crystal, q-points and all, so that the usual dense-grid Eliashberg machinery can
+   consume it.
+
+**The derivative, and why the basis is "fixed".** For each (atom, direction), dV = [H(+0.06) − H(−0.06)] / 0.12. The
+subtlety is that the PAO Hamiltonian is written in a basis of atomic orbitals, and if the orbitals moved with the atom,
+the difference would mix the physical response with a basis-change term. So all displaced cells are projected onto
+orbitals centred at the *reference* positions. Then the difference is the matrix of dV/du in one fixed basis, which is
+what DFPT gives too. This was checked on the ideal cell to 0.1 % on the band elements near E_F.
+
+**The completion part, which is the trap.** A PAO Hamiltonian describes the good bands exactly and replaces everything
+else by a constant η (6.2 eV here) times a projector onto the "rest". That rest is not physical and its derivative is
+large: 79 % of the norm of dV. In the ideal cell it does no harm because it is the same for every atom and stays away
+from E_F. The good-subspace projection removes it where it matters.
+
+**Where the two tests diverge.**
+
+- *Ideal cell:* 6 runs → one dV → by translation symmetry it is also the response of the other 7 atoms → folded to the
+  primitive cell's (k, q) representation on the 2³ q-grid → written as the coarse vertex → the standard driver
+  interpolates and gives λ = 1.70 against DFPT 1.66.
+- *Zero-point cell:* 48 runs → 8 independent dV's, one per atom → summed with the phases e^{iq·T} to form the response
+  to a phonon-like pattern at each q → same fold. The sum is exact (verified on synthetic data), but each atom's dV now
+  carries its own, different completion part, so the 8 contributions add incoherently and the folded vertex is wrong
+  (λ 0.73). The physical part is fine: evaluated between the cell's own eigenstates near E_F, atom by atom and q by q,
+  it agrees with the ideal cell to 2 to 5 %.
+
+**What that means.** For a disordered reference, stop at the supercell: use the derivatives in the band basis of the
+reference cell itself at q = Γ, with the cell's phonons, and never route them through the primitive orbital-basis
+cache. The ideal-cell fold remains valid for crystals.
+
+### The supercell-native route in detail
+
+**Why the supercell is enough.** A supercell of N atoms has 3N phonon modes at its own Γ point, and those modes are
+exactly the phonons of the underlying crystal at the N q-points commensurate with the cell (for 2×2×2, the 2³ q-grid).
+Likewise its k-points fold the primitive k and k+q onto the same supercell k. So "q = Γ of the supercell" already
+contains every (k, q) pair that the coarse grid of the crystal would give. For an ideal crystal the two descriptions
+are the same information written differently; for a disordered cell only the supercell description exists, because
+there is no primitive cell to fold to.
+
+**The band basis of the reference cell.** Diagonalise the PAO Hamiltonian H₀ of the reference cell (ideal or ZG) at
+each of its supercell k-points: eigenstates |m, k⟩ with energies ε_m(k). These are the actual electronic states of that
+structure, disorder included. Then take the matrix elements of the 3N per-atom derivatives between those states,
+
+```
+d_{κα}(m, n; k) = ⟨m, k| dV_{κα} |n, k⟩,
+```
+
+keeping only states within a window around E_F (about 1 eV). Two things happen automatically here. The completion
+part η·Q, which wrecked the fold, drops out: between good states its first-order matrix elements vanish, and the window
+keeps us far from the completion edge where the step mixes good and complement states. And the disorder is treated
+exactly, because the states are those of the disordered cell. This is the quantity computed by
+`scripts/fd_zg/diag_zg10.py`, which agrees with the ideal cell to 2 to 5 % at q ≠ 0.
+
+**The cell's phonons.** The same 48 displaced runs contain the forces on all atoms. Finite differences of those forces
+give the 3N×3N force-constant matrix of the reference cell: for the ZG cell these are the zero-point (or thermal)
+renormalised force constants, which is the first step of the anharmonic SDM loop. Diagonalising it with the masses
+gives the modes ν at Γ, frequencies ω_ν and eigenvectors e_{κα}^ν. Alternatively, for a first test, one can fold the
+harmonic DFPT phonons of the crystal to the supercell Γ; that isolates the effect of the disorder on the electronic
+vertex from its effect on the phonons.
+
+**Putting them together.** The mode-resolved vertex is the rotation of the per-atom derivatives onto the modes,
+
+```
+g_ν(m, n; k) = Σ_{κα} e_{κα}^ν / sqrt(2 M_κ ω_ν) · d_{κα}(m, n; k),
+```
+
+and the Eliashberg function follows as in the crystal case, with k summed over the supercell grid and the δ-functions
+smeared or made adaptive:
+
+```
+α²F(ω) = (1/N_F) Σ_{k,m,n,ν} |g_ν(m,n;k)|² δ(ε_m(k)) δ(ε_n(k)) δ(ω − ω_ν).
+```
+
+λ, ω_log, Tc, transport and the ARPES self-energy are then the usual functionals of α²F. For the ideal 2×2×2 cell this
+must reproduce the primitive calculation on the 2³ q / 12³ k grid, which is the consistency check to run first.
+
+**What is lost and what has to be built.** Lost: q-interpolation. The coarse 2³ sampling is what the cell gives, and
+denser q means a bigger cell (hence the 64-atom cells; the 3³ pathology of Pb was exactly a sampling problem). The
+k-sum can still be made denser by interpolating the supercell Hamiltonian in k, the same PAO interpolation used for
+crystals. To build: the force-constant extraction from the displaced runs, the Γ-mode handling in the Eliashberg
+drivers (today every mode at Γ is zeroed, only the three acoustic ones should be), and the dense-k interpolation for
+the supercell. The diagnostic script already does the vertex part.
+
+**Why the ideal-cell fold stays.** For a crystal, translating the 8 atoms' responses into the primitive (k, q) language
+is exact, and the completion part is identical for every atom, so it interpolates smoothly and never reaches E_F. That
+is why the validated fixed-basis numbers (λ 1.70 vs 1.66) stand. The fold only breaks when the cell is not a crystal.
+
+### "Any disordered cell has an undisplaced counterpart: can one use its finite differences directly?"
+
+**The undisplaced counterpart is just the crystal.** Its finite-difference vertex is the derivative at the equilibrium
+geometry, the same object DFPT computes, and it is validated (λ 1.70 vs 1.66). Combined with the harmonic phonons and
+the Bose factors it gives the whole standard theory: α²F, λ, Tc, transport, the kink. That is what the production
+pipeline already does, with DFPT instead of finite differences. For a crystal the finite-difference route adds nothing
+except independence from ph.x.
+
+**What the displaced cell adds, and when it is needed.** The vertex at the thermal geometry is
+dV(u_T) = dV(0) + (second derivatives)·u_T + …, so running the finite differences at the ZG geometry measures how the
+coupling itself changes with the disorder, beyond the Bose-factor temperature dependence of the harmonic theory. That
+is the only reason to displace atoms of an already-disordered cell. First measurement: +2 to +5 % on Pb's Fermi-window
+vertex at zero point. For a crystal at low temperature this is a small correction and the counterpart suffices. It
+stops being a correction, and the counterpart stops existing in any useful sense, for alloys, strongly anharmonic
+systems and MD snapshots, which is the target of section 9 of the SDM plan.
+
+**By goal:**
+
+- Thermal band shifts and widths: the ZG scf alone, no finite differences at all (the thermal driver), or perturbation
+  theory with the crystal vertex.
+- α²F and everything downstream at the harmonic level: the crystal, by DFPT or by finite differences of the undisplaced
+  supercell.
+- Coupling renormalised by disorder, anharmonicity or alloying: finite differences at the disordered geometry,
+  consumed in that cell's band basis.
+
+**Why the crystal's machinery cannot be borrowed for the third case.** The fold to the primitive cell uses the crystal's
+Bloch states and silently relies on every atom's derivative carrying the same completion part η·dQ/du, which then
+cancels or stays away from E_F. The derivatives of the disordered cell each carry their own completion part, because
+the poorly projected states of that cell are different. Projecting them with the crystal's projector does not help: the
+contamination sits in the operators, not in the basis they are written in. The eigenstates of the disordered cell near
+E_F are the one representation in which the contamination drops out at first order, and that is the band basis of the
+supercell-native route.
+
+**What the counterpart is still used for.** As the reference of the comparison, both for the electrons (the
+undisplaced ZG cell in the thermal driver removes the supercell offset) and for the vertex (the ideal cell's
+derivatives against which the +2 to +5 % was measured); and as the consistency check of the supercell-native code,
+which run on the ideal 2×2×2 cell must reproduce the primitive λ on the 2³ q / 12³ k grid before it is trusted on a
+disordered cell.

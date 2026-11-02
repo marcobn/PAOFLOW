@@ -1365,6 +1365,7 @@ one layout, one system folder per crystal:
   optics/            absorption.py  emissivity.py  dielectric.py  plot_absorption.py
   transport/         mobility.py  plot_mobility.py  |  resistivity.py  plot_resistivity.py (metals)
   arpes/             arpes.py
+  thermal/           zg.py  (ZG supercells: special displacement method)
 ```
 
 Every driver is a thin script: it loads the nearest `system.py`
@@ -1393,6 +1394,7 @@ python superconductivity/me.py; python superconductivity/me_aniso.py; python sup
 mpirun -np N python optics/absorption.py [--emissivity --direct-dielectric ../qe/optics/output]
 mpirun -np N python transport/mobility.py             # or transport/resistivity.py for a metal
 mpirun -np N python arpes/arpes.py
+python thermal/zg.py --write; (cd thermal/zg && NP=8 bash run_zg.sh); mpirun -np N python thermal/zg.py --spectral --plot
 ```
 
 The `ahc` and `elphmat` ph.x sources are no longer offered by the generator (their library

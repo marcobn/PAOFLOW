@@ -3,7 +3,7 @@
 One :class:`ElphonSystem` per crystal (``system.py`` of the system folder) and one
 physics-named function per property, called by the thin drivers of the workflow folders
 (``phonons/``, ``coupling/``, ``superconductivity/``, ``optics/``, ``transport/``,
-``arpes/``).  See ``docs/internals/Electron-Phonon-Coupling.md`` and
+``arpes/``, ``thermal/``).  See ``docs/internals/Electron-Phonon-Coupling.md`` and
 ``examples/elphon/README.md``.
 """
 
@@ -27,6 +27,25 @@ from .superconductivity import (
     write_eliashberg,
 )
 from .system import Electrons, ElphonSystem, find_system_file, is_root, load_system
+from .thermal import (
+    FCC_POINTS,
+    band_statistics,
+    ensemble_spectral_function,
+    load_thermal_spectral,
+    load_thermal_summary,
+    peak_width_at_crossing,
+    plot_thermal_spectral_function,
+    plot_thermal_summary,
+    save_thermal_spectral,
+    spectral_function_from_weights,
+    static_linewidth,
+    symmetry_points,
+    thermal_dielectric,
+    thermal_spectral_function,
+    write_thermal_summary,
+    write_zg_run_script,
+    zg_cells,
+)
 from .transport import (
     carrier_mobility,
     metal_resistivity,
@@ -38,6 +57,23 @@ from .transport import (
 __all__ = [
     'Electrons',
     'ElphonSystem',
+    'FCC_POINTS',
+    'band_statistics',
+    'ensemble_spectral_function',
+    'load_thermal_spectral',
+    'load_thermal_summary',
+    'peak_width_at_crossing',
+    'plot_thermal_spectral_function',
+    'plot_thermal_summary',
+    'save_thermal_spectral',
+    'spectral_function_from_weights',
+    'static_linewidth',
+    'symmetry_points',
+    'thermal_dielectric',
+    'thermal_spectral_function',
+    'write_thermal_summary',
+    'write_zg_run_script',
+    'zg_cells',
     'absorption_label',
     'carrier_mobility',
     'direct_dielectric',

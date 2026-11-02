@@ -10,7 +10,7 @@ once the DFT/DFPT assets of the system exist:
   REPORT.md             (where a reference run has been documented)
   system.py             THE configuration: prefix, grids, masses, nelec, basis, long-range
                         model, cache; plus the per-workflow defaults (SUPERCONDUCTIVITY,
-                        OPTICS, TRANSPORT, ARPES, PHONONS, COUPLING)
+                        OPTICS, TRANSPORT, ARPES, THERMAL, PHONONS, COUPLING)
   qe/                   phonon/ (scf.in, ph.in), nscf/ (nscf.in [, epw.in, write_ukk.py]),
                         optics/ (nscf.in with many bands), run_qe.sh, kmesh.py;
                         the pseudopotentials go here (outputs are git-ignored)
@@ -22,13 +22,15 @@ once the DFT/DFPT assets of the system exist:
   optics/               absorption.py emissivity.py dielectric.py plot_absorption.py
   transport/            mobility.py plot_mobility.py | resistivity.py plot_resistivity.py (metals)
   arpes/                arpes.py
+  thermal/              zg.py               ZG supercells (special displacement method): thermal
+                                            band shifts and widths, dielectric function vs T
   figures/
 ```
 
 | system | what it shows | workflows |
 |---|---|---|
 | [`Si`](Si/README.md) | phonon-assisted absorption and thermal emissivity, carrier mobility, phonon linewidths and ARPES, quadrupoles | phonons, coupling, optics, transport, arpes |
-| [`Pb`](Pb/README.md) | Eliashberg α²F, λ, Tc, Migdal–Eliashberg gap, resistivity / infrared optics / emissivity of a metal, the ARPES kink | phonons, superconductivity, optics, transport, arpes |
+| [`Pb`](Pb/README.md) | Eliashberg α²F, λ, Tc, Migdal–Eliashberg gap, resistivity / infrared optics / emissivity of a metal, the ARPES kink, thermal band shifts and widths from ZG supercells | phonons, superconductivity, optics, transport, arpes, thermal |
 | [`MgB2`](MgB2/README.md) | two-gap superconductor: anisotropic Migdal–Eliashberg equations, the σ-band kink | phonons, superconductivity, arpes |
 | [`SiC`](SiC/README.md) | polar crystal: Fröhlich coupling, quadrupoles, LO-TO splitting, mobility of a polar semiconductor | phonons, coupling, transport |
 
@@ -43,7 +45,8 @@ once the DFT/DFPT assets of the system exist:
 - **The drivers are thin.** Each one loads the nearest `system.py` (`load_system`), parses its
   options, calls one physics-named function of `PAOFLOW.elphon.workflows`
   (`eliashberg`, `phonon_assisted_absorption`, `carrier_mobility`, `metal_resistivity`,
-  `fan_migdal`, `phonon_dispersion`, `quadrupoles`, ...) and writes `output/` next to itself.
+  `fan_migdal`, `phonon_dispersion`, `quadrupoles`, `thermal_spectral_function`, ...) and writes
+  `output/` next to itself.
   The drivers are identical in every system folder: they are copies of
   `src/PAOFLOW/gen/elphon_templates/` (a unit test keeps them in step), which is also what
   `paoflow-gen elphon` writes.
@@ -52,7 +55,8 @@ once the DFT/DFPT assets of the system exist:
   `superconductivity/output/fs_coupling.npz` by `me_aniso.py` and the anisotropic ARPES
   self-energy, `coupling/quadrupole.fmt` by `system.py` (`quadrupoles=`),
   `qe/optics/output` (the extended-basis dielectric function of `optics/dielectric.py`) by
-  `optics/absorption.py --emissivity` and `transport/resistivity.py`.
+  `optics/absorption.py --emissivity` and `transport/resistivity.py`, `phonons/output/<prefix>.fc`
+  and `superconductivity/output/eliashberg.npz` (the Eliashberg plateau) by `thermal/zg.py`.
 - **Run directories.** To run a system elsewhere, copy `system.py` and the workflow folders
   you need, and point `phonon_dir`, `nscf_dir`, `save_dir`, `basis_dir` of the
   `ElphonSystem` at the data (absolute paths are fine).

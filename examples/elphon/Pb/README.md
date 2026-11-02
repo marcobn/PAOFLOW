@@ -45,6 +45,7 @@ elements to the rounding level.
 | `transport/plot_resistivity.py` | plots α²F vs α²F_tr, ρ(T) (optional measured overlay) and the emissivity |
 | `optics/dielectric.py` | interband dielectric function on the extended basis (`dielectric_tensor(intraband=False)`, `--interband-only` is the default here) |
 | `arpes/arpes.py` | ARPES band map along Γ-X across k_F with the isotropic self-energy from α²F (the kink), optionally the band-resolved Fan–Migdal one (`--self-energy isotropic fan-migdal`) |
+| `thermal/zg.py` | ZG supercells (special displacement method): thermal band shifts and widths along Γ–X vs the Eliashberg plateau, ε(ω; T) of the cells |
 
 **Pseudopotential:** copy `Pb.upf` (ONCVPSP, from the EPW tutorial material) into `qe/`.
 The inputs of `qe/phonon/`, `qe/nscf/` and `qe/optics/` use `pseudo_dir = '../'`.
@@ -238,6 +239,31 @@ electron-phonon self-energy:
   [self_energy_fan_migdal.npz, arpes_fan_migdal_<T>K.npz], arpes.png}`.
 
 ---
+
+### 7. Thermal band structures from ZG supercells (`thermal/`)
+
+The special displacement method (Zacharias–Giustino) puts the thermal average of the electronic
+structure into one supercell per temperature: its atoms are displaced along the harmonic phonons
+of `phonons/output/pb.fc` with the ZG amplitudes and signs (`PAOFLOW.special_displacement`), and a
+plain `pw.x` scf of the cell gives the clamped-ion Hamiltonian at that temperature.
+
+```bash
+python thermal/zg.py --write                  # 3^3 cells (27 atoms) at 0, 100, 300 K, 5 seeds + the undisplaced cell -> thermal/zg/seed<s>/
+(cd thermal/zg && NP=16 bash run_zg.sh)       # pw.x on each cell (4^3 k, 324 bands; minutes per cell)
+mpirun -np 8 python thermal/zg.py --spectral --plot
+```
+
+`--spectral` unfolds the PAO Hamiltonian of every ZG save onto the primitive zone along Γ–X
+(`thermal_spectral_function`), averages the seeds at each temperature and tabulates, for the band
+crossing $E_F$, the peak shift and FWHM at the crossing and the mean shift and spread along the
+path (`output/thermal_summary.{json,dat}`, `spectral_T<T>K.png`, `thermal_summary.png`), next to
+the adiabatic Eliashberg plateau $2\Gamma(T) = 2\pi\int\alpha^2F\,(2n+1)\,d\Omega$ of
+`superconductivity/output/eliashberg.npz`: the width that a static ensemble of displaced cells
+must reproduce. The undisplaced 27-atom cell (`pb_zg_ref`) gives the offset of the supercell PAO
+bands from the primitive ones, to which the thermal shifts are referred. A single 27-atom
+configuration gives one sharp peak per k shifted by tens of meV rather than a width; the width
+emerges from the seed ensemble and from larger cells (`--supercell 4 4 4`, 64 atoms). See
+`docs/internals/special-displacement.md`.
 
 ## Reference results (Pb, μ* = 0.1, σ = 0.05 eV)
 

@@ -75,6 +75,7 @@ dfpt-coupling-port
 long-range-elphon-plan
 finite-difference-vertex
 special-displacement-plan
+special-displacement
 arpes-chinook-plan
 arpes
 elphon-examples-layout-plan

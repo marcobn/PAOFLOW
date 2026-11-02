@@ -5240,6 +5240,133 @@ class PAOFLOW:
         bloch = BlochHamiltonian.from_data_controller(self.data_controller, ispin=ispin)
         return simulate(experiment, basis, bloch, self_energy)
 
+    def special_displacement(
+        self,
+        temperatures,
+        supercell_matrix=None,
+        force_constants_file=None,
+        zg_dir='zg',
+        pp_dir=None,
+        prefix=None,
+        kgrid=None,
+        nbnd=None,
+        hubbard_file=None,
+        hubbard_card=None,
+        niters=15000,
+        error_thresh=0.05,
+        seed=0,
+        include_set_a=True,
+        min_freq_thz=1.0e-3,
+        reference=False,
+    ):
+        """Special displacement method (Zacharias-Giustino): one ZG supercell per temperature.
+
+        Builds, for every temperature, the single supercell configuration whose
+        clamped-ion properties equal the Williams-Lax thermal average to second
+        order in the atomic displacements (Zacharias and Giustino, PRB 94, 075125
+        (2016); PRR 2, 013357 (2020)), and writes one ``pw.x`` scf input per
+        temperature under ``<outputdir>/<zg_dir>/`` with the manifest ``zg.json``
+        and a ``<prefix>.npz`` holding the displacements and signs.  The phonons
+        come from the force constants already on the controller (``phonons()``
+        with forces) or from a ``q2r.x`` file.  After ``pw.x`` the ZG saves feed the
+        thermal workflows (unfolded spectral functions, dielectric function).
+
+        Arguments:
+            temperatures: Temperatures in kelvin (a number or a sequence).
+            supercell_matrix: Diagonal ZG supercell (scalar or three integers);
+                default: the phonon supercell of the controller.
+            force_constants_file (str, optional): ``q2r.x`` force constants of the
+                unit cell; otherwise ``arry['phonopy']`` must carry force constants.
+            zg_dir (str): Sub-directory for the inputs (default ``'zg'``).
+            pp_dir, prefix, kgrid, nbnd, hubbard_file, hubbard_card: As in
+                :meth:`electron_phonon`.
+            niters (int): Maximum number of sign permutations tried.
+            error_thresh (float): Accepted relative error of the mean-square
+                displacements (``ZG.x`` ``error_thresh``).
+            seed (int): Seed of the permutations.
+            include_set_a (bool): Include the time-reversal-invariant q-points.
+            min_freq_thz (float): Modes below it are frozen.
+            reference (bool): Also write the undisplaced supercell
+                (``<prefix>_zg_ref.in``): the offset of the supercell bands from the
+                primitive ones, to which the thermal shifts are referred.
+
+        Returns:
+            None (the configurations are stored as ``arry['zg_configurations']``).
+        """
+        import numpy as np
+
+        from .phonon.io import read_hubbard_card
+        from .phonon.special_displacement import (
+            phonopy_from_q2r,
+            reference_configuration,
+            write_zg_inputs,
+            zg_configuration,
+        )
+        from .phonon.structure import paoflow_to_phonopy
+
+        arry, attr = self.data_controller.data_dicts()
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+        try:
+            if force_constants_file is not None:
+                phonon = phonopy_from_q2r(
+                    paoflow_to_phonopy(self.data_controller), force_constants_file
+                )
+            else:
+                phonon = arry.get('phonopy')
+                if phonon is None or phonon.force_constants is None:
+                    raise ValueError(
+                        'special_displacement needs force constants: run phonons() with forces '
+                        'or pass force_constants_file (q2r.x)'
+                    )
+            if supercell_matrix is None:
+                supercell_matrix = attr.get('phonon_supercell_matrix')
+            if supercell_matrix is None:
+                raise ValueError('supercell_matrix is required')
+            temps = np.atleast_1d(np.asarray(temperatures, dtype=float))
+            configurations = [
+                zg_configuration(
+                    phonon,
+                    supercell_matrix,
+                    float(T),
+                    niters=niters,
+                    error_thresh=error_thresh,
+                    seed=seed,
+                    include_set_a=include_set_a,
+                    min_freq_thz=min_freq_thz,
+                )  # fmt: skip
+                for T in temps
+            ]
+            if reference:
+                configurations.append(reference_configuration(configurations[0]))
+            arry['zg_configurations'] = configurations
+            paths = write_zg_inputs(
+                self.data_controller, configurations, zg_dir=zg_dir, pp_dir=pp_dir, prefix=prefix,
+                kgrid=kgrid, nbnd=nbnd, hubbard_card=hubbard_card,
+            )  # fmt: skip
+            if self.rank == 0:
+                for conf in configurations:
+                    if conf['temperature_k'] is None:
+                        print('Reference (undisplaced) supercell: %d atoms' % len(conf['cell']))
+                        continue
+                    print(
+                        'ZG configuration at %7.2f K: %d atoms, error %.4f after %d attempts, '
+                        'rms displacement %.4f bohr'
+                        % (
+                            conf['temperature_k'], len(conf['cell']), conf['error'], conf['attempts'],
+                            float(np.sqrt(conf['msd_configuration'].sum(axis=1).mean())),
+                        )
+                    )  # fmt: skip
+                print(
+                    'Wrote %d ZG supercell inputs under %s. Run pw.x on each; the saves are '
+                    'the input of the thermal workflows.' % (len(paths), zg_dir)
+                )
+            self.report_module_time('Special displacement (write inputs)')
+        except Exception as e:
+            self.report_exception('special_displacement')
+            if attr.get('abort_on_exception', False):
+                raise e
+
     def electron_phonon(
         self,
         supercell_matrix=None,

@@ -79,6 +79,24 @@ ARPES = dict(
     adaptive_smearing=0.7,  # adaptive widths a |v| dq of the Fan-Migdal run (metals)
     intensity_power=1.0,  # power scale of the band maps (weak bands next to strong ones)
 )
+THERMAL = dict(
+    temps_k=[0.0, 100.0, 300.0],  # temperatures (K) of the ZG supercells
+    supercell=(3, 3, 3),  # ZG supercell (diagonal, in primitive cells)
+    kgrid=(4, 4, 4),  # k-grid of the supercell scf (None: the coarse grid divided by the supercell)
+    nbnd_per_atom=12,  # bands per atom of the supercell scf (above the PAO orbitals per atom)
+    force_constants=None,  # q2r.x force constants (None: phonons/output/<prefix>.fc of phonons.py)
+    seeds=[0, 1, 2, 3, 4],  # seeds of the sign search: one cell per seed and temperature (ensemble average)
+    error_thresh=0.05,  # accepted relative error of the mean-square displacements (ZG.x error_thresh)
+    reference=True,  # also the undisplaced supercell (offset of the supercell bands)
+    path='G-X',  # k-path of the unfolded spectral function
+    sym_points=None,  # its points in the primitive reciprocal basis (None: the lattice defaults)
+    nk_per_seg=200,  # k-points per path segment
+    energy_window=(-0.4, 0.4, 1601),  # (E_min, E_max, n) of the spectral function (eV, relative to E_F)
+    broadening_ev=0.003,  # Gaussian width of the spectral function (eV)
+    crossing_ev=0.0,  # energy (eV) at which the width of the crossing band is measured
+    half_window_ev=0.25,  # half width (eV) of the window of the peak and moment analysis
+    dielectric=None,  # dielectric function of the ZG cells (nfft, emin, emax, ne, delta; None: skip)
+)
 PHONONS = dict(
     units='cm-1',  # 'cm-1' or 'THz'
     mesh=(24, 24, 24),  # q-mesh of the DOS
