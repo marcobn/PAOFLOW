@@ -117,3 +117,10 @@ user-invocable: true
     - `develop` is the integration branch, and PRs into `main` are only accepted from `develop`. Feature work happens on branches such as `develop-marco`
     - Never commit autonomously. Stage nothing and run no `git commit` unless the user asks for a commit in the current message; a request to commit in an earlier message does not carry over to later work
     - Docs: `./docs/serve_docs.sh` gives a live preview, and `--full` builds with source links. Developer notes are in `docs/internals/`
+
+8. **Task Estimation Rules**
+    - When estimating completion times for a task, you must assume an AI agentic execution speed, NOT human developer hours.
+    - Base your velocity on immediate code generation, automated file reading, and syntax checking.
+    - Unless a task requires heavy architectural rewrites, enforce a maximum estimate cap of 15–30 minutes per file modification.
+    - If a task is trivial (e.g., reading a file or mapping a configuration), estimate it in seconds or minutes, not hours.
+
