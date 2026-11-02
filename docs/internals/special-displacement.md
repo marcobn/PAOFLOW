@@ -38,6 +38,16 @@ acoustic sum rule is applied by phonopy, not by the ZG step. The identity
 $\langle u^2\rangle_{\rm conf} = \langle u^2\rangle_T\,(1 + \text{error})$ is exact and is a unit
 test.
 
+### Electrons at the lattice temperature in the dielectric function (2 November 2026)
+
+`dielectric_tensor(temperature=T)` replaces the DFT-smearing occupations of the Kubo–Greenwood sum (and the
+Drude weight) by Fermi–Dirac occupations at `k_B T`, with the chemical potential re-determined on the
+interpolated grid so that the electron count is conserved (`do_epsilon.fermi_dirac_occupations`, all MPI ranks).
+`direct_dielectric(temperature_k=)` and `thermal_dielectric` expose it, and `zg.py --dielectric` uses the lattice
+temperature of every cell unless `dielectric=dict(..., electronic_temperature=False)`: at 4500 K `k_B T` is
+0.39 eV and the interband onsets of a metal move by that much. First use: the spectral emissivity of TaC at the
+pyrometry temperatures (`production/XTa_project/TaC_elphon/thermal/`).
+
 ### Thermal force constants (the anharmonic self-consistent step, 2 November 2026)
 
 `thermal_force_constants(elphon_dir, phonon_reference, ridge, translation_average)` reads the forces of the

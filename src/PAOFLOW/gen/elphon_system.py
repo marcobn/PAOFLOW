@@ -194,7 +194,7 @@ THERMAL_COMMENTS = {
     'broadening_ev': 'Gaussian width of the spectral function (eV)',
     'crossing_ev': 'energy (eV) at which the width of the crossing band is measured',
     'half_window_ev': 'half width (eV) of the window of the peak and moment analysis',
-    'dielectric': 'dielectric function of the ZG cells (nfft, emin, emax, ne, delta; None: skip)',
+    'dielectric': 'dielectric function of the ZG cells (nfft, emin, emax, ne, delta, electronic_temperature; None: skip)',
     'fd_mode': "displaced runs of a ZG cell (--displace): 'random' (2 fd_nconfig cells) or 'cartesian' (6 N)",
     'fd_nconfig': 'random configurations per ZG cell',
     'fd_distance': 'displacement amplitude (bohr) of the displaced runs',

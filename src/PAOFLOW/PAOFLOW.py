@@ -3319,6 +3319,7 @@ class PAOFLOW:
         emis_ntheta=90,
         emis_temperature=300.0,
         intraband=True,
+        temperature=None,
     ):
         r"""Compute the frequency-dependent dielectric tensor.
 
@@ -3386,6 +3387,15 @@ class PAOFLOW:
             ``intrasmear``. Default 0.05.
         intraband : bool, optional
             Include the intraband (Drude) term of metals (default ``True``).
+        temperature : float, optional
+            Electronic temperature (K) of the occupations: Fermi-Dirac
+            occupations at this temperature, with the chemical potential
+            re-determined on the interpolated grid so that the electron count
+            of the DFT-smearing occupations is conserved, replace the
+            ``smearing``/``degauss`` ones in the interband sum and in the
+            Drude weight (thermal emission of hot metals, Williams-Lax cells
+            at the lattice temperature).  ``None`` (default) keeps the DFT
+            smearing.
             ``False`` gives the interband dielectric function, to be combined
             with an ab initio (extended) Drude term
             (:func:`PAOFLOW.response.drude.extended_drude_dielectric`).
@@ -3470,6 +3480,7 @@ class PAOFLOW:
             attr['delta'] = delta
         attr['intrasmear'] = intrasmear
         attr['intraband'] = bool(intraband)
+        attr['eps_temperature_k'] = None if temperature is None else float(temperature)
         attr['emissivity'] = emissivity
         attr['emis_angles'] = np.atleast_1d(np.array(emis_angles, dtype=float))
         attr['emis_ntheta'] = int(emis_ntheta)

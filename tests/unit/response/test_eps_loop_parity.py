@@ -140,3 +140,47 @@ def test_jdos_loop_parity(kind):
     j = jdos_loop(dc, ene, 0, kind)
     ref = _ref_jdos(dc, ene, 0, kind)
     np.testing.assert_allclose(j, ref, rtol=1e-9, atol=1e-12)
+
+
+# ----------------------------------------------------------------------------
+# Electronic temperature of the occupations
+# ----------------------------------------------------------------------------
+
+
+def test_fermi_dirac_occupations_conserve_the_count_and_recover_the_step():
+    from PAOFLOW.response.do_epsilon import K_BOLTZMANN_EV, fermi_dirac_occupations
+
+    rng = np.random.default_rng(3)
+    Ek = np.sort(rng.uniform(-4.0, 4.0, (30, 8)), axis=1)
+    w = rng.uniform(0.5, 1.5, 30)
+    n_el = float(np.sum(w[:, None] * 2.0 * (Ek <= 0.0)))
+    fn, fnF, mu = fermi_dirac_occupations(Ek, K_BOLTZMANN_EV * 4500.0, n_el, w, 2.0)
+    assert abs(float(np.sum(w[:, None] * fn)) - n_el) < 1e-8
+    assert np.all((fn >= 0) & (fn <= 2.0)) and np.all(fnF >= 0)
+    # -df/dE integrates to spin_factor over the band energy at fixed mu.
+    kT = K_BOLTZMANN_EV * 4500.0
+    e = np.linspace(mu - 40 * kT, mu + 40 * kT, 20001)
+    f = 1.0 / (np.exp((e - mu) / kT) + 1.0)
+    np.testing.assert_allclose(np.trapezoid(2.0 * f * (1 - f) / kT, e), 2.0, rtol=1e-6)
+    # Cold limit: the step function with the same count.
+    fn0, _, mu0 = fermi_dirac_occupations(Ek, K_BOLTZMANN_EV * 1.0, n_el, w, 2.0)
+    np.testing.assert_allclose(fn0, 2.0 * (Ek <= mu0), atol=1e-9)
+
+
+def test_eps_loop_electronic_temperature_matches_the_cold_limit_and_runs_hot():
+    dc = _make_data(12, 8, insulator=False, seed=5)
+    ene = np.linspace(0.05, 6.0, 60)
+    cold = eps_loop(dc, ene, 0, 0, 0)
+    dc._t['eps_temperature_k'] = (
+        1.0  # cold electrons: the Gaussian-smeared occupations become a step
+    )
+    dc._t['smearing'] = 'gauss'
+    dc._t['degauss'] = 0.001
+    step = eps_loop(dc, ene, 0, 0, 0)
+    ref = eps_loop(_make_data(12, 8, insulator=False, seed=5), ene, 0, 0, 0)
+    assert np.all(np.isfinite(step[0])) and np.all(np.isfinite(step[1]))
+    # Hot electrons change the spectrum smoothly and stay finite.
+    dc._t['eps_temperature_k'] = 5000.0
+    hot = eps_loop(dc, ene, 0, 0, 0)
+    assert np.all(np.isfinite(hot[0])) and not np.allclose(hot[0], ref[0])
+    assert not np.allclose(cold[0], hot[0])

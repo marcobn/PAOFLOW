@@ -6,6 +6,74 @@ rank = comm.Get_rank()
 
 from ..utils.smearing import gaussian, intgaussian, intmetpax, metpax
 
+#: Boltzmann constant in eV/K (occupations at an electronic temperature).
+K_BOLTZMANN_EV = 8.617333262e-5
+
+
+def fermi_dirac_occupations(Ek, kT, n_electrons, weights=None, spin_factor=2.0, comm=None):
+    r"""Fermi-Dirac occupations at an electronic temperature with the electron count conserved.
+
+    The chemical potential :math:`\mu` is found by bisection so that
+
+    .. math::
+
+        \sum_{n\mathbf k} w_{\mathbf k}\, g_s\, f\!\left(\frac{E_{n\mathbf k}-\mu}{k_B T}\right)
+        = N_e ,
+
+    with the sum over every k-point of all MPI ranks (``comm``).
+
+    Parameters
+    ----------
+    Ek : ndarray, shape (nk_local, nbnd)
+        Band energies (eV, any reference) of the local k-points.
+    kT : float
+        :math:`k_B T` in eV (``> 0``).
+    n_electrons : float
+        Electron count to conserve (summed with the same weights over all ranks).
+    weights : ndarray, shape (nk_local,), optional
+        k-point weights (``None``: unit weights).
+    spin_factor : float
+        Occupation of a band (2 without spin-orbit coupling, 1 with it).
+    comm : mpi4py communicator, optional
+        For the global electron count (``MPI.COMM_WORLD`` by default).
+
+    Returns
+    -------
+    fn : ndarray, shape (nk_local, nbnd)
+        Occupations ``spin_factor * f``.
+    fnF : ndarray, shape (nk_local, nbnd)
+        ``spin_factor * (-df/dE)`` (the Drude weight of metals).
+    mu : float
+        The chemical potential (eV, same reference as ``Ek``).
+    """
+    if comm is None:
+        comm = MPI.COMM_WORLD
+    Ek = np.asarray(Ek, dtype=float)
+    w = np.ones(Ek.shape[0]) if weights is None else np.asarray(weights, dtype=float)
+    kT = float(kT)
+
+    def occupations(mu):
+        x = np.clip((Ek - mu) / kT, -300.0, 300.0)
+        return 1.0 / (np.exp(x) + 1.0)
+
+    def count(mu):
+        local = float(np.sum(w[:, None] * occupations(mu))) * spin_factor
+        return comm.allreduce(local, op=MPI.SUM)
+
+    lo = comm.allreduce(float(Ek.min()), op=MPI.MIN) - 20.0 * kT
+    hi = comm.allreduce(float(Ek.max()), op=MPI.MAX) + 20.0 * kT
+    for _ in range(200):
+        mu = 0.5 * (lo + hi)
+        if count(mu) > n_electrons:
+            hi = mu
+        else:
+            lo = mu
+        if hi - lo < 1.0e-12:
+            break
+    mu = 0.5 * (lo + hi)
+    f = occupations(mu)
+    return spin_factor * f, spin_factor * f * (1.0 - f) / kT, mu
+
 
 def do_dielectric_tensor(data_controller, ene):
     r"""Compute and write the frequency-dependent dielectric tensor.
@@ -1031,6 +1099,27 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
                     ' smearing with degauss = %.4f eV' % degauss
                 )
             fnF = spin_factor * gaussian(Ek, Ef, degauss)
+
+    # Electronic temperature: Fermi-Dirac occupations at k_B T with the chemical potential
+    # re-determined on this grid to conserve the electron count of the occupations above
+    # (hot metals, thermal cells at the lattice temperature).
+    temperature_k = attributes.get('eps_temperature_k')
+    if temperature_k:
+        weights = arrays.get('kpnts_wght')
+        if weights is not None:
+            weights = np.asarray(weights, dtype=float)[: Ek.shape[0]]
+        w = np.ones(Ek.shape[0]) if weights is None else weights
+        n_electrons = comm.allreduce(float(np.sum(w[:, None] * fn)), op=MPI.SUM)
+        fn, fnF_t, mu = fermi_dirac_occupations(
+            Ek, K_BOLTZMANN_EV * float(temperature_k), n_electrons, weights, spin_factor, comm
+        )
+        if not attributes['insulator']:
+            fnF = fnF_t
+        if rank == 0 and ispin == 0 and ipol == 0 and jpol == 0:
+            print(
+                'Electronic temperature %.1f K (k_B T = %.4f eV): chemical potential %+.4f eV'
+                % (temperature_k, K_BOLTZMANN_EV * float(temperature_k), mu)
+            )
 
     # Vectorised Kubo--Greenwood accumulation. The interband term is built per
     # k-point by broadcasting over (band-pair, energy); the metal (Drude) term

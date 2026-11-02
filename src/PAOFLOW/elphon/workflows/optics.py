@@ -486,6 +486,7 @@ def direct_dielectric(
     configuration: str = 'extended',
     pthr: float = 0.95,
     smearing: str | None = None,
+    temperature_k: float | None = None,
 ) -> None:
     """Direct dielectric function on the extended PAO basis (PAOFLOW's optical route).
 
@@ -512,6 +513,9 @@ def direct_dielectric(
         Projectability threshold.
     smearing : str, optional
         PAOFLOW smearing of the Fermi level (metals: ``'gauss'``).
+    temperature_k : float, optional
+        Electronic temperature of the occupations (``dielectric_tensor(temperature=)``):
+        the thermal cells of the special displacement method use their lattice temperature.
 
     Notes
     -----
@@ -539,6 +543,7 @@ def direct_dielectric(
     pf.pao_eigh()
     pf.gradient_and_momenta(position_dipoles=True)
     pf.dielectric_tensor(
-        emin=emin, emax=emax, ne=ne, d_tensor='diag', delta=delta, intraband=intraband
-    )
+        emin=emin, emax=emax, ne=ne, d_tensor='diag', delta=delta, intraband=intraband,
+        temperature=temperature_k,
+    )  # fmt: skip
     pf.finish_execution()

@@ -488,12 +488,18 @@ def dielectric(args):
     if not cells:
         raise SystemExit('no ZG saves under %s' % ZG)
     settings = dict(DEFAULTS.get('dielectric') or {})
+    # The electrons of a thermal cell are at its lattice temperature: Fermi-Dirac occupations
+    # at T (k_B T = 0.39 eV at 4500 K) unless electronic_temperature=False in the settings.
+    electronic = settings.pop('electronic_temperature', True)
     for cell in cells:
         outdir = os.path.join(OUTPUT, 'dielectric_%s' % cell_label(cell))
         if is_root():
             print('%s: dielectric function of %s -> %s' % (NAME, cell['prefix'], outdir))
+        options = dict(settings)
+        if electronic and 'temperature_k' not in options:
+            options['temperature_k'] = float(cell['temperature_k'])
         thermal_dielectric(
-            SYSTEM, cell['save'], outdir, configuration=SYSTEM.configuration, **settings
+            SYSTEM, cell['save'], outdir, configuration=SYSTEM.configuration, **options
         )
 
 
