@@ -71,7 +71,12 @@ def flip_cells(a: np.ndarray, axes=(-3, -2, -1)) -> np.ndarray:
 
 
 def _cartesian_entries(directional, natoms: int) -> dict:
-    """``{(atom, axis): (dV, scale)}`` from unit-Cartesian directional entries."""
+    """``{(atom, axis): (dV, sign)}`` from Cartesian directional entries.
+
+    ``compute_dV`` stores every ``dV`` as the derivative per unit displacement along the
+    direction of ``displacement`` (whatever its length), so only the sign of the axis
+    component matters: an entry displaced along ``-x`` carries ``-dV/dx``.
+    """
     entries = {}
     for d in directional:
         vec = np.asarray(d['displacement'], dtype=float)
@@ -81,7 +86,7 @@ def _cartesian_entries(directional, natoms: int) -> dict:
                 'the finite-difference source needs Cartesian derivatives of every atom '
                 '(displacement_mode cartesian or random), got the direction %s' % vec.tolist()
             )
-        entries[(int(d['sc_atom']), ax)] = (d['dV'], float(vec[ax]))
+        entries[(int(d['sc_atom']), ax)] = (d['dV'], 1.0 if vec[ax] > 0 else -1.0)
     missing = [(k, a) for k in range(natoms) for a in range(3) if (k, a) not in entries]
     if missing:
         raise ValueError(
@@ -99,8 +104,10 @@ def fill_g_ReRp_from_fd(g_ReRp: np.ndarray, directional, natoms: int) -> None:
     g_ReRp : ndarray, shape (nawf, nawf, 3 natoms, n1, n2, n3, 1, 1, 1)
         The (shared) cache buffer, overwritten.
     directional : list[dict]
-        ``compute_dV`` entries ``{sc_atom, displacement, dV}`` with unit Cartesian
-        displacements of every atom (``dV`` in eV/bohr, ``(nawf, nawf, n1, n2, n3, 1)``).
+        ``compute_dV`` entries ``{sc_atom, displacement, dV}`` with Cartesian displacements
+        of every atom (``dV`` in eV/bohr per unit displacement along ``displacement``,
+        ``(nawf, nawf, n1, n2, n3, 1)``; the Cartesian mode stores ``+/- distance`` vectors,
+        the random mode unit vectors).
     natoms : int
         Atoms of the cell (``3 natoms`` Cartesian modes).
     """
@@ -109,7 +116,7 @@ def fill_g_ReRp_from_fd(g_ReRp: np.ndarray, directional, natoms: int) -> None:
     grid = tuple(g_ReRp.shape[3:6])
     if nmodes != 3 * natoms or tuple(g_ReRp.shape[6:]) != (1, 1, 1):
         raise ValueError('g_ReRp must have 3 natoms modes and a single phonon cell.')
-    for (k, a), (dV, scale) in entries.items():
+    for (k, a), (dV, sign) in entries.items():
         dV = np.asarray(dV)
         if dV.ndim != 6 or dV.shape[0] != nawf or tuple(dV.shape[2:5]) != grid:
             raise ValueError(
@@ -118,7 +125,7 @@ def fill_g_ReRp_from_fd(g_ReRp: np.ndarray, directional, natoms: int) -> None:
             )
         if dV.shape[5] != 1:
             raise ValueError('spin-polarised finite-difference vertices are not supported.')
-        g_ReRp[:, :, 3 * k + a, ..., 0, 0, 0] = flip_cells(dV[..., 0]) / (scale * RY_TO_EV)
+        g_ReRp[:, :, 3 * k + a, ..., 0, 0, 0] = sign * flip_cells(dV[..., 0]) / RY_TO_EV
 
 
 def g_ReRp_from_fd(directional, natoms: int) -> np.ndarray:

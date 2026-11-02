@@ -182,6 +182,10 @@ next to `'dfpt'` and `'epw'`. `elphon/fd_vertex.py`:
   superconductivity workflow sets `nq = 1` and `'acoustic'` for the `'fd'` source; `coarse_q` is refused.
 - The cache key includes `displacements.json` and the fit options; the reference save of the system is the
   undisplaced cell's (`tmp_<prefix>_ref/`), whose time-reversal-reduced k list is unfolded by `electrons()`.
+- Convention of the directional entries: `compute_dV` stores every `dV` as the derivative per unit displacement
+  along the direction of `displacement`, whose length is the ± distance in the Cartesian mode and 1 in the random
+  mode; the cache therefore takes the sign of the axis component only (a 2 November run that also divided by the
+  0.06 bohr distance gave λ = 237 for the zero-point Pb cell, i.e. 278× too large).
 - Single rank: the cell derivatives are serial PAOFLOW runs on every displaced save (COMM_WORLD collectives
   inside), and with one q the dense loop has nothing to distribute, so `prepare_dense_vertex` refuses `mpirun`
   for this source (a 4-rank run deadlocked on 2 November: rank 0 in a PAOFLOW broadcast, the others in the

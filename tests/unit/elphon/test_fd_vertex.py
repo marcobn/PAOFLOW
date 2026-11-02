@@ -75,12 +75,15 @@ def test_g_ReRp_from_fd_rejects_incomplete_or_oblique_sets():
     oblique = dict(directional[0], displacement=[0.6, 0.8, 0.0])
     with pytest.raises(ValueError, match='Cartesian'):
         fv.g_ReRp_from_fd([oblique] + directional[1:], 2)
-    # Scaled Cartesian displacements (the Cartesian mode stores +/- distance) are rescaled.
-    scaled = [
-        dict(d, displacement=[2.0 * x for x in d['displacement']], dV=2.0 * d['dV'])
+    # dV is the derivative per unit displacement whatever the length of the stored vector
+    # (the Cartesian mode keeps +/- distance): the length is ignored, the sign is not.
+    scaled = [dict(d, displacement=[0.06 * x for x in d['displacement']]) for d in directional]
+    np.testing.assert_allclose(fv.g_ReRp_from_fd(scaled, 2), fv.g_ReRp_from_fd(directional, 2))
+    flipped = [
+        dict(d, displacement=[-0.06 * x for x in d['displacement']], dV=-d['dV'])
         for d in directional
     ]
-    np.testing.assert_allclose(fv.g_ReRp_from_fd(scaled, 2), fv.g_ReRp_from_fd(directional, 2))
+    np.testing.assert_allclose(fv.g_ReRp_from_fd(flipped, 2), fv.g_ReRp_from_fd(directional, 2))
 
 
 def _write_out(edir, name, forces):
