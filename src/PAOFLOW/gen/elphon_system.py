@@ -87,7 +87,7 @@ def _format_dict(name: str, values: dict[str, Any], comments: dict[str, str] | N
 
 
 SYSTEM_COMMENTS = {
-    'coupling_source': "'dfpt': PAOFLOW's vertex from ph.x dvscf + the nscf save; 'epw': .epb files",
+    'coupling_source': "'dfpt': PAOFLOW's vertex from ph.x dvscf + the nscf save; 'epw': .epb files; 'fd': finite differences of a supercell (fd_dir)",
     'qe_dir': 'qe/phonon (scf, ph.x), qe/nscf (<prefix>.save), qe/optics',
     'coarse_grid': 'nscf k-grid',
     'qgrid': 'ph.x q-grid (divides the k-grid)',
@@ -103,8 +103,8 @@ SYSTEM_COMMENTS = {
 SUPERCONDUCTIVITY_COMMENTS = {
     'nk': 'dense electron grid per axis (EPW nkf)',
     'nq': 'dense phonon grid per axis (EPW nqf); nk % nq == 0',
-    'sigma_ev': 'Fermi-surface smearing (EPW degaussw)',
-    'adaptive_smearing': 'Yates prefactor of the adaptive widths (None: fixed smearing)',
+    'sigma_ev': 'Fermi-surface smearing (EPW degaussw): the floor of the adaptive widths',
+    'adaptive_smearing': 'Yates prefactor of the adaptive widths (0.7 production; None: fixed smearing)',
     'mu_star': 'Coulomb pseudopotential',
     'transport': 'also alpha^2F_tr (transport/resistivity.py)',
     'fs_coupling': 'Fermi-surface pair coupling for me_aniso.py (needs nk == nq)',
@@ -195,6 +195,11 @@ THERMAL_COMMENTS = {
     'crossing_ev': 'energy (eV) at which the width of the crossing band is measured',
     'half_window_ev': 'half width (eV) of the window of the peak and moment analysis',
     'dielectric': 'dielectric function of the ZG cells (nfft, emin, emax, ne, delta; None: skip)',
+    'fd_mode': "displaced runs of a ZG cell (--displace): 'random' (2 fd_nconfig cells) or 'cartesian' (6 N)",
+    'fd_nconfig': 'random configurations per ZG cell',
+    'fd_distance': 'displacement amplitude (bohr) of the displaced runs',
+    'lambda_nk': 'dense k per axis of the supercell for lambda(T) of the ZG cells (--lambda)',
+    'lambda_sigma_ev': 'Fermi-surface smearing (eV) of lambda(T)',
 }
 PHONONS_COMMENTS = {
     'units': "'cm-1' or 'THz'",
@@ -667,7 +672,13 @@ def _collect_superconductivity(cfg, pd, kg: int) -> None:
         nq,
         'NK_DENSE',
     )
-    sigma = pd.ask_float('Fermi-surface smearing (eV, EPW degaussw)', 0.05)
+    adaptive = pd.ask_float(
+        'Adaptive Fermi-surface smearing prefactor a (Yates; 0.7 production, 0 = fixed width)', 0.7
+    )
+    sigma = pd.ask_float(
+        'Fermi-surface smearing (eV): floor of the adaptive widths, or the fixed width (EPW degaussw)',
+        0.001 if adaptive else 0.05,
+    )
     mu_star = pd.ask_float('Coulomb pseudopotential mu* (for Tc)', 0.10)
     transport = pd.ask_yes_no(
         'Also the transport Eliashberg function (resistivity, infrared optics, emissivity)?',
@@ -692,7 +703,7 @@ def _collect_superconductivity(cfg, pd, kg: int) -> None:
         nk=nk,
         nq=nq,
         sigma_ev=sigma,
-        adaptive_smearing=None,
+        adaptive_smearing=adaptive or None,
         mu_star=mu_star,
         transport=transport,
         fs_coupling=fs_coupling,
@@ -941,6 +952,11 @@ def _collect_thermal(cfg, pd, kg: int) -> None:
         crossing_ev=0.0,
         half_window_ev=0.25 if metal else 0.5,
         dielectric=None if metal else dict(nfft=24, emin=0.05, emax=6.0, ne=1200, delta=0.05),
+        fd_mode='random',
+        fd_nconfig=60,
+        fd_distance=0.03,
+        lambda_nk=12,
+        lambda_sigma_ev=0.05,
     )
 
 

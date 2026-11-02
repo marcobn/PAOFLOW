@@ -364,3 +364,26 @@ def test_spectral_function_normalisation_and_peak_width():
     pk = peak_width_at_crossing(res_off, energy_ev=0.0, half_window_ev=0.1)
     assert pk['k_index'] == 1 and pk['E_pc_ev'] == pytest.approx(-0.045)
     assert pk['shift_ev'] == pytest.approx(0.03, abs=1.0e-3)
+
+
+def test_write_zg_inputs_accumulates_the_manifest(tmp_path):
+    pytest.importorskip('phonopy')
+    import json
+
+    from PAOFLOW.phonon.do_phonopy import init_phonopy
+    from PAOFLOW.phonon.special_displacement import MANIFEST, write_zg_inputs, zg_configuration
+
+    dc = _aluminium_controller(tmp_path, supercell_matrix=2)
+    phonon = init_phonopy(dc)
+    phonon.force_constants = _spring_force_constants(phonon)
+    first = [zg_configuration(phonon, 2, 100.0, niters=5, seed=0)]
+    write_zg_inputs(dc, first, zg_dir='zg', nbnd=40)
+    second = [zg_configuration(phonon, 2, 300.0, niters=5, seed=0)]
+    write_zg_inputs(dc, second, zg_dir='zg', nbnd=40)
+    manifest = json.loads((tmp_path / 'zg' / MANIFEST).read_text())
+    temps = sorted(e['temperature_k'] for e in manifest['configurations'])
+    assert temps == [100.0, 300.0]
+    # Rewriting a temperature replaces its entry instead of duplicating it.
+    write_zg_inputs(dc, second, zg_dir='zg', nbnd=40)
+    manifest = json.loads((tmp_path / 'zg' / MANIFEST).read_text())
+    assert sorted(e['temperature_k'] for e in manifest['configurations']) == [100.0, 300.0]

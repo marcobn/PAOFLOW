@@ -38,6 +38,21 @@ acoustic sum rule is applied by phonopy, not by the ZG step. The identity
 $\langle u^2\rangle_{\rm conf} = \langle u^2\rangle_T\,(1 + \text{error})$ is exact and is a unit
 test.
 
+### Thermal force constants (the anharmonic self-consistent step, 2 November 2026)
+
+`thermal_force_constants(elphon_dir, phonon_reference, ridge, translation_average)` reads the forces of the
+displaced runs of a ZG cell (`electron_phonon(supercell_matrix=1)` on the cell, Cartesian ± pairs or the random
+mode, through `elphon.fd_vertex.fd_force_constants`) and returns the local curvature at the thermal configuration
+in Ry/bohr² and phonopy layout, averaged over the sub-cell translations of the reference supercell
+(`translation_average_force_constants`: blocks sharing the primitive atoms and the relative translation are
+averaged; idempotent). `phonopy_with_force_constants(unitcell, supercell_matrix, fc)` wraps them in a phonopy
+object (`calculator='qe'`, primitive `'P'`) and `PAOFLOW.special_displacement(force_constants=fc,
+force_constants_supercell=S)` builds the next ZG cell from them: one iteration of the A-SDM loop of Zacharias
+and Giustino (the thermal force constants replace the harmonic ones until the ZG cell is self-consistent).
+Pb demo in the validation README (`Workspace/PAOFLOW/validation/Pb_fd_fixed_basis`, `thermal_fc_demo.py`):
+zero-point curvature within 1–5 % of the harmonic phonons, 300 K LA hardened by 3–6 % at fixed volume, the
+regenerated 300 K cell within 0.5 % in rms displacement, i.e. converged at the first iteration for Pb.
+
 ## Orchestrator and workflow layer
 
 ```python

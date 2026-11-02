@@ -275,6 +275,8 @@ zero-point renormalisation of Pb's λ is at the per-cent level. Converged absolu
 interpolation of the supercell Hamiltonian and vertex (item 2); the 300 K cell (`fd_zg300/`) is the first
 temperature-dependent vertex.
 
+300 K ZG 2³ cell, same machinery (`fd_zg300/`, 2 Nov 2026): with the ideal phonons the 300 K vertex changes λ by +0.3 to +1.6 % at σ = 0.2–0.3 eV (zero-point +1 %); the Γ modes of the displaced cell (local curvature from the FD forces) are hardened by ~3 % on average (top mode +15 %) and lower λ by ~5 %, net −3.5 to −5 % (0.916 / 0.844 against 0.949 / 0.889 ideal); at σ = 0.5 the two agree. N_F of the 300 K cell is 2–5 % lower. Table and caveats (12³ k, 2³ q) in the validation README.
+
 Validation sequence for this combined route, all on Pb and all against numbers we already have:
 
 - T = 0 ZG cell (zero-point displacements) + fixed-basis FD vs the harmonic DFPT vertex of the undisplaced

@@ -27,6 +27,8 @@ def generate_eph_inputs(
     nbnd=None,
     is_plusminus='auto',
     displacement_mode='symmetry',
+    nconfig=None,
+    seed=0,
 ):
     """Build the reference-cell displacements and write their QE SCF inputs."""
     arry, attr = data_controller.data_dicts()
@@ -35,11 +37,15 @@ def generate_eph_inputs(
     attr['elphon_displacement_distance'] = displacement_distance
 
     init_phonopy(data_controller)
+    if displacement_mode == 'random':
+        is_plusminus = True  # the least-squares fit needs the antisymmetric +/- differences
     cells, meta = generate_eph_displacements(
         arry['phonopy'],
         displacement_distance,
         is_plusminus=is_plusminus,
         displacement_mode=displacement_mode,
+        nconfig=nconfig,
+        seed=seed,
     )
     arry['elphon_displacements'] = meta
 
@@ -55,6 +61,8 @@ def generate_eph_inputs(
         configuration=configuration,
         nbnd=nbnd,
         is_plusminus=is_plusminus,
+        displacement_mode=displacement_mode,
+        seed=seed if displacement_mode == 'random' else None,
     )
 
 
@@ -67,12 +75,16 @@ def run_eph(
     shift_type=1,
     project_good_subspace=None,
     fixed_basis=False,
+    locality_cutoff=None,
+    ridge=1.0e-4,
     **kwargs,
 ):
     """Analyse phase (P1): rebuild ``HRs`` per displaced cell -> ``dV``.
 
-    The ``g_mn^v(k, q)`` assembly and the derived properties (Eliashberg
-    ``alpha^2 F`` / ``lambda``, phonon-limited transport) land in P2.
+    ``locality_cutoff`` and ``ridge`` control the least-squares fit of the
+    ``'random'`` displacement mode (ignored otherwise).  The ``g_mn^v(k, q)``
+    assembly and the derived properties (Eliashberg ``alpha^2 F`` / ``lambda``,
+    phonon-limited transport) land in P2.
     """
     return compute_dV(
         data_controller,
@@ -83,4 +95,6 @@ def run_eph(
         shift_type=shift_type,
         project_good_subspace=project_good_subspace,
         fixed_basis=fixed_basis,
+        locality_cutoff=locality_cutoff,
+        ridge=ridge,
     )

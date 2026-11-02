@@ -50,6 +50,7 @@ def eliashberg(
     fs_coupling: bool = False,
     fsthick_ev: float | None = None,
     adaptive_smearing: float | None = None,
+    gamma_modes: str | None = None,
     comm=None,
 ) -> dict:
     """Isotropic Eliashberg properties (and optionally alpha^2F_tr, the Fermi-surface coupling).
@@ -83,6 +84,10 @@ def eliashberg(
     adaptive_smearing : float, optional
         Yates prefactor ``a`` of the adaptive Fermi-surface widths ``a |v_nk| dk`` per
         dense state, floored at ``sigma_ev``.
+    gamma_modes : {'all', 'acoustic'}, optional
+        Modes zeroed at ``q = Gamma``; default ``'all'`` (the QE convention) except for the
+        finite-difference source, where Gamma is the only q and only the acoustic modes
+        are dropped (``'acoustic'``).
     comm : MPI communicator, optional
 
     Returns
@@ -98,6 +103,17 @@ def eliashberg(
         If ``nq`` is missing for the dense-q route or does not divide ``nk``.
     """
     nscf = electrons.nscf
+    supercell = system.coupling_source == 'fd'
+    if supercell:
+        # The cell is its own unit cell: Gamma is the only phonon wavevector and carries
+        # every mode of the cell (3 N); the dense q-grid is the single point.
+        if coarse_q:
+            raise ValueError("coupling_source='fd' has no coarse-q route (q = Gamma only)")
+        if nq not in (None, 1):
+            print('  coupling_source fd: the dense q-grid is Gamma only (nq = 1)', flush=True)
+        nq = 1
+        gamma_modes = gamma_modes or 'acoustic'
+    gamma_modes = gamma_modes or 'all'
     common = dict(
         source=system.coupling_source,
         save_dir=system.save_path,
@@ -121,6 +137,7 @@ def eliashberg(
             system.coarse_grid,
             None,
             allow_missing_long_range=not system.long_range,
+            gamma_modes=gamma_modes,
             **common,
         )
     if nq is None:
@@ -149,6 +166,7 @@ def eliashberg(
         alat=nscf['alat'],
         cell_volume=nscf['omega'],
         adaptive_smearing=adaptive_smearing,
+        gamma_modes=gamma_modes,
         **arguments,
         **common,
     )

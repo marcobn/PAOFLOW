@@ -39,6 +39,8 @@ def write_eph_displaced_supercells(
     configuration='standard',
     nbnd=None,
     is_plusminus='auto',
+    displacement_mode='symmetry',
+    seed=None,
 ):
     """Write ``supercell.in`` (reference) + ``disp-NNN.in`` for every cell.
 
@@ -47,6 +49,9 @@ def write_eph_displaced_supercells(
     ``configuration`` (:func:`PAOFLOW.elphon.basis.supercell_nbnd`); when the
     pseudopotentials cannot be located it falls back to the QE default (no
     ``nbnd`` line) with a warning.
+
+    ``displacement_mode`` and ``seed`` are recorded in the manifest so the
+    analyse phase can select the least-squares route of the ``'random'`` mode.
 
     Returns the list of written ``disp-NNN.in`` paths.
     """
@@ -123,6 +128,9 @@ def write_eph_displaced_supercells(
                 'configuration': configuration,
                 'nbnd': nbnd,
                 'is_plusminus': is_plusminus,
+                'displacement_mode': displacement_mode,
+                'nconfig': len({m['config'] for m in meta if m.get('config') is not None}) or None,
+                'seed': seed,
                 'reference_prefix': reference_prefix,
                 'displacements': manifest_meta,
             },

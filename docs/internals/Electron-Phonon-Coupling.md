@@ -200,7 +200,9 @@ Paths relative to `src/PAOFLOW/`.
 | `elphon/qe_matdyn.py` | WS interpolation of QE force-constant files, used by the property-only route. |
 | `gen/epw_inputs.py` | EPW input helpers: `kpoints_card` / `uniform_kpoint_list` (explicit full nscf grid), `write_placeholder_ukk` (EPW without Wannierization), `epw_input`. |
 | `inputs/read_QE_xml.py` | `uniform_grid_from_kpoints`: recovers the grid of an explicit `K_POINTS crystal` nscf list, which has no `monkhorst_pack` element. |
-| `elphon/basis.py`, `displacements.py`, `do_elphon.py`, `io.py`, `symmetry.py`, `fold.py`, `gkq.py`, `do_gkq.py`, `dvscf_fd.py` | The finite-difference frozen-phonon route; see [Electron-Phonon Coupling](Electron-Phonon-Coupling). |
+| `elphon/basis.py`, `displacements.py`, `do_elphon.py`, `io.py`, `symmetry.py`, `fold.py`, `gkq.py`, `do_gkq.py`, `dvscf_fd.py` | The finite-difference frozen-phonon route (fixed basis; symmetry, Cartesian or random all-atom displacements); see [finite-difference-vertex](finite-difference-vertex). |
+| `elphon/random_displacements.py` | Random all-atom `+/-` patterns and the local least-squares fit of `dV` and the force constants (streaming normal equations, per-atom-pair active sets, ridge, residual diagnostics). |
+| `elphon/fd_vertex.py` | The `'fd'` coupling source: a cell that is its own unit cell (ZG cell, alloy supercell) feeds its finite-difference derivatives (`g(R_e)` with the index flip, Ry/bohr, `R_p = 0`) and the force constants of the same runs (`fd_phonon_at_q`) to the dense-q drivers; `gamma_modes='acoustic'`. |
 
 ---
 
@@ -1344,6 +1346,15 @@ A DFPT q-grid that is too coarse (e.g. $3^3$ for Pb) gives an inflated
 $\lambda$ under dense-q interpolation, from Fourier overshoot near $\Gamma$.
 
 ---
+
+### Production grids (policy of 2 November 2026)
+
+Production runs use dense grids of 48³ (or the equivalent sampling for larger cells: 24³ for a 2×2×2
+supercell) with the adaptive Fermi-surface smearing (`adaptive_smearing=0.7`, floor `sigma_ev=0.001`), and
+no extra 8³ `ph.x` dispersion check of the 6³ coupling. On TaC the adaptive series converged at 48³
+(λ 0.740 / 0.742 / 0.743 at 48 / 60 / 72) while the fixed σ = 0.05 eV drifted between 0.68 and 0.77 with
+the grid, and the 60³/60³ Fermi-surface run cost 24 h on 32 ranks for no change; `paoflow-gen elphon`
+proposes these defaults.
 
 ## The examples and the `paoflow-gen elphon` CLI workflow
 

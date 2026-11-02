@@ -518,6 +518,158 @@ def phonopy_from_q2r(unitcell, force_constants_file: str):
     return phonon
 
 
+def _diagonal_dims(supercell_matrix) -> NDArray[np.int64]:
+    """Diagonal of a scalar / length-3 / diagonal 3x3 supercell matrix."""
+    S = np.asarray(supercell_matrix, dtype=int)
+    if S.ndim == 0:
+        return np.array([int(S)] * 3)
+    if S.shape == (3,):
+        return S.astype(int)
+    if S.shape == (3, 3) and np.count_nonzero(S - np.diag(np.diagonal(S))) == 0:
+        return np.diagonal(S).astype(int)
+    raise NotImplementedError('only diagonal supercells are supported.')
+
+
+def translation_average_force_constants(
+    force_constants: NDArray[np.float64],
+    s2p: NDArray[np.int64],
+    translations: NDArray[np.int64],
+    supercell_matrix,
+) -> NDArray[np.float64]:
+    """Average supercell force constants over the sub-cell translations.
+
+    The second derivatives of a displaced (thermal, zero-point) supercell depend on
+    the configuration; averaging the blocks ``(a, b)`` that share the primitive atoms
+    and the relative sub-cell translation ``(T_b - T_a) mod dims`` gives the
+    translationally invariant force constants of the crystal at that configuration,
+    the object the next special-displacement step needs.
+
+    Parameters
+    ----------
+    force_constants : ndarray, shape (natom_sc, natom_sc, 3, 3)
+        Supercell force constants (phonopy layout).
+    s2p, translations : ndarray
+        Primitive atom and integer translation of every supercell atom
+        (:func:`~PAOFLOW.elphon.fold.supercell_atom_translations` of the undisplaced
+        reference supercell, whose atom order the displaced cell shares).
+    supercell_matrix : int or array_like
+        Diagonal supercell matrix.
+
+    Returns
+    -------
+    ndarray, shape (natom_sc, natom_sc, 3, 3)
+        The averaged force constants (idempotent).
+    """
+    fc = np.asarray(force_constants, dtype=float)
+    dims = _diagonal_dims(supercell_matrix)
+    s2p = np.asarray(s2p, dtype=int)
+    T = np.asarray(translations, dtype=int)
+    nat = fc.shape[0]
+    if fc.shape != (nat, nat, 3, 3) or s2p.size != nat or T.shape != (nat, 3):
+        raise ValueError('force_constants, s2p and translations do not describe the same cell.')
+    keys = {}
+    for a in range(nat):
+        for b in range(nat):
+            key = (int(s2p[a]), int(s2p[b])) + tuple(int(x) for x in (T[b] - T[a]) % dims)
+            keys.setdefault(key, []).append((a, b))
+    out = np.empty_like(fc)
+    for pairs in keys.values():
+        mean = np.mean([fc[a, b] for a, b in pairs], axis=0)
+        for a, b in pairs:
+            out[a, b] = mean
+    return out
+
+
+def phonopy_with_force_constants(unitcell, supercell_matrix, force_constants):
+    """A phonopy object with given supercell force constants.
+
+    Parameters
+    ----------
+    unitcell : phonopy.structure.atoms.PhonopyAtoms
+        The reference unit cell (bohr, PAOFLOW's phonopy convention).
+    supercell_matrix : int or array_like
+        Diagonal supercell of the force constants.
+    force_constants : ndarray, shape (natom_sc, natom_sc, 3, 3)
+        Force constants in Ry/bohr^2 (the QE units of PAOFLOW's phonopy objects), in
+        the atom order of ``phonopy.Phonopy(unitcell, supercell_matrix).supercell``.
+
+    Returns
+    -------
+    phonopy.Phonopy
+        Ready for :func:`zg_configuration` (``calculator='qe'``, primitive ``'P'``).
+    """
+    from phonopy import Phonopy
+
+    dims = _diagonal_dims(supercell_matrix)
+    phonon = Phonopy(
+        unitcell, supercell_matrix=np.diag(dims), primitive_matrix='P', calculator='qe'
+    )
+    fc = np.asarray(force_constants, dtype=float)
+    nat = len(phonon.supercell)
+    if fc.shape != (nat, nat, 3, 3):
+        raise ValueError(
+            'force_constants %s do not match the %d-atom supercell of %s.'
+            % (fc.shape, nat, dims.tolist())
+        )
+    phonon.force_constants = fc
+    return phonon
+
+
+def thermal_force_constants(
+    elphon_dir: str,
+    phonon_reference,
+    ridge: float = 1.0e-4,
+    translation_average: bool = True,
+) -> NDArray[np.float64]:
+    """Force constants of a displaced (thermal) supercell from its finite-difference runs.
+
+    The forces of the displaced runs of a ZG cell (``electron_phonon(supercell_matrix=1)``
+    on the cell, Cartesian or random mode) give the local curvature at the thermal
+    configuration; averaged over the sub-cell translations it is the temperature-dependent
+    force-constant matrix of the next special-displacement iteration (the anharmonic
+    self-consistent loop of Zacharias and Giustino).
+
+    Parameters
+    ----------
+    elphon_dir : str
+        The electron-phonon directory of the displaced runs of the ZG cell.
+    phonon_reference : phonopy.Phonopy
+        The undisplaced reference (``Phonopy(unitcell, supercell_matrix)``): its supercell
+        fixes the atom order and the sub-cell translations.
+    ridge : float
+        Ridge of the force fit (random mode).
+    translation_average : bool
+        Average over the sub-cell translations (``True``) or keep the raw curvature.
+
+    Returns
+    -------
+    ndarray, shape (natom_sc, natom_sc, 3, 3)
+        Force constants in Ry/bohr^2 (phonopy layout, no acoustic sum rule).
+    """
+    from ..elphon.fd_vertex import fd_force_constants
+    from ..elphon.fold import supercell_atom_translations
+
+    phi = fd_force_constants(elphon_dir, ridge=ridge)
+    if phi is None:
+        raise ValueError(
+            'the displaced runs in %s do not determine the force constants of every atom.'
+            % elphon_dir
+        )
+    nat = phi.shape[0] // 3
+    if nat != len(phonon_reference.supercell):
+        raise ValueError(
+            '%d atoms in the displaced runs, %d in the reference supercell.'
+            % (nat, len(phonon_reference.supercell))
+        )
+    fc = phi.reshape(nat, 3, nat, 3).transpose(0, 2, 1, 3)
+    if translation_average:
+        s2p, translations = supercell_atom_translations(phonon_reference)
+        fc = translation_average_force_constants(
+            fc, s2p, translations, phonon_reference.supercell_matrix
+        )
+    return fc
+
+
 def zg_configuration(
     phonon,
     supercell_matrix,
@@ -691,6 +843,8 @@ def write_zg_inputs(
     list of str
         The written input files.  Next to each input, ``<prefix>.npz`` keeps the
         displacements (bohr), signs, q-points, amplitudes and mean-square displacements.
+        An existing manifest of the same supercell is merged (entries of the same prefix
+        replaced), so one cell per call accumulates into one ``zg.json``.
     """
     import json
 
@@ -751,7 +905,18 @@ def write_zg_inputs(
                 'msd_thermal_bohr2': np.asarray(conf['msd_thermal']).tolist(),
             }
         )
-    with open(os.path.join(out_dir, MANIFEST), 'w') as f:
+    manifest_path = os.path.join(out_dir, MANIFEST)
+    if os.path.isfile(manifest_path):
+        # Successive calls (one temperature at a time, the anharmonic iteration) accumulate
+        # in one manifest: entries of the same prefix are replaced, the others kept.
+        with open(manifest_path) as f:
+            previous = json.load(f)
+        if previous.get('dims') == [int(n) for n in dims]:
+            new_prefixes = {e['prefix'] for e in entries}
+            entries = [
+                e for e in previous.get('configurations', []) if e['prefix'] not in new_prefixes
+            ] + entries
+    with open(manifest_path, 'w') as f:
         json.dump(
             {
                 'dims': [int(n) for n in dims],

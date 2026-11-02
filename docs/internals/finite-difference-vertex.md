@@ -8,8 +8,8 @@ and the numbers.
 ## 1. The route
 
 `PAOFLOW.electron_phonon` is two-phase. Phase 1 writes one `pw.x` scf input per displaced supercell (phonopy
-displacements of the reference primitive cell, `displacement_mode='symmetry'` or `'cartesian'`, `is_plusminus`
-for central differences). Phase 2 rebuilds the PAO Hamiltonian of every displaced cell and forms
+displacements of the reference primitive cell, `displacement_mode='symmetry'`, `'cartesian'` or `'random'`,
+`is_plusminus` for central differences). Phase 2 rebuilds the PAO Hamiltonian of every displaced cell and forms
 $dV_{\kappa\alpha}=[H^{\rm SC}(+\delta)-H^{\rm SC}(-\delta)]/2\delta$ in the supercell PAO basis (eV/bohr).
 `do_gkq.assemble_eph_tensor` expands the symmetry-reduced directions (`symmetry.py`, Wigner-D), folds the
 supercell derivative to the primitive real-space tensor $g(\kappa\alpha;\mathbf R_e,\mathbf R_p)$ (`fold.py`,
@@ -113,8 +113,84 @@ The vertex of an arbitrary reference structure without DFPT: thermally displaced
 method, `special-displacement-plan.md` §9), molecular-dynamics snapshots, alloys, and systems where the native
 vertex is not available (PAW/US with the internal projector, hybrids, DFT+U, VASP). Still to do for the
 supercell use: the arbitrary-reference mode without fold, the Γ-mode handling in the Eliashberg drivers (all
-modes at Γ are zeroed today), the sparse vertex layout beyond ~30 atoms, and the random-displacement
-least-squares extraction that replaces the 6N Cartesian runs.
+modes at Γ are zeroed today) and the sparse vertex layout beyond ~30 atoms. The random-displacement
+least-squares extraction that replaces the 6N Cartesian runs is in place (section 6).
+
+## 6. Random displacements and local least squares (2 November 2026)
+
+`electron_phonon(displacement_mode='random', nconfig=M, seed=s)` writes `2M` cells in which **every** atom of
+the supercell is displaced by `displacement_distance` along its own random direction (uniform on the sphere),
+each pattern $u^m$ with its mirror $-u^m$. The manifest entries carry the full `(natoms, 3)` pattern
+(`sc_atom` is `None`, plus `config` and `sign`) and the manifest records `displacement_mode`, `nconfig` and
+`seed`; `tprnfor` is on, so the same runs give the forces. The analyse phase (`compute_dV` dispatches to
+`elphon/random_displacements.py`) forms the antisymmetric differences
+
+$$D_m = \tfrac12\,[H(+u^m) - H(-u^m)] = \sum_{\kappa\alpha} u^m_{\kappa\alpha}\, \partial_{\kappa\alpha}V + O(u^3)$$
+
+in the fixed reference basis and fits every matrix element of $\partial_{\kappa\alpha}V$ by least squares over
+the $M$ configurations. Nothing is stored per configuration: the normal equations $G=\sum_m u^m (u^m)^T$
+($3N\times 3N$), $B=\sum_m u^m D_m$ (the size of the output) and $y_2=\sum_m|D_m|^2$ are accumulated while the
+pairs are built, and the residual $y_2 - 2\,\mathrm{Re}\,w^\dagger B + w^\dagger G w$ of the fit is exact given the
+solution (relative floor $10^{-8}$ from cancellation).
+
+**Locality.** The element between an orbital on atom $A$ and an orbital on atom $B$ is fitted only against
+the atoms within `locality_cutoff` (bohr, periodic minimum image) of $A$ or of $B$, i.e. $3\,|N(A)\cup N(B)|$
+unknowns instead of $3N$, with the derivative set to zero outside; `None` fits every element against all
+atoms (then $M \ge 3N$ is needed for a full-rank fit). Because a displaced atom moves with all its periodic
+images, the active set does not depend on the lattice vector of the element, so the groups are the $N^2$ atom
+pairs and the solve is a sub-block of the same $G$ and $B$ (one inverse per distinct active set). `ridge`
+(default $10^{-4}$, relative to the mean diagonal of $G_{SS}$) regularises under-determined sets.
+Omitted atoms outside the cutoff enter as $1/\sqrt{M}$ noise, since the random directions of different atoms
+are uncorrelated.
+
+**Output.** `directional` holds $3N$ entries with unit Cartesian displacements, one per supercell atom and
+direction, so `assemble_eph_tensor` and the supercell-native scripts consume them unchanged
+(`assemble_eph_tensor` keeps the reference primitive-cell atoms for the fold; translating the other atoms'
+derivatives onto them, which would average the statistics, is not done yet). `fit` reports `nconfig`,
+`cutoff`, `ridge`, the global `relative_residual`, the `pair_residual` per atom pair, the condition number of
+$G$ and the neighbour counts; `force_constants` (eV/Å², phonopy layout, symmetrised) and `force_residual`
+come from the same fit of $-\tfrac12[F(+u)-F(-u)] = \Phi u$ when the `pw.x` outputs sit next to the inputs.
+
+**Cost.** For a 54-atom SQS with a two-shell cutoff (about 20–30 atoms per active set, 60–90 unknowns),
+$M\approx 60$–100 pairs replace 162 Cartesian pairs; for the 128-atom cell the ratio is 4–5. Unit tests
+(`tests/unit/elphon/test_random_displacements.py`) recover an exact linear model with and without the cutoff,
+with fewer configurations than global unknowns, and `compute_dV` end to end with fake `pw.x` force blocks.
+Validation on the Pb 2×2×2 ideal cell against the Cartesian run (`fd/` vs `fd_random/` on music) is in
+`Workspace/PAOFLOW/validation/Pb_fd_fixed_basis/README.md`.
+
+## 7. The cell as its own unit cell: the `'fd'` coupling source (2 November 2026)
+
+`ElphonSystem(coupling_source='fd', fd_dir=<elphon dir of the displaced runs>, save_dir=<reference cell save>,
+coarse_grid=<the cell's k-grid>)` makes the finite-difference derivatives of a cell that is its own unit cell
+(`electron_phonon(supercell_matrix=1)`, Cartesian or random mode) a coarse coupling source of the dense-q drivers,
+next to `'dfpt'` and `'epw'`. `elphon/fd_vertex.py`:
+
+- `fd_cell_derivatives(coupling_dir, **options)` runs `compute_dV` on the displaced runs (fixed basis by default;
+  `locality_cutoff`, `ridge` for the random mode) and `fill_g_ReRp_from_fd` writes the derivatives of every atom
+  into the shared `g(R_e, R_p)` buffer of `prepare_dense_vertex`: `g_{ij,3κ+α}(R_e) = ∂_{κα}V_{ij}(−R_e)` in Ry/bohr
+  (the electrons use `H(k) = Σ_R e^{−2πik·R} HRs(R)`, the vertex kernel `d(k) = Σ_R e^{+2πik·R} g(R)`, hence the
+  index flip on the FFT grid; unit test on grid k), with a single phonon cell `R_p = 0`: the q-grid is `(1, 1, 1)`.
+- `fd_force_constants(edir)` reads the forces of the same runs (`tprnfor` is on): central differences of the
+  Cartesian ± pairs of every atom, or the forces-only least-squares fit of the random mode; symmetrised, Ry/bohr².
+  `fd_phonon_at_q` wraps them in the Wigner-Seitz interpolator on the `(1, 1, 1)` grid (acoustic sum rule imposed),
+  so the dense driver gets the cell's own Γ modes: 3 acoustic (zeroed) and 3N − 3 'optical' modes that are the
+  primitive phonons folded on the commensurate q-grid (ideal cell) or the local curvature at the displaced
+  configuration (ZG cell).
+- `gamma_modes` option of `eliashberg_dense_q` / `eliashberg_from_qe_coupling` (`do_pao_eph.gamma_zero_mask`):
+  `'all'` keeps the QE convention (every mode zeroed at Γ, a 1/N_q effect on the usual grids, the default and the
+  numbers of every existing reference), `'acoustic'` zeroes only `|ω| < gamma_acoustic_thz` (0.1 THz). The
+  superconductivity workflow sets `nq = 1` and `'acoustic'` for the `'fd'` source; `coarse_q` is refused.
+- The cache key includes `displacements.json` and the fit options; the reference save of the system is the
+  undisplaced cell's (`tmp_<prefix>_ref/`), whose time-reversal-reduced k list is unfolded by `electrons()`.
+- Single rank: the cell derivatives are serial PAOFLOW runs on every displaced save (COMM_WORLD collectives
+  inside), and with one q the dense loop has nothing to distribute, so `prepare_dense_vertex` refuses `mpirun`
+  for this source (a 4-rank run deadlocked on 2 November: rank 0 in a PAOFLOW broadcast, the others in the
+  node barrier).
+
+λ of the cell is intensive and equals the primitive λ on the commensurate q-grid at equal k-sampling (section 6 of
+the validation README: 0.949 vs 0.955 at σ = 0.2 eV for the ideal and zero-point 2×2×2 cells on 12³ k). The dense-k
+interpolation of the 144-orbital supercell (24³ = primitive 48³) is the converged number. First run: the zero-point
+2³ ZG cell (`fd_zg/`) as `fd_zg_native/` on music (`scripts/fd_native/`).
 
 ## Questions and answers (1 November 2026)
 

@@ -834,7 +834,7 @@ def zg_cells(zg_dir: str) -> list[dict]:
         ``temperature_k`` (``None`` for the undisplaced cell), ``prefix``, ``directory``, ``input``,
         ``save`` (the QE save of the finished scf: the schema file exists and the ``.out`` next to
         the input, when present, reports ``JOB DONE``; ``None`` otherwise), ``dims``, ``natoms``,
-        ``error``.
+        ``kgrid``, ``nbnd``, ``error``.
     """
     from ...phonon.special_displacement import MANIFEST
 
@@ -870,6 +870,8 @@ def zg_cells(zg_dir: str) -> list[dict]:
                     'save': sorted(saves)[0] if saves else None,
                     'dims': [int(n) for n in data['dims']],
                     'natoms': int(data['natoms']),
+                    'kgrid': [int(n) for n in data['kgrid']] if data.get('kgrid') else None,
+                    'nbnd': data.get('nbnd'),
                     'error': entry.get('error'),
                 }
             )
@@ -936,3 +938,279 @@ def thermal_dielectric(
     from .optics import direct_dielectric
 
     direct_dielectric(system, zg_save, outdir, configuration=configuration, **kwargs)
+
+
+# --------------------------------------------------------------------------- #
+# Anharmonic self-consistent loop: displaced runs of a ZG cell, its thermal force
+# constants, the next cell, and the electron-phonon coupling of the cell ('fd' source)
+# --------------------------------------------------------------------------- #
+FD_DIR = 'fd'
+
+
+def zg_iteration_dir(thermal_dir: str, iteration: int) -> str:
+    """``<thermal_dir>/zg`` for iteration 0 and ``<thermal_dir>/zg_iter<n>`` for the next cells."""
+    return os.path.join(thermal_dir, 'zg' if iteration <= 0 else 'zg_iter%d' % int(iteration))
+
+
+def fd_dir_of_cell(cell: Mapping, fd_dir: str = FD_DIR) -> str:
+    """The displaced-runs directory of a ZG cell: ``<cell directory>/<prefix>_<fd_dir>``."""
+    return os.path.join(cell['directory'], '%s_%s' % (cell['prefix'], fd_dir))
+
+
+def unit_cell_of(system) -> object:
+    """The phonopy unit cell (bohr) of the system's save."""
+    from ...PAOFLOW import PAOFLOW
+    from ...phonon.structure import paoflow_to_phonopy
+
+    pf = PAOFLOW(
+        savedir=system.save_path, outputdir=os.path.join(system.root, 'output'), verbose=False
+    )
+    return paoflow_to_phonopy(pf.data_controller)
+
+
+def write_fd_displacements(
+    cell: Mapping,
+    *,
+    distance: float = 0.03,
+    mode: str = 'random',
+    nconfig: int = 60,
+    seed: int = 0,
+    kgrid=None,
+    nbnd: int | None = None,
+    pp_dir: str | None = None,
+    configuration='standard',
+    fd_dir: str = FD_DIR,
+) -> str:
+    """Displaced-cell ``pw.x`` inputs of one ZG cell (the cell is its own unit cell).
+
+    Parameters
+    ----------
+    cell : Mapping
+        A finished cell of :func:`zg_cells` (``save`` set).
+    distance, mode, nconfig, seed
+        ``PAOFLOW.electron_phonon`` displacement amplitude (bohr), ``displacement_mode``
+        (``'random'``: ``2 nconfig`` cells; ``'cartesian'``: ``6 N``), configurations and seed.
+    kgrid, nbnd : optional
+        Supercell k-grid and bands (default: those of the ZG cell scf).
+    pp_dir : str, optional
+        Pseudopotential directory written into the inputs.
+    configuration : str or mapping
+        PAO basis preset (sizes ``nbnd`` when not given by the cell).
+    fd_dir : str
+        Suffix of the displaced-runs directory (:func:`fd_dir_of_cell`).
+
+    Returns
+    -------
+    str
+        The displaced-runs directory (``displacements.json``, ``supercell.in``, ``disp-NNN.in``).
+    """
+    from ...PAOFLOW import PAOFLOW
+
+    target = fd_dir_of_cell(cell, fd_dir)
+    pf = PAOFLOW(savedir=cell['save'], outputdir=cell['directory'], verbose=False)
+    pf.electron_phonon(
+        supercell_matrix=1,
+        displacement_distance=distance,
+        elphon_dir=os.path.basename(target),
+        pp_dir=pp_dir,
+        prefix=cell['prefix'],
+        kgrid=kgrid if kgrid is not None else cell.get('kgrid'),
+        nbnd=nbnd if nbnd is not None else cell.get('nbnd'),
+        configuration=configuration,
+        is_plusminus=True,
+        displacement_mode=mode,
+        nconfig=nconfig,
+        seed=seed,
+    )
+    return target
+
+
+def fd_inputs(fd_dir: str) -> list[str]:
+    """The ``pw.x`` inputs of a displaced-runs directory (reference first)."""
+    inputs = (
+        [os.path.join(fd_dir, 'supercell.in')]
+        if os.path.isfile(os.path.join(fd_dir, 'supercell.in'))
+        else []
+    )
+    return inputs + sorted(glob.glob(os.path.join(fd_dir, 'disp-*.in')))
+
+
+def fd_runs_done(fd_dir: str) -> tuple[int, int]:
+    """``(finished, total)`` ``pw.x`` runs of a displaced-runs directory (``JOB DONE`` in the output)."""
+    inputs = fd_inputs(fd_dir)
+    done = 0
+    for path in inputs:
+        out = os.path.splitext(path)[0] + '.out'
+        if os.path.isfile(out):
+            with open(out, errors='replace') as handle:
+                if 'JOB DONE' in handle.read():
+                    done += 1
+    return done, len(inputs)
+
+
+def write_fd_run_script(fd_dir: str, filename: str = 'run_fd.sh') -> str:
+    """Shell script running ``pw.x`` on the reference and displaced cells (skips finished runs)."""
+    inputs = [os.path.basename(p) for p in fd_inputs(fd_dir)]
+    lines = [
+        '#!/bin/bash',
+        '# pw.x scf of the displaced cells (run from this directory): NP=8 bash %s' % filename,
+        'set -e',
+        'NP=${NP:-8}; NK=${NK:-1}',
+        'PW=${PW:-pw.x}',
+        'log() { echo "$(date +%T) $*"; }',
+        'for input in %s; do' % ' '.join(inputs),
+        '  name=${input%.in}',
+        '  if grep -q "JOB DONE" $name.out 2>/dev/null; then log "$input done"; continue; fi',
+        '  log "$input"',
+        '  mpirun -np $NP $PW -nk $NK -in $input > $name.out',
+        'done',
+        'log "all displaced cells done"',
+    ]
+    path = os.path.join(fd_dir, filename)
+    with open(path, 'w') as handle:
+        handle.write('\n'.join(lines) + '\n')
+    os.chmod(path, 0o755)
+    return path
+
+
+def cell_force_constants(
+    cell: Mapping, unitcell, ridge: float = 1.0e-4, fd_dir: str = FD_DIR
+) -> dict:
+    """Thermal force constants of a ZG cell from its finished displaced runs.
+
+    Parameters
+    ----------
+    cell : Mapping
+        A cell of :func:`zg_cells`.
+    unitcell : phonopy.structure.atoms.PhonopyAtoms
+        The primitive cell (:func:`unit_cell_of`).
+    ridge : float
+        Ridge of the force fit (random mode).
+    fd_dir : str
+        Suffix of the displaced-runs directory.
+
+    Returns
+    -------
+    dict
+        ``force_constants`` ``(natom_sc, natom_sc, 3, 3)`` Ry/bohr^2 (translation averaged),
+        ``qpoints`` of the cell's commensurate grid and their ``frequencies_thz`` ``(nq, 3 nat)``.
+    """
+    from phonopy import Phonopy
+
+    from ...phonon.special_displacement import (
+        phonopy_with_force_constants,
+        supercell_qpoints,
+        thermal_force_constants,
+    )
+
+    dims = [int(n) for n in cell['dims']]
+    reference = Phonopy(
+        unitcell, supercell_matrix=np.diag(dims), primitive_matrix='P', calculator='qe'
+    )
+    fc = thermal_force_constants(fd_dir_of_cell(cell, fd_dir), reference, ridge=ridge)
+    phonon = phonopy_with_force_constants(unitcell, dims, fc)
+    qpoints = supercell_qpoints(dims)
+    phonon.run_qpoints(qpoints)
+    return {
+        'force_constants': fc,
+        'qpoints': qpoints,
+        'frequencies_thz': np.asarray(phonon.qpoints.frequencies),
+    }
+
+
+def harmonic_frequencies(unitcell, force_constants_file: str, dims) -> NDArray[np.float64]:
+    """Frequencies (THz) of the ``q2r.x`` force constants on the commensurate grid of ``dims``."""
+    from ...phonon.special_displacement import phonopy_from_q2r, supercell_qpoints
+
+    phonon = phonopy_from_q2r(unitcell, force_constants_file)
+    phonon.run_qpoints(supercell_qpoints([int(n) for n in dims]))
+    return np.asarray(phonon.qpoints.frequencies)
+
+
+def write_next_zg_cell(
+    system,
+    cell: Mapping,
+    force_constants: NDArray[np.float64],
+    zg_dir: str,
+    *,
+    pp_dir: str | None = None,
+    error_thresh: float = 0.05,
+) -> list[str]:
+    """The ZG cell of the next iteration: same temperature, seed, supercell, k-grid and bands,
+    displaced along the phonons of the thermal ``force_constants``.
+
+    Returns
+    -------
+    list of str
+        The written inputs (under ``<zg_dir>/seed<s>/``; the manifest accumulates).
+    """
+    from ...PAOFLOW import PAOFLOW
+
+    pf = PAOFLOW(savedir=system.save_path, outputdir=zg_dir, verbose=False)
+    dims = [int(n) for n in cell['dims']]
+    return pf.special_displacement(
+        [float(cell['temperature_k'])],
+        supercell_matrix=dims,
+        force_constants=force_constants,
+        force_constants_supercell=dims,
+        zg_dir='seed%d' % int(cell['seed']),
+        pp_dir=pp_dir,
+        prefix=system.prefix,
+        kgrid=cell.get('kgrid'),
+        nbnd=cell.get('nbnd'),
+        error_thresh=error_thresh,
+        seed=int(cell['seed']),
+    )
+
+
+def cell_displacements(cell: Mapping) -> NDArray[np.float64] | None:
+    """The ZG displacements (bohr) of a cell from its ``<prefix>.npz``, or ``None``."""
+    npz = os.path.join(cell['directory'], cell['prefix'] + '.npz')
+    return np.load(npz)['displacements'] if os.path.isfile(npz) else None
+
+
+def fd_system_for_cell(system, cell: Mapping, *, fd_dir: str = FD_DIR, fd_options=None):
+    """An :class:`~PAOFLOW.elphon.workflows.system.ElphonSystem` of one ZG cell with the
+    finite-difference coupling source (its displaced runs, its reference save, Gamma only).
+
+    Parameters
+    ----------
+    system : ElphonSystem
+        The crystal (basis, projectability, masses, electrons per primitive cell).
+    cell : Mapping
+        A cell of :func:`zg_cells` whose displaced runs are finished.
+    fd_dir : str
+        Suffix of the displaced-runs directory.
+    fd_options : dict, optional
+        Fit options (``locality_cutoff``, ``ridge``, ...).
+
+    Returns
+    -------
+    ElphonSystem
+        With ``nelec`` scaled by the number of primitive cells and the cache under the
+        displaced-runs directory.
+    """
+    from .system import ElphonSystem
+
+    target = fd_dir_of_cell(cell, fd_dir)
+    ref_prefix = cell['prefix'] + '_ref'
+    if not cell.get('kgrid'):
+        raise ValueError('the ZG manifest of %s has no k-grid' % cell['prefix'])
+    return ElphonSystem(
+        prefix=ref_prefix,
+        root=cell['directory'],
+        coupling_source='fd',
+        fd_dir=target,
+        save_dir=os.path.join(target, 'tmp_' + ref_prefix, ref_prefix + '.save'),
+        coarse_grid=tuple(int(n) for n in cell['kgrid']),
+        masses_amu=list(system.masses_amu),
+        nelec=float(system.nelec) * int(np.prod(cell['dims'])),
+        basis_dir=system.basis_path,
+        configuration=system.configuration,
+        pthr=system.pthr,
+        projector=system.projector,
+        long_range=False,
+        cache_dir=os.path.join(target, 'cache'),
+        spin_degeneracy=system.spin_degeneracy,
+        fd_options=dict(fd_options or {}),
+    )

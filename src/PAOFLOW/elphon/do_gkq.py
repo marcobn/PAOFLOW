@@ -147,6 +147,16 @@ def assemble_eph_tensor(
     phonon = init_phonopy(data_controller)
     s2p, translations = supercell_atom_translations(phonon)
 
+    if result.get('displacement_mode') == 'random':
+        # The random fit returns the derivatives of every supercell atom; the fold
+        # consumes the reference primitive-cell atoms (the others are their
+        # periodic translates and would be averaged as if they were the same
+        # tensor by the directional solve below).
+        from .displacements import reference_supercell_atoms
+
+        keep = set(int(k) for k in reference_supercell_atoms(phonon))
+        directional = [d for d in directional if int(d['sc_atom']) in keep]
+
     if configuration is None:
         configuration = attr.get('elphon_configuration', 'standard')
     from ..phonon.io import _pp_filenames
@@ -178,7 +188,9 @@ def assemble_eph_tensor(
         # reference), so the reference PAO Hamiltonian is not rebuilt again here.
         sym_inputs = result.get('ref_symmetry_inputs')
         if sym_inputs is not None:
-            ops = build_dv_symmetry_operators(**sym_inputs)
+            from .dvscf_fd import symmetry_operator_inputs
+
+            ops = build_dv_symmetry_operators(**symmetry_operator_inputs(sym_inputs))
         else:
             from .dvscf_fd import _save_dir_for, supercell_symmetry_operators
 

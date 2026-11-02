@@ -181,9 +181,13 @@ class ElphonSystem:
         cell by :func:`~PAOFLOW.elphon.elph_bloch.atom_masses`).
     nelec : float
         Valence electrons of the cell (locates the Fermi level or the gap).
-    coupling_source : {'dfpt', 'epw'}
+    coupling_source : {'dfpt', 'epw', 'fd'}
         ``'dfpt'``: PAOFLOW's native vertex from the ``ph.x`` ``dvscf`` files and the nscf
-        wavefunctions; ``'epw'``: EPW's ``.epb`` files of an ``epbwrite`` run.
+        wavefunctions; ``'epw'``: EPW's ``.epb`` files of an ``epbwrite`` run; ``'fd'``: the
+        finite-difference derivatives of a cell that is its own unit cell (a thermally
+        displaced or alloy supercell, ``electron_phonon(supercell_matrix=1)``), read from
+        ``fd_dir``; the save is the reference cell's, the q-grid is ``(1, 1, 1)`` and the
+        phonons are the cell's Gamma modes from the forces of the same displaced runs.
     coarse_grid : tuple of int
         nscf k-grid (EPW ``nk1..3``).
     qgrid : tuple of int, optional
@@ -222,6 +226,14 @@ class ElphonSystem:
         (``None`` disables it).
     spin_degeneracy : float, optional
         2 without spin-orbit coupling, 1 with it; ``None`` reads it from the save.
+    fd_dir : str, optional
+        ``coupling_source='fd'``: the electron-phonon directory of the displaced runs
+        (``displacements.json``, ``tmp_*/`` saves, ``pw.x`` outputs next to the inputs).
+    fd_options : dict, optional
+        ``coupling_source='fd'``: options of the derivative fit
+        (:func:`~PAOFLOW.elphon.fd_vertex.fd_cell_derivatives`: ``fixed_basis``,
+        ``locality_cutoff``, ``ridge``, ``project_good_subspace``, ``verify_saves``); the
+        basis, configuration and ``pthr`` come from the system.
     """
 
     prefix: str
@@ -245,15 +257,24 @@ class ElphonSystem:
     quadrupoles: str | None = None
     cache_dir: str | None = 'cache'
     spin_degeneracy: float | None = None
+    fd_dir: str | None = None
+    fd_options: dict = field(default_factory=dict)
     extra: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.coupling_source not in ('dfpt', 'epw'):
+        if self.coupling_source not in ('dfpt', 'epw', 'fd'):
             raise ValueError(
-                "coupling_source must be 'dfpt' or 'epw', got %r" % self.coupling_source
+                "coupling_source must be 'dfpt', 'epw' or 'fd', got %r" % self.coupling_source
             )
         self.root = os.path.abspath(self.root)
         self.coarse_grid = tuple(int(n) for n in self.coarse_grid)
+        if self.coupling_source == 'fd':
+            if not self.fd_dir:
+                raise ValueError("coupling_source='fd' needs fd_dir (the displaced-runs directory)")
+            if self.qgrid is None:
+                self.qgrid = (1, 1, 1)
+            if tuple(int(n) for n in self.qgrid) != (1, 1, 1):
+                raise ValueError("coupling_source='fd' is Gamma-only: qgrid must be (1, 1, 1)")
         self.qgrid = self.coarse_grid if self.qgrid is None else tuple(int(n) for n in self.qgrid)
         if any(k % q for k, q in zip(self.coarse_grid, self.qgrid)):
             raise ValueError(
@@ -302,7 +323,9 @@ class ElphonSystem:
 
     @property
     def coupling_dir(self) -> str:
-        """Where the coarse coupling is read from: the phonon directory (dfpt) or the nscf one (epw)."""
+        """Where the coarse coupling is read from: the phonon directory (dfpt), the nscf one (epw) or the displaced runs (fd)."""
+        if self.coupling_source == 'fd':
+            return self.path(self.fd_dir)
         return self.phonon_path if self.coupling_source == 'dfpt' else self.nscf_path
 
     @property
@@ -333,6 +356,15 @@ class ElphonSystem:
             raise FileNotFoundError(
                 '%s not found: run the pw.x nscf in %s first.' % (self.save_path, self.nscf_path)
             )
+        if self.coupling_source == 'fd':
+            manifest = os.path.join(self.coupling_dir, 'displacements.json')
+            if not os.path.isfile(manifest):
+                raise FileNotFoundError(
+                    '%s not found: generate the displaced cells with '
+                    'electron_phonon(supercell_matrix=1, ...) and run pw.x on them first.'
+                    % manifest
+                )
+            return
         if self.coupling_source == 'epw':
             if not any(f.startswith(self.prefix + '.epb') for f in os.listdir(self.nscf_path)):
                 raise FileNotFoundError(
@@ -520,7 +552,7 @@ class ElphonSystem:
             ``coupling_source``, ``save_dir``, ``long_range``,
             ``allow_missing_long_range``, ``masses_amu``, ``tau_cryst``, ``species``,
             ``orbital_positions`` and, optionally, ``sym_rots``, ``cache_dir``,
-            ``cache_tag``.
+            ``cache_tag`` and (``'fd'``) ``fd_options``.
         """
         nscf = electrons.nscf
         kwargs = dict(
@@ -538,6 +570,13 @@ class ElphonSystem:
         if cache and self.cache_path:
             kwargs['cache_dir'] = self.cache_path
             kwargs['cache_tag'] = basis_tag(electrons.data_controller, self.pthr)
+        if self.coupling_source == 'fd':
+            kwargs['fd_options'] = dict(
+                basispath=self.basis_path,
+                configuration=self.configuration,
+                pthr=self.pthr,
+                **self.fd_options,
+            )
         return kwargs
 
     def positional_arguments(self, electrons: Electrons) -> tuple:

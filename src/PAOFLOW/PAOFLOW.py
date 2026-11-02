@@ -5245,6 +5245,8 @@ class PAOFLOW:
         temperatures,
         supercell_matrix=None,
         force_constants_file=None,
+        force_constants=None,
+        force_constants_supercell=None,
         zg_dir='zg',
         pp_dir=None,
         prefix=None,
@@ -5277,6 +5279,14 @@ class PAOFLOW:
                 default: the phonon supercell of the controller.
             force_constants_file (str, optional): ``q2r.x`` force constants of the
                 unit cell; otherwise ``arry['phonopy']`` must carry force constants.
+            force_constants (ndarray, optional): Explicit supercell force constants
+                ``(natom_sc, natom_sc, 3, 3)`` in Ry/bohr^2 (phonopy layout), e.g. the
+                thermal force constants of a displaced cell
+                (:func:`~PAOFLOW.phonon.special_displacement.thermal_force_constants`,
+                the anharmonic self-consistent iteration); takes precedence over
+                ``force_constants_file``.
+            force_constants_supercell (optional): Diagonal supercell the explicit
+                force constants refer to (default ``supercell_matrix``).
             zg_dir (str): Sub-directory for the inputs (default ``'zg'``).
             pp_dir, prefix, kgrid, nbnd, hubbard_file, hubbard_card: As in
                 :meth:`electron_phonon`.
@@ -5298,6 +5308,7 @@ class PAOFLOW:
         from .phonon.io import read_hubbard_card
         from .phonon.special_displacement import (
             phonopy_from_q2r,
+            phonopy_with_force_constants,
             reference_configuration,
             write_zg_inputs,
             zg_configuration,
@@ -5308,7 +5319,19 @@ class PAOFLOW:
         if hubbard_card is None and hubbard_file is not None:
             hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
         try:
-            if force_constants_file is not None:
+            if force_constants is not None:
+                if force_constants_supercell is None:
+                    force_constants_supercell = supercell_matrix or attr.get(
+                        'phonon_supercell_matrix'
+                    )
+                if force_constants_supercell is None:
+                    raise ValueError('force_constants needs force_constants_supercell')
+                phonon = phonopy_with_force_constants(
+                    paoflow_to_phonopy(self.data_controller),
+                    force_constants_supercell,
+                    force_constants,
+                )
+            elif force_constants_file is not None:
                 phonon = phonopy_from_q2r(
                     paoflow_to_phonopy(self.data_controller), force_constants_file
                 )
@@ -5383,10 +5406,14 @@ class PAOFLOW:
         nbnd=None,
         is_plusminus='auto',
         displacement_mode='symmetry',
+        nconfig=None,
+        seed=0,
         pthr=0.95,
         shift_type=1,
         project_good_subspace=None,
         fixed_basis=True,
+        locality_cutoff=None,
+        ridge=1.0e-4,
     ):
         """Electron-phonon coupling via finite differences of the PAO H (Stage S7).
 
@@ -5445,11 +5472,19 @@ class PAOFLOW:
                 symmetry-minimal set and takes forward differences against the
                 reference supercell; ``True`` adds the explicit ``-`` for central
                 differences.
-            displacement_mode ({'symmetry', 'cartesian'}): ``'symmetry'``
+            displacement_mode ({'symmetry', 'cartesian', 'random'}): ``'symmetry'``
                 (default) uses phonopy's symmetry-reduced displacements (the full
                 Cartesian tensor is reconstructed by the symmetry expansion);
                 ``'cartesian'`` displaces every reference-cell atom explicitly
-                along x, y and z (full Cartesian derivative directly, more runs).
+                along x, y and z (full Cartesian derivative directly, more runs);
+                ``'random'`` displaces *every* supercell atom at once along a
+                random direction in ``nconfig`` configurations (plus their ``-u``
+                mirrors) and recovers the Cartesian derivatives of all atoms by
+                local least squares in the analyse phase: the route for
+                references without symmetry (thermally displaced cells, alloys).
+            nconfig (int, optional): Number of random configurations
+                (``'random'`` mode; ``2 * nconfig`` cells are written).
+            seed (int): Seed of the random directions.
             pthr (float): Projectability threshold for the analyse phase.
             shift_type (int): Hamiltonian shift scheme for the analyse phase.
             project_good_subspace (bool, optional): Project the derivative onto
@@ -5464,6 +5499,13 @@ class PAOFLOW:
                 differentiates the hopping parameters of a basis that follows the
                 atoms, which adds the basis-rotation term ``[H, dU]`` (off-diagonal
                 elements ``(eps_n - eps_m) <m|dU|n>``) to the vertex.
+            locality_cutoff (float, optional): ``'random'`` mode: radius (Bohr)
+                around the two orbital sites of a Hamiltonian element within which
+                atoms are fitted as unknowns; ``None`` (default) fits every element
+                against all atoms (needs ``nconfig >= 3 * natoms`` for a full-rank
+                fit).
+            ridge (float): ``'random'`` mode: ridge regularisation relative to the
+                mean diagonal of the normal equations (default ``1e-4``).
 
         Returns:
             None
@@ -5496,6 +5538,8 @@ class PAOFLOW:
                     nbnd=nbnd,
                     is_plusminus=is_plusminus,
                     displacement_mode=displacement_mode,
+                    nconfig=nconfig,
+                    seed=seed,
                 )
                 if self.rank == 0:
                     print(
@@ -5515,6 +5559,8 @@ class PAOFLOW:
                 shift_type=shift_type,
                 project_good_subspace=project_good_subspace,
                 fixed_basis=fixed_basis,
+                locality_cutoff=locality_cutoff,
+                ridge=ridge,
             )
 
         except Exception as e:

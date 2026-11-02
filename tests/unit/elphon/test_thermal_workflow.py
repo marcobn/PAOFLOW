@@ -254,3 +254,55 @@ def test_thermal_summary_round_trip_and_plot(tmp_path):
     pytest.importorskip('matplotlib')
     figure = th.plot_thermal_summary(rows, str(tmp_path / 'out' / 'thermal_summary.png'), name='Pb')
     assert os.path.getsize(figure) > 0
+
+
+# ----------------------------------------------------------------------------
+# A-SDM loop helpers
+# ----------------------------------------------------------------------------
+
+
+def test_iteration_and_fd_directories():
+    assert th.zg_iteration_dir('/t', 0) == '/t/zg'
+    assert th.zg_iteration_dir('/t', 2) == '/t/zg_iter2'
+    cell = {'directory': '/t/zg/seed1', 'prefix': 'pb_zg_T300K'}
+    assert th.fd_dir_of_cell(cell) == '/t/zg/seed1/pb_zg_T300K_fd'
+
+
+def test_fd_run_script_and_done_count(tmp_path):
+    fd = tmp_path / 'cell_fd'
+    fd.mkdir()
+    for name in ('supercell.in', 'disp-001.in', 'disp-002.in'):
+        (fd / name).write_text('&control\n/\n')
+    assert th.fd_runs_done(str(fd)) == (0, 3)
+    (fd / 'supercell.out').write_text('... JOB DONE.\n')
+    (fd / 'disp-001.out').write_text('still running\n')
+    assert th.fd_runs_done(str(fd)) == (1, 3)
+    script = th.write_fd_run_script(str(fd))
+    text = (tmp_path / 'cell_fd' / 'run_fd.sh').read_text()
+    assert os.path.basename(script) == 'run_fd.sh'
+    assert 'supercell.in disp-001.in disp-002.in' in text
+    assert 'JOB DONE' in text and os.access(script, os.X_OK)
+
+
+def test_fd_system_for_cell(tmp_path):
+    from PAOFLOW.elphon.workflows import ElphonSystem
+
+    system = ElphonSystem(
+        prefix='pb', root=str(tmp_path), masses_amu=[207.2], nelec=14, basis_dir=None,
+        coarse_grid=(12, 12, 12), qgrid=(6, 6, 6), pthr=0.9, spin_degeneracy=2,
+    )  # fmt: skip
+    cell = {
+        'directory': str(tmp_path / 'zg' / 'seed0'), 'prefix': 'pb_zg_T300K', 'seed': 0,
+        'temperature_k': 300.0, 'dims': [2, 2, 2], 'kgrid': [6, 6, 6], 'nbnd': 192,
+    }  # fmt: skip
+    fd_system = th.fd_system_for_cell(system, cell, fd_options={'ridge': 1e-3})
+    assert fd_system.coupling_source == 'fd' and fd_system.qgrid == (1, 1, 1)
+    assert fd_system.coarse_grid == (6, 6, 6)
+    assert fd_system.nelec == 14 * 8
+    assert fd_system.prefix == 'pb_zg_T300K_ref'
+    assert fd_system.coupling_dir == os.path.join(cell['directory'], 'pb_zg_T300K_fd')
+    assert fd_system.save_path.endswith(os.path.join('tmp_pb_zg_T300K_ref', 'pb_zg_T300K_ref.save'))
+    assert fd_system.fd_options == {'ridge': 1e-3} and fd_system.pthr == 0.9
+    assert fd_system.cache_path == os.path.join(fd_system.coupling_dir, 'cache')
+    with pytest.raises(ValueError, match='k-grid'):
+        th.fd_system_for_cell(system, dict(cell, kgrid=None))

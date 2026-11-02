@@ -90,6 +90,7 @@ def dense_vertex_cache_key(
                 or 'patterns' in f
                 or ('.dyn' in f and not f.endswith('.xml'))
                 or f.endswith('.ukk')
+                or f == 'displacements.json'  # finite-difference source
             ):
                 path = os.path.join(root, f)
                 names.append((os.path.relpath(path, coupling_dir), os.path.getsize(path)))

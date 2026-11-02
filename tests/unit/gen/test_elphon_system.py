@@ -275,7 +275,8 @@ def test_collect_elphon_system_prompts_and_reprompts_incommensurate_q(tmp_path, 
             'superconductivity, arpes',  # workflows
             '6',  # nq
             '12',  # nk
-            '',  # sigma
+            '',  # adaptive smearing (0.7)
+            '',  # sigma (floor 1 meV)
             '',  # mu*
             'n',  # transport Eliashberg
             'y',  # fs coupling
@@ -298,6 +299,8 @@ def test_collect_elphon_system_prompts_and_reprompts_incommensurate_q(tmp_path, 
     assert cfg['workflows'] == ['superconductivity', 'arpes']
     assert cfg['superconductivity']['me_temps'] == [1.0, 5.0, 9.0]
     assert cfg['superconductivity']['fs_coupling'] is True
+    assert cfg['superconductivity']['adaptive_smearing'] == 0.7
+    assert cfg['superconductivity']['sigma_ev'] == 0.001
     assert cfg['arpes']['self_energy'] == ['isotropic', 'anisotropic']
     assert cfg['pseudo_dir'] == '../../../'  # the template's directory, from <out>/qe/phonon
     written = es.write_system_folder(cfg, cfg['out'])

@@ -67,6 +67,7 @@ from ..phonon.qe_force_constants import (
 )
 from .do_pao_eph import (
     check_long_range_terms,
+    gamma_zero_mask,
     load_epw_coupling,
     vertex_from_epw,
     vertex_from_qe_ahc,
@@ -608,6 +609,9 @@ def eliashberg_dense_q(
     cache_dir=None,
     cache_tag=None,
     long_range=None,
+    gamma_modes='all',
+    gamma_acoustic_thz=0.1,
+    fd_options=None,
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
 
@@ -710,6 +714,14 @@ def eliashberg_dense_q(
         belongs to interband dipoles only).
     save_dir, pseudo_dir, prefix, basis, unfold, basis_shells, unfold_tol, cache_dir, cache_tag
         ``source='dfpt'`` and cache options of :func:`prepare_dense_vertex`.
+    gamma_modes : {'all', 'acoustic'}, optional
+        Modes zeroed at ``q = Gamma`` (:func:`~PAOFLOW.elphon.do_pao_eph.gamma_zero_mask`):
+        ``'all'`` (default, the QE convention) or only the acoustic ones below
+        ``gamma_acoustic_thz`` -- required by ``source='fd'``, where Gamma is the only q.
+    fd_options : dict, optional
+        ``source='fd'``: options of :func:`~PAOFLOW.elphon.fd_vertex.fd_cell_derivatives`
+        (``basispath``, ``configuration``, ``pthr``, ``fixed_basis``, ``locality_cutoff``,
+        ``ridge``, ...).
 
     Notes
     -----
@@ -737,7 +749,7 @@ def eliashberg_dense_q(
         allow_missing_long_range=allow_missing_long_range,
         save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
         basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
-        long_range=long_range,
+        long_range=long_range, fd_options=fd_options,
     )  # fmt: skip
     g_ReRp, win, phonon_at_q = vertex['g_ReRp'], vertex['window'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']
@@ -837,11 +849,14 @@ def eliashberg_dense_q(
         is_gamma = np.linalg.norm(q_cryst - np.round(q_cryst)) < 1.0e-6
         q_weight = qweights[iq] / qweights.sum()
         pair_weights = None
+        gamma_mask = (
+            gamma_zero_mask(freq_thz, gamma_modes, gamma_acoustic_thz) if is_gamma else None
+        )
         if pair_coupling is not None:
             # Same mode exclusions as lambda_qv below.
             pair_weights = np.where(freq_thz < min_freq_thz, 0.0, q_weight)
             if is_gamma:
-                pair_weights[:] = 0.0
+                pair_weights[gamma_mask] = 0.0
         lr_q = None
         if long_range is not None:
             lr_q = long_range.vertex_pao(q_cryst, A.shape[1], orbital_positions)
@@ -853,14 +868,14 @@ def eliashberg_dense_q(
         lam = res['lambda_qnu'][isig].copy()
         lam[freq_thz < min_freq_thz] = 0.0  # drop spurious soft/imaginary modes
         if is_gamma:
-            lam[:] = 0.0  # zero the Gamma acoustic blow-up (QE convention)
+            lam[gamma_mask] = 0.0  # every mode (QE convention) or the acoustic ones only
         lam_qv[iq] = lam
         om_qv[iq] = np.abs(freq_thz)
         if transport:
             lam_tr = res['lambda_tr_qnu'][isig].copy()
             lam_tr[freq_thz < min_freq_thz] = 0.0  # same exclusions as lambda
             if is_gamma:
-                lam_tr[:] = 0.0
+                lam_tr[gamma_mask] = 0.0
             lam_tr_qv[iq] = lam_tr
 
     # Each rank wrote a disjoint slice; a single SUM reduction rebuilds the grid.
@@ -923,6 +938,7 @@ def prepare_dense_vertex(
     cache_tag: str | None = None,
     bands=None,
     long_range=None,
+    fd_options: dict | None = None,
 ) -> dict:
     """Coarse couplings -> shared ``g(R_e, R_p)`` and the phonon interpolator.
 
@@ -955,10 +971,14 @@ def prepare_dense_vertex(
     phonon_at_q : callable or None
         ``q_cryst -> (freq_thz, z)``; ``None`` builds it from EPW's force constants or
         from the ``ph.x`` dyn files.
-    source : {'epw', 'dfpt', 'ahc', 'elphmat'}, optional
+    source : {'epw', 'dfpt', 'fd', 'ahc', 'elphmat'}, optional
         Coarse coupling input (see :func:`eliashberg_dense_q`).  ``'dfpt'`` computes the
         vertex natively from ``dvscf`` and the nscf wavefunctions
-        (:class:`~PAOFLOW.elphon.dfpt_vertex.CoarseVertexSetup`), without EPW.
+        (:class:`~PAOFLOW.elphon.dfpt_vertex.CoarseVertexSetup`), without EPW.  ``'fd'``
+        takes the finite-difference derivatives of a cell that is its own unit cell
+        (:mod:`~PAOFLOW.elphon.fd_vertex`): ``coupling_dir`` is the electron-phonon
+        directory of the displaced runs, ``qgrid_coarse`` must be ``(1, 1, 1)`` and the
+        phonons default to the cell's force constants from the same runs.
     masses_amu : ndarray, shape ``(nat,)``
         Atomic masses (amu), one per atom.
     tau_cryst : ndarray, shape ``(nat, 3)``, optional
@@ -1004,6 +1024,11 @@ def prepare_dense_vertex(
         ``source='dfpt'``: restrict the band projector of the vertex to these nscf bands
         (EPW's ``exclude_bands``; default all bands, the consistent choice for the PAO
         Hamiltonian).
+    fd_options : dict, optional
+        ``source='fd'``: keyword arguments of
+        :func:`~PAOFLOW.elphon.fd_vertex.fd_cell_derivatives` (basis, projectability,
+        fixed basis, locality cutoff and ridge of the random mode); ``ridge`` is also
+        used by the force-constant fit.
 
     Returns
     -------
@@ -1032,6 +1057,40 @@ def prepare_dense_vertex(
     epw = None
     dfpt = None
     small = {'epsi': None, 'zstar': None}
+    fd = None
+    if source == 'fd':
+        from .fd_vertex import fd_force_constants, fd_phonon_at_q
+
+        if tuple(qgrid_coarse) != (1, 1, 1):
+            raise ValueError(
+                "source='fd' is a Gamma-only supercell source: qgrid_coarse must be (1, 1, 1)."
+            )
+        fd = dict(fd_options or {})
+        if comm.Get_size() > 1:
+            # The cell derivatives come from serial PAOFLOW runs on every displaced save
+            # (collectives on COMM_WORLD inside); with one q there is nothing for MPI to
+            # distribute here, so the driver must run on a single rank.
+            raise ValueError(
+                "source='fd' builds the cell derivatives with serial PAOFLOW runs: run the "
+                'driver with a single MPI rank (python eliashberg.py, no mpirun).'
+            )
+        if q_cryst_coarse is None:
+            q_cryst_coarse = np.zeros((1, 3))
+        if phonon_at_q is None:
+            phi = fd_force_constants(coupling_dir, ridge=float(fd.get('ridge', 1.0e-4)))
+            if phi is None:
+                raise ValueError(
+                    'the displaced runs in %s do not determine the force constants of every '
+                    'atom (pw.x outputs with forces next to the inputs, +/- pairs along x, y, z '
+                    'or the random mode); pass phonon_at_q.' % coupling_dir
+                )
+            if phi.shape[0] != nmodes:
+                raise ValueError(
+                    'force constants of %d modes but %d atoms in masses_amu.'
+                    % (phi.shape[0], masses_amu.size)
+                )
+            atom_positions = tau_cryst if orbital_positions is not None else None
+            phonon_at_q = fd_phonon_at_q(phi, masses_amu, at, atom_positions)
     if source == 'dfpt':
         from .dfpt_vertex import CoarseVertexSetup
 
@@ -1110,6 +1169,10 @@ def prepare_dense_vertex(
         from .coupling_cache import dense_vertex_cache_key, load_dense_vertex
 
         tag = cache_tag if long_range is None else '%s|lr=%s' % (cache_tag, long_range.signature())
+        if fd is not None:  # the fit options change the derivatives
+            import json as _json
+
+            tag = '%s|fd=%s' % (tag, _json.dumps({k: fd[k] for k in sorted(fd)}, default=str))
         cache_key = dense_vertex_cache_key(
             coupling_dir, source, qgrid_coarse, ng, masses_amu, A.shape, tag
         )
@@ -1189,6 +1252,22 @@ def prepare_dense_vertex(
         node_comm.Barrier()
         for row in range(node_rank, nawf, node_size):
             g_ReRp[row] = np.fft.fftn(g_ReRp[row], axes=(-3, -2, -1)) / nq_coarse
+    elif source == 'fd':
+        if node_rank == 0:
+            from .fd_vertex import FD_DERIVATIVE_OPTIONS, fd_cell_derivatives, fill_g_ReRp_from_fd
+
+            result = fd_cell_derivatives(
+                coupling_dir, **{k: v for k, v in fd.items() if k in FD_DERIVATIVE_OPTIONS}
+            )
+            fill_g_ReRp_from_fd(g_ReRp, result['directional'], int(masses_amu.size))
+            fit = result.get('fit')
+            if fit is not None:
+                print(
+                    '  finite-difference vertex: %d random pairs, relative residual %.2e'
+                    % (fit['nconfig'], fit['relative_residual']),
+                    flush=True,
+                )
+            del result
     elif node_rank == 0:
         nq_coarse = qg[0] * qg[1] * qg[2]
         labels = np.round(q_cryst_coarse * np.asarray(qg)).astype(int) % np.asarray(qg)
