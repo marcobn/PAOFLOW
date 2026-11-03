@@ -19,8 +19,11 @@ import os
 from dataclasses import dataclass
 
 import numpy as np
+import scipy.fft
 from numpy.typing import NDArray
 from scipy.io import FortranFile
+
+from ..utils.parallel_resources import core_budget
 
 
 @dataclass(frozen=True)
@@ -156,7 +159,9 @@ def periodic_part_on_grid(
     box = np.zeros((nb,) + tuple(int(n) for n in fft_grid), dtype=np.complex128)
     i1, i2, i3 = box_indices(miller, fft_grid)
     box[:, i1, i2, i3] = coefficients
-    return np.fft.ifftn(box, axes=(1, 2, 3)) * (box.shape[1] * box.shape[2] * box.shape[3])
+    # threaded over this rank's core budget (scipy.fft and numpy.fft are both pocketfft)
+    u_r = scipy.fft.ifftn(box, axes=(1, 2, 3), workers=core_budget())
+    return u_r * (box.shape[1] * box.shape[2] * box.shape[3])
 
 
 def project_on_plane_waves(
@@ -184,10 +189,67 @@ def project_on_plane_waves(
         ``(1/N) sum_r f(r) exp(-i (G'' - G0).r)``.
     """
     n = int(np.prod(fft_grid))
-    spectrum = np.fft.fftn(fields, axes=(-3, -2, -1)) / n
+    spectrum = scipy.fft.fftn(fields, axes=(-3, -2, -1), workers=core_budget()) / n
     shifted = miller - np.asarray(umklapp, dtype=int).reshape(3, 1)
     i1, i2, i3 = box_indices(shifted, fft_grid)
     return spectrum[..., i1, i2, i3]
+
+
+def local_potential_on_sphere(
+    potential: NDArray[np.complex128],
+    coefficients: NDArray[np.complex128],
+    miller_k: NDArray[np.int_],
+    miller_kq: NDArray[np.int_],
+    fft_grid: tuple[int, int, int],
+    umklapp: NDArray[np.int_] | tuple[int, int, int] = (0, 0, 0),
+    max_bytes: int = 1024**3,
+) -> NDArray[np.complex128]:
+    """Products ``dV_c(r) u_n(r)`` on the ``k + q + G`` sphere, in memory-bounded blocks.
+
+    Parameters
+    ----------
+    potential : ndarray, shape ``(nc, nr1, nr2, nr3)``, complex
+        Periodic perturbing potentials on the grid.
+    coefficients : ndarray, shape ``(nb, npw_k)``, complex
+        Plane-wave coefficients at ``k`` (one spinor component).
+    miller_k : ndarray, shape ``(3, npw_k)``, int
+        Their Miller indices.
+    miller_kq : ndarray, shape ``(3, npw_kq)``, int
+        Miller indices of the stored block at ``k' = k + q - G0``.
+    fft_grid : tuple of int
+        ``(nr1, nr2, nr3)``.
+    umklapp : array_like, shape ``(3,)``, int, optional
+        ``G0`` (see :func:`project_on_plane_waves`).
+    max_bytes : int, optional
+        Size of the grid fields of one block (default 1 GiB); the peak memory is about
+        three times this.
+
+    Returns
+    -------
+    ndarray, shape ``(nc, nb, npw_kq)``, complex
+        ``project_on_plane_waves(potential[:, None] * periodic_part_on_grid(coefficients,
+        miller_k, fft_grid)[None], miller_kq, fft_grid, umklapp)``.
+
+    Notes
+    -----
+    The direct product holds ``nc * nb`` grid fields at once (119 GB for 36 modes, 120 bands
+    and a 120^3 grid).  Here the bands are taken in blocks of at most ``max_bytes`` of fields
+    and the potentials in as many as fit beside them; every entry is computed by the same
+    transforms, so the result does not depend on the blocking.
+    """
+    ncomp, nbands = potential.shape[0], coefficients.shape[0]
+    field_bytes = np.dtype(np.complex128).itemsize * int(np.prod(fft_grid))
+    nfields = max(1, int(max_bytes) // field_bytes)
+    band_block = min(nbands, nfields)
+    comp_block = max(1, min(ncomp, nfields // band_block))
+    out = np.empty((ncomp, nbands, miller_kq.shape[1]), dtype=np.complex128)
+    for b0 in range(0, nbands, band_block):
+        u_r = periodic_part_on_grid(coefficients[b0 : b0 + band_block], miller_k, fft_grid)
+        for c0 in range(0, ncomp, comp_block):
+            out[c0 : c0 + comp_block, b0 : b0 + band_block] = project_on_plane_waves(
+                potential[c0 : c0 + comp_block, None] * u_r[None], miller_kq, fft_grid, umklapp
+            )
+    return out
 
 
 def interpolate_to_grid(

@@ -46,8 +46,7 @@ from .plane_waves import (
     g_sphere,
     interpolate_to_grid,
     k_plus_g_cart,
-    periodic_part_on_grid,
-    project_on_plane_waves,
+    local_potential_on_sphere,
     read_plane_wave_block,
 )
 from .pseudopotential_terms import (
@@ -293,6 +292,9 @@ class CoarseVertexSetup:
         Directory of the UPF files (default: the save directory, where QE copies them).
     cache_bytes : int, optional
         Memory budget of the per-rank cache of plane-wave blocks and projectors.
+    fft_bytes : int, optional
+        Memory budget of the grid fields ``dV_c(r) u_n(r)`` of one block of
+        :meth:`matrix_elements` (see :func:`~PAOFLOW.elphon.plane_waves.local_potential_on_sphere`).
     unfold_kpoints : bool, optional
         The save holds the irreducible wedge: rotate the stored Bloch functions to every
         point of the full grid (:class:`~PAOFLOW.elphon.wavefunction_symmetry.WavefunctionProvider`).
@@ -316,6 +318,7 @@ class CoarseVertexSetup:
         pseudo_dir: str | None = None,
         cache_bytes: int = 256 * 1024**2,
         unfold_kpoints: bool | None = None,
+        fft_bytes: int = 1024**3,
     ):
         self.save_dir = save_dir
         self.files: DFPTFiles = locate_dfpt_files(dfpt_dir, prefix)
@@ -387,6 +390,7 @@ class CoarseVertexSetup:
         self.nk = int(self.kpts_cryst.shape[0])
         self.nbnd = int(self.setup['nbnd'])
         self.cache_bytes = int(cache_bytes)
+        self.fft_bytes = int(fft_bytes)
         self._blocks: dict[int, PlaneWaveBlock] = {}
         self._beta: dict[int, NDArray[np.complex128]] = {}
         self._cached_bytes = 0
@@ -486,6 +490,7 @@ class CoarseVertexSetup:
         ng: Sequence[int],
         basis: str = 'auto',
         bands: Sequence[int] | None = None,
+        kpoints: Sequence[int] | None = None,
     ) -> NDArray[np.complex128]:
         """PAO-gauge vertex ``g_q(k)_{ij,c}`` of one coarse q on the k-grid (before the ``R_e`` transform).
 
@@ -496,11 +501,17 @@ class CoarseVertexSetup:
         bands : sequence of int, optional
             Restrict the band projector to these nscf bands (EPW's ``exclude_bands``
             bookkeeping, for comparisons); default: all bands of the projections.
+        kpoints : sequence of int, optional
+            Indices (nscf order) of the k-points to compute; default all.  The potential
+            and the ``k + q`` bookkeeping are those of the full grid, so a block of the
+            grid costs its share of the full vertex: this is how
+            :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex` splits one
+            coarse q over the ranks of a node.
 
         Returns
         -------
-        ndarray ``(nk, nawf, nawf, 3 nat)``, complex
-            In the k order of the nscf run.
+        ndarray ``(len(kpoints), nawf, nawf, 3 nat)``, complex
+            In the order of ``kpoints`` (the k order of the nscf run by default).
         """
         nbnd, nawf, nk = A.shape
         if nk != self.nk or nbnd != self.nbnd:
@@ -522,8 +533,10 @@ class CoarseVertexSetup:
             basis = 'pao' if nawf <= nbnd else 'band'
         potential = self.potential_at(member)
         ikq, g0 = kq_index_map(self.kpts_cryst, member.q_cryst, tuple(int(n) for n in ng))
-        gk_b = np.empty((nk, nawf, nawf, 3 * self.nat), dtype=np.complex128)
-        for ik in range(nk):
+        ks = np.arange(nk) if kpoints is None else np.asarray(kpoints, dtype=int)
+        gk_b = np.empty((ks.size, nawf, nawf, 3 * self.nat), dtype=np.complex128)
+        for row, ik in enumerate(ks):
+            ik = int(ik)
             if basis == 'pao':
                 m = self.matrix_elements(
                     member,
@@ -539,7 +552,7 @@ class CoarseVertexSetup:
                 m = np.einsum(
                     'mi,cmn,nj->cij', A[:, :, ikq[ik]], d, np.conj(A[:, :, ik]), optimize=True
                 )
-            gk_b[ik] = np.moveaxis(m, 0, -1)
+            gk_b[row] = np.moveaxis(m, 0, -1)
         return gk_b
 
     def potential_at(self, member: StarMember) -> NDArray[np.complex128]:
@@ -613,12 +626,14 @@ class CoarseVertexSetup:
         # the (scalar, non-magnetic) potential acts on each spinor component separately
         dvpsi = np.empty((3 * self.nat, c_k.shape[0], npol * npw_kq), dtype=np.complex128)
         for spin in range(npol):
-            u_r = periodic_part_on_grid(
-                c_k[:, spin * npw_k : (spin + 1) * npw_k], blk_k.miller, self.fft_smooth
-            )
-            w = potential[:, None] * u_r[None]
-            dvpsi[:, :, spin * npw_kq : (spin + 1) * npw_kq] = project_on_plane_waves(
-                w, blk_kq.miller, self.fft_smooth, umklapp
+            dvpsi[:, :, spin * npw_kq : (spin + 1) * npw_kq] = local_potential_on_sphere(
+                potential,
+                c_k[:, spin * npw_k : (spin + 1) * npw_k],
+                blk_k.miller,
+                blk_kq.miller,
+                self.fft_smooth,
+                umklapp,
+                self.fft_bytes,
             )
         # k + q + G' for the bra projectors: equal to k' + G'' of the stored block on an exact
         # grid; EPW uses the sum k + q itself, which differs when the k-points were given with
@@ -850,6 +865,103 @@ def rotate_pao_vertex(
     return out
 
 
+def k_blocks(nk: int, nparts: int) -> list[NDArray[np.int_]]:
+    """Contiguous blocks of the k indices ``0 .. nk - 1`` for ``nparts`` ranks (some may be empty)."""
+    return [
+        np.asarray(b, dtype=int) for b in np.array_split(np.arange(int(nk)), max(1, int(nparts)))
+    ]
+
+
+def pao_vertex_k_shared(
+    setup: CoarseVertexSetup,
+    member: StarMember,
+    A: NDArray[np.complex128],
+    ng: Sequence[int],
+    basis: str,
+    node_comm,
+    bands: Sequence[int] | None = None,
+) -> NDArray[np.complex128]:
+    """``g_q(k)`` of every k, computed by k-blocks over the ranks of ``node_comm`` and gathered.
+
+    Parameters
+    ----------
+    setup, member, A, ng, basis, bands
+        As :meth:`CoarseVertexSetup.pao_vertex_k`.
+    node_comm : MPI communicator
+        The ranks sharing the work (every rank holds the full ``A``).
+
+    Returns
+    -------
+    ndarray ``(nk, nawf, nawf, 3 nat)``, complex
+        The same array on every rank, in the k order of the nscf run.
+    """
+    from mpi4py import MPI
+
+    nk = int(A.shape[2])
+    blocks = k_blocks(nk, node_comm.Get_size())
+    part = np.ascontiguousarray(
+        setup.pao_vertex_k(member, A, ng, basis, bands, kpoints=blocks[node_comm.Get_rank()])
+    )
+    per_k = int(np.prod(part.shape[1:]))
+    counts = [int(b.size) * per_k for b in blocks]
+    displs = [int(d) for d in np.concatenate([[0], np.cumsum(counts)[:-1]])]
+    full = np.empty((nk,) + part.shape[1:], dtype=np.complex128)
+    node_comm.Allgatherv(
+        [part, MPI.C_DOUBLE_COMPLEX], [full, (counts, displs), MPI.C_DOUBLE_COMPLEX]
+    )
+    return full
+
+
+def _unfolding_self_check(
+    setup: CoarseVertexSetup,
+    A: NDArray[np.complex128],
+    kpts_cryst: NDArray[np.float64],
+    q0: NDArray[np.float64],
+    iq: int,
+    member: StarMember,
+    base: NDArray[np.complex128],
+    ops: dict,
+    ng: Sequence[int],
+    basis: str,
+    conjugate_u: bool,
+    tol: float,
+    node_comm,
+) -> None:
+    """Compare the rotated vertex of ``member`` with a direct computation (k-split over ``node_comm``)."""
+    nk = int(A.shape[2])
+    gk = rotate_pao_vertex(base, kpts_cryst, q0, member, setup, ops, ng, conjugate_u=conjugate_u)
+    if node_comm is None:
+        rows = np.arange(nk)
+    else:
+        rows = k_blocks(nk, node_comm.Get_size())[node_comm.Get_rank()]
+    direct = setup.pao_vertex_k(member, A, ng, basis, kpoints=rows)
+    scale = float(np.abs(direct).max()) if direct.size else 0.0
+    per_k = np.abs(gk[rows] - direct).reshape(rows.size, -1).max(1) if rows.size else np.zeros(0)
+    if node_comm is not None:
+        from mpi4py import MPI
+
+        scale = node_comm.allreduce(scale, op=MPI.MAX)
+    dev = float(per_k.max()) / scale if per_k.size and scale > 0 else 0.0
+    nbad = int(np.count_nonzero(per_k / max(scale, 1e-300) > tol))
+    if node_comm is not None:
+        dev = node_comm.allreduce(dev, op=MPI.MAX)
+        nbad = node_comm.allreduce(nbad, op=MPI.SUM)
+    if node_comm is None or node_comm.Get_rank() == 0:
+        print(
+            '  star unfolding self-check (irreducible q %d -> member q = %s, operation %d): '
+            'max relative deviation %.2e at %d of %d k-points'
+            % (iq, np.round(member.q_cryst, 4), member.isym, dev, nbad, nk),
+            flush=True,
+        )
+    if dev > tol:
+        raise ValueError(
+            'star unfolding deviates by %.2e (> %.0e) at %d k-points: the nscf band set cuts a '
+            'degenerate multiplet there, so the projected PAO functions are not symmetric. '
+            "Change nbnd so that the highest band is isolated at every k, or use unfold='full'."
+            % (dev, tol, nbad)
+        )
+
+
 def unfolded_pao_vertices(
     setup: CoarseVertexSetup,
     A: NDArray[np.complex128],
@@ -861,6 +973,7 @@ def unfolded_pao_vertices(
     check_member: bool = True,
     tol: float = 1e-6,
     conjugate_u: bool = True,
+    node_comm=None,
 ):
     """Generate ``(member, g_q(k))`` for every star member of the given irreducible q.
 
@@ -885,6 +998,12 @@ def unfolded_pao_vertices(
         Largest tolerated relative deviation of the self-check.
     conjugate_u : bool, optional
         Wigner-D convention (``True`` reproduces the direct vertices).
+    node_comm : MPI communicator, optional
+        Share the work among these ranks: the vertex of each irreducible q is computed by
+        k-blocks (:func:`pao_vertex_k_shared`) and the members of its star are dealt
+        round-robin, so every ``(member, gk)`` is yielded on exactly one rank; the
+        self-check is split the same way.  Each rank must run the generator to the end
+        (collective calls inside).  Default: everything on the calling rank.
 
     Yields
     ------
@@ -899,33 +1018,29 @@ def unfolded_pao_vertices(
         change ``nbnd`` so that the highest band is isolated everywhere, or use
         ``unfold='full'``.
     """
+    size = 1 if node_comm is None else node_comm.Get_size()
+    rank = 0 if node_comm is None else node_comm.Get_rank()
     checked = False
     for iq in irreducible:
         q0 = setup.q_irr[iq]
-        base = setup.pao_vertex_k(StarMember(q0, iq, 0, False, np.zeros(3, int)), A, ng, basis)
+        member0 = StarMember(q0, iq, 0, False, np.zeros(3, int))
+        if node_comm is None:
+            base = setup.pao_vertex_k(member0, A, ng, basis)
+        else:
+            base = pao_vertex_k_shared(setup, member0, A, ng, basis, node_comm)
         star = [m for m in setup.members if m.iq_irr == iq]
-        for member in star:
+        if check_member and not checked:
+            target = next((m for m in star if m.isym != 0 or m.time_reversed), None)
+            if target is not None:
+                checked = True
+                _unfolding_self_check(
+                    setup, A, kpts_cryst, q0, iq, target, base, ops, ng, basis, conjugate_u, tol,
+                    node_comm,
+                )  # fmt: skip
+        for j, member in enumerate(star):
+            if j % size != rank:
+                continue
             gk = rotate_pao_vertex(
                 base, kpts_cryst, q0, member, setup, ops, ng, conjugate_u=conjugate_u
             )
-            if check_member and not checked and (member.isym != 0 or member.time_reversed):
-                direct = setup.pao_vertex_k(member, A, ng, basis)
-                scale = float(np.abs(direct).max())
-                dev = float(np.abs(gk - direct).max()) / scale if scale > 0 else 0.0
-                per_k = np.abs(gk - direct).reshape(gk.shape[0], -1).max(1) / max(scale, 1e-300)
-                bad = np.nonzero(per_k > tol)[0]
-                checked = True
-                print(
-                    '  star unfolding self-check (irreducible q %d -> member q = %s, operation %d): '
-                    'max relative deviation %.2e at %d of %d k-points'
-                    % (iq, np.round(member.q_cryst, 4), member.isym, dev, bad.size, gk.shape[0]),
-                    flush=True,
-                )
-                if dev > tol:
-                    raise ValueError(
-                        'star unfolding deviates by %.2e (> %.0e) at %d k-points (first: %s): the nscf band set '
-                        'cuts a degenerate multiplet there, so the projected PAO functions are not symmetric. '
-                        "Change nbnd so that the highest band is isolated at every k, or use unfold='full'."
-                        % (dev, tol, bad.size, bad[:5].tolist())
-                    )
             yield member, gk

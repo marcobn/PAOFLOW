@@ -54,6 +54,7 @@ Deferred / to validate
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -910,6 +911,54 @@ def eliashberg_dense_q(
     return out
 
 
+def _sum_on_node_root(node_comm, array: NDArray[np.complex128]) -> None:
+    """Sum ``array`` over the ranks of ``node_comm`` into node rank 0, in place, one leading row at a time.
+
+    Row-wise messages keep every count far below the ``2^31`` limit of MPI for the
+    multi-GB ``g_q(R_e)`` of large cells.
+    """
+    if node_comm.Get_size() == 1:
+        return
+    from mpi4py import MPI
+
+    if not array.flags.c_contiguous:
+        raise ValueError('_sum_on_node_root needs a C-contiguous array')
+    root = node_comm.Get_rank() == 0
+    for row in array:  # contiguous views of the leading axis
+        if root:
+            node_comm.Reduce(MPI.IN_PLACE, row, op=MPI.SUM, root=0)
+        else:
+            node_comm.Reduce(row, None, op=MPI.SUM, root=0)
+
+
+def _broadcast_cells(leaders, g_ReRp: NDArray[np.complex128], labels, owner: dict) -> None:
+    """Give every node the q-cells built on the others (node leaders only), one orbital row at a time.
+
+    Parameters
+    ----------
+    leaders : MPI communicator
+        One rank per node (the node-local rank 0 of each).
+    g_ReRp : ndarray ``(nawf, nawf, ncart, n1, n2, n3, nq1, nq2, nq3)``
+        The node's shared buffer; the cells of the other nodes are filled in.
+    labels : ndarray ``(nq, 3)`` int
+        Grid labels of the coarse q.
+    owner : dict
+        ``label -> rank in leaders`` of the node that built the cell.
+    """
+    me = leaders.Get_rank()
+    for lab in labels:
+        root = int(owner[tuple(int(x) for x in lab)])
+        for row in range(g_ReRp.shape[0]):
+            cell = g_ReRp[row, ..., lab[0], lab[1], lab[2]]
+            if me == root:
+                buf = np.ascontiguousarray(cell)
+            else:
+                buf = np.empty(cell.shape, dtype=np.complex128)
+            leaders.Bcast(buf, root=root)
+            if me != root:
+                cell[...] = buf
+
+
 def prepare_dense_vertex(
     A: NDArray[np.complex128],
     kpts_cryst: NDArray[np.float64],
@@ -939,6 +988,7 @@ def prepare_dense_vertex(
     bands=None,
     long_range=None,
     fd_options: dict | None = None,
+    node_groups: int | None = None,
 ) -> dict:
     """Coarse couplings -> shared ``g(R_e, R_p)`` and the phonon interpolator.
 
@@ -1029,6 +1079,10 @@ def prepare_dense_vertex(
         :func:`~PAOFLOW.elphon.fd_vertex.fd_cell_derivatives` (basis, projectability,
         fixed basis, locality cutoff and ridge of the random mode); ``ridge`` is also
         used by the force-constant fit.
+    node_groups : int, optional
+        Testing only: split the communicator into this many groups that play the role of
+        nodes, so that the shared windows and the cell exchange of ``source='dfpt'`` are
+        exercised on one machine.  Default: the real nodes (``MPI.COMM_TYPE_SHARED``).
 
     Returns
     -------
@@ -1051,7 +1105,10 @@ def prepare_dense_vertex(
     # Allocate ONE copy per node in MPI shared memory (built by the node-local
     # rank 0 only) instead of an independent copy per rank, which otherwise
     # multiplies the memory by the number of ranks on the node.
-    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    if node_groups:
+        node_comm = comm.Split(comm.Get_rank() % int(node_groups), comm.Get_rank())
+    else:
+        node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
     node_rank = node_comm.Get_rank()
 
     epw = None
@@ -1192,8 +1249,12 @@ def prepare_dense_vertex(
     if cached:
         pass
     elif source == 'dfpt':
-        # The q-cells are disjoint: the node ranks share the coarse q and then the
-        # orbital rows of the q -> R_p transform (identical to the serial loop).
+        # Work split: the coarse q (or the irreducible q of the star unfolding) go
+        # round-robin over the nodes; inside a node the k-points of every q are
+        # split over the node ranks and the partial g_q(R_e) summed on node rank 0,
+        # which writes the q-cell of the shared window.  The nodes then exchange
+        # their cells (each needs the whole g(R_e, R_p)) and share the orbital
+        # rows of the q -> R_p transform (identical to the serial loop).
         nq_coarse = qg[0] * qg[1] * qg[2]
         labels = np.round(q_cryst_coarse * np.asarray(qg)).astype(int) % np.asarray(qg)
         if q_cryst_coarse.shape[0] != nq_coarse or len({tuple(lab) for lab in labels}) != nq_coarse:
@@ -1201,17 +1262,35 @@ def prepare_dense_vertex(
                 'the coarse q-points (%d) must tile the full %s grid'
                 % (q_cryst_coarse.shape[0], 'x'.join(map(str, qg)))
             )
-        member_of = {
-            tuple(np.round(m.q_cryst * np.asarray(qg)).astype(int) % np.asarray(qg)): m
-            for m in dfpt.members
-        }
+
+        def label_of(q_cryst):
+            return tuple(
+                int(x) for x in np.round(q_cryst * np.asarray(qg)).astype(int) % np.asarray(qg)
+            )
+
+        member_of = {label_of(m.q_cryst): m for m in dfpt.members}
         kidx = np.round(np.asarray(kpts_cryst, dtype=float) * np.asarray(ng)).astype(
             int
         ) % np.asarray(ng)
         node_size = node_comm.Get_size()
+        leaders = comm.Split(0 if node_rank == 0 else MPI.UNDEFINED, comm.Get_rank())
+        inode, nnodes = node_comm.bcast(
+            (leaders.Get_rank(), leaders.Get_size()) if node_rank == 0 else None, root=0
+        )
+        from .dfpt_vertex import k_blocks
+
+        mine_k = k_blocks(nk, node_size)[node_rank]
+        owner = {}  # q label -> node that builds its cell
         if node_rank == 0:
             g_ReRp[...] = 0.0
         node_comm.Barrier()
+        if comm.Get_rank() == 0:
+            print(
+                '  coarse vertex: %d q on %d node(s), %d rank(s) per node share the %d k-points'
+                % (nq_coarse, nnodes, node_size, nk),
+                flush=True,
+            )
+        t_build = time.time()
         if unfold == 'irreducible':
             from .dfpt_vertex import (
                 orbital_shells,
@@ -1228,28 +1307,50 @@ def prepare_dense_vertex(
                 basis_shells if isinstance(basis_shells, tuple) else orbital_shells(basis_shells)
             )
             ops = pao_vertex_rotation_operators(dfpt, shells, atom_labels, tuple(ng))
-            mine = list(range(node_rank, len(dfpt.q_irr), node_size))
+            for m in dfpt.members:
+                owner[label_of(m.q_cryst)] = int(m.iq_irr) % nnodes
+            mine = list(range(inode, len(dfpt.q_irr), nnodes))
             for member, gk in unfolded_pao_vertices(
-                dfpt, A, kpts_cryst, tuple(ng), ops, mine, basis, check_member=True, tol=unfold_tol
-            ):
-                lab = np.round(member.q_cryst * np.asarray(qg)).astype(int) % np.asarray(qg)
+                dfpt, A, kpts_cryst, tuple(ng), ops, mine, basis, check_member=True,
+                tol=unfold_tol, node_comm=node_comm,
+            ):  # fmt: skip
+                lab = label_of(member.q_cryst)
                 if long_range is not None:
                     gk = gk - long_range.vertex_pao(member.q_cryst, nawf, orbital_positions)[None]
                 g_ReRp[..., lab[0], lab[1], lab[2]] = pao_vertex_to_cells(gk, kidx, tuple(ng))
         elif unfold == 'full':
             from .elph_bloch import pao_vertex_to_cells
 
-            for iq in range(node_rank, nq_coarse, node_size):
-                member = member_of[tuple(labels[iq])]
-                gk = dfpt.pao_vertex_k(member, A, tuple(ng), basis, bands)
+            for iq in range(nq_coarse):
+                owner[tuple(int(x) for x in labels[iq])] = iq % nnodes
+            for iq in range(inode, nq_coarse, nnodes):
+                t_q = time.time()
+                member = member_of[tuple(int(x) for x in labels[iq])]
+                gk = dfpt.pao_vertex_k(member, A, tuple(ng), basis, bands, kpoints=mine_k)
                 if long_range is not None:
                     gk = gk - long_range.vertex_pao(member.q_cryst, nawf, orbital_positions)[None]
-                gR = pao_vertex_to_cells(gk, kidx, tuple(ng))
-                g_ReRp[..., labels[iq, 0], labels[iq, 1], labels[iq, 2]] = gR
+                gR = pao_vertex_to_cells(gk, kidx[mine_k], tuple(ng))
+                del gk
+                _sum_on_node_root(node_comm, gR)
+                if node_rank == 0:
+                    g_ReRp[..., labels[iq, 0], labels[iq, 1], labels[iq, 2]] = gR
+                del gR
+                if comm.Get_rank() == 0:
+                    print(
+                        '  coarse q %d of %d: %.0f s' % (iq + 1, nq_coarse, time.time() - t_q),
+                        flush=True,
+                    )
         else:
             raise ValueError("unfold must be 'full' or 'irreducible', got %r" % (unfold,))
         dfpt.clear_cache()
         node_comm.Barrier()
+        if nnodes > 1 and node_rank == 0:
+            _broadcast_cells(leaders, g_ReRp, labels, owner)
+        if leaders != MPI.COMM_NULL:
+            leaders.Free()
+        node_comm.Barrier()
+        if comm.Get_rank() == 0:
+            print('  coarse vertex built in %.0f s' % (time.time() - t_build), flush=True)
         for row in range(node_rank, nawf, node_size):
             g_ReRp[row] = np.fft.fftn(g_ReRp[row], axes=(-3, -2, -1)) / nq_coarse
     elif source == 'fd':

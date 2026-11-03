@@ -1207,9 +1207,33 @@ electrons. The paper neglects local-field effects (a few per cent).
 - **MPI over the q loop** (both workflows), with `load_balancing` and
   `Allreduce(SUM)`. Cap the rank count at the number of q evaluated.
 - **Node-shared vertex.** $g(R_e,R_p)$ is allocated once per node
-  (`MPI.Win.Allocate_shared`). The node-local rank 0 builds it in place: each
-  coarse $g_q(R_e)$ goes to its q-cell, then the q → $R_p$ FFT runs one orbital
-  row at a time. There are no full-size temporaries.
+  (`MPI.Win.Allocate_shared`). For the EPW / `elphmat` / AHC sources the
+  node-local rank 0 builds it in place: each coarse $g_q(R_e)$ goes to its
+  q-cell, then the q → $R_p$ FFT runs one orbital row at a time. There are no
+  full-size temporaries.
+- **Native DFPT vertex: q over nodes, k over the node ranks** (Nov 3 2026).
+  `prepare_dense_vertex(source='dfpt')` deals the coarse q (or, with
+  `unfold='irreducible'`, the irreducible q) round-robin over the nodes; inside a
+  node the $N_k$ k-points of every q are split in contiguous blocks over the node
+  ranks (`pao_vertex_k(..., kpoints=block)`), each rank transforms its block to
+  $g_q(R_e)$ (the partial sums add up exactly, `pao_vertex_to_cells` is linear in
+  the k scatter) and the node sums them on its rank 0 (`_sum_on_node_root`,
+  row-wise `Reduce`), which writes the q-cell. The nodes then exchange their cells
+  (`_broadcast_cells`, one orbital row at a time from the owner's node leader) and
+  the q → $R_p$ FFT is shared over orbital rows as before. The star unfolding
+  computes the irreducible vertex by k-blocks and gathers it (`pao_vertex_k_shared`),
+  deals the star members over the node ranks and splits its self-check the same
+  way. Every rank therefore does $N_q N_k / N_{\rm ranks}$ k-points of work, with
+  a per-node memory of the shared window plus one $g_q(R_e)$ transient per rank;
+  before this the q were dealt over the node ranks only and every node rebuilt
+  the whole vertex (a multi-node job gained nothing, and a single node could not
+  hold more ranks than its memory allowed). Sizing rule: ranks per node =
+  (node memory − window) / per-rank peak (NbSn2 minimal basis: window 42 GB,
+  peak 19 GB per rank → 8 ranks on a 256 GB node), nodes = wanted speed-up; the
+  k-point cost of one coarse q is printed per q. Rounding differs from the serial
+  loop only through the order of the k sum (Pb 12³ k / 2³ q: the three layouts
+  agree to the cache precision). `node_groups=N` (testing) emulates N nodes on
+  one machine.
 - **EPW coupling.** `load_epw_coupling` reads the full `epmatq`
   ($n_{\rm bndep}^2\,N_k\,3n_{\rm at}\,N_q$ complex) on node rank 0
   only. It is released once $g(R_e,R_p)$ is built. The other ranks receive the
