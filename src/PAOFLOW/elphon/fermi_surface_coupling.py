@@ -119,7 +119,13 @@ class FermiSurfacePairCoupling:
         # that every member of a star carries the same state labels.
         representatives = np.asarray(representatives, dtype=int)
         energy_rep_ev = (energies_ry[representatives] - fermi_ry) * RY_TO_EV
-        irr_index, band_index = np.nonzero(np.abs(energy_rep_ev) < self.fsthick_ev)
+        # A state needs a non-zero Fermi-surface delta: with adaptive widths a state far
+        # from E_F in units of its own (small) width has an underflowed delta, and the
+        # per-state normalisation D_a would divide by zero (NaN couplings, Nb at 48^3).
+        in_window = (np.abs(energy_rep_ev) < self.fsthick_ev) & (
+            self.delta_ry[representatives] > 0.0
+        )
+        irr_index, band_index = np.nonzero(in_window)
         self.nstates = irr_index.size
         state_of_irreducible = -np.ones(energy_rep_ev.shape, dtype=int)
         state_of_irreducible[irr_index, band_index] = np.arange(self.nstates)
@@ -310,4 +316,43 @@ def read_fs_coupling(path: str) -> dict[str, Any]:
         The arrays, with the 0-d entries converted to Python scalars.
     """
     with np.load(path) as data:
-        return {key: (data[key].item() if data[key].ndim == 0 else data[key]) for key in data}
+        coupling = {key: (data[key].item() if data[key].ndim == 0 else data[key]) for key in data}
+    return drop_zero_weight_states(coupling)
+
+
+def drop_zero_weight_states(coupling: dict[str, Any]) -> dict[str, Any]:
+    """Remove the states of zero Fermi-surface weight from a coupling dictionary.
+
+    Files written before the window filter of :class:`FermiSurfacePairCoupling` can hold
+    states whose delta underflowed (adaptive widths); their coupling rows are ``NaN`` and
+    they carry no weight, so dropping them leaves every observable unchanged.
+
+    Parameters
+    ----------
+    coupling : dict
+        As returned by :func:`read_fs_coupling` (per-state arrays of leading size ``N``).
+
+    Returns
+    -------
+    dict
+        The same dictionary when every weight is positive, otherwise a copy restricted to
+        the states with ``weight > 0`` (arrays of leading dimension ``N`` sliced, the
+        ``(N, N)`` and ``(N, N, nfreq)`` pair arrays sliced on both state axes).
+    """
+    weights = np.asarray(coupling.get('weight', []), dtype=float)
+    if weights.size == 0:
+        return coupling
+    keep = np.flatnonzero(weights > 0.0)
+    if keep.size == weights.size:
+        return coupling
+    n = weights.size
+    out = {}
+    for key, value in coupling.items():
+        arr = np.asarray(value)
+        if arr.ndim >= 2 and arr.shape[0] == n and arr.shape[1] == n:
+            out[key] = arr[np.ix_(keep, keep)]
+        elif arr.ndim >= 1 and arr.shape[0] == n:
+            out[key] = arr[keep]
+        else:
+            out[key] = value
+    return out

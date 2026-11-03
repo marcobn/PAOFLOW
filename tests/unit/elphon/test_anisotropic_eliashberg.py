@@ -220,3 +220,27 @@ def test_epw_gap_distribution_and_file_format(tmp_path: Path) -> None:
     assert table.shape[1] == 5  # EPW columns: T + scaled, Delta (meV), T, scaled, raw
     np.testing.assert_allclose(table[:, 0], 5.0 + table[:, 3])
     np.testing.assert_allclose(table[:, 2], 5.0)
+
+
+def test_zero_weight_states_are_dropped_from_a_coupling() -> None:
+    from PAOFLOW.elphon.anisotropic_eliashberg import coupling_strength
+    from PAOFLOW.elphon.fermi_surface_coupling import drop_zero_weight_states
+
+    rng = np.random.default_rng(0)
+    n, nf = 4, 5
+    pair = rng.random((n, n, nf))
+    coupling = {
+        'coupling': pair.copy(), 'coulomb': rng.random((n, n)), 'weight': np.array([0.3, 0.0, 0.5, 0.2]),
+        'energy_ev': rng.random(n), 'band': np.arange(n), 'freq_ev': 0.01 * np.arange(1, nf + 1),
+        'fermi_ev': 0.1, 'sigma_ev': 0.001, 'k_cryst': rng.random((n, 3)),
+    }  # fmt: skip
+    coupling['coupling'][1] = np.nan  # the zero-weight state has an undefined row
+    coupling['coulomb'][1] = np.nan
+    clean = drop_zero_weight_states(coupling)
+    assert clean['coupling'].shape == (3, 3, nf) and clean['coulomb'].shape == (3, 3)
+    assert clean['weight'].tolist() == [0.3, 0.5, 0.2] and clean['band'].tolist() == [0, 2, 3]
+    assert clean['fermi_ev'] == 0.1 and np.all(np.isfinite(clean['coupling']))
+    strength = coupling_strength(clean)
+    assert np.isfinite(strength['lambda']) and np.all(np.isfinite(strength['lambda_nk']))
+    # With every weight positive the dictionary is returned untouched.
+    assert drop_zero_weight_states(clean) is clean

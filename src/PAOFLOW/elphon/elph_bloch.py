@@ -1261,13 +1261,43 @@ def band_vertex(
     return np.matmul(left, Vk[:, None])  # (nb, nmode, m, n)
 
 
+#: Memory budget (bytes) of one k-block of the dense vertex kernel (three complex temporaries of
+#: ``kblock * nawf^2 * max(ncart, nmode)`` elements in :func:`band_vertex`).
+DENSE_BLOCK_BYTES = 4.0e9
+
+
+def dense_block_size(nawf, ncart, nmode, budget_bytes=None, kmax=4096, kmin=8):
+    """Number of dense k-points per block of the vertex kernel for a memory budget.
+
+    The historical block of 4096 k-points is kept whenever it fits (every primitive cell), so
+    existing results are unchanged; large cells (a 144-orbital, 24-mode supercell needs
+    ~100 GB at 4096) get the largest block within ``budget_bytes``.
+
+    Parameters
+    ----------
+    nawf, ncart, nmode : int
+        Orbitals, Cartesian displacement components and phonon modes of the vertex.
+    budget_bytes : float, optional
+        Memory for the block temporaries (default :data:`DENSE_BLOCK_BYTES`).
+    kmax, kmin : int
+        Bounds of the block size.
+
+    Returns
+    -------
+    int
+    """
+    budget = DENSE_BLOCK_BYTES if budget_bytes is None else float(budget_bytes)
+    per_k = 3 * 16 * int(nawf) * int(nawf) * max(int(ncart), int(nmode), 1)
+    return int(max(kmin, min(kmax, budget // per_k)))
+
+
 def lambda_q_dense_ws_fast(
     gR,
     electrons,
     q_cryst,
     zmass,
     freqs_thz,
-    kblock=4096,
+    kblock=None,
     pair_coupling=None,
     pair_weights=None,
     pair_q_weight=None,
@@ -1292,6 +1322,9 @@ def lambda_q_dense_ws_fast(
     zmass : ndarray ``(nmode, ncart)``
     freqs_thz : ndarray ``(nmode,)``
     kblock : int, optional
+        Dense k-points per block; ``None`` (default) takes :func:`dense_block_size`
+        (4096 for primitive cells, fewer for large supercells so that the block
+        temporaries stay within :data:`DENSE_BLOCK_BYTES`).
     pair_coupling : FermiSurfacePairCoupling, optional
         Also accumulate the state-resolved Fermi-surface coupling of the
         anisotropic Migdal-Eliashberg equations
@@ -1323,6 +1356,8 @@ def lambda_q_dense_ws_fast(
     nawf = electrons['nawf']
     nkd = Nk**3
     nmode = zmass.shape[0]
+    if kblock is None:
+        kblock = dense_block_size(nawf, gR.shape[2], nmode)
     gn_flat = vertex_ws_coefficients(gR, electrons)
 
     shift = np.asarray(q_cryst, dtype=float) * Nk
