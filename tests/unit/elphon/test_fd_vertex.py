@@ -242,3 +242,17 @@ def test_elphon_system_fd_source(tmp_path):
 def test_fd_cell_derivatives_rejects_unknown_options(tmp_path):
     with pytest.raises(ValueError, match='unknown'):
         fv.fd_cell_derivatives(str(tmp_path), nconfig=3)
+
+
+def test_fd_cache_tag_ignores_paths_and_basis_settings():
+    a = fv.fd_cache_tag(
+        'basis:abc:192:0.95',
+        dict(basispath='/x/BASIS', configuration='standard', pthr=0.95, ridge=1e-4),
+    )
+    b = fv.fd_cache_tag(
+        'basis:abc:192:0.95',
+        dict(basispath='/y/BASIS', configuration='standard', pthr=0.95, ridge=1e-4),
+    )
+    assert a == b and a.startswith('basis:abc:192:0.95|fd=')
+    assert fv.fd_cache_tag('t', dict(ridge=1e-3)) != fv.fd_cache_tag('t', dict(ridge=1e-4))
+    assert fv.fd_cache_tag('t', dict(locality_cutoff=7.0)) != fv.fd_cache_tag('t', {})

@@ -42,6 +42,31 @@ from .elph_bloch import AMU_RY, RY_TO_EV
 from .io import MANIFEST
 from .random_displacements import RY_BOHR2_TO_EV_ANG2
 
+#: The ``fd_options`` that change the derivatives and therefore the cache key (paths, the
+#: basis preset and the projectability threshold are already in the basis tag of the cache).
+FD_CACHE_OPTIONS = (
+    'fixed_basis',
+    'project_good_subspace',
+    'locality_cutoff',
+    'ridge',
+    'shift_type',
+)
+
+
+def fd_cache_tag(cache_tag: str | None, fd_options) -> str:
+    """Cache tag of the ``'fd'`` source: the basis tag plus the fit options that matter.
+
+    Only :data:`FD_CACHE_OPTIONS` enter, so a cache written on one machine is found on
+    another where the basis tables live elsewhere (the 2 November caches of music were
+    keyed with the absolute ``basispath`` and had to be renamed).
+    """
+    import json
+
+    fd = dict(fd_options or {})
+    fit = {k: fd[k] for k in sorted(fd) if k in FD_CACHE_OPTIONS}
+    return '%s|fd=%s' % (cache_tag, json.dumps(fit, default=str))
+
+
 #: Keyword arguments of :func:`fd_cell_derivatives` accepted in ``fd_options``.
 FD_DERIVATIVE_OPTIONS = (
     'basispath',

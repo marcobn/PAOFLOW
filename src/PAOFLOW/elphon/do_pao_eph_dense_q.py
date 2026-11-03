@@ -1169,10 +1169,10 @@ def prepare_dense_vertex(
         from .coupling_cache import dense_vertex_cache_key, load_dense_vertex
 
         tag = cache_tag if long_range is None else '%s|lr=%s' % (cache_tag, long_range.signature())
-        if fd is not None:  # the fit options change the derivatives
-            import json as _json
+        if fd is not None:  # the fit options change the derivatives (paths do not)
+            from .fd_vertex import fd_cache_tag
 
-            tag = '%s|fd=%s' % (tag, _json.dumps({k: fd[k] for k in sorted(fd)}, default=str))
+            tag = fd_cache_tag(tag, fd)
         cache_key = dense_vertex_cache_key(
             coupling_dir, source, qgrid_coarse, ng, masses_amu, A.shape, tag
         )
