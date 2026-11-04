@@ -832,6 +832,52 @@ def fft_wfc_R2G(wfc, igwx, mill, omega):
     return wfcg
 
 
+def unfold_gamma_sphere(wfc, mill):
+    """Full-sphere plane-wave coefficients from the half sphere stored by a gamma-tricks run.
+
+    Parameters
+    ----------
+    wfc : array_like, shape ``(nbnd, igwx)``
+        Coefficients :math:`c_n(\\mathbf G)` stored by Quantum ESPRESSO with ``gamma_only``:
+        ``G = 0`` once and one member of every ``+G / -G`` pair.
+    mill : array_like, shape ``(3, igwx)``, int
+        Their Miller indices.
+
+    Returns
+    -------
+    wfc_full : np.ndarray, shape ``(nbnd, 2 igwx - 1)``, complex
+        The coefficients on the full sphere, ``c_n(-G) = c_n(G)^*`` appended for every ``G != 0``.
+    mill_full : np.ndarray, shape ``(3, 2 igwx - 1)``, int
+        The Miller indices of the full sphere, the stored ones first.
+
+    Raises
+    ------
+    ValueError
+        If ``G = 0`` is not stored exactly once, or if both members of a pair are stored (the
+        block is then not a gamma-tricks half sphere).
+
+    Notes
+    -----
+    With gamma tricks the wavefunctions are real in space, :math:`\\psi(\\mathbf r) =
+    \\psi(\\mathbf r)^*`, hence :math:`c(-\\mathbf G) = c(\\mathbf G)^*` and the half sphere
+    determines the full one.  Every inner product downstream (Loewdin orthonormalisation,
+    atomic-wavefunction overlaps, projections, augmentation) is a plain sum over the stored
+    G-vectors, so it is correct only on the unfolded set; the stored normalisation of QE
+    (:math:`|c(0)|^2 + 2\\sum_{G>0}|c(G)|^2 = 1`) is the full-sphere norm already.
+    """
+    wfc = np.asarray(wfc)
+    mill = np.asarray(mill, dtype=np.int64)
+    nonzero = np.any(mill != 0, axis=0)
+    if np.count_nonzero(~nonzero) != 1:
+        raise ValueError('gamma-tricks block: G = 0 must be stored exactly once')
+    keys = {tuple(g) for g in mill.T}
+    if any((-g[0], -g[1], -g[2]) in keys for g in mill[:, nonzero].T):
+        raise ValueError('gamma-tricks block: both members of a +G/-G pair are stored')
+    mill_full = np.concatenate([mill, -mill[:, nonzero]], axis=1)
+    wfc_full = np.concatenate([wfc, np.conj(wfc[:, nonzero])], axis=1)
+    return wfc_full, mill_full
+
+
 def read_QE_wfc(data_controller, ik, ispin, orthonormalize=True):
     """Read Quantum ESPRESSO wavefunction coefficients from a Fortran binary ``wfc*.dat`` file.
 
@@ -854,7 +900,9 @@ def read_QE_wfc(data_controller, ik, ispin, orthonormalize=True):
     -------
     gkspace : dict
         G-space descriptor with keys ``'xk'``, ``'igwx'``, ``'mill'``,
-        ``'bg'``, ``'gamma_only'``.
+        ``'bg'``, ``'gamma_only'``.  A gamma-tricks file (``K_POINTS gamma``) is unfolded to
+        the full G-sphere by :func:`unfold_gamma_sphere`; ``'gamma_only'`` is then ``False``
+        and ``'gamma_unfolded'`` is ``True``.
     wfc : dict
         Wavefunction data with keys ``'wfc'`` (complex array), ``'npol'``,
         ``'nbnd'``, ``'ispin'``.
@@ -890,7 +938,7 @@ def read_QE_wfc(data_controller, ik, ispin, orthonormalize=True):
 
             xk = np.frombuffer(record[1:7], np.float64)
             ispin = record[7]
-            gamma_only = record[8] != 0
+            gamma_only = bool(record[8] != 0)
             # scalef = np.frombuffer(record[9:], np.float64)[0]
             # print('ik =', ik, '  ispin =', ispin, '  gamma_only =', gamma_only, '  scalef =', scalef)
             # print('xk =', xk)
@@ -940,10 +988,27 @@ def read_QE_wfc(data_controller, ik, ispin, orthonormalize=True):
         except:
             raise Exception('no wfc file found')
 
+    wfc = np.asarray(wfc)
+    unfolded = False
+    if gamma_only:
+        # K_POINTS gamma: QE stores half of the G-sphere (real wavefunctions); every inner
+        # product below needs the full sphere.
+        if npol != 1:
+            raise ValueError('gamma-tricks wavefunctions with npol != 1')
+        wfc, mill = unfold_gamma_sphere(wfc, mill)
+        igwx = int(mill.shape[1])
+        gamma_only, unfolded = False, True
     # ``scalef`` is deliberately not applied: Loewdin orthonormalisation makes
     # ``owfc`` independent of any global scale on the input (and QE writes it as 1).
-    owfc = loewdin_orthonormalize(wfc) if orthonormalize else np.asarray(wfc)
-    gkspace = {'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': gamma_only}
+    owfc = loewdin_orthonormalize(wfc) if orthonormalize else wfc
+    gkspace = {
+        'xk': xk,
+        'igwx': igwx,
+        'mill': mill,
+        'bg': bg,
+        'gamma_only': gamma_only,
+        'gamma_unfolded': unfolded,
+    }
     return gkspace, {'wfc': owfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin}
 
 

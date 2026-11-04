@@ -242,7 +242,7 @@ class DataController:
             None
         """
         from glob import glob
-        from os import mkdir
+        from os import makedirs
         from os.path import exists, join
 
         from mpi4py import MPI
@@ -324,9 +324,8 @@ class DataController:
                 attr['temp'] = 0.025852
                 attr['npool'], attr['smearing'] = npool, smearing
 
-            # Create the output directory
-            if not exists(attr['opath']):
-                mkdir(attr['opath'])
+            # Create the output directory (and its parents: drivers nest run folders)
+            makedirs(attr['opath'], exist_ok=True)
 
             self.add_default_arrays()
 
@@ -793,7 +792,7 @@ class DataController:
                     )
                 )
 
-            if self.data_attributes['write_QE_bands'] == True:
+            if self.data_attributes.get('write_QE_bands', False):
                 with open(join(self.data_attributes['opath'], 'kpath.pwscf'), 'w') as f:
                     f.write('K_POINTS tpiba\n')
                     f.write(f'{kpnts.shape[1]}\n')

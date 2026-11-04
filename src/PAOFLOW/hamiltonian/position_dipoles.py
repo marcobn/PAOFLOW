@@ -178,30 +178,35 @@ def enumerate_pao_pairs(
     N1, N2, N3 = _lattice_search_bounds(a_cart, max_pair_cut)
 
     pairs: list[PAOPair] = []
-    for bra, bra_site in enumerate(pao_catalog.sites):
-        for ket, ket_site in enumerate(pao_catalog.sites):
-            cut = cutoffs[bra] + cutoffs[ket] + extra_pad
-            if cut <= 0.0:
-                continue
-            cut2 = cut * cut
-            for n1 in range(-N1, N1 + 1):
-                for n2 in range(-N2, N2 + 1):
-                    for n3 in range(-N3, N3 + 1):
-                        deltaR = n1 * a_cart[0] + n2 * a_cart[1] + n3 * a_cart[2]
-                        displacement = ket_site.tau + deltaR - bra_site.tau
-                        d2 = float(displacement @ displacement)
-                        if d2 > cut2:
-                            continue
-                        pairs.append(
-                            PAOPair(
-                                bra_site=bra,
-                                ket_site=ket,
-                                deltaR_lattice=(n1, n2, n3),
-                                deltaR_cart=deltaR.copy(),
-                                displacement=displacement.copy(),
-                                distance=float(np.sqrt(d2)),
-                            )
-                        )
+    images = np.array(
+        [
+            (n1, n2, n3)
+            for n1 in range(-N1, N1 + 1)
+            for n2 in range(-N2, N2 + 1)
+            for n3 in range(-N3, N3 + 1)
+        ],
+        dtype=int,
+    ).reshape(-1, 3)  # the loop order of the original nested enumeration
+    deltaR_all = images @ a_cart  # (nimg, 3)
+    taus = np.array([site.tau for site in pao_catalog.sites], dtype=float).reshape(-1, 3)
+    cut_arr = np.asarray(cutoffs, dtype=float)
+    for bra in range(len(pao_catalog.sites)):
+        cut = cut_arr[bra] + cut_arr + extra_pad  # (nket,)
+        # (nket, nimg, 3) displacements of every ket image from the bra site
+        disp = taus[:, None, :] + deltaR_all[None, :, :] - taus[bra][None, None, :]
+        d2 = np.einsum('kid,kid->ki', disp, disp)
+        keep = (cut[:, None] > 0.0) & (d2 <= (cut * cut)[:, None])
+        for ket, img in np.argwhere(keep):  # ket outer, image inner: the original order
+            pairs.append(
+                PAOPair(
+                    bra_site=int(bra),
+                    ket_site=int(ket),
+                    deltaR_lattice=(int(images[img, 0]), int(images[img, 1]), int(images[img, 2])),
+                    deltaR_cart=deltaR_all[img].copy(),
+                    displacement=disp[ket, img].copy(),
+                    distance=float(np.sqrt(d2[ket, img])),
+                )
+            )
     return pairs
 
 
@@ -311,8 +316,53 @@ def build_position_tables(
     )
 
 
+def _grouped_blocks(
+    tables: PositionTables,
+) -> list[tuple[slice, slice, np.ndarray, np.ndarray, np.ndarray]]:
+    """Pair blocks grouped by site pair: ``(rows, cols, translations (np, 3), overlap (np, nb, nk),
+    dipole (np, 3, nb, nk))`` per group, cached on the tables.
+
+    The Bloch sums are assembled group by group into the ``(nawf, nawf)`` k-space matrices, so the
+    memory is that of the blocks themselves and never ``npairs x nawf^2`` (for a 54-atom cell with
+    864 orbitals the padded stack of the 24 000 pairs would be 950 GB).
+    """
+    cached = getattr(tables, '_grouped', None)
+    if cached is not None:
+        return cached
+    groups: dict = {}
+    for p, pair in enumerate(tables.pairs):
+        groups.setdefault((pair.bra_site, pair.ket_site), []).append(p)
+    out = []
+    has_dipole = len(tables.dipole) == len(tables.pairs) and len(tables.pairs) > 0
+    for (bra, ket), index in groups.items():
+        rows = slice(
+            tables.basis_offsets[bra], tables.basis_offsets[bra] + tables.orbitals_per_site[bra]
+        )
+        cols = slice(
+            tables.basis_offsets[ket], tables.basis_offsets[ket] + tables.orbitals_per_site[ket]
+        )
+        translations = np.array([tables.pairs[p].deltaR_cart for p in index], dtype=float).reshape(
+            -1, 3
+        )
+        overlap = np.stack([np.asarray(tables.overlap[p], dtype=float) for p in index])
+        dipole = (
+            np.stack([np.asarray(tables.dipole[p], dtype=float) for p in index])
+            if has_dipole
+            else np.zeros((len(index), 3) + overlap.shape[1:])
+        )
+        out.append((rows, cols, translations, overlap, dipole))
+    try:
+        tables._grouped = out
+    except AttributeError:
+        pass
+    return out
+
+
 def _stacked_blocks(tables: PositionTables) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Pair blocks padded to full ``(nawf, nawf)`` matrices, stacked along the pair axis."""
+    """Pair blocks padded to full ``(nawf, nawf)`` matrices, stacked along the pair axis.
+
+    Kept for small bases and tests; ``npairs x nawf^2`` memory (see :func:`_grouped_blocks`).
+    """
     npairs, nawf = len(tables.pairs), tables.nawf
     overlap = np.zeros((npairs, nawf, nawf))
     dipole = np.zeros((npairs, 3, nawf, nawf))
@@ -360,17 +410,23 @@ def assemble_position_kspace(
     -----
     The phase carries the lattice translation only, as the Hamiltonian of
     :func:`~PAOFLOW.elphon.elph_bloch.band_velocities`; the orbital centres enter through
-    :math:`\boldsymbol\tau` in :func:`lowdin_dipole_kspace`.
+    :math:`\boldsymbol\tau` in :func:`lowdin_dipole_kspace`.  The sums are accumulated site pair by
+    site pair from the stored blocks (:func:`_grouped_blocks`), so the memory is the k-space
+    matrices only.
     """
     k_points_cart = np.asarray(k_points_cart, dtype=float)
     if k_points_cart.ndim != 2 or k_points_cart.shape[1] != 3:
         raise ValueError('k_points_cart must have shape (nk, 3).')
-    overlap, dipole, translations = _stacked_blocks(tables)
-    phases = np.exp(1j * (k_points_cart @ translations.T))  # (nk, npairs)
-    overlap_k = np.tensordot(phases, overlap, axes=(1, 0))
-    dipole_k = np.tensordot(phases, dipole, axes=(1, 0))
-    gradient_phases = phases[:, :, None] * (1j * translations)[None, :, :]  # (nk, npairs, 3)
-    overlap_gradient_k = np.tensordot(gradient_phases, overlap, axes=(1, 0))  # (nk, 3, nawf, nawf)
+    nk, nawf = k_points_cart.shape[0], tables.nawf
+    overlap_k = np.zeros((nk, nawf, nawf), dtype=complex)
+    overlap_gradient_k = np.zeros((nk, 3, nawf, nawf), dtype=complex)
+    dipole_k = np.zeros((nk, 3, nawf, nawf), dtype=complex)
+    for rows, cols, translations, overlap, dipole in _grouped_blocks(tables):
+        phases = np.exp(1j * (k_points_cart @ translations.T))  # (nk, np)
+        overlap_k[:, rows, cols] += np.tensordot(phases, overlap, axes=(1, 0))
+        dipole_k[:, :, rows, cols] += np.tensordot(phases, dipole, axes=(1, 0))
+        gradient_phases = phases[:, :, None] * (1j * translations)[None, :, :]  # (nk, np, 3)
+        overlap_gradient_k[:, :, rows, cols] += np.tensordot(gradient_phases, overlap, axes=(1, 0))
     return overlap_k, overlap_gradient_k, dipole_k
 
 
@@ -394,22 +450,12 @@ def assemble_overlap_kspace(
     k_points_cart = np.asarray(k_points_cart, dtype=float)
     if k_points_cart.ndim != 2 or k_points_cart.shape[1] != 3:
         raise ValueError('k_points_cart must have shape (nk, 3).')
-    npairs, nawf = len(tables.pairs), tables.nawf
-    overlap = np.zeros((npairs, nawf, nawf))
-    translations = np.zeros((npairs, 3))
-    for p, pair in enumerate(tables.pairs):
-        rows = slice(
-            tables.basis_offsets[pair.bra_site],
-            tables.basis_offsets[pair.bra_site] + tables.orbitals_per_site[pair.bra_site],
-        )
-        cols = slice(
-            tables.basis_offsets[pair.ket_site],
-            tables.basis_offsets[pair.ket_site] + tables.orbitals_per_site[pair.ket_site],
-        )
-        overlap[p, rows, cols] = tables.overlap[p]
-        translations[p] = pair.deltaR_cart
-    phases = np.exp(1j * (k_points_cart @ translations.T))
-    return np.tensordot(phases, overlap, axes=(1, 0))
+    nk, nawf = k_points_cart.shape[0], tables.nawf
+    overlap_k = np.zeros((nk, nawf, nawf), dtype=complex)
+    for rows, cols, translations, overlap, _dipole in _grouped_blocks(tables):
+        phases = np.exp(1j * (k_points_cart @ translations.T))
+        overlap_k[:, rows, cols] += np.tensordot(phases, overlap, axes=(1, 0))
+    return overlap_k
 
 
 def on_site_dipoles(tables: PositionTables) -> NDArray[np.float64]:
@@ -1017,8 +1063,9 @@ def position_dipoles_on_grid(
         arrays['_PD_on_site'],
     )
     k_cart = _kgrid_to_cart(kgrid_2pi_alat, alat)
-    # blocks of k keep the Bloch sums (nk, 3, nawf, nawf) within a few hundred MB
-    kblock = max(1, int(2.0e8 // (3 * 16 * tables.nawf**2)))
+    # blocks of k keep the Bloch sums and the Loewdin temporaries, ~16 complex (nawf, nawf)
+    # per k, within about 1 GB
+    kblock = max(1, int(1.0e9 // (16 * 16 * tables.nawf**2)))
     dipole = np.empty((k_cart.shape[0], 3, tables.nawf, tables.nawf), dtype=complex)
     for start in range(0, k_cart.shape[0], kblock):
         overlap_k, overlap_gradient_k, dipole_k = assemble_position_kspace(

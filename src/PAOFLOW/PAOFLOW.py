@@ -3535,6 +3535,7 @@ class PAOFLOW:
         shg_bin=None,
         position_dipoles=False,
         symmetry=True,
+        molecule=False,
     ):
         r"""Second-order optical responses: shift and injection currents, second-harmonic generation.
 
@@ -3625,6 +3626,17 @@ class PAOFLOW:
             and does nothing when they are absent (models, VASP); an array ``(nops, 3, 3)`` of
             Cartesian matrices is accepted instead (they must be lattice symmetries). ``False``
             runs the full grid.
+        molecule : bool, optional
+            A molecule in a vacuum box: the Gamma point only (``nk`` ignored), no injection
+            current, all 27 components, and the molecular quantities of
+            :mod:`PAOFLOW.response.molecular_nlo` written as ``beta_T_r_<abc>`` / ``beta_T_i_<abc>``
+            (Taylor hyperpolarizability, a.u., electrons: :math:`\beta_T = -2\epsilon_0\Omega\chi`),
+            ``beta_molecular.dat`` (:math:`\beta_\parallel` along the ground-state dipole,
+            :math:`\beta_{\rm HRS}`, depolarisation ratio) and ``dmudt_<abc>`` (the shift response
+            per molecule, the rate of change of the dipole under illumination).  The run warns
+            when orbital pairs couple across more than 0.45 of the box (minimum-image violation)
+            or when the Hamiltonian has a k-grid.  With ``nspin = 2`` the channels are occupied
+            by their own electron counts (``nelec`` may be a pair).
 
         Returns
         -------
@@ -3644,7 +3656,11 @@ class PAOFLOW:
         import numpy as np
 
         from .hamiltonian.bloch_derivatives import orbital_positions_from_data
-        from .response.nonlinear_optics import nonlinear_optical_spectra, write_nonlinear_outputs
+        from .response.nonlinear_optics import (
+            channel_electron_counts,
+            nonlinear_optical_spectra,
+            write_nonlinear_outputs,
+        )
 
         arrays, attr = self.data_controller.data_dicts()
         total = None
@@ -3654,6 +3670,14 @@ class PAOFLOW:
                     "nonlinear_optics needs 'HRs': call it after pao_hamiltonian() and before "
                     'interpolated_hamiltonian() / pao_eigh() (or keep free_HRs=False).'
                 )
+            if molecule:
+                if tuple(int(n) for n in nk) != (1, 1, 1) and self.rank == 0:
+                    print(
+                        'Nonlinear optics: molecule=True evaluates the Gamma point only (nk ignored)'
+                    )
+                nk = (1, 1, 1)
+                injection_current = False
+                components = 'all'
             want = tuple(
                 name
                 for name, flag in (
@@ -3669,9 +3693,19 @@ class PAOFLOW:
             at = np.asarray(arrays['a_vectors'], dtype=float)
             alat = float(attr['alat'])
             volume = float(attr['omega']) if 'omega' in attr else alat**3 * abs(np.linalg.det(at))
-            nelec_value = float(attr['nelec']) if nelec is None else float(nelec)
             nspin = HRs.shape[-1]
             spin_factor = 2.0 if (nspin == 1 and not attr.get('dftSO', False)) else 1.0
+            if nspin == 2:
+                # one electron count per channel (the total would occupy nelec bands in each)
+                nelec_channel = channel_electron_counts(HRs, nelec)
+            else:
+                nelec_channel = [float(attr['nelec']) if nelec is None else float(nelec)]
+            if molecule and tuple(HRs.shape[2:5]) != (1, 1, 1) and self.rank == 0:
+                print(
+                    'WARNING: molecule=True with a %s k-grid Hamiltonian: the results are those '
+                    'of the periodic array of boxes, not of an isolated molecule'
+                    % 'x'.join(str(int(n)) for n in HRs.shape[2:5])
+                )
             positions = (
                 np.asarray(orbital_positions, dtype=float)
                 if orbital_positions is not None
@@ -3724,7 +3758,7 @@ class PAOFLOW:
                         alat,
                         volume,
                         positions,
-                        nelec_value,
+                        nelec_channel[ispin],
                         nk,
                         energy,
                         components=components,
@@ -3756,14 +3790,68 @@ class PAOFLOW:
                     write_nonlinear_outputs(
                         self.data_controller, result, slab, suffix='_%d' % ispin
                     )
+            if molecule:
+                from .response.molecular_nlo import ionic_charges_from_data, molecular_summary
+
+                pos_bohr = positions @ at * alat
+                nocc_channels = [
+                    int(round(float(nelec_channel[s]) / spin_factor)) for s in range(nspin)
+                ]
+                ionic = ionic_charges_from_data(self.data_controller)
+                if ionic is None and self.rank == 0:
+                    print(
+                        'WARNING: no ionic charges (basis list / UPF files): the ground-state dipole '
+                        'is the electronic part only and beta_parallel is origin-dependent'
+                    )
+                mol = molecular_summary(
+                    total, HRs[:, :, 0, 0, 0, :], pos_bohr, positions, volume, nocc_channels,
+                    spin_factor, ionic=ionic,
+                )  # fmt: skip
+                violations = mol.pop('minimum_image_violations')
+                total.update(mol)
+                if 'beta_parallel_au' in total:  # collective writers (barrier inside): every rank
+                    self.data_controller.write_file_row_col(
+                        'beta_molecular.dat', energy, total['beta_parallel_au'].real
+                    )
+                    self.data_controller.write_file_row_col(
+                        'beta_hrs.dat', energy, total['beta_hrs_au']
+                    )
+                    self.data_controller.write_file_row_col(
+                        'beta_depolarization.dat', energy, total['depolarization_ratio']
+                    )
+                if self.rank == 0:
+                    if violations:
+                        worst = max(violations, key=lambda v: v[2])
+                        print(
+                            'WARNING: %d orbital pairs couple across more than 0.45 of the box '
+                            '(largest |H_ij| %.3f eV between orbitals %d and %d at %.2f of a '
+                            'lattice vector): enlarge the box, the minimum-image operators are '
+                            'not exact' % (len(violations), worst[2], worst[0], worst[1], worst[3])
+                        )
             written = write_nonlinear_outputs(self.data_controller, total, slab)
             attr['nonlinear_optics'] = {
                 'nk': tuple(int(n) for n in nk), 'eta_ev': float(eta), 'scissor_ev': float(scissor),
                 'components': list(total['components']), 'nocc': int(total['nocc']),
                 'gap_ev': float(total['gap_ev']), 'twoD': bool(twoD), 'slab_height_bohr': slab,
                 'position_dipoles': (level if position_dipoles else False),
-                'symmetry': total.get('symmetry'),
+                'symmetry': total.get('symmetry'), 'molecule': bool(molecule),
             }  # fmt: skip
+            if self.rank == 0 and molecule and 'beta_T_au' in total:
+                i0 = int(np.argmin(np.abs(energy)))
+                tensor_label = ', '.join(
+                    '%s %.1f' % (c, total['beta_T_au'][ic, i0].real)
+                    for ic, c in enumerate(total['components'])
+                    if abs(total['beta_T_au'][ic, i0].real)
+                    > 1.0e-3 * np.abs(total['beta_T_au'][:, i0]).max()
+                )
+                print(
+                    'Nonlinear optics (molecule): dipole (%.3f, %.3f, %.3f) e bohr = %.2f D; at %.2f eV '
+                    'beta_T (a.u., Taylor, electrons): %s; beta_parallel %.1f, beta_HRS %.1f, '
+                    'depolarisation ratio %.2f'
+                    % (*total['dipole_ebohr'], np.linalg.norm(total['dipole_ebohr']) * 2.541746, energy[i0], tensor_label,
+                       total['beta_parallel_au'][i0].real, total['beta_hrs_au'][i0],
+                       total['depolarization_ratio'][i0])
+                )  # fmt: skip
             if self.rank == 0:
                 sym = total.get('symmetry')
                 print(

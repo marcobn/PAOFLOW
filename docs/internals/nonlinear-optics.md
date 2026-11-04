@@ -284,8 +284,73 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   (18 bands above 0.95) is the working one. Cost at nawf = 62, 40³ k, three components with
   SHG: 15 min on 8 ranks.
 - **Memory.** The δ-kernels are evaluated in pair blocks of about 16 MB and the three-band SHG
-  term in k-chunks of about 2·10⁶ triples; the Wigner–Seitz images of `HRs` (nws × nawf² complex)
+  term in slabs of the third band index of about 2·10⁶ elements (`(k, n, n, s)` arrays, so the memory is bounded for any basis size; one k-point with many ranks deals the slabs over the ranks); the Wigner–Seitz images of `HRs` (nws × nawf² complex)
   are the largest resident array (300 MB for GaAs at 16³).
+
+## Molecules (Γ-only, many atoms) — 3 November 2026
+
+A molecule in a vacuum box is a Γ-only run: `K_POINTS automatic 1 1 1 0 0 0` or `K_POINTS gamma`
+(the gamma-tricks half G-sphere is unfolded by `read_QE_wfc` / `unfold_gamma_sphere`,
+`c(-G) = c(G)^*`, so every projection, Löwdin step and real-space route sees the full sphere; the
+`gamma` run is about 2.5× cheaper in QE and gives identical PAOFLOW results, PNA test below).
+`HRs` is then `1 × 1 × 1` and `bloch_terms_from_HRs` with the pair-resolved Wigner–Seitz images
+reduces every operator to its minimum image: `v = i[H, x]` and `w = -[x, [x, H]]` with `x = diag(τ)`,
+hence `r_nm = x_nm` (the dipole matrix) and `r_{nm;a} = -i x_nm (x_nn - x_mm)` (the dipole shift of
+the transition).  Consequences, all verified on a tight-binding chain
+(`tests/unit/response/test_nonlinear_optics_molecule.py`, study in
+`Workspace/PAOFLOW/validation/nlo_molecules/`):
+
+- **SHG = first hyperpolarizability.** With the code's convention (`P = ε0 χ E E`, charge as `e^3`
+  with `e > 0`) the Taylor hyperpolarizability of the electrons is `β_T = -2 ε0 Ω χ`, i.e.
+  `β_T [a.u.] = -2 × 0.040919 Ω[bohr^3] χ[pm/V]`: the factor 2 is the B/T convention, the sign the
+  `(-e)^3` of electrons.  Finite-field `∂²μ/∂F²` of the same model: ratio −0.500 ± 0.01 on every
+  component; real-time propagation of the density matrix: same sign, real part within 0.5 % at low ω.
+- **Shift "current" = dμ/dt.** `σ^{abb}(ω) = C_shift norm Σ 2|x^b_nm|² (x^a_nn - x^a_mm) δ(ω_nm - ω)`
+  exactly (1e-10): the absorption rate times the dipole shift of the transition.  Per molecule
+  (`σ Ω`, A m³ V⁻²) it is the rate of change of the dipole under illumination, not a DC current.
+- **Injection vanishes** (no band velocities: `v_nn = 0` exactly); what is printed is rounding
+  noise scaled by the large SI prefactor.
+- **Minimum image.** Exact only when every coupled pair lies inside the Wigner–Seitz cell of the
+  box; outputs are invariant under wrapping the coordinates and `Ω χ` is independent of the box
+  (1e-14 / 1e-10).  Measured hopping range of a Löwdin PAO Hamiltonian (Pb, 18 orbitals): 1.3 eV at
+  3.6 Å, 0.17 eV at 7 Å, 0.02 eV at 10 Å, < 5 meV beyond 12 Å, so the box must satisfy
+  `L/2 > min(D, ~12 Å)` with `D` the molecular extent; `molecule=True` warns on pairs coupling
+  across more than 0.45 of a lattice vector (`molecular_nlo.minimum_image_violations`).
+- **Degeneracies** are handled by the covariant clusters: D3h selection rules hold to 1e-16 on a
+  degenerate triangle.
+
+`PAOFLOW.nonlinear_optics(..., molecule=True)` forces `nk = (1, 1, 1)`, all 27 components and no
+injection, and writes `beta_T_r_<abc>` / `beta_T_i_<abc>` (a.u.), `beta_molecular.dat`
+(`β_∥ = (1/5) Σ (β_iij + β_iji + β_jii) μ̂_j`, EFISH), `beta_hrs.dat`
+(`sqrt(<β_ZZZ²> + <β_XZZ²>)`, exact SO(3) quadrature, any tensor) and `beta_depolarization.dat`,
+plus `dmudt_<abc>` (`PAOFLOW.response.molecular_nlo`).  The ground-state dipole used for `β_∥` is
+the tight-binding electronic one (`-g_s Σ_occ <x>`, orbital centres), without the nuclear term.
+
+**Memory and parallelism.** The three-band SHG term runs in slabs of the third band index
+(`(k, n, n, s)` arrays, about 2·10⁶ elements each, `band_slab`), so the memory no longer grows as
+`n³`: measured on a random molecular model, peak RSS 0.86 GB at `n = 480` (the old k-chunking
+would have needed ~14 GB) and the time is `∝ n³` with 209 s at `n = 480` on 8 threads.  With one
+k-point and several MPI ranks the pair blocks of the δ-kernels and the band slabs are dealt over
+the ranks (`work=(rank, size)`), summed by the existing `Allreduce`.  `_ws_lattice_pairs` and
+`enumerate_pao_pairs` are vectorised over the column sites / images (identical output), and the
+Bloch sums of the position-dipole tables are assembled site pair by site pair from the stored
+blocks instead of a padded `(npairs, nawf, nawf)` stack (`_grouped_blocks`; the stack was 406 GB
+for a 54-atom cell with 864 orbitals), which matters for `nat` of tens to thousands.
+
+**Spin.** `nspin = 2` occupies each channel with its own electron count
+(`channel_electron_counts`: bands at or below `E_F` on the coarse grid, or `nelec=(n_0, n_1)`);
+before, `nelec` bands were occupied in both channels.
+
+**PNA (p-nitroaniline, 16 atoms, 20 × 16 × 12 Å, PBE, 70 Ry, 160 standard orbitals, 29 bands with
+projectability > 0.95, PAO levels within 6 meV of DFT):** `χ_xxx(0) = 11.60 pm/V` in the box,
+`β_T,xxx = -24.6·10³ a.u.`, `β_∥ = 13.1·10³ a.u.`, `β_HRS = 9.8·10³ a.u.`, depolarisation ratio 3.9;
+with the intra-atomic position dipoles `β_∥ = 14.9·10³`; with a 1.5 eV scissor to the vapour charge-transfer band
+`β_∥(1064 nm) = 8.2–9.4·10³` against the gas-phase EFISH 1072 ± 44 a.u. (Kaatz et al. 1998): the uncoupled response
+is 8× the measurement, 4–5× the coupled TDDFT/CC values (local-field screening missing). The ground-state dipole that
+orients β_∥ includes the ionic charges (`ionic_charges_from_data`), 3.9 D here (Mulliken-type, vs 6.2–6.9 D).  Independent-particle PBE values are an
+order of magnitude above the coupled/experimental PNA numbers (~1·10³ a.u. static), as expected
+without local-field screening and with the KS gap; the gamma-tricks and full-sphere saves agree to
+1e-5.
 
 ## Not implemented (follow-ups)
 

@@ -381,6 +381,7 @@ def accumulate_shift_and_injection(
     smearing: str,
     out: dict,
     k_weights: NDArray[np.float64] | None = None,
+    work: tuple[int, int] = (0, 1),
 ) -> None:
     """Add the :math:`\\delta`-function sums of a k-block to ``out`` (unnormalised).
 
@@ -400,6 +401,9 @@ def accumulate_shift_and_injection(
         ``(ncomp, ne)``.
     k_weights : ndarray ``(nb,)``, optional
         Weight of every k-point (orbit sizes of an irreducible wedge); 1 by default.
+    work : tuple of int, optional
+        ``(rank, size)``: this call handles every ``size``-th pair block starting at ``rank``
+        (the ranks sharing one k-block; their ``out`` are summed by the caller).
     """
     F = occupation[:, None, :] - occupation[:, :, None]  # f_m - f_n  (n: first band index)
     if k_weights is not None:
@@ -417,7 +421,10 @@ def accumulate_shift_and_injection(
         return
     r, rd, pd = geometry.position, geometry.position_derivative, geometry.position_delta
     chunk = max(1, int(2.0e6 // max(energy_grid.size, 1)))  # pairs per kernel block (~16 MB)
-    for start in range(0, ik_all.size, chunk):
+    rank_w, size_w = int(work[0]), int(work[1])
+    for iblock, start in enumerate(range(0, ik_all.size, chunk)):
+        if iblock % size_w != rank_w:
+            continue
         sl = slice(start, start + chunk)
         ik, n, m = ik_all[sl], n_all[sl], m_all[sl]
         kernel = delta_kernel(
@@ -472,6 +479,8 @@ def accumulate_shg_histograms(
     degeneracy_tol: float = 1.0e-4,
     chunk: int | None = None,
     k_weights: NDArray[np.float64] | None = None,
+    band_slab: int | None = None,
+    work: tuple[int, int] = (0, 1),
 ) -> None:
     """Add the SHG weights of a k-block to the transition-energy histograms ``out``.
 
@@ -495,20 +504,39 @@ def accumulate_shg_histograms(
         ``'hist1'``, ``'hist2'``.
     degeneracy_tol : float
     chunk : int, optional
+        k-points per inner chunk of the three-band term (default about ``2e6 / n^3``, at
+        least 1).
     k_weights : ndarray ``(nb,)``, optional
         Weight of every k-point (orbit sizes of an irreducible wedge); 1 by default.
-        k-points per inner chunk of the three-band term (memory).
+    band_slab : int, optional
+        Bands of the third index ``l`` per slab of the three-band term: the arrays are
+        ``(k, n, n, band_slab)`` instead of ``(k, n, n, n)``, so the memory is bounded (about
+        ``2e6`` elements per slab by default) whatever the basis size; the result does not
+        depend on the slab (the histogram is linear in the ``l`` sum).
+    work : tuple of int, optional
+        ``(rank, size)``: this call handles every ``size``-th unit of work (the mixed terms of
+        a k-chunk, then its band slabs) starting at ``rank``; the ranks sharing a k-block sum
+        their ``out`` afterwards.
+
+    Notes
+    -----
+    Per k-chunk of ``nkc`` k-points and slab of ``s`` bands the three-band term holds about
+    ``130 nkc n^2 s`` bytes (``den``, ``D``, ``B``, ``T`` and the binning temporaries); the
+    mixed terms are ``(k, n, n)`` arrays.  For a molecule (one k-point, large ``n``) this is
+    what makes ``n`` of a few thousand feasible.
     """
     nbins = bin_edges.size - 1
     width = bin_edges[1] - bin_edges[0]
     nb, n = geometry.energies.shape
     chunk = chunk or max(1, int(2.0e6 // max(n**3, 1)))
+    nkc = min(int(chunk), nb)
+    band_slab = band_slab or max(1, int(2.0e6 // max(nkc * n * n, 1)))
+    band_slab = max(1, min(int(band_slab), n))
+    rank_w, size_w = int(work[0]), int(work[1])
     index = np.arange(n)
-    distinct = (
-        (index[:, None, None] != index[None, :, None])
-        & (index[:, None, None] != index[None, None, :])
-        & (index[None, :, None] != index[None, None, :])
-    )  # (n, m, l)
+    pair_distinct = index[:, None] != index[None, :]  # (n, m)
+    edge0 = float(bin_edges[0])
+    unit = 0
     for start in range(0, nb, chunk):
         sl = slice(start, start + chunk)
         E_s = energies_scissored[sl]
@@ -524,61 +552,79 @@ def accumulate_shg_histograms(
         inv_mn = -inv_nm  # 1 / omega'_mn
         fnm = f[:, :, None] - f[:, None, :]  # f_n - f_m
         om_mn = om_nm.transpose(0, 2, 1)  # [n, m] -> omega'_mn
-        edge0 = float(bin_edges[0])
-        # three-band denominator omega'_ln - omega'_ml = 2E'_l - E'_n - E'_m, axes (k, n, m, l)
-        den = 2.0 * E_s[:, None, None, :] - E_s[:, :, None, None] - E_s[:, None, :, None]
-        ok = distinct[None] & (np.abs(den) > degeneracy_tol)
-        D = np.where(ok, 1.0 / np.where(ok, den, 1.0), 0.0)
-        for ic, (a, b, c) in enumerate(components):
-            # ---- interband term: r^a_nm (r^b_ml r^c_ln + r^c_ml r^b_ln) / (w_ln - w_ml)
-            B = np.einsum('kml,kln->kmln', r[:, b], r[:, c]) + np.einsum(
-                'kml,kln->kmln', r[:, c], r[:, b]
-            )
-            T = np.einsum('knm,kmln,knml->knml', r[:, a], B, D)
-            # 2 f_nm / (w_mn - 2w)
-            out['hist2'][ic] += _bincount_complex(
-                om_mn[:, :, :, None], 2.0 * fnm[:, :, :, None] * T, edge0, width, nbins
-            )
-            # f_ln / (w_ln - w): [n, l] arrays
-            out['hist1'][ic] += _bincount_complex(
-                om_mn[:, :, None, :], fnm.transpose(0, 2, 1)[:, :, None, :] * T, edge0, width, nbins
-            )
-            # f_ml / (w_ml - w): [m, l] arrays
-            out['hist1'][ic] += _bincount_complex(
-                om_nm[:, None, :, :], fnm[:, None, :, :] * T, edge0, width, nbins
-            )
-            # ---- mixed terms (overall factor i), resonant at omega'_mn
-            ra_nm = r[:, a]
-            rb_mn, rc_mn = r[:, b].transpose(0, 2, 1), r[:, c].transpose(0, 2, 1)
-            t1 = (
-                2.0
-                * ra_nm
-                * (rd[:, c, b].transpose(0, 2, 1) + rd[:, b, c].transpose(0, 2, 1))
-                * inv_mn
-            )
-            t2 = (rd[:, c, a] * rb_mn + rd[:, b, a] * rc_mn) * inv_mn
-            # (r^b Delta^c)_mn and (r^c Delta^b)_mn in their covariant form
-            x3 = (
-                ra_nm
-                * (pd[:, b, c].transpose(0, 2, 1) + pd[:, c, b].transpose(0, 2, 1))
-                * inv_mn**2
-            )
-            t4 = -0.5 * (rb_mn * rd[:, a, c] + rc_mn * rd[:, a, b]) * inv_mn
-            # Delta^a_mn Re[r^b_nm r^c_mn] = (1/2)[(r^c Delta^a)_mn r^b_nm + (r^b Delta^a)_mn r^c_nm]
-            t5 = (
-                -0.25
-                * (
-                    pd[:, c, a].transpose(0, 2, 1) * r[:, b]
-                    + pd[:, b, a].transpose(0, 2, 1) * r[:, c]
+        # ---- mixed terms (overall factor i), resonant at omega'_mn: (k, n, m) arrays
+        if unit % size_w == rank_w:
+            for ic, (a, b, c) in enumerate(components):
+                ra_nm = r[:, a]
+                rb_mn, rc_mn = r[:, b].transpose(0, 2, 1), r[:, c].transpose(0, 2, 1)
+                t1 = (
+                    2.0
+                    * ra_nm
+                    * (rd[:, c, b].transpose(0, 2, 1) + rd[:, b, c].transpose(0, 2, 1))
+                    * inv_mn
                 )
-                * inv_mn**2
-            )
-            out['hist1'][ic] += _bincount_complex(
-                om_mn, 1j * fnm * (t2 + x3 + t4 + t5), edge0, width, nbins
-            )
-            out['hist2'][ic] += _bincount_complex(
-                om_mn, 1j * fnm * (t1 - 4.0 * x3), edge0, width, nbins
-            )
+                t2 = (rd[:, c, a] * rb_mn + rd[:, b, a] * rc_mn) * inv_mn
+                # (r^b Delta^c)_mn and (r^c Delta^b)_mn in their covariant form
+                x3 = (
+                    ra_nm
+                    * (pd[:, b, c].transpose(0, 2, 1) + pd[:, c, b].transpose(0, 2, 1))
+                    * inv_mn**2
+                )
+                t4 = -0.5 * (rb_mn * rd[:, a, c] + rc_mn * rd[:, a, b]) * inv_mn
+                # Delta^a_mn Re[r^b_nm r^c_mn] = (1/2)[(r^c Delta^a)_mn r^b_nm + (r^b Delta^a)_mn r^c_nm]
+                t5 = (
+                    -0.25
+                    * (
+                        pd[:, c, a].transpose(0, 2, 1) * r[:, b]
+                        + pd[:, b, a].transpose(0, 2, 1) * r[:, c]
+                    )
+                    * inv_mn**2
+                )
+                out['hist1'][ic] += _bincount_complex(
+                    om_mn, 1j * fnm * (t2 + x3 + t4 + t5), edge0, width, nbins
+                )
+                out['hist2'][ic] += _bincount_complex(
+                    om_mn, 1j * fnm * (t1 - 4.0 * x3), edge0, width, nbins
+                )
+        unit += 1
+        # ---- interband (three-band) term r^a_nm (r^b_ml r^c_ln + r^c_ml r^b_ln) / (w_ln - w_ml),
+        # in slabs of the third index l: arrays (k, n, m, s)
+        for l0 in range(0, n, band_slab):
+            unit += 1
+            if (unit - 1) % size_w != rank_w:
+                continue
+            ls = slice(l0, min(l0 + band_slab, n))
+            idx_l = index[ls]
+            distinct = (
+                pair_distinct[:, :, None]
+                & (index[:, None, None] != idx_l[None, None, :])
+                & (index[None, :, None] != idx_l[None, None, :])
+            )  # (n, m, s)
+            # three-band denominator omega'_ln - omega'_ml = 2E'_l - E'_n - E'_m
+            den = 2.0 * E_s[:, None, None, ls] - E_s[:, :, None, None] - E_s[:, None, :, None]
+            ok = distinct[None] & (np.abs(den) > degeneracy_tol)
+            D = np.where(ok, 1.0 / np.where(ok, den, 1.0), 0.0)
+            for ic, (a, b, c) in enumerate(components):
+                B = np.einsum('kml,kln->kmln', r[:, b][:, :, ls], r[:, c][:, ls, :]) + np.einsum(
+                    'kml,kln->kmln', r[:, c][:, :, ls], r[:, b][:, ls, :]
+                )
+                T = np.einsum('knm,kmln,knml->knml', r[:, a], B, D)
+                # 2 f_nm / (w_mn - 2w)
+                out['hist2'][ic] += _bincount_complex(
+                    om_mn[:, :, :, None], 2.0 * fnm[:, :, :, None] * T, edge0, width, nbins
+                )
+                # f_ln / (w_ln - w): [n, l] arrays
+                out['hist1'][ic] += _bincount_complex(
+                    om_mn[:, :, None, ls],
+                    fnm.transpose(0, 2, 1)[:, :, None, ls] * T,
+                    edge0,
+                    width,
+                    nbins,
+                )
+                # f_ml / (w_ml - w): [m, l] arrays
+                out['hist1'][ic] += _bincount_complex(
+                    om_nm[:, None, :, ls], fnm[:, None, :, ls] * T, edge0, width, nbins
+                )
 
 
 def shg_from_histograms(
@@ -596,6 +642,50 @@ def shg_from_histograms(
 
 
 # --------------------------------------------------------------------------- driver
+def channel_electron_counts(
+    HRs: NDArray[np.complex128], nelec=None, tol: float = 1.0e-6
+) -> list[float]:
+    """Electrons of each collinear spin channel (``nspin = 2``).
+
+    Parameters
+    ----------
+    HRs : ndarray ``(n, n, n1, n2, n3, 2)``
+        Real-space Hamiltonians of the two channels, eigenvalues relative to the Fermi level.
+    nelec : pair of float, optional
+        Explicit counts ``(channel 0, channel 1)``; returned as given.
+    tol : float, optional
+        Bands with energies up to ``tol`` eV above the Fermi level count as occupied.
+
+    Returns
+    -------
+    list of float
+        One count per channel, the number of bands at or below the Fermi level on the coarse grid.
+
+    Raises
+    ------
+    ValueError
+        If the count varies with k (a metallic channel): pass ``nelec`` explicitly or a
+        ``fermi_energy`` with a temperature.
+    """
+    if nelec is not None and np.ndim(nelec) == 1 and len(nelec) == 2:
+        return [float(x) for x in nelec]
+    HRs = np.asarray(HRs)
+    n = HRs.shape[0]
+    counts = []
+    for s in range(HRs.shape[-1]):
+        Hk = np.fft.fftn(HRs[..., s], axes=(2, 3, 4)).reshape(n, n, -1)
+        e = np.linalg.eigvalsh(np.moveaxis(Hk, -1, 0))
+        nocc_k = np.count_nonzero(e <= float(tol), axis=1)
+        if nocc_k.min() != nocc_k.max():
+            raise ValueError(
+                'spin channel %d: the number of bands below the Fermi level varies with k '
+                '(%d-%d): pass nelec=(n_0, n_1) or fermi_energy with a temperature'
+                % (s, nocc_k.min(), nocc_k.max())
+            )
+        counts.append(float(nocc_k[0]))
+    return counts
+
+
 def _k_grid(nk: Sequence[int]) -> NDArray[np.float64]:
     axes = [np.arange(int(n)) / int(n) for n in nk]
     return np.stack(np.meshgrid(*axes, indexing='ij'), axis=-1).reshape(-1, 3)
@@ -630,6 +720,7 @@ def nonlinear_optical_spectra(
     symmetry_ops_cryst: NDArray[np.float64] | None = None,
     comm=None,
     progress: bool = False,
+    shg_band_slab: int | None = None,
 ) -> dict:
     """Shift current, injection currents and SHG of ``HRs`` on a uniform k-grid.
 
@@ -705,6 +796,9 @@ def nonlinear_optical_spectra(
         k-points are split over its ranks; ``None`` runs serially.
     progress : bool, optional
         Print the k-block progress of rank 0.
+    shg_band_slab : int, optional
+        Bands per slab of the three-band SHG term (:func:`accumulate_shg_histograms`);
+        default from a memory budget of about ``2e6`` elements per slab.
 
     Returns
     -------
@@ -806,7 +900,13 @@ def nonlinear_optical_spectra(
     # k loop
     from ..utils.communication import load_balancing
 
-    kstart, kstop = load_balancing(size, rank, nk_loop)
+    if nk_loop < size:
+        # fewer k-points than ranks (a molecule at Gamma): every rank takes every k-point and
+        # the work inside each k-block (pair blocks, band slabs) is dealt over the ranks
+        kstart, kstop, work = 0, nk_loop, (rank, size)
+    else:
+        kstart, kstop = load_balancing(size, rank, nk_loop)
+        work = (0, 1)
     nblocks = max(1, -(-(kstop - kstart) // int(kblock)))
     for ib, b0 in enumerate(range(kstart, kstop, int(kblock))):
         if progress and rank == 0 and (ib % max(1, nblocks // 10) == 0 or ib == nblocks - 1):
@@ -838,7 +938,7 @@ def nonlinear_optical_spectra(
             else:
                 widths = np.full(omega_s.shape, float(eta))
             accumulate_shift_and_injection(
-                geometry, f, omega_s, energy_grid, widths, comps, smearing, out, kw
+                geometry, f, omega_s, energy_grid, widths, comps, smearing, out, kw, work=work
             )
         if do_shg:
             accumulate_shg_histograms(
@@ -850,6 +950,8 @@ def nonlinear_optical_spectra(
                 hist,
                 degeneracy_tol,
                 k_weights=kw,
+                band_slab=shg_band_slab,
+                work=work,
             )
     if comm is not None and size > 1:
         from mpi4py import MPI
@@ -911,6 +1013,10 @@ OUTPUT_FILES = (
     ('shgr', 'shg', lambda x: x.real, 'pm/V', 'pm^2/V'),
     ('shgi', 'shg', lambda x: x.imag, 'pm/V', 'pm^2/V'),
     ('shga', 'shg', lambda x: np.abs(x), 'pm/V', 'pm^2/V'),
+    # molecule mode (per molecule; see PAOFLOW.response.molecular_nlo)
+    ('beta_T_r', 'beta_T_au', lambda x: x.real, 'a.u.', 'a.u.'),
+    ('beta_T_i', 'beta_T_au', lambda x: x.imag, 'a.u.', 'a.u.'),
+    ('dmudt', 'dmudt_si', lambda x: x, 'A m^3 V^-2', 'A m^3 V^-2'),
 )
 
 
