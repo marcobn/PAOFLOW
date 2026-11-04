@@ -352,6 +352,79 @@ order of magnitude above the coupled/experimental PNA numbers (~1·10³ a.u. sta
 without local-field screening and with the KS gap; the gamma-tricks and full-sphere saves agree to
 1e-5.
 
+## Coupled (local-field) response of molecules — `response/coupled_response.py`, 3–4 November 2026
+
+The molecule mode above is an independent-particle response: the electrons see the external field
+only. The induced Hartree (and exchange-correlation) potential of the response density screens the
+field inside a polar molecule, and for push-pull chromophores that screening reduces $\beta$ by a
+factor 3–5 (coupled versus uncoupled Kohn–Sham response). `nonlinear_optics(molecule=True,
+coupling=...)` solves that coupled response for the SHG hyperpolarizability next to the
+independent-particle spectrum.
+
+**Formalism** (atomic units, one closed-shell channel, orthonormal PAO basis, Gamma Hamiltonian $H$,
+dipole operator $D_a$, $P = g_s\sum_{\rm occ}|n\rangle\langle n|$, electron charge $-1$ so the
+coupling is $+\mathbf E\cdot\mathbf D$ and $\mu_a = -\mathrm{Tr}[PD_a] + \sum_I Z_IR_{I,a}$):
+
+- first order at $\omega$, in the eigenbasis of $H$,
+  $\delta P_{nm} = \dfrac{f_m - f_n}{\omega - \epsilon_n + \epsilon_m + i\eta}\,[V^{\rm ext} + K[\delta P]]_{nm}$,
+  a linear system on the particle-hole blocks solved with GMRES (`first_order_density`);
+- second order for $E_b(\omega_1)$, $E_c(\omega_2)$ (`second_order_density`): the particle-hole
+  blocks obey
+  $(\omega_\sigma - \epsilon_n + \epsilon_m + i\eta)\,\delta P^{(2)}_{nm} = S_{nm} + (f_m - f_n)[K[\delta P^{(2)}] + \tfrac12 V_g]_{nm}$
+  with $S = \tfrac12([V^{(1)}_b,\delta P_c] + [V^{(1)}_c,\delta P_b])$, $V^{(1)} = V^{\rm ext} + K[\delta P]$
+  and $V_g = g_{xc}\,\delta n_b\delta n_c$; the occupied-occupied and empty-empty blocks follow from
+  $P^2 = g_sP$, $\delta P^{(2)}_{oo} = -\tfrac12(\delta P_b\delta P_c + \delta P_c\delta P_b)_{oo}/g_s$
+  (plus sign for the empty block), and their induced potential enters the particle-hole source;
+- $\beta^T_{abc}(-\omega_\sigma;\omega_1,\omega_2) = -2\,\mathrm{Tr}[\delta P^{(2)}_{bc}D_a]$ (Taylor
+  convention, the same as the molecule mode), $\alpha_{ab}(\omega) = -\mathrm{Tr}[\delta P_bD_a]$;
+- the static finite-field route (`finite_field_density`, Pulay-DIIS self-consistency of
+  $H + \mathbf E\cdot\mathbf D + K[P - P_0]$; `static_hyperpolarizability`, Richardson-extrapolated
+  central differences with a step set by the gap, `auto_field_step`) is the reference that the
+  frequency-domain solve reproduces at $\omega\to 0$.
+
+**Kernels** (`CoulombKernel.apply(dP) -> dV`, `second_order(dP1, dP2) -> g_xc dn1 dn2`):
+
+| `coupling` | kernel | needs |
+|---|---|---|
+| `'none'` | independent particles (regression target) | — |
+| `'monopole'` | Hartree of the atomic monopoles, $\delta V_{\mu\mu} = \sum_B\gamma_{A(\mu)B}\delta q_B$, Ohno–Klopman $\gamma_{AB} = [R^2 + (2/(U_A+U_B))^2]^{-1/2}$, $\gamma_{AA} = U_A$ (DFTB `mio` Hubbard values, `coupling_options['hubbard_u']` overrides) | basis records (atom labels, centres) |
+| `'hartree'` | density $\delta n(\mathbf r) = \sum\phi_\mu\phi_\nu\delta P_{\nu\mu}$ on the FFT grid, Poisson solve with the spherical cutoff $v(G) = 4\pi[1-\cos(GR_c)]/G^2$, $R_c$ half the shortest cell height (exact open boundaries for a molecule inside that sphere), projection $\int\phi_\mu\delta V\phi_\nu$ | internal PAO basis (`pao_orbitals_on_grid`, grid twice the wavefunction sphere; `grid='coarse'` halves it) |
+| `'hartree+alda'` | plus $f_{xc}$, $g_{xc}$ of the PW92 LDA at the PAO ground-state density (`lda_kernels`, zero below $10^{-8}$) | same |
+
+Outputs: `beta_coupled.dat` (photon energy, $\beta_\parallel$ real and imaginary, $\beta_{\rm HRS}$,
+depolarisation ratio, independent-particle and coupled), `beta_coupled_static.dat` (finite-field
+values), the `'coupled'` key of the result (`alpha`, `beta_T` `(ne, 3, 3, 3)`, static tensors) and a
+one-line summary. The IPA of the same solver is always computed and printed with the ratio.
+
+**Validation** (`tests/unit/response/test_coupled_response.py`): with the kernel off the solver
+reproduces `nonlinear_optical_spectra` (static to $3\cdot10^{-3}$, off-resonant real parts to 1 %;
+the imaginary parts differ by a few per cent because the sum over states carries $\eta$ in the
+resonant denominators only); frequency-domain $\omega\to 0$ equals the finite-field tensor with and
+without the kernel ($2\cdot10^{-3}$); Kleinman symmetry of the static tensor; origin independence;
+monopole screening lowers $\alpha$ and $|\beta|$; PW92 against the tabulated $\epsilon_c$; the grid
+Poisson solve against the analytic Gaussian repulsion integrals of `utils/pyints` ($2\cdot10^{-3}$).
+
+**PNA** (`Workspace/PAOFLOW/validation/nlo_molecules/coupled/REPORT.md`): the response space decides the
+result. With all 160 PAO states the complement that the projectability filter puts at the shift energy (131 states,
+degenerate 5.06 eV above the HOMO, full dipole strength) carries two thirds of the independent-particle $\alpha$
+and over-screens $\beta$: Hartree + ALDA gives $\beta_\parallel(1064\,{\rm nm})$ = 396 a.u. Restricted to the 29
+projected states (`coupling_options={'active': 'projected'}`), no scissor, Hartree + ALDA gives
+$\beta_\parallel(0)$ = 808 and $\beta_\parallel(1064\,{\rm nm})$ = 1 172 a.u. against the measured 1 072 ± 44,
+TDDFT 978 / 2 127 and coupled cluster 1 579–1 797, where the independent-particle values are 18 376 / 94 959;
+$\alpha_{\rm iso}$ of that space is 42 a.u. (the three empty states hold the charge transfer, not the atomic
+polarizability; measured ~100). Keeping the complement but at a physical energy, `projectability(shift=E_HOMO + 20..30 eV)`,
+gives $\alpha_{\rm iso}$ = 101–121 and $\beta_\parallel(1064\,{\rm nm})$ = 1 026–1 077 with the full space, and the
+coupled charge-transfer resonance falls at 4.10 eV against the 4.2 eV vapour band (no scissor: the kernel supplies
+the blue shift that the 1.5 eV scissor of the independent-particle comparison mimicked). The nscf Kohn–Sham states
+themselves (no PAO basis) give the same $\beta$ within 15 % and a slowly converging $\alpha$. The monopole kernel
+gives 1 853 / 3 296. Coarse grid (`grid='coarse'`) equals the full grid to three digits at an eighth of the memory.
+The solves are distributed over the MPI ranks and a thread pool (`coupling_options['n_threads']`).
+
+**Limits.** One closed-shell channel (`nspin = 2` raises); scalar-relativistic bases; the grid route
+needs the internal PAO basis and holds the `(N_r × n)` orbital table in memory (PNA: 160 orbitals on
+202 × 152 × 118, 4.6 GB real); exchange (hybrid) kernels and the periodic (crystal, slab) version are
+the open items of the plan.
+
 ## Not implemented (follow-ups)
 
 Position dipoles beyond the tight-binding approximation (`position_dipoles.py` in $r$ and $r_{;a}$),

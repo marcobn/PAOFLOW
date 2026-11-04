@@ -3536,6 +3536,8 @@ class PAOFLOW:
         position_dipoles=False,
         symmetry=True,
         molecule=False,
+        coupling=None,
+        coupling_options=None,
     ):
         r"""Second-order optical responses: shift and injection currents, second-harmonic generation.
 
@@ -3652,6 +3654,23 @@ class PAOFLOW:
         ``docs/internals/nonlinear-optics.md`` for the formulas, the sign of the curvature term
         in the sum rule, the histogram scheme of the SHG and the validation on GaAs and
         tight-binding models.
+        coupling : {None, 'none', 'monopole', 'hartree', 'hartree+alda'}, optional
+            Molecules only: also solve the coupled (self-consistent) second-order response
+            (:mod:`PAOFLOW.response.coupled_response`), in which the induced Hartree potential of the
+            response density (and, with ``'hartree+alda'``, the adiabatic-LDA kernel) screens the
+            field: the local-field correction that the independent-particle response above lacks.
+            ``'monopole'`` uses the atomic monopoles (self-consistent-charge form, Hubbard
+            parameters of :data:`~PAOFLOW.response.coupled_response.HUBBARD_U_HA`), ``'hartree'``
+            the density on the real-space grid with a cutoff Coulomb kernel (needs the internal
+            PAO basis).  Writes ``beta_coupled.dat`` (photon energy, :math:`\beta_\parallel`,
+            :math:`\beta_{\rm HRS}` and the depolarisation ratio, independent-particle and
+            coupled) and ``beta_coupled_static.dat``; the results carry the ``'coupled'`` key.
+        coupling_options : dict, optional
+            ``energies_ev`` (photon energies of the coupled solve, default ``[0, emax/2]``),
+            ``eta_ev`` (default ``eta``), ``hubbard_u`` (``{species: U (Hartree)}``), ``grid``
+            (``'coarse'`` or ``(n1, n2, n3)``), ``static_step`` (finite-field step, a.u.),
+            ``tol`` (GMRES tolerance), ``n_threads`` (thread pool over the solves of each
+            rank); the solves are also distributed over the MPI ranks.
         """
         import numpy as np
 
@@ -3828,6 +3847,95 @@ class PAOFLOW:
                             'lattice vector): enlarge the box, the minimum-image operators are '
                             'not exact' % (len(violations), worst[2], worst[0], worst[1], worst[3])
                         )
+            if molecule and coupling and coupling != 'none':
+                import os
+
+                from .response.coupled_response import coupled_molecule
+                from .response.molecular_nlo import beta_parallel, hrs_quantities
+
+                opts = dict(coupling_options or {})
+                energies_c = np.atleast_1d(
+                    np.asarray(opts.pop('energies_ev', [0.0, 0.5 * emax]), dtype=float)
+                )
+                eta_c = float(opts.pop('eta_ev', eta))
+                coupled = {}
+                for name in ('none', coupling):  # collective: the solves are split over the ranks
+                    coupled[name] = coupled_molecule(
+                        self.data_controller, HRs, pos_bohr, dipoles, nocc_channels,
+                        spin_factor, name, eta_c, energies_c, scissor_ev=scissor,
+                        progress=bool(attr.get('verbose', False)), comm=self.comm, **opts,
+                    )  # fmt: skip
+                mu = np.asarray(total['dipole_ebohr'], dtype=float)
+                for name, res in coupled.items():
+                    tensor = np.moveaxis(res['beta_T'], 0, -1)  # (3, 3, 3, ne)
+                    res['beta_parallel_au'] = beta_parallel(tensor, mu)
+                    hrs = hrs_quantities(tensor)
+                    res['beta_hrs_au'] = hrs['beta_hrs']
+                    res['depolarization_ratio'] = hrs['depolarization_ratio']
+                    if 'beta_T_static' in res:
+                        res['beta_parallel_static_au'] = float(
+                            beta_parallel(res['beta_T_static'], mu)
+                        )
+                        res['beta_hrs_static_au'] = float(
+                            hrs_quantities(res['beta_T_static'])['beta_hrs']
+                        )
+                total['coupled'] = coupled
+                ipa, cpl = coupled['none'], coupled[coupling]
+                table = np.stack(
+                    [
+                        energies_c,
+                        ipa['beta_parallel_au'].real, cpl['beta_parallel_au'].real,
+                        ipa['beta_parallel_au'].imag, cpl['beta_parallel_au'].imag,
+                        ipa['beta_hrs_au'], cpl['beta_hrs_au'],
+                        ipa['depolarization_ratio'], cpl['depolarization_ratio'],
+                    ],
+                    axis=1,
+                )  # fmt: skip
+                if self.rank == 0:
+                    np.savetxt(
+                        os.path.join(attr['opath'], 'beta_coupled.dat'), table,
+                        header='photon energy (eV); beta_parallel re (independent-particle, %s); '
+                        'beta_parallel im (ipa, %s); beta_HRS (ipa, %s); depolarisation ratio '
+                        '(ipa, %s); a.u., Taylor convention' % ((coupling,) * 4),
+                        fmt='%.6e',
+                    )  # fmt: skip
+                    if 'beta_parallel_static_au' in cpl:
+                        with open(
+                            os.path.join(attr['opath'], 'beta_coupled_static.dat'), 'w'
+                        ) as fh:
+                            fh.write(
+                                '# finite-field static beta (a.u., Taylor): beta_parallel '
+                                'beta_HRS, independent-particle then %s\n%.6e %.6e\n%.6e %.6e\n'
+                                % (
+                                    coupling,
+                                    ipa['beta_parallel_static_au'], ipa['beta_hrs_static_au'],
+                                    cpl['beta_parallel_static_au'], cpl['beta_hrs_static_au'],
+                                )
+                            )  # fmt: skip
+                    ratio = np.abs(cpl['beta_parallel_au']) / np.maximum(
+                        np.abs(ipa['beta_parallel_au']), 1.0e-300
+                    )
+                    print(
+                        'Nonlinear optics (molecule, coupled %s): beta_parallel at %s eV: '
+                        'independent-particle %s, coupled %s a.u. (ratio %s); static finite-field '
+                        '%s -> %s'
+                        % (
+                            coupling, np.round(energies_c, 3),
+                            np.round(ipa['beta_parallel_au'].real, 1),
+                            np.round(cpl['beta_parallel_au'].real, 1), np.round(ratio, 3),
+                            (
+                                '%.1f' % ipa['beta_parallel_static_au']
+                                if 'beta_parallel_static_au' in ipa
+                                else 'skipped'
+                            ),
+                            (
+                                '%.1f' % cpl['beta_parallel_static_au']
+                                if 'beta_parallel_static_au' in cpl
+                                else 'skipped'
+                            ),
+                        ),
+                        flush=True,
+                    )  # fmt: skip
             written = write_nonlinear_outputs(self.data_controller, total, slab)
             attr['nonlinear_optics'] = {
                 'nk': tuple(int(n) for n in nk), 'eta_ev': float(eta), 'scissor_ev': float(scissor),
@@ -3835,6 +3943,7 @@ class PAOFLOW:
                 'gap_ev': float(total['gap_ev']), 'twoD': bool(twoD), 'slab_height_bohr': slab,
                 'position_dipoles': (level if position_dipoles else False),
                 'symmetry': total.get('symmetry'), 'molecule': bool(molecule),
+                'coupling': (coupling if molecule else None),
             }  # fmt: skip
             if self.rank == 0 and molecule and 'beta_T_au' in total:
                 i0 = int(np.argmin(np.abs(energy)))
