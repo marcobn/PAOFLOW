@@ -1,0 +1,28 @@
+---
+name: Open master -> develop PR after a hotfix
+on:
+  pull_request:
+    types: [closed]
+    branches: [master]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  back-merge:
+    if: github.event.pull_request.merged && (github.head_ref == 'hotfix' || startsWith(github.head_ref, 'hotfix/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open back-merge PR unless one is already open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$(gh pr list --base develop --head master --json number --jq '.[].number')" ]; then
+            echo "A master -> develop PR is already open; it now includes this hotfix."
+            exit 0
+          fi
+          gh pr create --base develop --head master \
+            --title "Merge master into develop (hotfix #$PR_NUMBER)" \
+            --body "Back-merge of hotfix #$PR_NUMBER. Use a merge commit, not squash, or the next develop -> master release will be blocked."
+...
