@@ -3538,6 +3538,7 @@ class PAOFLOW:
         molecule=False,
         coupling=None,
         coupling_options=None,
+        complement_shift=30.0,
     ):
         r"""Second-order optical responses: shift and injection currents, second-harmonic generation.
 
@@ -3665,6 +3666,13 @@ class PAOFLOW:
             PAO basis).  Writes ``beta_coupled.dat`` (photon energy, :math:`\beta_\parallel`,
             :math:`\beta_{\rm HRS}` and the depolarisation ratio, independent-particle and
             coupled) and ``beta_coupled_static.dat``; the results carry the ``'coupled'`` key.
+        complement_shift : float or None, optional
+            Molecules only: energy of the PAO complement (the ``nawf - bnd`` states that the
+            projectability filter puts at the shift) in eV above the HOMO, applied to the
+            Gamma Hamiltonian before the response (:func:`~PAOFLOW.response.molecular_nlo.reshift_complement`).
+            The automatic shift of ``projectability`` sits just above the last projected band and
+            over-screens the response; 30 eV reproduces the measured polarizability and
+            hyperpolarizability of PNA. ``None`` keeps the Hamiltonian as built.
         coupling_options : dict, optional
             ``energies_ev`` (photon energies of the coupled solve, default ``[0, emax/2]``),
             ``eta_ev`` (default ``eta``), ``hubbard_u`` (``{species: U (Hartree)}``), ``grid``
@@ -3725,6 +3733,28 @@ class PAOFLOW:
                     'of the periodic array of boxes, not of an isolated molecule'
                     % 'x'.join(str(int(n)) for n in HRs.shape[2:5])
                 )
+            if molecule and complement_shift is not None and tuple(HRs.shape[2:5]) == (1, 1, 1):
+                from .response.molecular_nlo import reshift_complement
+
+                nocc_shift = [
+                    int(round(float(nelec_channel[s]) / spin_factor)) for s in range(nspin)
+                ]
+                HRs = np.array(HRs, dtype=complex)
+                HRs[:, :, 0, 0, 0, :], moved = reshift_complement(
+                    HRs[:, :, 0, 0, 0, :], int(attr['bnd']), nocc_shift, float(complement_shift)
+                )
+                if self.rank == 0 and attr.get('verbose', False):
+                    print(
+                        'Nonlinear optics (molecule): %d complement states moved from %s to %s eV '
+                        '(%.1f eV above the HOMO)'
+                        % (
+                            HRs.shape[0] - int(attr['bnd']),
+                            ', '.join('%.2f' % m[0] for m in moved),
+                            ', '.join('%.2f' % m[1] for m in moved),
+                            float(complement_shift),
+                        ),
+                        flush=True,
+                    )
             positions = (
                 np.asarray(orbital_positions, dtype=float)
                 if orbital_positions is not None
@@ -3944,6 +3974,7 @@ class PAOFLOW:
                 'position_dipoles': (level if position_dipoles else False),
                 'symmetry': total.get('symmetry'), 'molecule': bool(molecule),
                 'coupling': (coupling if molecule else None),
+                'complement_shift_ev': (complement_shift if molecule else None),
             }  # fmt: skip
             if self.rank == 0 and molecule and 'beta_T_au' in total:
                 i0 = int(np.argmin(np.abs(energy)))

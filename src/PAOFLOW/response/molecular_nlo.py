@@ -259,6 +259,78 @@ def hrs_quantities(beta: NDArray) -> dict:
     return {'beta_hrs': np.sqrt(zzz + xzz), 'depolarization_ratio': ratio, 'zzz2': zzz, 'xzz2': xzz}
 
 
+def reshift_complement(
+    H_gamma: NDArray,
+    nbnd: int,
+    nocc_channels,
+    shift_above_homo_ev: float = 30.0,
+    tol: float = 1.0e-6,
+) -> tuple[NDArray, list[tuple[float, float]]]:
+    """Move the shifted complement of a Gamma PAO Hamiltonian to ``shift_above_homo_ev`` above the HOMO.
+
+    Parameters
+    ----------
+    H_gamma : ndarray ``(n, n)`` or ``(n, n, nspin)``
+        Gamma-point PAO Hamiltonian (eV) whose ``n - nbnd`` complement states are degenerate at
+        the shift energy of ``pao_hamiltonian``.
+    nbnd : int
+        Projected (physical) states.
+    nocc_channels : sequence of int
+        Occupied states per channel (the HOMO of each channel sets the reference).
+    shift_above_homo_ev : float, optional
+        New energy of the complement, relative to the HOMO of the channel (eV).
+    tol : float, optional
+        Relative tolerance of the degeneracy check of the complement.
+
+    Returns
+    -------
+    H : ndarray
+        Same shape as ``H_gamma``, the projected states untouched.
+    moved : list of (old, new)
+        Complement energy before and after, per channel (eV).
+
+    Raises
+    ------
+    ValueError
+        If the top ``n - nbnd`` eigenvalues are not degenerate (no shifted complement).
+
+    Notes
+    -----
+    The automatic shift of ``projectability`` puts the complement just above the last projected
+    band, which is inert for band structures but acts, in a response calculation, as a collective
+    manifold of large dipole strength at low energy: it over-screens the hyperpolarizability of a
+    molecule and inflates its polarizability. At 20–30 eV above the HOMO, where the σ* and
+    continuum channels of the real molecule lie, the same states give the atomic polarizability
+    correctly (PNA, `Workspace/PAOFLOW/validation/nlo_molecules/coupled/REPORT.md`).
+    """
+    H = np.array(H_gamma, dtype=complex)
+    squeeze = H.ndim == 2
+    if squeeze:
+        H = H[:, :, None]
+    n = H.shape[0]
+    ncomp = n - int(nbnd)
+    moved = []
+    for s_ in range(H.shape[2]):
+        e, C = np.linalg.eigh(H[:, :, s_])
+        if ncomp <= 0:
+            moved.append((np.nan, np.nan))
+            continue
+        top = e[int(nbnd) :]
+        scale = max(abs(float(top[0])), 1.0)
+        if float(top.max() - top.min()) > tol * scale:
+            raise ValueError(
+                'the top %d eigenvalues spread over %.3e eV: no degenerate complement to re-shift'
+                % (ncomp, float(top.max() - top.min()))
+            )
+        homo = float(e[int(nocc_channels[s_]) - 1])
+        new = homo + float(shift_above_homo_ev)
+        moved.append((float(top[0]), new))
+        e = e.copy()
+        e[int(nbnd) :] = new
+        H[:, :, s_] = (C * e[None, :]) @ C.conj().T
+    return (H[:, :, 0] if squeeze else H), moved
+
+
 def minimum_image_violations(
     H: NDArray,
     positions_cryst: NDArray[np.float64],

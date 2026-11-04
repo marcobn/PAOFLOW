@@ -412,8 +412,9 @@ projected states (`coupling_options={'active': 'projected'}`), no scissor, Hartr
 $\beta_\parallel(0)$ = 808 and $\beta_\parallel(1064\,{\rm nm})$ = 1 172 a.u. against the measured 1 072 ± 44,
 TDDFT 978 / 2 127 and coupled cluster 1 579–1 797, where the independent-particle values are 18 376 / 94 959;
 $\alpha_{\rm iso}$ of that space is 42 a.u. (the three empty states hold the charge transfer, not the atomic
-polarizability; measured ~100). Keeping the complement but at a physical energy, `projectability(shift=E_HOMO + 20..30 eV)`,
-gives $\alpha_{\rm iso}$ = 101–121 and $\beta_\parallel(1064\,{\rm nm})$ = 1 026–1 077 with the full space, and the
+polarizability; measured ~100). Keeping the complement but at a physical energy (the molecule-mode default
+`complement_shift=30.0` eV above the HOMO, applied to the Gamma Hamiltonian by `reshift_complement`; `None` keeps
+the automatic shift) gives $\alpha_{\rm iso}$ = 101–121 and $\beta_\parallel(1064\,{\rm nm})$ = 1 026–1 077 with the full space, and the
 coupled charge-transfer resonance falls at 4.10 eV against the 4.2 eV vapour band (no scissor: the kernel supplies
 the blue shift that the 1.5 eV scissor of the independent-particle comparison mimicked). The nscf Kohn–Sham states
 themselves (no PAO basis) give the same $\beta$ within 15 % and a slowly converging $\alpha$. The monopole kernel

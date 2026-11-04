@@ -111,3 +111,25 @@ def test_channel_electron_counts():
     HRs_k[:, :, 1, 0, 0, 0] = np.diag([0.0, 0.2])  # H(k = 1/2) = H(0) - H(R=1): band 2 crosses E_F
     with pytest.raises(ValueError):
         channel_electron_counts(HRs_k)
+
+
+def test_reshift_complement_moves_only_the_degenerate_block():
+    from PAOFLOW.response.molecular_nlo import reshift_complement
+
+    rng = np.random.default_rng(3)
+    n, nbnd, nocc = 8, 5, 3
+    Q, _ = np.linalg.qr(rng.standard_normal((n, n)))
+    e = np.concatenate([np.sort(rng.uniform(-10.0, 2.0, nbnd)), np.full(n - nbnd, 6.5)])
+    H = (Q * e[None, :]) @ Q.T
+    out, moved = reshift_complement(H, nbnd, [nocc], 30.0)
+    e_new = np.linalg.eigvalsh(out)
+    assert np.allclose(e_new[:nbnd], e[:nbnd])
+    assert np.allclose(e_new[nbnd:], e[nocc - 1] + 30.0)
+    assert np.allclose(moved, [(6.5, e[nocc - 1] + 30.0)])
+    # the projected block of the Hamiltonian is untouched: same projector
+    P = Q[:, :nbnd] @ Q[:, :nbnd].T
+    assert np.allclose(P @ out @ P, P @ H @ P)
+    stacked, _ = reshift_complement(np.stack([H, H], axis=-1), nbnd, [nocc, nocc], 20.0)
+    assert stacked.shape == (n, n, 2)
+    with pytest.raises(ValueError):
+        reshift_complement(np.diag(np.arange(8.0)), nbnd, [nocc], 30.0)
