@@ -1213,4 +1213,5 @@ def fd_system_for_cell(system, cell: Mapping, *, fd_dir: str = FD_DIR, fd_option
         cache_dir=os.path.join(target, 'cache'),
         spin_degeneracy=system.spin_degeneracy,
         fd_options=dict(fd_options or {}),
+        vertex_dtype=system.vertex_dtype,
     )

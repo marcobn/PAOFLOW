@@ -92,6 +92,10 @@ from .fermi_surface_coupling import FermiSurfacePairCoupling
 # --------------------------------------------------------------------------- #
 # 1. Build the double real-space vertex g(R_e, R_p)
 # --------------------------------------------------------------------------- #
+CELL_DTYPES = ('complex128', 'complex64')
+"""Storage precisions of the node-shared ``g(R_e, R_p)`` (:func:`prepare_dense_vertex`)."""
+
+
 def build_g_ReRp(g_qRe, q_cryst, qgrid):
     """Fourier-transform the coarse-q half-vertex ``g_q(R_e)`` to ``g(R_e, R_p)``.
 
@@ -613,6 +617,7 @@ def eliashberg_dense_q(
     gamma_modes='all',
     gamma_acoustic_thz=0.1,
     fd_options=None,
+    cell_dtype='complex128',
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
 
@@ -723,6 +728,8 @@ def eliashberg_dense_q(
         ``source='fd'``: options of :func:`~PAOFLOW.elphon.fd_vertex.fd_cell_derivatives`
         (``basispath``, ``configuration``, ``pthr``, ``fixed_basis``, ``locality_cutoff``,
         ``ridge``, ...).
+    cell_dtype : {'complex128', 'complex64'}, optional
+        Storage precision of the node-shared vertex (:func:`prepare_dense_vertex`).
 
     Notes
     -----
@@ -750,7 +757,7 @@ def eliashberg_dense_q(
         allow_missing_long_range=allow_missing_long_range,
         save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
         basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
-        long_range=long_range, fd_options=fd_options,
+        long_range=long_range, fd_options=fd_options, cell_dtype=cell_dtype,
     )  # fmt: skip
     g_ReRp, win, phonon_at_q = vertex['g_ReRp'], vertex['window'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']
@@ -931,7 +938,7 @@ def _sum_on_node_root(node_comm, array: NDArray[np.complex128]) -> None:
             node_comm.Reduce(row, None, op=MPI.SUM, root=0)
 
 
-def _broadcast_cells(leaders, g_ReRp: NDArray[np.complex128], labels, owner: dict) -> None:
+def _broadcast_cells(leaders, g_ReRp: NDArray, labels, owner: dict) -> None:
     """Give every node the q-cells built on the others (node leaders only), one orbital row at a time.
 
     Parameters
@@ -953,7 +960,7 @@ def _broadcast_cells(leaders, g_ReRp: NDArray[np.complex128], labels, owner: dic
             if me == root:
                 buf = np.ascontiguousarray(cell)
             else:
-                buf = np.empty(cell.shape, dtype=np.complex128)
+                buf = np.empty(cell.shape, dtype=g_ReRp.dtype)
             leaders.Bcast(buf, root=root)
             if me != root:
                 cell[...] = buf
@@ -989,6 +996,7 @@ def prepare_dense_vertex(
     long_range=None,
     fd_options: dict | None = None,
     node_groups: int | None = None,
+    cell_dtype: str = 'complex128',
 ) -> dict:
     """Coarse couplings -> shared ``g(R_e, R_p)`` and the phonon interpolator.
 
@@ -1083,6 +1091,11 @@ def prepare_dense_vertex(
         Testing only: split the communicator into this many groups that play the role of
         nodes, so that the shared windows and the cell exchange of ``source='dfpt'`` are
         exercised on one machine.  Default: the real nodes (``MPI.COMM_TYPE_SHARED``).
+    cell_dtype : {'complex128', 'complex64'}, optional
+        Storage precision of the node-shared ``g(R_e, R_p)`` (and of its cache entry, whose
+        key carries the precision).  ``'complex64'`` halves the window (the dense step
+        reads it row by row in double precision, the couplings change at the 1e-7 level);
+        for cells whose double-precision table exceeds the shared memory of a node.
 
     Returns
     -------
@@ -1211,13 +1224,21 @@ def prepare_dense_vertex(
     nawf = int(A.shape[1])
     qg = qgrid_coarse
     shape = (nawf, nawf, nmodes, ng[0], ng[1], ng[2], qg[0], qg[1], qg[2])
-    itemsize = np.dtype(np.complex128).itemsize
+    if cell_dtype not in CELL_DTYPES:
+        raise ValueError('cell_dtype must be one of %s, got %r' % (CELL_DTYPES, cell_dtype))
+    itemsize = np.dtype(cell_dtype).itemsize
     nelem = int(np.prod(shape))
+    if comm.Get_rank() == 0:
+        print(
+            '  g(R_e, R_p) node-shared window: %s x %s = %.1f GB per node'
+            % (shape, cell_dtype, nelem * itemsize / 1e9),
+            flush=True,
+        )
     win = MPI.Win.Allocate_shared(
         nelem * itemsize if node_rank == 0 else 0, itemsize, comm=node_comm
     )
     buf, _ = win.Shared_query(0)
-    g_ReRp = np.ndarray(buffer=buf, dtype=np.complex128, shape=shape)
+    g_ReRp = np.ndarray(buffer=buf, dtype=cell_dtype, shape=shape)
 
     # --- cache of the finished g(R_e, R_p) (optional) ----------------------- #
     cache_key = None
@@ -1230,6 +1251,8 @@ def prepare_dense_vertex(
             from .fd_vertex import fd_cache_tag
 
             tag = fd_cache_tag(tag, fd)
+        if cell_dtype != 'complex128':
+            tag = '%s|%s' % (tag, cell_dtype)
         cache_key = dense_vertex_cache_key(
             coupling_dir, source, qgrid_coarse, ng, masses_amu, A.shape, tag
         )

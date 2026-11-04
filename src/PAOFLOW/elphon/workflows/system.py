@@ -234,6 +234,10 @@ class ElphonSystem:
         (:func:`~PAOFLOW.elphon.fd_vertex.fd_cell_derivatives`: ``fixed_basis``,
         ``locality_cutoff``, ``ridge``, ``project_good_subspace``, ``verify_saves``); the
         basis, configuration and ``pthr`` come from the system.
+    vertex_dtype : {'complex128', 'complex64'}, optional
+        Storage precision of the node-shared ``g(R_e, R_p)`` of the dense-q drivers
+        (``cell_dtype`` of :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`);
+        ``'complex64'`` halves the per-node memory of large (spinor) cells.
     """
 
     prefix: str
@@ -259,6 +263,7 @@ class ElphonSystem:
     spin_degeneracy: float | None = None
     fd_dir: str | None = None
     fd_options: dict = field(default_factory=dict)
+    vertex_dtype: str = 'complex128'
     extra: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -551,7 +556,7 @@ class ElphonSystem:
         dict
             ``coupling_source``, ``save_dir``, ``long_range``,
             ``allow_missing_long_range``, ``masses_amu``, ``tau_cryst``, ``species``,
-            ``orbital_positions`` and, optionally, ``sym_rots``, ``cache_dir``,
+            ``orbital_positions``, ``cell_dtype`` and, optionally, ``sym_rots``, ``cache_dir``,
             ``cache_tag`` and (``'fd'``) ``fd_options``.
         """
         nscf = electrons.nscf
@@ -564,6 +569,7 @@ class ElphonSystem:
             tau_cryst=nscf['tau_cryst'],
             species=nscf['atom_names'],
             orbital_positions=nscf['orbital_positions'],
+            cell_dtype=self.vertex_dtype,
         )
         if symmetry:
             kwargs['sym_rots'] = nscf['s_cryst']

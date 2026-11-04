@@ -228,6 +228,7 @@ def long_range_path(
         orbital_positions=nscf['orbital_positions'],
         save_dir=system.save_path,
         comm=comm,
+        cell_dtype=system.vertex_dtype,
     )
     if system.cache_path:
         # the shared g(R_e, R_p) cache of the system folder; the key carries the long-range

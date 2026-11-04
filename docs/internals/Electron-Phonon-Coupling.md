@@ -1211,6 +1211,10 @@ electrons. The paper neglects local-field effects (a few per cent).
   node-local rank 0 builds it in place: each coarse $g_q(R_e)$ goes to its
   q-cell, then the q → $R_p$ FFT runs one orbital row at a time. There are no
   full-size temporaries.
+  Large spinor cells whose double-precision table exceeds the shared memory of a node
+  store it in single precision (`vertex_dtype='complex64'` of `ElphonSystem`,
+  `cell_dtype` of `prepare_dense_vertex`): half the window, a separate cache entry,
+  couplings unchanged at the 1e-7 level (the dense step reads the rows in double precision).
 - **Native DFPT vertex: q over nodes, k over the node ranks** (Nov 3 2026).
   `prepare_dense_vertex(source='dfpt')` deals the coarse q (or, with
   `unfold='irreducible'`, the irreducible q) round-robin over the nodes; inside a
