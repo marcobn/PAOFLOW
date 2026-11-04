@@ -1,18 +1,21 @@
 ---
-name: Only allow develop -> main
+name: Only allow develop/patch -> master
 on:
   pull_request:
-    branches: [ main ]   # only PRs targeting main
+    branches: [master]
 jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - name: Block PRs into main unless from develop
+      - name: Block PRs into master unless from develop or patch
         run: |
           echo "base: ${{ github.base_ref }}"
           echo "head: ${{ github.head_ref }}"
-          if [ "${{ github.head_ref }}" != "develop" ]; then
-            echo "::error::PRs into 'main' must come from 'develop' (got '${{ github.head_ref }}')."
-            exit 1
-          fi
+          case "${{ github.head_ref }}" in
+            develop|patch) ;;
+            *)
+              echo "::error::PRs into 'master' must come from 'develop' or 'patch' (got '${{ github.head_ref }}')."
+              exit 1
+              ;;
+          esac
 ...
