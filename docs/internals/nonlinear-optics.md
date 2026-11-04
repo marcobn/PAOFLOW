@@ -431,6 +431,52 @@ needs the internal PAO basis and holds the `(N_r × n)` orbital table in memory 
 202 × 152 × 118, 4.6 GB real); exchange (hybrid) kernels and the periodic (crystal, slab) version are
 the open items of the plan.
 
+## Coupled linear response of crystals: local fields, ALDA, long-range kernels — `response/coupled_crystal.py`, 4 November 2026
+
+The crystal version of the coupled response (plan: `PAOFLOW.wiki/PAOFLOW_NLO_crystal_local_fields_plan.md`).
+For a crystal $\chi$ is the response to the macroscopic field, so the cell-averaged ($\mathbf G = 0$) Hartree
+term is excluded by definition and the kernel adds the microscopic local fields ($\mathbf G \neq 0$ Hartree),
+the adiabatic-LDA term and, optionally, a long-range term $-\alpha/q^2$ (LRC of Botti et al. 2004 with a given
+$\alpha$, or the head of the RPA-bootstrap kernel of Sharma et al. 2011 / Rigamonti et al. 2015,
+`bootstrap_alpha`), the part of the exact kernel that carries the electron–hole attraction and that ALDA lacks.
+
+**Formalism.** Per $\mathbf k$ of a dense grid, in the band basis of the interpolated PAO Hamiltonian
+(`build_crystal_channel` mirrors the IPA driver: Bloch terms from `HRs`, `band_geometry` with the position
+dipoles and the scissor-consistent velocities), for a unit field $E_b$:
+
+$$\delta P_{nm}(\mathbf k) = \frac{f_m - f_n}{\omega - \epsilon_n + \epsilon_m + i\eta}
+\Big[r^b + \delta V_{\rm Hxc}[\delta n] + \alpha\,\mathbf P\cdot\mathbf r\Big]_{nm}(\mathbf k),\qquad
+\delta n(\mathbf r) = \sum_{\mathbf k} w_{\mathbf k}\sum_{\mu\nu}u^*_{\mu\mathbf k}u_{\nu\mathbf k}\,\delta P^{\rm orb}_{\nu\mu}(\mathbf k),$$
+
+$\delta V_H(\mathbf G \neq 0) = 4\pi\,\delta n(\mathbf G)/G^2$, $\delta V_H(0) = 0$, plus $f_{xc}[n_0]\,\delta n$,
+$\mathbf P = -\Omega^{-1}\sum_{\mathbf k}w_{\mathbf k}\,\mathrm{Tr}[\delta P\,\mathbf r]$ and
+$\epsilon_{M,ab} = \delta_{ab} + 4\pi P_a/E_b$. The periodic parts $u_{\mu\mathbf k}$ are the Löwdin PAO Bloch
+functions at every $\mathbf k$ of the dense grid (`periodic_parts_at_k`: the plane-wave sphere of `ecutwfc`
+around $\mathbf k$, `calc_atwfc_k`, `ortho_atwfc_k`), stored as sphere coefficients and transformed to the cell
+grid on the fly (`sphere_to_grid`, the wavefunction grid by default, `grid_factor=2` alias-free). The unknown of
+the GMRES solve is the pair $(\delta n, \mathbf P)$ on every rank (identical after the Allreduce of the density
+and the polarization), the matrix-vector product is one pass over the local k-points (`first_order_crystal`);
+`dielectric_function_crystal` returns $\epsilon_M(\omega)$ for the requested field directions. The ALDA kernel
+uses the ground-state density of the occupied interpolated states (`CrystalChannel.ground_state_density`);
+`read_charge_density` reads QE's `charge-density.dat` for the basis-completeness diagnostic.
+
+**Tests** (`tests/unit/response/test_coupled_crystal.py`): periodic Hartree of a cosine density (analytic,
+$\mathbf G = 0$ dropped), Miller sphere and sphere-to-grid normalisation, kernel off against the sum over states
+of a synthetic channel ($10^{-10}$), the long-range kernel against its closed form
+$\chi = (1 - \alpha\chi_0)^{-1}\chi_0$ ($10^{-7}$), neutrality of the Hartree-screened density and the density
+sum rule.
+
+**GaAs** (`Workspace/PAOFLOW/validation/nonlinear_optics_GaAs/paoflow_nc/coupled/`): pseudo-atomic extended
+basis (54 orbitals; valence projectabilities 0.999–1.000 against 0.85–0.88 on the all-electron set), position
+dipoles, scissor 0.86 eV; the independent-particle baseline on that basis gives $|\chi_{xyz}(0)|$ = 180.9 pm/V at
+40³ (178.4 on the all-electron set, 166–180 measured). The kernel series of $\epsilon_M(\omega)$ (none / Hartree
+/ + ALDA / + LRC / + bootstrap) is in the report of that folder.
+
+**Limits.** One spin channel, norm-conserving; full k-grid (the induced density breaks the point group); the
+first-order (linear) response only, the second-order crystal response with the intraband length-gauge term is
+the next step of the plan; the bootstrap is the head-only form (one number), the full $\mathbf G\mathbf G'$ body
+is not implemented.
+
 ## Not implemented (follow-ups)
 
 Position dipoles beyond the tight-binding approximation (`position_dipoles.py` in $r$ and $r_{;a}$),
