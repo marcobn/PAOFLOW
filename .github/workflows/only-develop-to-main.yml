@@ -1,5 +1,5 @@
 ---
-name: Only allow develop/patch -> master
+name: Only allow develop/hotfix -> master
 on:
   pull_request:
     branches: [master]
@@ -7,15 +7,33 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - name: Block PRs into master unless from develop or patch
+      - name: Block PRs into master unless from develop or hotfix
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           echo "base: ${{ github.base_ref }}"
-          echo "head: ${{ github.head_ref }}"
-          case "${{ github.head_ref }}" in
-            develop|patch) ;;
+          echo "head: $HEAD_REF"
+          case "$HEAD_REF" in
+            develop|hotfix|hotfix/*) ;;
             *)
-              echo "::error::PRs into 'master' must come from 'develop' or 'patch' (got '${{ github.head_ref }}')."
+              echo "::error::PRs into 'master' must come from 'develop', 'hotfix' or 'hotfix/*' (got '$HEAD_REF')."
               exit 1
               ;;
           esac
+      - uses: actions/checkout@v4
+        if: github.head_ref == 'develop'
+        with:
+          fetch-depth: 0
+      - name: Require hotfixes on master to be merged back into develop
+        if: github.head_ref == 'develop'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=$(git log --oneline --no-merges "$HEAD_SHA..$BASE_SHA")
+          if [ -n "$missing" ]; then
+            echo "::error::develop is missing commits from master. Merge master into develop first (merge commit, not squash):"
+            echo "$missing"
+            exit 1
+          fi
 ...
