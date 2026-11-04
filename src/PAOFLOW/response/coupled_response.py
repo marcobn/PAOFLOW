@@ -463,7 +463,7 @@ def atoms_from_basis(data_controller) -> tuple[NDArray[np.int64], NDArray[np.flo
 
 
 def grid_kernel_from_data(
-    data_controller, P0: NDArray, xc: str | None = None, grid=None, verbose: bool = False
+    data_controller, P0: NDArray, xc: str | None = None, grid='coarse', verbose: bool = False
 ) -> GridKernel:
     """:class:`GridKernel` of the molecule held by ``data_controller`` (internal PAO basis).
 
@@ -473,9 +473,10 @@ def grid_kernel_from_data(
     P0 : ndarray ``(n, n)``
         Ground-state density matrix (for the ALDA kernel).
     xc : {None, 'lda'}, optional
-    grid : tuple of int or 'coarse', optional
-        FFT grid: default twice the wavefunction sphere (alias-free products), ``'coarse'`` the
-        wavefunction sphere itself (one eighth of the memory, aliased products).
+    grid : 'coarse', 'full' or tuple of int, optional
+        FFT grid: ``'coarse'`` (default) the wavefunction sphere, which reproduces the alias-free
+        ``'full'`` grid (twice the sphere, eight times the memory) to three digits on PNA; or an
+        explicit ``(n1, n2, n3)``.
     verbose : bool, optional
     """
     from ..hamiltonian.do_real_space import pao_orbitals_on_grid
@@ -485,7 +486,7 @@ def grid_kernel_from_data(
         phi, info = pao_orbitals_on_grid(data_controller, nr=None)
         nr = tuple(max(1, n // 2) for n in info['nr'])
         del phi
-    elif grid is not None:
+    elif grid not in (None, 'full'):
         nr = tuple(int(n) for n in grid)
     phi, info = pao_orbitals_on_grid(data_controller, nr=nr)
     if verbose:
@@ -509,7 +510,7 @@ def coupled_molecule(
     energies_ev,
     scissor_ev: float = 0.0,
     hubbard_u: dict | None = None,
-    grid=None,
+    grid='coarse',
     active: int | str | None = None,
     static_step='auto',
     tol: float = 1.0e-10,

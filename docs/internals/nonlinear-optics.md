@@ -417,7 +417,12 @@ polarizability; measured ~100). Keeping the complement but at a physical energy 
 the automatic shift) gives $\alpha_{\rm iso}$ = 101–121 and $\beta_\parallel(1064\,{\rm nm})$ = 1 026–1 077 with the full space, and the
 coupled charge-transfer resonance falls at 4.10 eV against the 4.2 eV vapour band (no scissor: the kernel supplies
 the blue shift that the 1.5 eV scissor of the independent-particle comparison mimicked). The nscf Kohn–Sham states
-themselves (no PAO basis) give the same $\beta$ within 15 % and a slowly converging $\alpha$. The monopole kernel
+themselves (no PAO basis) give the same $\beta$ within 15 % and a slowly converging $\alpha$. Those numbers used
+the generic all-electron `BASIS/` tables; on the proper pseudo-atomic basis of the run's pseudopotentials
+(`paoflow-genbasis-ps` → `BASIS_PS`, occupied projectabilities > 0.993, projected block 26 + 4 states) the
+default gives $\beta_\parallel(1064\,{\rm nm})$ = 1 068 (standard) / 1 105 (extended) and $\alpha_{\rm iso}$ = 88 / 114.
+**The molecule setting is `BASIS_PS` + `configuration='extended'` + `coupling='hartree+alda'`** (decision of
+Nov 4 2026), coarse grid (the default), threshold 0.95 (0.9 changes the result by 1–2 %). The monopole kernel
 gives 1 853 / 3 296. Coarse grid (`grid='coarse'`) equals the full grid to three digits at an eighth of the memory.
 The solves are distributed over the MPI ranks and a thread pool (`coupling_options['n_threads']`).
 

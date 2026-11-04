@@ -3663,7 +3663,10 @@ class PAOFLOW:
             ``'monopole'`` uses the atomic monopoles (self-consistent-charge form, Hubbard
             parameters of :data:`~PAOFLOW.response.coupled_response.HUBBARD_U_HA`), ``'hartree'``
             the density on the real-space grid with a cutoff Coulomb kernel (needs the internal
-            PAO basis).  Writes ``beta_coupled.dat`` (photon energy, :math:`\beta_\parallel`,
+            PAO basis). The validated molecule setting is the pseudo-atomic basis of the run's
+            pseudopotentials (``paoflow-genbasis-ps``, ``projections(basispath='BASIS_PS',
+            configuration='extended')``) with ``coupling='hartree+alda'`` (PNA: $\beta_\parallel$
+            at 1064 nm 1 105 a.u. against 1 072 ± 44 measured, $\alpha$ 114 against ~100).  Writes ``beta_coupled.dat`` (photon energy, :math:`\beta_\parallel`,
             :math:`\beta_{\rm HRS}` and the depolarisation ratio, independent-particle and
             coupled) and ``beta_coupled_static.dat``; the results carry the ``'coupled'`` key.
         complement_shift : float or None, optional
@@ -3676,7 +3679,7 @@ class PAOFLOW:
         coupling_options : dict, optional
             ``energies_ev`` (photon energies of the coupled solve, default ``[0, emax/2]``),
             ``eta_ev`` (default ``eta``), ``hubbard_u`` (``{species: U (Hartree)}``), ``grid``
-            (``'coarse'`` or ``(n1, n2, n3)``), ``static_step`` (finite-field step, a.u.),
+            (``'coarse'`` (default), ``'full'`` or ``(n1, n2, n3)``), ``static_step`` (finite-field step, a.u.),
             ``tol`` (GMRES tolerance), ``n_threads`` (thread pool over the solves of each
             rank); the solves are also distributed over the MPI ranks.
         """
