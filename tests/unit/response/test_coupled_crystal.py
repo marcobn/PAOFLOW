@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from PAOFLOW.response import coupled_crystal as cc
+from PAOFLOW.response import nonlinear_optics as nlo
 
 pytestmark = pytest.mark.unit
 
@@ -38,6 +39,11 @@ def test_miller_sphere_and_grid_normalisation():
     coeff = rng.standard_normal((3, mill.shape[1])) + 1j * rng.standard_normal((3, mill.shape[1]))
     coeff /= np.linalg.norm(coeff, axis=1)[:, None]
     nr = cc.grid_for_sphere(mill)
+    assert (
+        all(cc.smooth_size(x) == x for x in nr)
+        and cc.smooth_size(23) == 24
+        and cc.smooth_size(25) == 25
+    )
     omega = 7.0
     u = cc.sphere_to_grid(coeff, mill, nr, omega)
     norms = (np.abs(u) ** 2).sum(0) * omega / np.prod(nr)
@@ -117,6 +123,10 @@ def test_hartree_kernel_screens_and_keeps_the_density_neutral():
     ch = _synthetic_channel()
     hartree = cc.PeriodicKernel(ch.nr, ch.at_bohr, ch.omega)
     out = cc.first_order_crystal(ch, hartree, 0, 0.0, 0.01 * HA)
+    assert ch.tables and len(ch.tables) == ch.nk_local
+    uncached = cc.first_order_crystal(ch, hartree, 0, 0.0, 0.01 * HA, cache_gb=0)
+    ch.tables = {}
+    assert np.allclose(uncached['polarization'], out['polarization'])
     assert abs(out['density'].sum()) < 1e-8 * np.abs(out['density']).max()
     ipa = cc.first_order_crystal(
         ch, cc.PeriodicKernel(ch.nr, ch.at_bohr, ch.omega, hartree=False), 0, 0.0, 0.01 * HA
@@ -128,3 +138,56 @@ def test_hartree_kernel_screens_and_keeps_the_density_neutral():
     alda = cc.PeriodicKernel(ch.nr, ch.at_bohr, ch.omega, xc='lda', n0=n0)
     out2 = cc.first_order_crystal(ch, alda, 0, 0.0, 0.01 * HA)
     assert np.isfinite(out2['polarization']).all() and alda.label == 'hartree+alda'
+
+
+def _polar_crystal(seed=2):
+    """Two-orbital non-centrosymmetric tight-binding crystal on a simple cubic lattice: HRs (eV), cell."""
+    n = 2
+    HRs = np.zeros((n, n, 3, 3, 3, 1), dtype=complex)
+    # on-site energies and intra-cell hopping (R = 0)
+    H0 = np.array([[-1.0, 0.6], [0.6, 1.4]])
+    HRs[:, :, 0, 0, 0, 0] = H0
+    # nearest-neighbour hoppings along +-x, +-y, +-z (indices 1 and 2 = R = +1 and -1)
+    t = {0: (-0.35, -0.25, 0.15), 1: (-0.30, -0.20, 0.10), 2: (-0.33, -0.22, 0.12)}
+    for axis, (t11, t22, t12) in t.items():
+        for sgn, idx in ((1, 1), (-1, 2)):
+            block = np.array([[t11, t12 * (1.0 + 0.3 * sgn)], [t12 * (1.0 - 0.3 * sgn), t22]])
+            sl = [0, 0, 0]
+            sl[axis] = idx
+            HRs[:, :, sl[0], sl[1], sl[2], 0] = block
+    # Hermiticity: H(-R) = H(R)^dagger
+    for axis in range(3):
+        sl1, sl2 = [0, 0, 0], [0, 0, 0]
+        sl1[axis], sl2[axis] = 1, 2
+        HRs[:, :, sl2[0], sl2[1], sl2[2], 0] = HRs[:, :, sl1[0], sl1[1], sl1[2], 0].conj().T
+    at = np.eye(3)
+    alat = 6.0
+    positions = np.array([[0.0, 0.0, 0.0], [0.31, 0.22, 0.17]])  # off-centre second orbital
+    return HRs, at, alat, alat**3, positions
+
+
+def test_kernel_off_shg_matches_the_independent_particle_driver():
+    HRs, at, alat, omega, pos = _polar_crystal()
+    nk = (6, 6, 6)
+    energy = np.array([0.3, 0.7])
+    eta = 0.05
+    comps = ['xxx', 'xyz', 'zxx', 'yyx']
+    ref = nlo.nonlinear_optical_spectra(
+        HRs, at, alat, omega, pos, 2.0, nk, energy, components=comps, eta=eta, spin_factor=2.0,
+        degeneracy_tol=1e-6, shg_bin=eta / 50, want=('shg',),
+    )  # fmt: skip
+    ch = cc.channel_from_HRs(
+        HRs, at, alat, omega, pos, 2.0, nk, scissor_ev=0.0, degeneracy_tol=1e-6
+    )
+    kernel = cc.PeriodicKernel((1, 1, 1), at * alat, omega, hartree=False)
+    idx = [tuple('xyz'.index(ch_) for ch_ in cmp) for cmp in comps]
+    out = cc.shg_crystal(ch, kernel, idx, energy, eta)
+    # real parts: 1 % of the dominant component off resonance (0.3, 0.7 eV; gap 2.7 eV); the
+    # imaginary parts carry the damping placement (eta in every denominator here) and differ by a
+    # few per cent of the dominant component
+    for ic, cmp in enumerate(comps):
+        for ie in range(energy.size):
+            r, m = ref['shg'][ic, ie], out['chi'][ic, ie]
+            scale = np.abs(ref['shg'][:, ie]).max()
+            assert abs(m.real - r.real) < 0.01 * scale, (cmp, ie, m, r)
+            assert abs(m.imag - r.imag) < 0.15 * scale, (cmp, ie, m, r)

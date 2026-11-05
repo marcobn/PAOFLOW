@@ -469,13 +469,35 @@ sum rule.
 **GaAs** (`Workspace/PAOFLOW/validation/nonlinear_optics_GaAs/paoflow_nc/coupled/`): pseudo-atomic extended
 basis (54 orbitals; valence projectabilities 0.999–1.000 against 0.85–0.88 on the all-electron set), position
 dipoles, scissor 0.86 eV; the independent-particle baseline on that basis gives $|\chi_{xyz}(0)|$ = 180.9 pm/V at
-40³ (178.4 on the all-electron set, 166–180 measured). The kernel series of $\epsilon_M(\omega)$ (none / Hartree
-/ + ALDA / + LRC / + bootstrap) is in the report of that folder.
+40³ (178.4 on the all-electron set, 166–180 measured). $\epsilon_{xx}(0)$ at 24³: independent particles 11.36,
+local fields 10.96 (−3.5 %), + ALDA 11.09 (−2.3 %; measured $\epsilon_\infty$ 10.9); at 16³ the long-range term adds
++6 % (bootstrap head, $\alpha$ = 0.10) or +16 % (LRC, $\alpha$ = 0.2) and sharpens the E1/E2 region; kernel off
+reproduces `dielectric_tensor` to 0.2 %. Full tables in the report of that folder.
+
+**Second order** (`second_order_crystal`, `shg_crystal`): the length-gauge equation of motion (Aversa and
+Sipe 1995) with the dressed first-order potentials $V_b = r^b + \delta V_b$,
+
+$$(2\omega - \omega'_{nm} + i\eta)\,\delta P^{(2)}_{nm} = S_{nm} + (f_m - f_n)\big[K[\delta P^{(2)}] + \tfrac12 V_g\big]_{nm},\qquad
+S = \tfrac12\big([V_b,\delta P_c] + [V_c,\delta P_b]\big) + \tfrac{i}{2}\big[(\delta P_c)_{;b} + (\delta P_b)_{;c}\big],$$
+
+where the covariant derivative of the first-order density,
+$(\delta P_c)_{nm;b} = (f_m - f_n)[(V_c)_{nm;b}/d_{nm} + (v^b_{\rm intra}V_c - V_cv^b_{\rm intra})_{nm}/d_{nm}^2]$ with
+$d_{nm} = \omega - \omega'_{nm} + i\eta$, is the intraband term of the length gauge: for $r^c$ it uses the
+generalized derivative $r^c_{;b}$ and the U(N)-covariant $\Delta$ term of `band_geometry`, for the induced
+potential the orbital-basis derivative by central differences of its projection on the periodic parts at
+$\mathbf k \pm h\hat e_b$ plus $i[r^b, \delta V]$ (`band_potential_derivative`). The occupied-occupied and
+empty-empty blocks follow from $P^2 = g_sP$ and their induced potential enters the source; the particle-hole
+blocks are solved as at first order (GMRES on the induced density and polarization at $2\omega$). The
+polarization is the current, $P^{(2)}_a = J_a/(-2i\omega)$ with the scissor-consistent interband velocity
+$i\omega'_{mn}r^a_{mn}$ and the diagonal band velocities; $\chi^{(2)}$ in pm/V with the sign convention of
+`nonlinear_optical_spectra` (24.43 pm/V per atomic unit). **Regression** (`test_coupled_crystal.py`, a
+two-orbital polar crystal on 6³): with the kernel off the real parts of five components agree with
+`nonlinear_optical_spectra` to 0.05–0.4 % off resonance and 1–4 % near the $2\omega$ resonance; the
+imaginary parts differ off resonance by the damping placement (a few per cent of the dominant component).
 
 **Limits.** One spin channel, norm-conserving; full k-grid (the induced density breaks the point group); the
-first-order (linear) response only, the second-order crystal response with the intraband length-gauge term is
-the next step of the plan; the bootstrap is the head-only form (one number), the full $\mathbf G\mathbf G'$ body
-is not implemented.
+bootstrap is the head-only form (one number), the full $\mathbf G\mathbf G'$ body is not implemented; the
+second-order kernel dressing is validated with the kernel off (the GaAs decomposition is the next run).
 
 ## Not implemented (follow-ups)
 

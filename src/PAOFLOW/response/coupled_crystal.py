@@ -101,27 +101,64 @@ def periodic_parts_at_k(
         'xk': k_cart * tpiba,
         'igwx': int(mill.shape[1]),
         'mill': mill,
-        'bg': bg,
+        'bg': bg.T * tpiba,  # calc_gkspace's convention: transposed, bohr^-1
         'gamma_only': False,
     }
     atwfc = calc_atwfc_k(arry['basis'], gkspace, dftSO=bool(attr.get('dftSO', False)))
     return np.asarray(ortho_atwfc_k(atwfc), dtype=complex), mill
 
 
+def check_periodic_parts(data_controller, ik: int = 0) -> float:
+    """Largest deviation between :func:`periodic_parts_at_k` at nscf k-point ``ik`` and the projection route.
+
+    Both build the orthonormal PAO Bloch functions on the plane-wave sphere; the sets may order the
+    sphere differently, so the comparison matches the Miller indices.  Returns ``max |c - c_ref|``
+    (0 up to round-off when the descriptors agree).
+    """
+    from ..projection.do_atwfc_proj import calc_atwfc_k, calc_gkspace, ortho_atwfc_k
+
+    arry, attr = data_controller.data_dicts()
+    gk = calc_gkspace(data_controller, int(ik), gamma_only=False)
+    ref = ortho_atwfc_k(calc_atwfc_k(arry['basis'], gk, dftSO=bool(attr.get('dftSO', False))))
+    bg = np.asarray(arry['b_vectors'], dtype=float)
+    k_cryst = np.linalg.solve(bg.T, np.asarray(arry['kgrid'][:, int(ik)], dtype=float))
+    mine, mill = periodic_parts_at_k(data_controller, k_cryst)
+    key_ref = {tuple(m): i for i, m in enumerate(np.asarray(gk['mill']).T)}
+    order = np.array([key_ref[tuple(m)] for m in mill.T])
+    return float(np.abs(mine - ref[:, order]).max())
+
+
 def sphere_to_grid(
     coeff: NDArray, mill: NDArray[np.int64], nr: tuple[int, int, int], omega: float
 ) -> NDArray[np.complex128]:
     r"""Periodic parts on the FFT grid, ``(N_r, nawf)``, normalised as :math:`\sum_r|u|^2\,\Omega/N_r = 1`."""
+    from scipy import fft as sfft
+
     n = coeff.shape[0]
     box = np.zeros((n,) + tuple(nr), dtype=complex)
     box[:, mill[0] % nr[0], mill[1] % nr[1], mill[2] % nr[2]] = coeff
-    u = np.fft.ifftn(box, axes=(1, 2, 3)) * (float(np.prod(nr)) / np.sqrt(float(omega)))
+    u = sfft.ifftn(box, axes=(1, 2, 3), workers=-1) * (float(np.prod(nr)) / np.sqrt(float(omega)))
     return np.ascontiguousarray(u.reshape(n, -1).T)
 
 
+def smooth_size(n: int) -> int:
+    """Smallest 5-smooth integer (factors 2, 3, 5 only) that is ``>= n``."""
+    n = max(int(n), 1)
+    while True:
+        m = n
+        for f in (2, 3, 5):
+            while m % f == 0:
+                m //= f
+        if m == 1:
+            return n
+        n += 1
+
+
 def grid_for_sphere(mill: NDArray[np.int64], factor: float = 1.0) -> tuple[int, int, int]:
-    """FFT grid holding the sphere (``factor`` 1: the wavefunction grid, 2: alias-free products)."""
-    return tuple(int(factor * (2 * int(np.abs(mill[i]).max()) + 1)) for i in range(3))
+    """FFT grid holding the sphere (``factor`` 1: the wavefunction grid, 2: alias-free products), 5-smooth sizes."""
+    return tuple(
+        smooth_size(int(np.ceil(factor * (2 * int(np.abs(mill[i]).max()) + 1)))) for i in range(3)
+    )
 
 
 def read_charge_density(
@@ -227,6 +264,12 @@ class PeriodicKernel:
             V = V + self.f_xc * dn
         return V
 
+    def second_order_density(self, dn1: NDArray, dn2: NDArray) -> NDArray[np.complex128] | None:
+        r""":math:`g_{xc}\,\delta n_1\delta n_2` on the grid (``None`` without an xc kernel)."""
+        if self.g_xc is None:
+            return None
+        return self.g_xc * np.asarray(dn1).reshape(-1) * np.asarray(dn2).reshape(-1)
+
 
 # --------------------------------------------------------------------------- channel
 @dataclass
@@ -265,6 +308,14 @@ class CrystalChannel:
     at_bohr: NDArray[np.float64]
     comm: object = None
     n0: NDArray | None = field(default=None, repr=False)
+    tables: dict = field(default_factory=dict, repr=False)
+    position_derivative: NDArray | None = field(default=None, repr=False)
+    position_delta: NDArray | None = field(default=None, repr=False)
+    velocity: NDArray | None = field(default=None, repr=False)
+    velocity_intra: NDArray | None = field(default=None, repr=False)
+    energies_bare: NDArray | None = field(default=None, repr=False)
+    k_cryst: NDArray | None = field(default=None, repr=False)
+    parts_at: object = field(default=None, repr=False)
 
     @property
     def nk_local(self) -> int:
@@ -274,8 +325,27 @@ class CrystalChannel:
     def n(self) -> int:
         return int(self.energies.shape[1])
 
+    def cache_tables(self, max_gb: float = 8.0, dtype=np.complex128) -> bool:
+        """Keep the grid tables of the local k-points in memory when they fit ``max_gb`` (per rank).
+
+        Returns ``True`` when cached; otherwise the tables are rebuilt by FFT at every use.
+        """
+        per_k = int(np.prod(self.nr)) * self.n * np.dtype(dtype).itemsize
+        if per_k * self.nk_local > float(max_gb) * 1e9:
+            self.tables = {}
+            return False
+        self.tables = {
+            ik: np.asarray(
+                sphere_to_grid(self.coeff[ik], self.mill[ik], self.nr, self.omega), dtype=dtype
+            )
+            for ik in range(self.nk_local)
+        }
+        return True
+
     def periodic_table(self, ik: int) -> NDArray[np.complex128]:
-        """``(N_r, n)`` periodic parts of local k-point ``ik`` on the grid."""
+        """``(N_r, n)`` periodic parts of local k-point ``ik`` on the grid (cached when available)."""
+        if ik in self.tables:
+            return self.tables[ik]
         return sphere_to_grid(self.coeff[ik], self.mill[ik], self.nr, self.omega)
 
     def coefficients(self, omega_ha: float, eta_ha: float) -> NDArray[np.complex128]:
@@ -321,6 +391,14 @@ class CrystalChannel:
         self.allreduce(P)
         return dn, P / self.omega
 
+    def polarization_of(self, dP_band: NDArray) -> NDArray[np.complex128]:
+        """Macroscopic polarization of ``dP_band`` ``(nk, n, n)`` (allreduced), no density."""
+        P = np.zeros(3, dtype=complex)
+        for ik in range(self.nk_local):
+            P -= self.weights[ik] * np.einsum('aij,ji->a', self.position[ik], dP_band[ik])
+        self.allreduce(P)
+        return P / self.omega
+
     def band_potential(self, V_grid: NDArray, ik: int) -> NDArray[np.complex128]:
         r""":math:`U^\dagger\,[\int u^*_\mu V u_\nu]\,U` of local k-point ``ik``."""
         u = self.periodic_table(ik)
@@ -329,6 +407,38 @@ class CrystalChannel:
         )
         U = self.eigenvectors[ik]
         return U.conj().T @ V_orb @ U
+
+    def band_potential_derivative(
+        self, V_grid: NDArray, ik: int, step: float = 1.0e-3
+    ) -> NDArray[np.complex128]:
+        r"""Covariant derivative :math:`\delta V_{nm;b}` of the induced potential at local k-point ``ik``.
+
+        :math:`[U^\dagger(\partial_b \delta V_{\rm orb})U]_{nm} + i[r^b, \delta V]_{nm}`, the orbital-basis
+        derivative by central differences of the projection on the periodic parts at
+        :math:`\mathbf k \pm h\,\hat e_b` (``step`` in bohr^-1); ``(3, n, n)``.
+        """
+        if self.parts_at is None or self.k_cryst is None:
+            raise ValueError(
+                'the channel has no periodic-part builder (build it from a data controller)'
+            )
+        B = 2.0 * np.pi * np.linalg.inv(self.at_bohr).T  # rows: reciprocal vectors (bohr^-1)
+        Binv = np.linalg.inv(B)
+        V = np.asarray(V_grid).reshape(-1)
+        U = self.eigenvectors[ik]
+        dV = self.band_potential(V, ik)
+        out = np.empty((3, self.n, self.n), dtype=complex)
+        for b in range(3):
+            shift = step * Binv[b]  # crystal coordinates of h e_b
+            orb = []
+            for sign in (1.0, -1.0):
+                cf, ml = self.parts_at(self.k_cryst[ik] + sign * shift)
+                u = sphere_to_grid(cf, ml, self.nr, self.omega)
+                orb.append((u.conj().T @ (V[:, None] * u)) * (self.omega / u.shape[0]))
+            d_orb = (orb[0] - orb[1]) / (2.0 * step)
+            out[b] = U.conj().T @ d_orb @ U + 1j * (
+                self.position[ik, b] @ dV - dV @ self.position[ik, b]
+            )
+        return out
 
 
 # --------------------------------------------------------------------------- solver
@@ -340,8 +450,18 @@ def first_order_crystal(
     eta_ha: float,
     tol: float = 1.0e-8,
     maxiter: int = 200,
+    cache_gb: float = 8.0,
+    cache_dtype=np.complex128,
 ) -> dict:
     """Coupled first-order response of the crystal to a unit field along ``direction``.
+
+    Parameters
+    ----------
+    cache_gb : float, optional
+        Memory cap (per rank) for keeping the grid tables of the local k-points
+        (:meth:`CrystalChannel.cache_tables`); 0 recomputes them at every use.
+    cache_dtype : optional
+        Storage of the cached tables (``np.complex64`` halves the memory).
 
     Returns
     -------
@@ -356,6 +476,8 @@ def first_order_crystal(
     r_b = ch.position[:, int(direction)]
     nr_tot = int(np.prod(ch.nr))
     count = [0]
+    if not ch.tables and cache_gb > 0 and ch.coeff:
+        ch.cache_tables(cache_gb, dtype=cache_dtype)
 
     def respond(V_band_fn):
         dP = np.empty_like(c)
@@ -376,10 +498,15 @@ def first_order_crystal(
         return respond(V_band)
 
     dP0 = respond(lambda ik: r_b[ik])
+    if kernel.label == 'none':
+        return {
+            'dP': dP0,
+            'density': None,
+            'polarization': ch.polarization_of(dP0),
+            'iterations': 0,
+        }
     dn0, P0 = ch.density_and_polarization(dP0)
     X0 = np.concatenate([dn0, P0])
-    if kernel.label == 'none':
-        return {'dP': dP0, 'density': dn0, 'polarization': P0, 'iterations': 0}
 
     def matvec(X):
         count[0] += 1
@@ -407,6 +534,8 @@ def dielectric_function_crystal(
     directions=(0, 1, 2),
     tol: float = 1.0e-8,
     progress: bool = False,
+    cache_gb: float = 8.0,
+    cache_dtype=np.complex128,
 ) -> dict:
     r"""Macroscopic dielectric tensor :math:`\epsilon_{M,ab}(\omega) = \delta_{ab} + 4\pi P_a/E_b` with the kernel."""
     energies = np.atleast_1d(np.asarray(energies_ev, dtype=float))
@@ -415,8 +544,9 @@ def dielectric_function_crystal(
     for ie, w in enumerate(energies):
         for b in directions:
             out = first_order_crystal(
-                ch, kernel, b, w / HARTREE_EV, float(eta_ev) / HARTREE_EV, tol=tol
-            )
+                ch, kernel, b, w / HARTREE_EV, float(eta_ev) / HARTREE_EV, tol=tol,
+                cache_gb=cache_gb, cache_dtype=cache_dtype,
+            )  # fmt: skip
             eps[ie, :, b] = 4.0 * np.pi * out['polarization']
             eps[ie, b, b] += 1.0
             if progress and rank == 0:
@@ -435,6 +565,256 @@ def dielectric_function_crystal(
     return {'energy_ev': energies, 'epsilon': eps, 'kernel': kernel.label}
 
 
+def second_order_crystal(
+    ch: CrystalChannel,
+    kernel: PeriodicKernel,
+    b: int,
+    c: int,
+    omega_ha: float,
+    eta_ha: float,
+    first_b: dict,
+    first_c: dict,
+    tol: float = 1.0e-8,
+    maxiter: int = 200,
+    cache_gb: float = 8.0,
+    cache_dtype=np.complex128,
+    derivative_step: float = 1.0e-3,
+) -> dict:
+    r"""Second-order response of the crystal to :math:`E_b(\omega)E_c(\omega)` (second-harmonic generation).
+
+    Parameters
+    ----------
+    ch, kernel, tol, maxiter, cache_gb, cache_dtype
+        As :func:`first_order_crystal`.
+    b, c : int
+        Field directions.
+    omega_ha, eta_ha : float
+        Photon energy and damping (Hartree); the response is at :math:`2\omega`.
+    first_b, first_c : dict
+        Results of :func:`first_order_crystal` for the two directions at ``omega_ha``.
+    derivative_step : float, optional
+        Step (bohr^-1) of the covariant derivative of the induced potential.
+
+    Returns
+    -------
+    dict
+        ``'dP'`` ``(nk_local, n, n)``, ``'polarization'`` ``(3,)`` (second-order macroscopic polarization
+        per unit fields, a.u.: :math:`\chi^{(2)}_{abc}` in atomic units), ``'iterations'``.
+
+    Notes
+    -----
+    Length gauge (Aversa and Sipe 1995): with the dressed first-order potentials
+    :math:`V_b = r^b + \delta V_b` and densities :math:`\delta P_b`, the particle-hole blocks obey
+
+    .. math::
+
+        (2\omega - \omega'_{nm} + i\eta)\,\delta P^{(2)}_{nm} = S_{nm} + (f_m - f_n)\big[K[\delta P^{(2)}] + \tfrac12 V_g\big]_{nm},\quad
+        S = \tfrac12\big([V_b,\delta P_c] + [V_c,\delta P_b]\big) + \tfrac{i}{2}\big[(\delta P_c)_{;b} + (\delta P_b)_{;c}\big],
+
+    with the covariant derivative of the first-order density
+    :math:`(\delta P_c)_{nm;b} = (f_m - f_n)\,[(V_c)_{nm;b}/d_{nm} + (v^b_{\rm intra}V_c - V_cv^b_{\rm intra})_{nm}/d_{nm}^2]`,
+    :math:`d_{nm} = \omega - \omega'_{nm} + i\eta`, carrying the intraband (k-derivative) term of the
+    length gauge; the occupied-occupied and empty-empty blocks follow from :math:`P^2 = g_sP`. The
+    polarization is the current, :math:`P^{(2)}_a = J_a/(-2i\omega)`,
+    :math:`J_a = -\Omega^{-1}\sum_{\mathbf k}w_{\mathbf k}[\sum_{n\neq m}\delta P^{(2)}_{nm}v'^a_{mn} + \sum_n\delta P^{(2)}_{nn}v^a_{nn}]`,
+    :math:`v'^a_{mn} = i\omega'_{mn}r^a_{mn}` (scissor-consistent), reported in the sign convention of
+    :func:`~PAOFLOW.response.nonlinear_optics.nonlinear_optical_spectra` (charge :math:`e > 0`).  With the
+    kernel off this reproduces that driver: real parts to 0.1-0.4 % off resonance and 1-4 % near the
+    :math:`2\omega` resonance; the imaginary parts differ off resonance by the damping placement
+    (:math:`\eta` in every denominator here, in the resonant ones there), a few per cent of the
+    dominant component.
+    """
+    from scipy.sparse.linalg import LinearOperator, gmres
+
+    if ch.position_derivative is None:
+        raise ValueError(
+            'the channel lacks the second-order geometry (build it with channel_from_HRs)'
+        )
+    if not ch.tables and cache_gb > 0 and ch.coeff:
+        ch.cache_tables(cache_gb, dtype=cache_dtype)
+    w, eta = float(omega_ha), float(eta_ha)
+    e, f = ch.energies, ch.occupations
+    fnm = f[None, :] - f[:, None]  # f_m - f_n
+    occ = f > 0
+    oo = occ[:, None] & occ[None, :]
+    vv = ~occ[:, None] & ~occ[None, :]
+    d1 = w - (e[:, :, None] - e[:, None, :]) + 1j * eta
+    d2 = 2.0 * w - (e[:, :, None] - e[:, None, :]) + 1j * eta
+    c2 = fnm[None] / d2
+    nr_tot = int(np.prod(ch.nr))
+    active = kernel.label != 'none'
+    alpha = kernel.lrc_alpha if active else 0.0
+    V_grid = (
+        {
+            'b': kernel.apply_density(first_b['density']),
+            'c': kernel.apply_density(first_c['density']),
+        }
+        if active
+        else {}
+    )
+    V_g = kernel.second_order_density(first_b['density'], first_c['density']) if active else None
+    P1 = {'b': first_b['dP'], 'c': first_c['dP']}
+    pol1 = {'b': first_b['polarization'], 'c': first_c['polarization']}
+    dirs = {'b': int(b), 'c': int(c)}
+    S_e = np.empty_like(c2)
+    P_block = np.empty_like(c2)
+    for ik in range(ch.nk_local):
+        r = ch.position[ik]
+        vin = ch.velocity_intra[ik]
+        Vt, Vd = {}, {}
+        for lab in ('b', 'c'):
+            a_ = dirs[lab]
+            Vt[lab] = r[a_].copy()
+            Vd[lab] = ch.position_derivative[ik][:, a_].copy()  # [direction] -> r^a_{;direction}
+            if active:
+                dV = ch.band_potential(V_grid[lab], ik)
+                if alpha:
+                    dV = dV + alpha * np.einsum('a,aij->ij', pol1[lab], r)
+                Vt[lab] = Vt[lab] + dV
+                Vd[lab] = Vd[lab] + ch.band_potential_derivative(V_grid[lab], ik, derivative_step)
+        dd = d1[ik]
+        D = {}
+        for lab, other in (('c', 'b'), ('b', 'c')):
+            a_ = dirs[other]
+            comm_v = vin[a_] @ Vt[lab] - Vt[lab] @ vin[a_]
+            D[lab] = fnm * (Vd[lab][a_] / dd + comm_v / dd**2)
+        Pb, Pc = P1['b'][ik], P1['c'][ik]
+        S = 0.5 * (Vt['b'] @ Pc - Pc @ Vt['b'] + Vt['c'] @ Pb - Pb @ Vt['c']) + 0.5j * (
+            D['c'] + D['b']
+        )
+        Q = 0.5 * (Pb @ Pc + Pc @ Pb) / float(ch.occupations.max())
+        P_block[ik] = np.where(vv, Q, 0.0) - np.where(oo, Q, 0.0)
+        S_e[ik] = np.where(oo | vv, 0.0, S / d2[ik])
+    if active:
+        dn_blk, P_blk = ch.density_and_polarization(P_block)
+        Vb_grid = kernel.apply_density(dn_blk)
+        if V_g is not None:
+            Vb_grid = Vb_grid + 0.5 * V_g
+        for ik in range(ch.nk_local):
+            Vk = ch.band_potential(Vb_grid, ik)
+            if alpha:
+                Vk = Vk + alpha * np.einsum('a,aij->ij', P_blk, ch.position[ik])
+            S_e[ik] = S_e[ik] + c2[ik] * Vk
+    count = [0]
+
+    def induced(X):
+        dn, P = X[:nr_tot], X[nr_tot:]
+        Vg = kernel.apply_density(dn)
+        out = np.empty_like(c2)
+        for ik in range(ch.nk_local):
+            Vk = ch.band_potential(Vg, ik)
+            if alpha:
+                Vk = Vk + alpha * np.einsum('a,aij->ij', P, ch.position[ik])
+            out[ik] = c2[ik] * Vk
+        return out
+
+    if active:
+        dn0, P0 = ch.density_and_polarization(S_e)
+        X0 = np.concatenate([dn0, P0])
+
+        def matvec(X):
+            count[0] += 1
+            dn, P = ch.density_and_polarization(induced(X))
+            return X - np.concatenate([dn, P])
+
+        op = LinearOperator((X0.size, X0.size), matvec=matvec, dtype=complex)
+        try:
+            X, info = gmres(op, X0, x0=X0, rtol=tol, maxiter=maxiter)
+        except TypeError:
+            X, info = gmres(op, X0, x0=X0, tol=tol, maxiter=maxiter)
+        if info != 0:
+            raise RuntimeError(
+                'second-order crystal response did not converge (GMRES info %d)' % info
+            )
+        dP = S_e + induced(X) + P_block
+    else:
+        dP = S_e + P_block
+    J = np.zeros(3, dtype=complex)
+    for ik in range(ch.nk_local):
+        om = e[ik][:, None] - e[ik][None, :]  # omega'_nm
+        for a_ in range(3):
+            v = 1j * om * ch.position[ik, a_]  # v'^a_nm = i omega'_nm r^a_nm
+            np.fill_diagonal(v, np.diag(ch.velocity[ik, a_]))
+            J[a_] -= ch.weights[ik] * np.einsum('nm,mn->', dP[ik], v)
+    ch.allreduce(J)
+    J /= ch.omega
+    # sign convention of nonlinear_optical_spectra (the charge enters as e^3 with e > 0): the
+    # electronic polarization computed here (charge -1) is multiplied by -1
+    return {'dP': dP, 'polarization': -J / (-2.0j * w), 'iterations': count[0]}
+
+
+#: chi^(2) in pm/V per atomic unit (P = eps0 chi E E; e^3 / (eps0 E_h^2) = 24.43 pm/V)
+CHI2_AU_TO_PM_V = 24.43
+
+
+def shg_crystal(
+    ch: CrystalChannel,
+    kernel: PeriodicKernel,
+    components,
+    energies_ev,
+    eta_ev: float,
+    tol: float = 1.0e-8,
+    progress: bool = False,
+    cache_gb: float = 8.0,
+    cache_dtype=np.complex128,
+) -> dict:
+    r""":math:`\chi^{(2)}_{abc}(-2\omega;\omega,\omega)` of the crystal with the kernel, in pm/V (:math:`P = \epsilon_0\chi EE`).
+
+    Parameters
+    ----------
+    components : sequence of ``(a, b, c)``
+    energies_ev : array_like
+    eta_ev : float
+
+    Returns
+    -------
+    dict
+        ``'energy_ev'``, ``'chi'`` ``(ncomp, ne)`` complex (pm/V), ``'chi_au'``, ``'kernel'``.
+    """
+    energies = np.atleast_1d(np.asarray(energies_ev, dtype=float))
+    comps = [tuple(int(x) for x in cmp) for cmp in components]
+    chi = np.zeros((len(comps), energies.size), dtype=complex)
+    rank = 0 if ch.comm is None else int(ch.comm.Get_rank())
+    for ie, w in enumerate(energies):
+        wh, eh = w / HARTREE_EV, float(eta_ev) / HARTREE_EV
+        needed = sorted({bb for _, bb, _ in comps} | {cc for _, _, cc in comps})
+        first = {
+            d: first_order_crystal(
+                ch, kernel, d, wh, eh, tol=tol, cache_gb=cache_gb, cache_dtype=cache_dtype
+            )
+            for d in needed
+        }
+        pairs = {}
+        for ic, (a, bb, cc) in enumerate(comps):
+            key = (min(bb, cc), max(bb, cc))
+            if key not in pairs:
+                pairs[key] = second_order_crystal(
+                    ch, kernel, key[0], key[1], wh, eh, first[key[0]], first[key[1]], tol=tol,
+                    cache_gb=cache_gb, cache_dtype=cache_dtype,
+                )  # fmt: skip
+            chi[ic, ie] = pairs[key]['polarization'][a] * CHI2_AU_TO_PM_V
+            if progress and rank == 0:
+                print(
+                    '  crystal SHG (%s): %.3f eV  chi_%s%s%s = %.3f%+.3fj pm/V'
+                    % (
+                        kernel.label,
+                        w,
+                        'xyz'[a],
+                        'xyz'[bb],
+                        'xyz'[cc],
+                        chi[ic, ie].real,
+                        chi[ic, ie].imag,
+                    ),
+                    flush=True,
+                )
+    return {
+        'energy_ev': energies,
+        'chi': chi,
+        'chi_au': chi / CHI2_AU_TO_PM_V,
+        'kernel': kernel.label,
+    }
+
+
 def bootstrap_alpha(eps_ipa_static: float, eps_lfe_static: float) -> float:
     r"""Head of the RPA-bootstrap kernel, :math:`\alpha = 4\pi\,\epsilon_M^{-1}(0)/[\epsilon_{\rm IPA}(0) - 1]`.
 
@@ -445,6 +825,135 @@ def bootstrap_alpha(eps_ipa_static: float, eps_lfe_static: float) -> float:
 
 
 # --------------------------------------------------------------------------- builder
+def channel_from_HRs(
+    HRs: NDArray,
+    a_vectors: NDArray[np.float64],
+    alat: float,
+    omega: float,
+    positions_cryst,
+    nelec: float,
+    nk,
+    scissor_ev: float = 0.0,
+    spin_factor: float = 2.0,
+    dipoles=None,
+    degeneracy_tol: float = 1.0e-4,
+    hopping_cutoff: float | None = None,
+    kblock: int = 64,
+    comm=None,
+    progress: bool = False,
+) -> CrystalChannel:
+    """Dense-grid channel from a real-space PAO Hamiltonian (the band geometry of the IPA driver).
+
+    Parameters
+    ----------
+    HRs : ndarray ``(nawf, nawf, n1, n2, n3, nspin)``
+        Real-space PAO Hamiltonian (eV).
+    a_vectors, alat, omega
+        Direct lattice (rows, alat units), lattice parameter (bohr), cell volume (bohr^3).
+    positions_cryst : ndarray ``(nawf, 3)`` or None
+        Orbital centres (crystal coordinates).
+    nelec : float
+        Electrons per cell.
+    nk : sequence of int
+        Dense k-grid (full grid).
+    scissor_ev, spin_factor, degeneracy_tol, hopping_cutoff, kblock
+        As :func:`~PAOFLOW.response.nonlinear_optics.nonlinear_optical_spectra`.
+    dipoles : callable, optional
+        Position-dipole operator (``K_cryst -> (nk, 3, nawf, nawf)``).
+    comm : MPI communicator, optional
+        k-points are split over its ranks.
+
+    Returns
+    -------
+    CrystalChannel
+        Without periodic parts (``coeff``/``mill`` empty, ``nr = (1, 1, 1)``): enough for the
+        kernel-off responses and the tests; :func:`build_crystal_channel` adds them.
+    """
+    from ..hamiltonian.bloch_derivatives import (
+        bloch_terms_from_HRs,
+        hamiltonian_derivatives_block,
+        velocity_and_curvature_operators,
+    )
+    from ..utils.communication import load_balancing
+    from .nonlinear_optics import _k_grid, band_geometry, dipole_gradient_by_differences
+
+    HRs = np.asarray(HRs)
+    if HRs.shape[-1] != 1:
+        raise NotImplementedError('the crystal coupled response handles one spin channel')
+    at = np.asarray(a_vectors, dtype=float)
+    nocc = int(round(float(nelec) / float(spin_factor)))
+    terms = bloch_terms_from_HRs(
+        HRs, at, float(alat), positions_cryst, ispin=0, hopping_cutoff=hopping_cutoff
+    )
+    n = terms.nawf
+    K = _k_grid(tuple(int(x) for x in nk))
+    nkd = K.shape[0]
+    size, rank = (1, 0) if comm is None else (comm.Get_size(), comm.Get_rank())
+    kstart, kstop = load_balancing(size, rank, nkd)
+    conduction = (np.arange(n) >= nocc).astype(float)
+    energies, bare, vectors, position, pderiv, pdelta, velocity, vintra = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
+    for b0 in range(kstart, kstop, int(kblock)):
+        kb = K[b0 : min(b0 + int(kblock), kstop)]
+        H, dH, d2H = hamiltonian_derivatives_block(terms, kb)
+        v_orb, w_orb = velocity_and_curvature_operators(terms, H, dH, d2H)
+        E, U = np.linalg.eigh(H)
+        if dipoles is not None:
+            d_orb = np.asarray(dipoles(kb), dtype=complex)
+            dg_orb = dipole_gradient_by_differences(dipoles, kb, at, float(alat), 1.0e-4)
+            dg_orb += 1j * terms.separation_bohr[None, :, None] * d_orb[:, None]
+            geometry = band_geometry(E, U, v_orb, w_orb, degeneracy_tol, d_orb, dg_orb)
+        else:
+            geometry = band_geometry(E, U, v_orb, w_orb, degeneracy_tol)
+        energies.append((E + float(scissor_ev) * conduction[None, :]) / HARTREE_EV)
+        bare.append(E / HARTREE_EV)
+        vectors.append(U)
+        position.append(geometry.position)
+        pderiv.append(geometry.position_derivative)
+        pdelta.append(geometry.position_delta / HARTREE_EV)
+        velocity.append(geometry.velocity / HARTREE_EV)
+        vintra.append(geometry.velocity_intra / HARTREE_EV)
+        if progress and rank == 0:
+            print(
+                '  crystal channel: k-points %d-%d of %d' % (b0, min(b0 + kblock, kstop), nkd),
+                flush=True,
+            )
+    occupations = np.zeros(n)
+    occupations[:nocc] = float(spin_factor)
+    cat = (
+        lambda arrs, shape, dtype=complex: np.concatenate(arrs)
+        if arrs
+        else np.zeros(shape, dtype=dtype)
+    )  # noqa: E731
+    return CrystalChannel(
+        energies=cat(energies, (0, n), float),
+        eigenvectors=cat(vectors, (0, n, n)),
+        position=cat(position, (0, 3, n, n)),
+        occupations=occupations,
+        weights=np.full(kstop - kstart, 1.0 / nkd),
+        coeff=[],
+        mill=[],
+        nr=(1, 1, 1),
+        omega=float(omega),
+        at_bohr=at * float(alat),
+        comm=comm,
+        position_derivative=cat(pderiv, (0, 3, 3, n, n)),
+        position_delta=cat(pdelta, (0, 3, 3, n, n)),
+        velocity=cat(velocity, (0, 3, n, n)),
+        velocity_intra=cat(vintra, (0, 3, n, n)),
+        energies_bare=cat(bare, (0, n), float),
+        k_cryst=K[kstart:kstop],
+    )
+
+
 def build_crystal_channel(
     data_controller,
     nk,
@@ -459,7 +968,7 @@ def build_crystal_channel(
     nelec: float | None = None,
     progress: bool = False,
 ) -> CrystalChannel:
-    """Dense-grid channel of a PAOFLOW run: band geometry of the IPA driver plus the periodic parts.
+    """Dense-grid channel of a PAOFLOW run: :func:`channel_from_HRs` plus the periodic parts.
 
     Parameters
     ----------
@@ -481,33 +990,14 @@ def build_crystal_channel(
     nelec : float, optional
         Electrons per cell (default ``attr['nelec']``).
     """
-    from ..hamiltonian.bloch_derivatives import (
-        bloch_terms_from_HRs,
-        hamiltonian_derivatives_block,
-        orbital_positions_from_data,
-        velocity_and_curvature_operators,
-    )
+    from ..hamiltonian.bloch_derivatives import orbital_positions_from_data
     from ..utils.communication import load_balancing
-    from .nonlinear_optics import _k_grid, band_geometry, dipole_gradient_by_differences
+    from .nonlinear_optics import _k_grid
 
     arrays, attr = data_controller.data_dicts()
-    HRs = arrays['HRs']
     at = np.asarray(arrays['a_vectors'], dtype=float)
     alat = float(attr['alat'])
-    omega = float(attr['omega'])
-    nspin = HRs.shape[-1]
-    if nspin != 1:
-        raise NotImplementedError('the crystal coupled response handles one spin channel')
     spin_factor = 1.0 if attr.get('dftSO', False) else 2.0
-    nelec = float(attr['nelec'] if nelec is None else nelec)
-    nocc = int(round(nelec / spin_factor))
-    positions = orbital_positions_from_data(data_controller)
-    terms = bloch_terms_from_HRs(HRs, at, alat, positions, ispin=0, hopping_cutoff=hopping_cutoff)
-    n = terms.nawf
-    K = _k_grid(tuple(int(x) for x in nk))
-    nkd = K.shape[0]
-    size, rank = (1, 0) if comm is None else (comm.Get_size(), comm.Get_rank())
-    kstart, kstop = load_balancing(size, rank, nkd)
     dipoles = None
     if position_dipoles:
         from ..hamiltonian.position_dipoles import position_dipole_operator
@@ -516,54 +1006,28 @@ def build_crystal_channel(
         dipoles = position_dipole_operator(
             data_controller, np.asarray(arrays['b_vectors'], dtype=float), alat, level=level
         )
-    conduction = (np.arange(n) >= nocc).astype(float)
-    energies, vectors, position = [], [], []
-    for b0 in range(kstart, kstop, int(kblock)):
-        kb = K[b0 : min(b0 + int(kblock), kstop)]
-        H, dH, d2H = hamiltonian_derivatives_block(terms, kb)
-        v_orb, w_orb = velocity_and_curvature_operators(terms, H, dH, d2H)
-        E, U = np.linalg.eigh(H)
-        if dipoles is not None:
-            d_orb = np.asarray(dipoles(kb), dtype=complex)
-            dg_orb = dipole_gradient_by_differences(dipoles, kb, at, alat, 1.0e-4)
-            dg_orb += 1j * terms.separation_bohr[None, :, None] * d_orb[:, None]
-            geometry = band_geometry(E, U, v_orb, w_orb, degeneracy_tol, d_orb, dg_orb)
-        else:
-            geometry = band_geometry(E, U, v_orb, w_orb, degeneracy_tol)
-        energies.append((E + float(scissor_ev) * conduction[None, :]) / HARTREE_EV)
-        vectors.append(U)
-        position.append(geometry.position)
-        if progress and rank == 0:
-            print(
-                '  crystal channel: k-points %d-%d of %d' % (b0, min(b0 + kblock, kstop), nkd),
-                flush=True,
-            )
+    ch = channel_from_HRs(
+        arrays['HRs'], at, alat, float(attr['omega']), orbital_positions_from_data(data_controller),
+        float(attr['nelec'] if nelec is None else nelec), nk, scissor_ev=scissor_ev,
+        spin_factor=spin_factor, dipoles=dipoles, degeneracy_tol=degeneracy_tol,
+        hopping_cutoff=hopping_cutoff, kblock=kblock, comm=comm, progress=progress,
+    )  # fmt: skip
+    K = _k_grid(tuple(int(x) for x in nk))
+    size, rank = (1, 0) if comm is None else (comm.Get_size(), comm.Get_rank())
+    kstart, kstop = load_balancing(size, rank, K.shape[0])
     coeff, mill = [], []
     for ik in range(kstart, kstop):
         cf, ml = periodic_parts_at_k(data_controller, K[ik])
         coeff.append(np.asarray(cf, dtype=coeff_dtype))
         mill.append(ml)
-    nr = grid_for_sphere(mill[0], grid_factor) if mill else (1, 1, 1)
-    nr_all = np.array(nr)
+    nr_all = np.array(grid_for_sphere(mill[0], grid_factor) if mill else (1, 1, 1))
     if comm is not None:
         from mpi4py import MPI
 
         comm.Allreduce(MPI.IN_PLACE, nr_all, op=MPI.MAX)
-    occupations = np.zeros(n)
-    occupations[:nocc] = spin_factor
-    return CrystalChannel(
-        energies=np.concatenate(energies) if energies else np.zeros((0, n)),
-        eigenvectors=np.concatenate(vectors) if vectors else np.zeros((0, n, n), dtype=complex),
-        position=np.concatenate(position) if position else np.zeros((0, 3, n, n), dtype=complex),
-        occupations=occupations,
-        weights=np.full(kstop - kstart, 1.0 / nkd),
-        coeff=coeff,
-        mill=mill,
-        nr=tuple(int(x) for x in nr_all),
-        omega=omega,
-        at_bohr=at * alat,
-        comm=comm,
-    )
+    ch.coeff, ch.mill, ch.nr = coeff, mill, tuple(int(x) for x in nr_all)
+    ch.parts_at = lambda k_cryst: periodic_parts_at_k(data_controller, k_cryst)
+    return ch
 
 
 __all__ = [
@@ -572,11 +1036,15 @@ __all__ = [
     'PeriodicKernel',
     'bootstrap_alpha',
     'build_crystal_channel',
+    'channel_from_HRs',
+    'check_periodic_parts',
     'dielectric_function_crystal',
     'first_order_crystal',
     'grid_for_sphere',
     'miller_sphere',
     'periodic_parts_at_k',
     'read_charge_density',
+    'second_order_crystal',
+    'shg_crystal',
     'sphere_to_grid',
 ]
