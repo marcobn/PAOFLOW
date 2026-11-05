@@ -50,9 +50,10 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 SYSTEMS_DIR = os.path.join(HERE, 'systems')
 
 CONFIG = {
-    # the systems submit.py submits, each into systems/<name>/runs.  Si already
-    # ran (2026-10): add it back to rerun it, which overwrites its runs
-    'systems': ['pt', 'fe', 'te'],
+    # the systems submit.py submits, each into systems/<name>/runs.  Pt, Fe and Te
+    # were submitted 2026-11; Si reruns d = 0..4 (sparse, sparse_curvature,
+    # sparse_interior and the reference) to match them
+    'systems': ['si'],
     # submit only the sizes d >= rerun_from_d, plus every case without a finished
     # ('ok') record (failed, killed or never run); None submits everything.  2: the
     # doubling fix of 2026-11-03 (1c16cf7a) changed the results of d >= 2 only.  The
