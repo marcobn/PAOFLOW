@@ -1,11 +1,10 @@
 """Cell doubling as pure index arithmetic on the bond list.
 
-Replicates ``hamiltonian.do_doubling.doubling_HRs`` exactly, without ever
-materializing the dense ``(2 nawf, 2 nawf, nk1, nk2, nk3, nspin)`` array.
-The dense kernel indexes its ``cell_index`` map by the *negated* folded
-lattice coordinate (``ix = -round(Rx*nk1)``, "the minus sign is due to
-the Fourier transformation"), so in the true folded coordinates produced
-by :func:`~PAOFLOW.sparse.hamiltonian.folded_R_triples` it builds
+Replicates ``hamiltonian.do_doubling.doubling_HRs`` without forming the dense
+``(2 nawf, 2 nawf, nk1, nk2, nk3, nspin)`` array: ``nnz`` doubles per step (plus the split
+Nyquist plane), where the dense kernel quadruples.  The dense kernel indexes its ``cell_index``
+by the *negated* folded coordinate (``ix = -round(Rx*nk1)``), so in the folded coordinates of
+:func:`~PAOFLOW.sparse.hamiltonian.folded_R_triples` it builds
 
 .. math::
 
@@ -13,93 +12,75 @@ by :func:`~PAOFLOW.sparse.hamiltonian.folded_R_triples` it builds
         H(2M) & H(2M-1) \\\\ H(2M+1) & H(2M)
     \\end{pmatrix}
 
-and the inverse map per bond with folded axis index ``m`` is:
+Inverse map per bond with folded axis index ``m`` (floor division, exact for negative ``m``):
 
-- ``m`` even: contributes the (0,0) and (1,1) blocks at ``M = m/2``
-  (``dnm`` kept — same replica);
-- ``m`` odd: contributes the (0,1) block at ``M = (m+1)/2`` and the (1,0)
-  block at ``M = (m-1)/2`` (``dnm = 0`` — the dense ``doubling_attr_arry``
-  doubles ``Dnm`` block-diagonally, zeroing cross-replica pairs).
+- ``m`` even: same replica, blocks (0,0) and (1,1) at ``M = m/2``, ``dnm`` kept;
+- ``m`` odd: cross replica, block (0,1) at ``M = (m+1)/2`` and (1,0) at ``M = (m-1)/2``,
+  ``dnm`` shifted by ``-/+ alat * a_axis``.
 
-Each doubling therefore exactly doubles ``nnz``: memory grows linearly in
-the number of orbitals, not quadratically as in the dense kernel.  The
-truncation ``eig_bound`` carries over unchanged (doubling only rearranges
-and duplicates row content).  Thresholding commutes with doubling.
-
-The driver remains responsible for the accompanying metadata updates
-(``tau``/``a_vectors`` in the DataController plus the dense
-``doubling_attr_arry`` for scalar attributes); ``double_axis`` updates the
-container's own ``a_vectors`` copy.
+The cross-replica ``dnm`` and the Nyquist split depart from the dense kernel on purpose; see
+:func:`double_axis`.  ``eig_bound`` carries over (rows are only rearranged and duplicated), and
+thresholding commutes with doubling.  The driver updates ``tau``/``a_vectors`` in the
+DataController and the scalar attributes (dense ``doubling_attr_arry``); ``double_axis`` only
+updates the container's own ``a_vectors``.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from .hamiltonian import SparseHamiltonian, unique_R
+from .hamiltonian import SparseHamiltonian, split_nyquist_axis, unique_R
 
 
-def double_axis(sph: SparseHamiltonian, axis: int) -> SparseHamiltonian:
+def double_axis(sph: SparseHamiltonian, axis: int, split_nyquist: bool = True) -> SparseHamiltonian:
     """Return a new bond list for the cell doubled along one axis.
 
     Parameters
     ----------
     sph : SparseHamiltonian
-        Bond list of the current cell.  Left unmodified; its raw bond
-        arrays must still be present, i.e. it must not have been
-        compacted.
+        Bond list of the current cell; left unmodified, must not be compacted.
     axis : int
         Lattice axis to double, 0, 1 or 2.
+    split_nyquist : bool, optional
+        Split the ``-nk/2`` plane of ``axis`` before mapping (see Notes).  ``False`` gives the
+        dense kernel's bonds exactly, for the parity tests only.
 
     Returns
     -------
     SparseHamiltonian
-        Bond list of the doubled cell: ``2 * nawf`` orbitals, ``2 * nnz``
-        bonds, the same R grid, and ``a_vectors`` with the doubled axis
-        scaled by two.
+        ``2 * nawf`` orbitals, ``2 * nnz`` bonds (plus two per bond on the split Nyquist plane),
+        the same R grid, and ``a_vectors`` with the doubled axis scaled by two.
 
     Raises
     ------
     AssertionError
-        If a mapped lattice index leaves the folded window of the R grid,
-        which would mean the halved index no longer names a vector of the
-        supercell's own lattice.
+        If a mapped index leaves the folded window, i.e. no longer names a supercell lattice vector.
     RuntimeError
-        If ``sph`` has been compacted and no longer holds the bond arrays.
+        If ``sph`` has been compacted.
 
     Notes
     -----
-    Doubling a cell along an axis means describing the same crystal with a
-    unit cell twice as long, holding two copies of the original basis.  The
-    orbital index therefore doubles: orbital ``i`` of the first replica
-    keeps index ``i``, orbital ``i`` of the second gets ``i + nawf``.  A
-    hopping that used to reach from cell ``m`` to cell ``0`` now either
-    stays inside one supercell (connecting the two replicas) or crosses to
-    a neighbouring supercell, depending on whether ``m`` is even or odd:
+    ``dnm`` stays the supercell's ``x_i - x_j``, with replica 1 at ``x + alat * a_axis``: block
+    (0,1) gets ``dnm - alat * a_axis``, (1,0) ``dnm + alat * a_axis``.  The ``dnm`` term adds
+    ``i [x, H(k)]`` to ``dH/dk``, harmless on band diagonals only in that commutator form.  The
+    dense ``doubling_attr_arry`` zeroes cross-replica ``Dnm``, which on Si (example01) puts
+    velocities off by ~35% and sigma by ~50% on every doubled cell.
 
-    - even ``m`` connects like-numbered replicas and lands on supercell
-      ``m/2``, contributing to both diagonal blocks;
-    - odd ``m`` connects the two different replicas and lands on
-      supercells ``(m ± 1) / 2``, contributing to the two off-diagonal
-      blocks.
-
-    Python's floor division implements the even case exactly, negative
-    indices included, and the ``±1`` offsets of the odd case pick out the
-    two supercells a cross-replica hopping reaches.  So the whole operation
-    is integer arithmetic on the axis component of each bond plus an offset
-    on its row or column index — no matrix is ever built, and the bond
-    count merely doubles.  The dense kernel, by
-    contrast, allocates the full ``(2 nawf, 2 nawf, ...)`` array and pays
-    four times the memory per doubling.
-
-    The intra-cell orbital position differences ``dnm``, which enter the
-    velocity operator, are kept on the diagonal blocks and zeroed on the
-    off-diagonal ones.  This follows the dense convention exactly: the
-    dense driver rebuilds ``Dnm`` for the doubled cell as a block-diagonal
-    repeat, which leaves cross-replica pairs at zero.
+    Doubling maps ``-nk/2`` to ``-nk/4``, no longer a Nyquist plane, so the plan cannot split it
+    later and :meth:`~SparseHamiltonian.hermitize` only adds the ``R -> -R`` mirror.  That suffices
+    on one axis, but a bond on two Nyquist planes (a quarter on each of four corners) gets two of
+    four copies and the doubled H(K) stops folding onto the primitive one (Pt, exact H(R): 1.6 meV
+    with two axes doubled, 4.4 meV with three).  Splitting here, while still Nyquist, is exact.
     """
     sph._require_bonds('double_axis')
     triples = sph.R_int[sph.ridx].astype(np.int64)
+    rows, cols, vals, dnm = sph.rows, sph.cols, sph.vals, sph.dnm
+    nk = sph.nk_grid[axis]
+    # nk = 2: +1 maps outside the window, and the plan still splits the doubled -1 plane
+    if split_nyquist and nk >= 4:
+        rows, cols, triples, vals, dnm = split_nyquist_axis(
+            rows, cols, triples, vals, dnm, nk, axis
+        )
     m = triples[:, axis]
     even = (m % 2) == 0
     odd = ~even
@@ -112,7 +93,6 @@ def double_axis(sph: SparseHamiltonian, axis: int) -> SparseHamiltonian:
     t_ll = triples[odd].copy()
     t_ll[:, axis] = (m[odd] - 1) // 2
 
-    nk = sph.nk_grid[axis]
     lo = -(nk // 2)
     hi = (nk - 1) // 2
     for t in (t_diag, t_ur, t_ll):
@@ -124,24 +104,24 @@ def double_axis(sph: SparseHamiltonian, axis: int) -> SparseHamiltonian:
 
     rows = np.concatenate(
         (
-            sph.rows[even],
-            sph.rows[even] + nawf,
-            sph.rows[odd],
-            sph.rows[odd] + nawf,
+            rows[even],
+            rows[even] + nawf,
+            rows[odd],
+            rows[odd] + nawf,
         )
     )
     cols = np.concatenate(
         (
-            sph.cols[even],
-            sph.cols[even] + nawf,
-            sph.cols[odd] + nawf,
-            sph.cols[odd],
+            cols[even],
+            cols[even] + nawf,
+            cols[odd] + nawf,
+            cols[odd],
         )
     )
     new_triples = np.concatenate((t_diag, t_diag, t_ur, t_ll))
-    vals = np.concatenate((sph.vals[even], sph.vals[even], sph.vals[odd], sph.vals[odd]))
-    zeros = np.zeros((int(odd.sum()), 3))
-    dnm = np.concatenate((sph.dnm[even], sph.dnm[even], zeros, zeros))
+    vals = np.concatenate((vals[even], vals[even], vals[odd], vals[odd]))
+    shift = sph.alat * sph.a_vectors[axis]
+    dnm = np.concatenate((dnm[even], dnm[even], dnm[odd] - shift, dnm[odd] + shift))
 
     a_vectors = sph.a_vectors.copy()
     a_vectors[axis, :] *= 2.0

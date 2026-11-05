@@ -5,8 +5,9 @@ window must agree, *inside the window*, with the same DoS computed the normal
 from-the-bottom way.  That is the whole claim of the feature -- the states
 below ``elo`` were never computed, and the assertion is that they were not
 needed for what was plotted.  It only holds with a margin of several smearing
-widths between ``elo`` and the plotted range, which is exactly why
-``interior_window`` clamps rather than trusting the caller.
+widths between ``elo`` and the plotted range, which is exactly why the
+interior window is placed that far outside the property ranges and an
+explicit one clamps them rather than trusting the caller.
 
 Requires the example01 QE data; skipped when absent.
 """
@@ -30,17 +31,23 @@ pytestmark = pytest.mark.skipif(
 MESH = 4  # 4^3 = 64 k-points: enough for a DoS, cheap enough for a test
 
 
-def _driver(outdir):
-    from PAOFLOW.SparsePAOFLOW import SparsePAOFLOW
+def _driver(outdir, nev=None, interior_window=None):
+    from PAOFLOW.PAOFLOW import PAOFLOW
 
-    p = SparsePAOFLOW(
+    config = {'hopping_threshold': 1.0e-4, 'hk_solver': 'auto'}
+    if nev is not None:
+        config['nev'] = nev
+    if interior_window is not None:
+        config['interior_window'] = interior_window
+
+    p = PAOFLOW(
         savedir='silicon.save',
         outputdir=outdir,
         smearing='gauss',
         npool=1,
         verbose=False,
-        threshold=1.0e-4,
-        hk_solver='auto',
+        sparse=True,
+        sparse_config=config,
     )
     p.read_atomic_proj_QE()
     p.projectability()
@@ -68,14 +75,15 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
     rather than assuming it: Yates widths scale as nkpnts^(-1/3) and on a
     coarse mesh they reach several eV, wide enough that no useful window
     exists at all.  That is a real property of the method, which is why
-    interior_window carries smear_margin_eV and warns when it is too small.
+    the interior window is placed a smearing margin outside the plotted range
+    and warns when the widths measured on the mesh outgrow it.
     """
     plot_lo, plot_hi = -1.0, 1.0
     fine = 12  # the native QE grid; coarser meshes smear too wide to test on
     nawf = 18
 
-    ref = _driver(str(in_example / 'full'))
-    ref.energy_window(emin=-12.0, emax=5.0, margin=0.0, nev=nawf)  # every band
+    # every band
+    ref = _driver(str(in_example / 'full'), nev=nawf)
     ref.interpolated_hamiltonian(nfft1=fine, nfft2=fine, nfft3=fine)
     ref.dos(emin=plot_lo, emax=plot_hi, ne=200, do_pdos=False)
     dos_full = np.array(ref.data_controller.data_arrays['dosdk'])
@@ -89,8 +97,7 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
         '%.2f) or this proves nothing' % (elo, float(ref_E.min()))
     )
 
-    itr = _driver(str(in_example / 'interior'))
-    itr.interior_window(elo, ehi)
+    itr = _driver(str(in_example / 'interior'), interior_window={'elo': elo, 'ehi': ehi})
     itr.interpolated_hamiltonian(nfft1=fine, nfft2=fine, nfft3=fine)
     itr.dos(emin=plot_lo, emax=plot_hi, ne=200, do_pdos=False)
     dos_int = np.array(itr.data_controller.data_arrays['dosdk'])
@@ -107,8 +114,7 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
 
 
 def test_mesh_pads_to_a_rectangular_block_and_sets_bnd(in_example):
-    p = _driver(str(in_example / 'pad'))
-    p.interior_window(-3.0, 3.0)
+    p = _driver(str(in_example / 'pad'), interior_window={'elo': -3.0, 'ehi': 3.0})
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)
 
@@ -126,40 +132,36 @@ def test_mesh_pads_to_a_rectangular_block_and_sets_bnd(in_example):
 
 
 def test_dos_outside_the_window_is_clamped_not_silently_zero(in_example, capsys):
-    p = _driver(str(in_example / 'clamp'))
-    p.interior_window(-2.0, 2.0)
+    p = _driver(str(in_example / 'clamp'), interior_window={'elo': -2.0, 'ehi': 2.0})
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.dos(emin=-12.0, emax=2.2, ne=50, do_pdos=False)  # far outside on both sides
     assert 'clamped' in capsys.readouterr().out
 
 
 def test_disjoint_range_skips_the_property_and_the_run_continues(in_example, capsys):
-    p = _driver(str(in_example / 'skip'))
-    p.interior_window(-2.0, 2.0)
+    p = _driver(str(in_example / 'skip'), interior_window={'elo': -2.0, 'ehi': 2.0})
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.dos(emin=5.0, emax=9.0, ne=50, do_pdos=False)  # no overlap at all
 
     out = capsys.readouterr().out
     assert 'SKIPPED' in out
-    assert [prop for prop, _ in p._skipped] == ['dos']
+    assert [prop for prop, _ in p.sparse._skipped] == ['dos']
     # the run continues: a supportable range still works afterwards
     p.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)
     assert 'dosdk' in p.data_controller.data_arrays
 
 
 def test_skips_are_restated_at_the_end(in_example, capsys):
-    p = _driver(str(in_example / 'report'))
-    p.interior_window(-2.0, 2.0)
-    p._skip('made-up property', 'for the test')
+    p = _driver(str(in_example / 'report'), interior_window={'elo': -2.0, 'ehi': 2.0})
+    p.sparse._skip('made-up property', 'for the test')
     capsys.readouterr()
-    p._report_skips()
+    p.sparse._report_skips()
     out = capsys.readouterr().out
     assert 'made-up property' in out and 'SKIPPED' in out
 
 
 def test_bands_are_nan_padded_under_an_interior_window(in_example):
-    p = _driver(str(in_example / 'bands'))
-    p.interior_window(-3.0, 3.0)
+    p = _driver(str(in_example / 'bands'), interior_window={'elo': -3.0, 'ehi': 3.0})
     p.bands(ibrav=2, nk=20)
     E_k = p.data_controller.data_arrays['E_k']
     finite = np.isfinite(E_k)
@@ -167,37 +169,100 @@ def test_bands_are_nan_padded_under_an_interior_window(in_example):
     assert np.all(E_k[finite] >= -3.0 - 1e-9) and np.all(E_k[finite] <= 3.0 + 1e-9)
 
 
-def test_the_two_window_modes_are_mutually_exclusive(in_example):
-    p = _driver(str(in_example / 'excl'))
-    p.interior_window(-1.0, 1.0)
-    with pytest.raises(RuntimeError, match='mutually exclusive'):
-        p.energy_window(emin=-12.0, emax=2.2, nev=10)
-
-    q = _driver(str(in_example / 'excl2'))
-    q.energy_window(emin=-12.0, emax=2.2, nev=10)
-    with pytest.raises(RuntimeError, match='mutually exclusive'):
-        q.interior_window(-1.0, 1.0)
-
-
-def test_interior_window_rejects_an_inverted_range(in_example):
-    p = _driver(str(in_example / 'bad'))
-    with pytest.raises(ValueError, match='need ehi > elo'):
-        p.interior_window(1.0, -1.0)
-
-
-def test_edge_contamination_is_warned_about(in_example, capsys):
+def test_edge_contamination_is_warned_about(in_example, capsys, monkeypatch):
     """A plotted range too close to the window edge must not fail silently.
 
-    States below elo are never computed, so their adaptive-smearing tails are
-    missing from the DoS near the edge -- a real error of order 1e-3 relative
-    on a coarse mesh.  The margin clamp handles the common case; this warning
-    catches the case where the measured widths turn out wider than assumed.
+    States outside the window are never computed, so their adaptive-smearing
+    tails are missing from the DoS near the edge -- a real error of order
+    1e-3 relative on a coarse mesh.  The smearing margin handles the common
+    case; this warning catches the case where the widths measured on the mesh
+    turn out wider than the probe estimate the window was placed with.
     """
-    p = _driver(str(in_example / 'edge'))
-    p.interior_window(-3.0, 3.0, smear_margin_eV=0.05)  # deliberately too small
+    from PAOFLOW.sparse import window
+
+    # place the window far too close to the plotted range
+    monkeypatch.setattr(window, 'SIGMA_FACTOR', 0.1)
+    p = _driver(str(in_example / 'edge'), interior_window={})
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     capsys.readouterr()
     p.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)
     out = capsys.readouterr().out
     assert 'contaminated' in out
-    assert 'smear_margin_eV' in out
+    assert 'finer k-mesh' in out
+
+
+def test_automatic_interior_window_matches_the_explicit_one(in_example):
+    """interior_window={} places the window a smearing margin outside the
+    property range; the same bounds given explicitly give the same DoS."""
+    auto = _driver(str(in_example / 'auto'), interior_window={})
+    auto.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
+    auto.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)
+    window = auto.sparse._mesh_window
+    (dos,) = window.ranges
+    assert dos.margin > 0.0
+    assert window.elo == pytest.approx(-1.0 - dos.margin)
+    # on this coarse mesh the margin reaches past the well-projected top
+    ptop = auto.sparse._projectable_top()
+    assert window.ehi == pytest.approx(min(ptop, 1.0 + dos.margin))
+
+    fixed = _driver(
+        str(in_example / 'fixed'), interior_window={'elo': window.elo, 'ehi': window.ehi}
+    )
+    fixed.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
+    fixed.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)
+    np.testing.assert_array_equal(
+        fixed.data_controller.data_arrays['dosdk'], auto.data_controller.data_arrays['dosdk']
+    )
+
+
+def test_automatic_interior_window_needs_a_property_range(in_example):
+    p = _driver(str(in_example / 'auto_bands'), interior_window={})
+    with pytest.raises(ValueError, match='no property of this pass has one'):
+        p.bands(ibrav=2, nk=20)
+    # after a property pass, bands() reuses its window
+    p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
+    p.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)
+    p.bands(ibrav=2, nk=20)
+    E_k = p.data_controller.data_arrays['E_k']
+    finite = E_k[np.isfinite(E_k)]
+    elo, ehi = p.sparse._mesh_window.elo, p.sparse._mesh_window.ehi
+    assert finite.size and finite.min() >= elo - 1e-9 and finite.max() <= ehi + 1e-9
+
+
+def test_interband_properties_are_skipped_under_an_interior_window(in_example):
+    """Full-spectrum properties cannot run inside an interior window: they are
+    skipped with the reason, the Hall term of transport alone is dropped,
+    and a band curvature recorded before the window was applied does not
+    reach the interior pass."""
+    p = _driver(str(in_example / 'interband'), interior_window={'elo': -3.0, 'ehi': 3.0})
+    p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
+    p.gradient_and_momenta(band_curvature=True)
+    p.anomalous_Hall(a_tensor=[[0, 1]], ne=11)
+    p.linear_response(response='cond', s_tensor=[[2, 0, 1]], a_tensor=[[0, 1]], esize=11)
+    p.transport(emin=-1.0, emax=1.0, ne=11, do_hall=True)
+    skipped = [name for name, _ in p.sparse._skipped]
+    assert 'anomalous_Hall' in skipped and 'linear_response' in skipped
+    assert 'transport Hall term' in skipped
+    assert 'gradient_and_momenta band_curvature' in skipped
+    assert all('every state' in reason or 'outside' in reason for _, reason in p.sparse._skipped)
+    opath = p.data_controller.data_attributes['opath']
+    assert os.path.exists(os.path.join(opath, 'sigmagauss_0.dat'))
+    assert not os.path.exists(os.path.join(opath, 'hall_gauss_0.dat'))
+    assert 'd2Ed2k' not in p.data_controller.data_arrays
+
+
+def test_dos_above_the_solved_bands_raises(in_example):
+    """A later DoS past the top computed band of the pass it reuses would
+    silently undercount states, so it raises like transport does instead of
+    writing a truncated curve.  Five states (the valence bands and one more)
+    keep the solve below the well-projected top; a request above that top
+    would be lowered to it instead."""
+    p = _driver(str(in_example / 'ewin'), nev=5)
+    p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
+    p.dos(emin=-12.0, emax=0.0, ne=50, do_pdos=False)  # inside: fine
+
+    # how high the solve reached at every k-point; the last column of E_k is
+    # padding wherever states above the well-projected bands were dropped
+    top = p.data_controller.data_attributes['sparse_solved_top']
+    with pytest.raises(RuntimeError, match='(?s)sparse dos: requested emax.*fused'):
+        p.dos(emin=-12.0, emax=top + 1.0, ne=50, do_pdos=False)

@@ -44,8 +44,9 @@ def do_topology(data_controller):
     from mpi4py import MPI
 
     from ..utils.communication import gather_full, scatter_full
-    from ..utils.constants import ANGSTROM_AU, LL
+    from ..utils.constants import ANGSTROM_AU
     from ..utils.get_R_grid_fft import get_R_grid_fft
+    from .do_berry_curvature import path_matrix_elements_k
     from ..spectrum.kpnts_interpolation_mesh import kpnts_interpolation_mesh
 
     comm = MPI.COMM_WORLD
@@ -82,19 +83,8 @@ def do_topology(data_controller):
     if nspin == 1 and spin_Hall:
         from .clebsch_gordan import clebsch_gordan
         from ..spectrum.do_eigh import do_eigh_calc
-        from .pfaffian import pfaffian
 
-        nktrim = 16
-        ktrim = np.zeros((nktrim, 3), dtype=float)
-        ktrim[0] = np.zeros(3, dtype=float)  # 0 0 0 0
-        ktrim[1] = b_vectors[0, :] / 2.0  # 1 1 0 0
-        ktrim[2] = b_vectors[1, :] / 2.0  # 2 0 1 0
-        ktrim[3] = b_vectors[0, :] / 2.0 + b_vectors[1, :] / 2.0  # 3 1 1 0
-        ktrim[4] = b_vectors[2, :] / 2.0  # 4 0 0 1
-        ktrim[5] = b_vectors[1, :] / 2.0 + b_vectors[2, :] / 2.0  # 5 0 1 1
-        ktrim[6] = b_vectors[2, :] / 2.0 + b_vectors[0, :] / 2.0  # 6 1 0 1
-        ktrim[7] = b_vectors[0, :] / 2.0 + b_vectors[1, :] / 2.0 + b_vectors[2, :] / 2.0  # 7 1 1 1
-        ktrim[8:16] = -ktrim[:8]
+        ktrim = trim_points(b_vectors)
 
         # Compute eigenfunctions at the TRIM points
         SRs = None
@@ -118,40 +108,11 @@ def do_topology(data_controller):
         else:
             theta = -1.0j * clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], 1)
 
-        nkt = nktrim // 2
-
         nelec = attributes['nelec']
-        wl = np.zeros((nkt, nawf, nawf), dtype=complex)
-        for ik in range(nkt):
-            wl[ik, :, :] = (
-                np.conj(v_ktrim[ik, :, :, 0].T).dot(theta).dot(np.conj(v_ktrim[ik + nkt, :, :, 0]))
-            )
-            wl[ik, :, :] = wl[ik, :, :] - wl[ik, :, :].T  # enforce skew symmetry
-        delta_ik = np.zeros(nkt, dtype=complex)
-        for ik in range(nkt):
-            delta_ik[ik] = pfaffian(wl[ik, :nelec, :nelec]) / np.sqrt(
-                npl.det(wl[ik, :nelec, :nelec])
-            )
+        delta_ik = z2_deltas(v_ktrim[:, :, :, 0], theta, nelec)
 
         # Write 'Z2.dim'
-        with open(os.path.join(attributes['opath'], 'Z2' + '.dim'), 'w') as f:
-            p2D = np.real(np.prod(delta_ik[:4]))
-            v0 = 1 if p2D + 1.0 < 1.0e-5 else 0
-            f.write('2D case: v0 = %1d \n' % (v0))
-
-            p3D = np.real(np.prod(delta_ik))
-            v0 = 1 if p3D + 1.0 < 1.0e-5 else 0
-
-            p3D = delta_ik[1] * delta_ik[3] * delta_ik[6] * delta_ik[7]
-            v1 = 1 if p3D + 1.0 < 1.0e-5 else 0
-
-            p3D = delta_ik[2] * delta_ik[3] * delta_ik[5] * delta_ik[7]
-            v2 = 1 if p3D + 1.0 < 1.0e-5 else 0
-
-            p3D = delta_ik[4] * delta_ik[6] * delta_ik[5] * delta_ik[7]
-            v3 = 1 if p3D + 1.0 < 1.0e-5 else 0
-
-            f.write('3D case: v0;v1,v2,v3 = %1d;%1d,%1d,%1d \n' % (v0, v1, v2, v3))
+        write_z2(os.path.join(attributes['opath'], 'Z2' + '.dim'), delta_ik)
 
     # Compute momenta and kinetic energy
     kq_aux = scatter_full(arrays['kq'].T, npool)
@@ -201,29 +162,18 @@ def do_topology(data_controller):
                     + 1.0j * Hks_aux[ik, :, :, ispin] * arrays['Dnm'][:, :, l]
                 )
 
-        # Compute momenta
+        # Compute momenta (and the spin current)
         for ik in range(dHks_aux.shape[0]):
             for ispin in range(nspin):
-                pks[ik, l, :, :, ispin] = (
-                    np.conj(arrays['v_k'][ik, :, :, ispin].T)
-                    .dot(dHks_aux[ik, :, :, ispin])
-                    .dot(arrays['v_k'][ik, :, :, ispin])[:bnd, :bnd]
+                pks_l, jks_l = path_matrix_elements_k(
+                    arrays['v_k'][ik, :, :, ispin],
+                    dHks_aux[ik, :, :, ispin],
+                    Sj[spol] if spin_Hall else None,
+                    bnd,
                 )
-
-        if spin_Hall:
-            for ik in range(pks.shape[0]):
-                for ispin in range(nspin):
-                    jks[ik, l, :, :, ispin] = (
-                        np.conj(arrays['v_k'][ik, :, :, ispin].T)
-                        .dot(
-                            0.5
-                            * (
-                                np.dot(Sj[spol], dHks_aux[ik, :, :, ispin])
-                                + np.dot(dHks_aux[ik, :, :, ispin], Sj[spol])
-                            )
-                        )
-                        .dot(arrays['v_k'][ik, :, :, ispin])
-                    )[:bnd, :bnd]
+                pks[ik, l, :, :, ispin] = pks_l
+                if spin_Hall:
+                    jks[ik, l, :, :, ispin] = jks_l
 
     if eff_mass == True:
         tks = np.zeros((kq_aux.shape[1], 3, 3, bnd, bnd, nspin), dtype=complex)
@@ -257,10 +207,8 @@ def do_topology(data_controller):
                 # Compute kinetic energy
                 for ik in range(d2Hks_aux.shape[0]):
                     for ispin in range(nspin):
-                        tks[ik, l, lp, :, :, ispin] = (
-                            np.conj(arrays['v_k'][ik, :, :, ispin].T)
-                            .dot(d2Hks_aux[ik, :, :, ispin])
-                            .dot(arrays['v_k'][ik, :, :, ispin])
+                        tks[ik, l, lp, :, :, ispin] = _project(
+                            arrays['v_k'][ik, :, :, ispin], d2Hks_aux[ik, :, :, ispin]
                         )[:bnd, :bnd]
 
                 d2Hks_aux = None
@@ -269,24 +217,226 @@ def do_topology(data_controller):
         mkm1 = np.zeros((tks.shape[0], bnd, 3, 3, nspin), dtype=complex)
         for ik in range(tks.shape[0]):
             for ispin in range(nspin):
-                for n in range(bnd):
-                    for m in range(bnd):
-                        if m != n:
-                            mkm1[ik, n, ipol, jpol, ispin] += (
-                                pks[ik, ipol, n, m, ispin] * pks[ik, jpol, m, n, ispin]
-                                + pks[ik, jpol, n, m, ispin] * pks[ik, ipol, m, n, ispin]
-                            ) / (
-                                arrays['E_k'][ik, n, ispin] - arrays['E_k'][ik, m, ispin] + 1.0e-16
-                            )
-                        else:
-                            mkm1[ik, n, ipol, jpol, ispin] += tks[ik, ipol, jpol, n, n, ispin]
-
+                mkm1[ik, :, ipol, jpol, ispin] = path_effective_mass_k(
+                    arrays['E_k'][ik, :, ispin],
+                    pks[ik, :, :, :, ispin],
+                    tks[ik, ipol, jpol, :, :, ispin],
+                    ipol,
+                    jpol,
+                    bnd,
+                )
         tks = None
+    else:
+        mkm1 = None
 
+    HRs_aux = None
+    HRs = None
+
+    Om_zk = Omj_zk = None
+    if Berry or spin_Hall:
+        Om_zk = np.zeros((pks.shape[0], 1), dtype=float)
+        Omj_zk = np.zeros((pks.shape[0], 1), dtype=float) if spin_Hall else None
+        for ik in range(pks.shape[0]):
+            om, omj = path_topology_berry_k(
+                arrays['E_k'][ik, :, 0],
+                pks[ik, :, :, :, 0],
+                jks[ik, :, :, :, 0] if spin_Hall else None,
+                ipol,
+                jpol,
+                bnd,
+                Berry,
+            )
+            if Berry:
+                Om_zk[ik] = om
+            if spin_Hall:
+                Omj_zk[ik] = omj
+        if not Berry:
+            Om_zk = None
+
+    velk = np.zeros((pks.shape[0], 3, bnd, nspin), dtype=float)
+    for n in range(bnd):
+        velk[:, :, n, :] = np.real(pks[:, :, n, n, :])
+    pks = jks = None
+    write_topology_path(data_controller, velk, mkm1, Om_zk, Omj_zk, spol, ipol, jpol, nkpi)
+
+
+def z2_deltas(v_ktrim, theta, nelec: int) -> np.ndarray:
+    """Pfaffian time-reversal indicators at the 8 TRIM pairs.
+
+    Parameters
+    ----------
+    v_ktrim : np.ndarray, shape ``(16, nawf, m)``
+        Eigenvectors at the 16 TRIM points ``k`` and ``-k`` (the second
+        eight are the negatives of the first), ``m >= nelec`` columns.
+    theta : np.ndarray or scipy.sparse matrix, shape ``(nawf, nawf)``
+        Time-reversal operator without complex conjugation.
+    nelec : int
+        Occupied states.
+
+    Returns
+    -------
+    np.ndarray, shape ``(8,)``, complex
+        :math:`\\mathrm{Pf}(w) / \\sqrt{\\det w}` with
+        :math:`w = V_k^\\dagger \\Theta V_{-k}^*`, skew-symmetrized.
+    """
+    from scipy.sparse import issparse
+
+    from .pfaffian import pfaffian
+
+    nkt = v_ktrim.shape[0] // 2
+    wl = np.zeros((nkt, v_ktrim.shape[2], v_ktrim.shape[2]), dtype=complex)
+    for ik in range(nkt):
+        if issparse(theta):
+            wl[ik, :, :] = np.conj(v_ktrim[ik].T) @ np.asarray(theta @ np.conj(v_ktrim[ik + nkt]))
+        else:
+            wl[ik, :, :] = (
+                np.conj(v_ktrim[ik, :, :].T).dot(theta).dot(np.conj(v_ktrim[ik + nkt, :, :]))
+            )
+        wl[ik, :, :] = wl[ik, :, :] - wl[ik, :, :].T  # enforce skew symmetry
+    delta_ik = np.zeros(nkt, dtype=complex)
+    for ik in range(nkt):
+        delta_ik[ik] = pfaffian(wl[ik, :nelec, :nelec]) / np.sqrt(npl.det(wl[ik, :nelec, :nelec]))
+    return delta_ik
+
+
+def write_z2(path: str, delta_ik: np.ndarray) -> None:
+    """Write the 2D and 3D Z2 indices of :func:`z2_deltas` to ``path``."""
+    with open(path, 'w') as f:
+        p2D = np.real(np.prod(delta_ik[:4]))
+        v0 = 1 if p2D + 1.0 < 1.0e-5 else 0
+        f.write('2D case: v0 = %1d \n' % (v0))
+
+        p3D = np.real(np.prod(delta_ik))
+        v0 = 1 if p3D + 1.0 < 1.0e-5 else 0
+
+        p3D = delta_ik[1] * delta_ik[3] * delta_ik[6] * delta_ik[7]
+        v1 = 1 if p3D + 1.0 < 1.0e-5 else 0
+
+        p3D = delta_ik[2] * delta_ik[3] * delta_ik[5] * delta_ik[7]
+        v2 = 1 if p3D + 1.0 < 1.0e-5 else 0
+
+        p3D = delta_ik[4] * delta_ik[6] * delta_ik[5] * delta_ik[7]
+        v3 = 1 if p3D + 1.0 < 1.0e-5 else 0
+
+        f.write('3D case: v0;v1,v2,v3 = %1d;%1d,%1d,%1d \n' % (v0, v1, v2, v3))
+
+
+def trim_points(b_vectors: np.ndarray) -> np.ndarray:
+    """The 16 TRIM points (8 and their negatives), Cartesian in units of ``2 pi / alat``."""
+    ktrim = np.zeros((16, 3), dtype=float)
+    ktrim[0] = np.zeros(3, dtype=float)  # 0 0 0 0
+    ktrim[1] = b_vectors[0, :] / 2.0  # 1 1 0 0
+    ktrim[2] = b_vectors[1, :] / 2.0  # 2 0 1 0
+    ktrim[3] = b_vectors[0, :] / 2.0 + b_vectors[1, :] / 2.0  # 3 1 1 0
+    ktrim[4] = b_vectors[2, :] / 2.0  # 4 0 0 1
+    ktrim[5] = b_vectors[1, :] / 2.0 + b_vectors[2, :] / 2.0  # 5 0 1 1
+    ktrim[6] = b_vectors[2, :] / 2.0 + b_vectors[0, :] / 2.0  # 6 1 0 1
+    ktrim[7] = b_vectors[0, :] / 2.0 + b_vectors[1, :] / 2.0 + b_vectors[2, :] / 2.0  # 7 1 1 1
+    ktrim[8:16] = -ktrim[:8]
+    return ktrim
+
+
+def _project(v_k, operator):
+    """``(v^dagger O v)`` for a dense or ``scipy.sparse`` operator, dense order kept."""
+    from .do_berry_curvature import _project as project
+
+    return project(v_k, operator)
+
+
+def path_effective_mass_k(E, pks, tks_ij, ipol: int, jpol: int, bnd: int) -> np.ndarray:
+    """Inverse effective mass :math:`M^{-1}_{ij}` of each band at one path point.
+
+    Parameters
+    ----------
+    E : np.ndarray, shape ``(nbands,)``
+    pks : np.ndarray, shape ``(3, bnd, bnd)``
+        Momentum matrices (``dH/dk`` with ``Dnm``).
+    tks_ij : np.ndarray, shape ``(bnd, bnd)``
+        :math:`V^\\dagger d^2H/dk_i dk_j V`.
+    ipol, jpol, bnd : int
+
+    Returns
+    -------
+    np.ndarray, shape ``(bnd,)``, complex
+    """
+    out = np.zeros(bnd, dtype=complex)
+    for n in range(bnd):
+        for m in range(bnd):
+            if m != n:
+                out[n] += (
+                    pks[ipol, n, m] * pks[jpol, m, n] + pks[jpol, n, m] * pks[ipol, m, n]
+                ) / (E[n] - E[m] + 1.0e-16)
+            else:
+                out[n] += tks_ij[n, n]
+    return out
+
+
+def path_topology_berry_k(E, pks, jks, ipol: int, jpol: int, bnd: int, Berry: bool):
+    """Berry and spin Berry curvature of the occupied bands at one path point.
+
+    Returns
+    -------
+    (Om_zk, Omj_zk) : tuple of float
+        The occupation-weighted sums (T = 0; the spin one at
+        :math:`\\mu = -0.2` eV, as in ``do_topology``); ``Omj_zk`` is 0 when
+        ``jks`` is ``None``.
+    """
+    deltab = 0.05
+    mu = -0.2  # chemical potential in eV)
+    Om_znk = np.zeros(bnd, dtype=float)
+    Omj_znk = np.zeros(bnd, dtype=float)
+    for n in range(bnd):
+        for m in range(bnd):
+            if m != n:
+                if Berry:
+                    Om_znk[n] += (
+                        -1.0
+                        * np.imag(
+                            pks[jpol, n, m] * pks[ipol, m, n] - pks[ipol, n, m] * pks[jpol, m, n]
+                        )
+                        / ((E[m] - E[n]) ** 2 + deltab**2)
+                    )
+                if jks is not None:
+                    Omj_znk[n] += (
+                        -2.0
+                        * np.imag(jks[ipol, n, m] * pks[jpol, m, n])
+                        / ((E[m] - E[n]) ** 2 + deltab**2)
+                    )
+    Om_zk = np.sum(Om_znk[:] * (0.5 * (1 - np.sign(E[:bnd]))))  # T=0.0K
+    Omj_zk = np.sum(Omj_znk[:] * (0.5 * (1 - np.sign(E[:bnd] - mu)))) if jks is not None else 0.0
+    return Om_zk, Omj_zk
+
+
+def write_topology_path(data_controller, velk, mkm1, Om_zk, Omj_zk, spol, ipol, jpol, nkpi) -> None:
+    """Gather and write the path outputs of :func:`do_topology` (collective).
+
+    Parameters
+    ----------
+    velk : np.ndarray, shape ``(nk_local, 3, bnd, nspin)``
+        Band velocities (real diagonal of ``pks``).
+    mkm1 : np.ndarray or None, shape ``(nk_local, bnd, 3, 3, nspin)``
+        Inverse effective mass, only the ``ipol, jpol`` entry filled.
+    Om_zk, Omj_zk : np.ndarray or None, shape ``(nk_local, 1)``
+        Berry and spin Berry curvature sums.
+    """
+    import os
+
+    from mpi4py import MPI
+
+    from ..utils.communication import gather_full
+    from ..utils.constants import LL
+
+    rank = MPI.COMM_WORLD.Get_rank()
+    arrays, attributes = data_controller.data_dicts()
+    npool = attributes['npool']
+    bnd = velk.shape[2]
+    nspin = velk.shape[3]
+
+    if mkm1 is not None:
         mkm1 = gather_full(mkm1, npool)
 
-        #### Write to data_controller
         # mkm1 *= ELECTRONVOLT_SI**2/H_OVER_TPI**2*ELECTRONMASS_SI
+
         if rank == 0:
             for ispin in range(nspin):
                 f = open(
@@ -303,77 +453,26 @@ def do_topology(data_controller):
                     s += '\n'
                     f.write(s)
                 f.close()
-
         mkm1 = None
-
-    HRs_aux = None
-    HRs = None
-
-    # Compute Berry curvature
-    if Berry or spin_Hall:
-        deltab = 0.05
-        mu = -0.2  # chemical potential in eV)
-        Om_zk = np.zeros((pks.shape[0], 1), dtype=float)
-        Om_znk = np.zeros((pks.shape[0], bnd), dtype=float)
-        Omj_zk = np.zeros((pks.shape[0], 1), dtype=float) if spin_Hall else None
-        Omj_znk = np.zeros((pks.shape[0], bnd), dtype=float) if spin_Hall else None
-        for ik in range(pks.shape[0]):
-            for n in range(bnd):
-                for m in range(bnd):
-                    if m != n:
-                        if Berry:
-                            Om_znk[ik, n] += (
-                                -1.0
-                                * np.imag(
-                                    pks[ik, jpol, n, m, 0] * pks[ik, ipol, m, n, 0]
-                                    - pks[ik, ipol, n, m, 0] * pks[ik, jpol, m, n, 0]
-                                )
-                                / (
-                                    (arrays['E_k'][ik, m, 0] - arrays['E_k'][ik, n, 0]) ** 2
-                                    + deltab**2
-                                )
-                            )
-                        if spin_Hall:
-                            Omj_znk[ik, n] += (
-                                -2.0
-                                * np.imag(jks[ik, ipol, n, m, 0] * pks[ik, jpol, m, n, 0])
-                                / (
-                                    (arrays['E_k'][ik, m, 0] - arrays['E_k'][ik, n, 0]) ** 2
-                                    + deltab**2
-                                )
-                            )
-            Om_zk[ik] = np.sum(
-                Om_znk[ik, :] * (0.5 * (1 - np.sign(arrays['E_k'][ik, :bnd, 0])))
-            )  # T=0.0K
-            if spin_Hall:
-                Omj_zk[ik] = np.sum(
-                    Omj_znk[ik, :] * (0.5 * (1 - np.sign(arrays['E_k'][ik, :bnd, 0] - mu)))
-                )  # T=0.0K
 
     indices = (LL[spol], LL[ipol], LL[jpol])
     lrng = list(range(nkpi)) if rank == 0 else None
 
-    pks = gather_full(pks, npool)
-    velk = np.zeros((nkpi, 3, bnd, nspin), dtype=float) if rank == 0 else None
-    if rank == 0:
-        for n in range(bnd):
-            velk[:, :, n, :] = np.real(pks[:, :, n, n, :])
+    velk = gather_full(velk, npool)
     for l in range(3):
         fvk = 'velocity_' + str(l)
         data_controller.write_bands(fvk, (velk[:, l, :bnd, :] if rank == 0 else None))
-    pks = velk = None
+    velk = None
 
-    if Berry:
+    if Om_zk is not None:
         Om_zk = gather_full(Om_zk, npool)
         fOm_zk = 'Omega_%s_%s%s.dat' % indices
         data_controller.write_file_row_col(fOm_zk, lrng, (-Om_zk[:, 0] if rank == 0 else None))
-    Om_zk = fOm_zk = None
 
-    if spin_Hall:
+    if Omj_zk is not None:
         Omj_zk = gather_full(Omj_zk, npool)
         fOmj_zk = 'Omegaj_%s_%s%s.dat' % indices
         data_controller.write_file_row_col(fOmj_zk, lrng, (Omj_zk[:, 0] if rank == 0 else None))
-    Omj_zk = fOmj_zk = None
 
 
 def band_loop_H(HRaux, R, kq, nawf, nspin):

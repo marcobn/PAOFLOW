@@ -22,7 +22,7 @@ import numpy as np
 # Compute Z2 invariant and topological properties on a selected path in the BZ
 def do_berry_curvature(data_controller):
     from mpi4py import MPI
-    from ..utils.constants import LL, ANGSTROM_AU
+    from ..utils.constants import ANGSTROM_AU
     from ..utils.get_R_grid_fft import get_R_grid_fft
     from ..utils.communication import scatter_full, gather_full
     from ..spectrum.kpnts_interpolation_mesh import kpnts_interpolation_mesh
@@ -94,26 +94,92 @@ def do_berry_curvature(data_controller):
         # Compute momenta
         for ik in range(dHks_aux.shape[0]):
             for ispin in range(nspin):
-                pks[ik, l, :, :, ispin] = (
-                    np.conj(arrays['v_k'][ik, :, :, ispin].T)
-                    .dot(dHks_aux[ik, :, :, ispin])
-                    .dot(arrays['v_k'][ik, :, :, ispin])[:bnd, :bnd]
+                pks[ik, l, :, :, ispin], jks[ik, l, :, :, ispin] = path_matrix_elements_k(
+                    arrays['v_k'][ik, :, :, ispin], dHks_aux[ik, :, :, ispin], Oj[spol], bnd
                 )
 
-        for ik in range(pks.shape[0]):
-            for ispin in range(nspin):
-                jks[ik, l, :, :, ispin] = (
-                    np.conj(arrays['v_k'][ik, :, :, ispin].T)
-                    .dot(
-                        0.5
-                        * (
-                            np.dot(Oj[spol], dHks_aux[ik, :, :, ispin])
-                            + np.dot(dHks_aux[ik, :, :, ispin], Oj[spol])
-                        )
-                    )
-                    .dot(arrays['v_k'][ik, :, :, ispin])
-                )[:bnd, :bnd]
+    Omj_zk = np.zeros((pks.shape[0], 1), dtype=float)
+    Omj_znk = np.zeros((pks.shape[0], bnd), dtype=float)
+    for ik in range(pks.shape[0]):
+        Omj_znk[ik], Omj_zk[ik] = path_berry_k(
+            arrays['E_k'][ik, :, 0], pks[ik, :, :, :, 0], jks[ik, :, :, :, 0], attributes, bnd
+        )
 
+    velk = np.zeros((pks.shape[0], 3, bnd, nspin), dtype=float)
+    for n in range(bnd):
+        velk[:, :, n, :] = np.real(pks[:, :, n, n, :])
+    pks = jks = None
+    write_berry_path(data_controller, velk, Omj_zk, Omj_znk, curvature, spol, ipol, jpol, nkpi)
+
+
+def _project(v_k, operator):
+    """``(v^dagger O v)`` for a dense or ``scipy.sparse`` operator; the dense
+    association order is kept for ndarrays."""
+    from scipy.sparse import issparse
+
+    if issparse(operator):
+        return np.conj(v_k.T) @ np.asarray(operator @ v_k)
+    return np.conj(v_k.T).dot(operator).dot(v_k)
+
+
+def _anticommutator(O, dH):
+    """:math:`\\tfrac12\\{O, \\partial H\\}`, with ``np.dot`` for ndarrays as before."""
+    from scipy.sparse import issparse
+
+    if issparse(O) or issparse(dH):
+        return 0.5 * (O @ dH + dH @ O)
+    return 0.5 * (np.dot(O, dH) + np.dot(dH, O))
+
+
+def path_matrix_elements_k(v_k, dHk, O, bnd: int):
+    """Momentum and current matrix elements of one direction at one path point.
+
+    Parameters
+    ----------
+    v_k : np.ndarray, shape ``(nawf, nawf)``
+        Every eigenvector at this point (columns).
+    dHk : np.ndarray or scipy.sparse matrix, shape ``(nawf, nawf)``
+        ``dH/dk_l`` (lattice part only, as built here from ``Rfft``).
+    O : np.ndarray or scipy.sparse matrix, shape ``(nawf, nawf)``, or None
+        Spin or orbital component of the curvature operator; ``None`` skips
+        the current (``jks`` is then ``None``).
+    bnd : int
+        Bands kept.
+
+    Returns
+    -------
+    (pks, jks) : tuple of np.ndarray, shape ``(bnd, bnd)``
+        :math:`V^\\dagger \\partial_l H V` and
+        :math:`V^\\dagger \\tfrac12\\{O, \\partial_l H\\} V`.
+    """
+    pks = _project(v_k, dHk)[:bnd, :bnd]
+    if O is None:
+        return pks, None
+    jks = _project(v_k, _anticommutator(O, dHk))[:bnd, :bnd]
+    return pks, jks
+
+
+def path_berry_k(E, pks, jks, attributes, bnd: int):
+    """Spin/orbital Berry curvature of one path point, per band and summed.
+
+    Parameters
+    ----------
+    E : np.ndarray, shape ``(nbands,)``
+        Eigenvalues (the first ``bnd`` are used).
+    pks, jks : np.ndarray, shape ``(3, bnd, bnd)``
+        :func:`path_matrix_elements_k` of the three directions.
+    attributes : dict
+        Supplies ``ipol``, ``jpol`` and the overrides ``bc_delta``,
+        ``bc_mu`` and ``bc_smearing``.
+    bnd : int
+
+    Returns
+    -------
+    (Omj_znk, Omj_zk) : tuple
+        Band-resolved curvature ``(bnd,)`` and its occupation-weighted sum.
+    """
+    ipol = attributes['ipol']
+    jpol = attributes['jpol']
     # --- broadening / occupation controls (overridable via attributes) ---
     #   bc_delta    : Lorentzian broadening in the energy denominator (eV).
     #   bc_mu       : chemical potential (E_k are referenced to E_F, so 0.0 = E_F).
@@ -129,37 +195,54 @@ def do_berry_curvature(data_controller):
     mu = attributes.get('bc_mu', 0.0)
     kbt = attributes.get('bc_smearing', 0.0)
 
-    Omj_zk = np.zeros((pks.shape[0], 1), dtype=float)
-    Omj_znk = np.zeros((pks.shape[0], bnd), dtype=float)
-    for ik in range(pks.shape[0]):
-        for n in range(bnd):
-            for m in range(bnd):
-                if m != n:
-                    Omj_znk[ik, n] += (
-                        -2.0
-                        * np.imag(jks[ik, ipol, n, m, 0] * pks[ik, jpol, m, n, 0])
-                        / ((arrays['E_k'][ik, m, 0] - arrays['E_k'][ik, n, 0]) ** 2 + deltab**2)
-                    )
-        en = arrays['E_k'][ik, :bnd, 0]
-        if kbt > 0.0:
-            # Fermi-Dirac occupation -> continuous band-summed curvature
-            occ = 1.0 / (np.exp(np.clip((en - mu) / kbt, -60.0, 60.0)) + 1.0)
-        else:
-            occ = 0.5 * (1.0 - np.sign(en - mu))  # T=0.0K sharp step (original)
-        Omj_zk[ik] = np.sum(Omj_znk[ik, :] * occ)
+    Omj_znk = np.zeros(bnd, dtype=float)
+    for n in range(bnd):
+        for m in range(bnd):
+            if m != n:
+                Omj_znk[n] += (
+                    -2.0
+                    * np.imag(jks[ipol, n, m] * pks[jpol, m, n])
+                    / ((E[m] - E[n]) ** 2 + deltab**2)
+                )
+    en = E[:bnd]
+    if kbt > 0.0:
+        # Fermi-Dirac occupation -> continuous band-summed curvature
+        occ = 1.0 / (np.exp(np.clip((en - mu) / kbt, -60.0, 60.0)) + 1.0)
+    else:
+        occ = 0.5 * (1.0 - np.sign(en - mu))  # T=0.0K sharp step (original)
+    return Omj_znk, np.sum(Omj_znk[:] * occ)
+
+
+def write_berry_path(data_controller, velk, Omj_zk, Omj_znk, curvature, spol, ipol, jpol, nkpi):
+    """Gather and write the path velocities and Berry curvatures (collective).
+
+    Parameters
+    ----------
+    velk : np.ndarray, shape ``(nk_local, 3, bnd, nspin)``
+        Band velocities, the real diagonal of ``pks``.
+    Omj_zk : np.ndarray, shape ``(nk_local, 1)``
+    Omj_znk : np.ndarray, shape ``(nk_local, bnd)``
+    curvature : str
+        ``'Spin'`` or ``'Orbital'``, for the file names.
+    """
+    from mpi4py import MPI
+
+    from ..utils.communication import gather_full
+    from ..utils.constants import LL
+
+    rank = MPI.COMM_WORLD.Get_rank()
+    arrays, attributes = data_controller.data_dicts()
+    npool = attributes['npool']
+    bnd = velk.shape[2]
 
     indices = (curvature, LL[spol], LL[ipol], LL[jpol])
     lrng = list(range(nkpi)) if rank == 0 else None
 
-    pks = gather_full(pks, npool)
-    velk = np.zeros((nkpi, 3, bnd, nspin), dtype=float) if rank == 0 else None
-    if rank == 0:
-        for n in range(bnd):
-            velk[:, :, n, :] = np.real(pks[:, :, n, n, :])
+    velk = gather_full(velk, npool)
     for l in range(3):
         fvk = 'velocity_' + str(l)
         data_controller.write_bands(fvk, (velk[:, l, :bnd, :] if rank == 0 else None))
-    pks = velk = None
+    velk = None
 
     Omj_zk = gather_full(Omj_zk, npool)
     Omj_znk = gather_full(Omj_znk, npool)

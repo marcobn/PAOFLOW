@@ -5,8 +5,8 @@ def do_fermisurf(data_controller):
     ----------
     data_controller : DataController
         Object providing ``data_arrays`` and ``data_attributes``.
-        Required array: ``E_k`` (shape ``(nkpnts, nawf, nspin)``), distributed
-        over MPI pools.
+        Required array: ``E_k`` (shape ``(nkpnts, nbands, nspin)``, ``nbands``
+        being ``nawf`` or a sparse energy window), distributed over MPI pools.
         Required attributes: ``nawf``, ``nk1``, ``nk2``, ``nk3``, ``nspin``,
         ``fermi_up``, ``fermi_dw``, ``npool``, ``opath``, ``verbose``.
 
@@ -35,7 +35,7 @@ def do_fermisurf(data_controller):
     - the band lies entirely within the window.
 
     The gathered eigenvalue array is reshaped to
-    ``(nk1, nk2, nk3, nawf, nspin)`` before the BXSF writer is called.
+    ``(nk1, nk2, nk3, nbands, nspin)`` before the BXSF writer is called.
     Only MPI rank 0 performs the band selection, the file I/O, and the NPZ
     saves; all ranks synchronise at the end via ``MPI.Barrier``.
     """
@@ -59,7 +59,9 @@ def do_fermisurf(data_controller):
         if attr['verbose']:
             print('Writing bxsf file for Fermi Surface')
 
-        nawf = attr['nawf']
+        # bands stored per k-point: nawf in the dense pipeline, the energy
+        # window in the sparse one
+        nawf = E_kf.shape[1]
         nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
         fermi_up, fermi_dw = attr['fermi_up'], attr['fermi_dw']
 

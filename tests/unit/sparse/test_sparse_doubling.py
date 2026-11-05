@@ -1,9 +1,16 @@
 """Sparse doubling: exact bond-level parity with the dense doubling kernel.
 
 The dense ``doubling_HRs`` (run here on small test matrices only) is the
-reference: converting its doubled dense output to a bond list must yield
-exactly the same bonds — values and per-bond ``dnm`` — as applying
-``double_axis`` to the converted base cell.
+reference for the bonds: converting its doubled dense output to a bond list
+must yield exactly the same bonds and values as applying ``double_axis`` to
+the converted base cell.
+
+The per-bond ``dnm`` is the one place the two differ on purpose.  The dense
+kernel doubles ``Dnm`` block-diagonally and leaves cross-replica pairs at
+zero, while ``double_axis`` keeps ``dnm = x_i - x_j`` for the orbital
+positions of the doubled cell.  It is checked against those positions.
+The Nyquist split of the doubled axis is the other; the parity tests turn
+it off, and the folding test checks what it is for.
 """
 
 import numpy as np
@@ -73,13 +80,29 @@ def _bond_dict(sph):
     return out
 
 
-def _assert_same_bonds(sa, sb, atol=1e-13):
+def _assert_same_bonds(sa, sb, x=None, atol=1e-13):
+    """Same bonds and values.  ``dnm`` of ``sa`` is checked against the
+    orbital positions ``x`` when given, else against ``sb``."""
     da, db = _bond_dict(sa), _bond_dict(sb)
     assert set(da) == set(db)
     for key, (va, dnma) in da.items():
         vb, dnmb = db[key]
         assert np.allclose(va, vb, atol=atol), key
-        assert np.allclose(dnma, dnmb, atol=atol), key
+        expected = dnmb if x is None else x[key[0]] - x[key[1]]
+        assert np.allclose(dnma, expected, atol=atol), key
+
+
+def _positions(rng_seed, axes):
+    """Orbital positions of the cell doubled along ``axes`` (Bohr, relative
+    to orbital 0): each doubling appends the current cell shifted by one
+    lattice vector."""
+    arrays, _ = _make_dc(np.random.default_rng(rng_seed)).data_dicts()
+    x = arrays['Dnm'][:, 0, :].copy()
+    a_vectors = arrays['a_vectors'].copy()
+    for ax in axes:
+        x = np.concatenate((x, x + ALAT * a_vectors[ax]))
+        a_vectors[ax] *= 2
+    return x
 
 
 def _double_dense(rng_seed, nx, ny, nz):
@@ -93,7 +116,7 @@ def _double_sparse(rng_seed, axes):
     dc = _make_dc(np.random.default_rng(rng_seed))
     sph = SparseHamiltonian.from_data_controller(dc, threshold=0.0)
     for ax in axes:
-        sph = double_axis(sph, ax)
+        sph = double_axis(sph, ax, split_nyquist=False)
     return sph
 
 
@@ -102,20 +125,37 @@ def test_single_doubling_each_axis_matches_dense():
         dense = _double_dense(seed, *flags)
         sparse = _double_sparse(seed, [axis])
         assert sparse.nawf == 2 * NAWF
-        _assert_same_bonds(sparse, dense)
+        _assert_same_bonds(sparse, dense, x=_positions(seed, [axis]))
 
 
 def test_two_doublings_x_then_y_match_dense():
     dense = _double_dense(42, 1, 1, 0)
     sparse = _double_sparse(42, [0, 1])
     assert sparse.nawf == 4 * NAWF
-    _assert_same_bonds(sparse, dense)
+    _assert_same_bonds(sparse, dense, x=_positions(42, [0, 1]))
+
+
+def test_cross_replica_dnm_differs_from_dense_only_there():
+    """The dense kernel zeroes cross-replica Dnm; the sparse one does not.
+    Same-replica bonds must still agree with the dense kernel exactly."""
+    nawf = NAWF
+    dense = _bond_dict(_double_dense(5, 1, 0, 0))
+    sparse = _bond_dict(_double_sparse(5, [0]))
+    cross = 0
+    for key, (_, dnm) in sparse.items():
+        same_replica = (key[0] < nawf) == (key[1] < nawf)
+        if same_replica:
+            assert np.allclose(dnm, dense[key][1], atol=1e-13), key
+        else:
+            assert np.allclose(dense[key][1], 0.0)
+            cross += 1
+    assert cross > 0
 
 
 def test_nnz_doubles_and_a_vectors_scale():
     dc = _make_dc(np.random.default_rng(3))
     sph = SparseHamiltonian.from_data_controller(dc, threshold=0.0)
-    doubled = double_axis(sph, 1)
+    doubled = double_axis(sph, 1, split_nyquist=False)
     assert doubled.nnz == 2 * sph.nnz
     assert np.allclose(doubled.a_vectors[1], 2 * sph.a_vectors[1])
     assert np.allclose(doubled.a_vectors[0], sph.a_vectors[0])
@@ -128,13 +168,15 @@ def test_threshold_commutes_with_doubling():
     dc = _make_dc(np.random.default_rng(seed))
     thr = 0.02 * float(np.abs(dc.data_dicts()[0]['HRs']).max())
 
-    early = double_axis(SparseHamiltonian.from_data_controller(dc, threshold=thr), 0)
+    early = double_axis(
+        SparseHamiltonian.from_data_controller(dc, threshold=thr), 0, split_nyquist=False
+    )
 
     dc2 = _make_dc(np.random.default_rng(seed), nx=1)
     doubling_HRs(dc2)
     late = SparseHamiltonian.from_data_controller(dc2, threshold=thr)
 
-    _assert_same_bonds(early, late)
+    _assert_same_bonds(early, late, x=_positions(seed, [0]))
 
 
 def test_doubling_then_hermitize_is_hermitian():
@@ -175,3 +217,28 @@ def test_hermitize_is_noop_on_hermitian_base_cell():
     assert np.allclose(
         base.assemble_hk(kfrac).toarray(), herm.assemble_hk(kfrac).toarray(), atol=1e-12
     )
+
+
+def test_doubled_hk_folds_onto_base_cell():
+    """H(K) of the doubled cell has exactly the eigenvalues of the base cell
+    at the k-points that fold onto K.  Bonds on two Nyquist planes at once
+    broke this once a second axis was doubled, unless the plane is split."""
+    import itertools
+
+    dc = _make_dc(np.random.default_rng(61))
+    base = SparseHamiltonian.from_data_controller(dc, threshold=0.0)
+    rng = np.random.default_rng(62)
+    for axes in ((0,), (0, 1), (0, 1, 2), (0, 0, 2)):
+        sph = base
+        for ax in axes:
+            sph = double_axis(sph, ax)
+        sph = sph.hermitize()
+        reps = [2 ** axes.count(ax) for ax in range(3)]
+        for _ in range(3):
+            K = rng.random(3)
+            folded = [
+                np.linalg.eigvalsh(base.assemble_hk((K + np.array(s)) / reps).toarray())
+                for s in itertools.product(*(range(r) for r in reps))
+            ]
+            E = np.linalg.eigvalsh(sph.assemble_hk(K).toarray())
+            assert np.allclose(E, np.sort(np.concatenate(folded)), atol=1e-10), axes

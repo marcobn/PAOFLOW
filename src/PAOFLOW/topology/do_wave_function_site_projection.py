@@ -1,5 +1,5 @@
 # this version works only for non-magnetic or non-collienar calculations
-def wave_function_site_projection(data_controller):
+def wave_function_site_projection(data_controller, v_k=None, k_index=None):
     """Write real-space site-projected wavefunction weights to a data file.
 
     Parameters
@@ -12,6 +12,12 @@ def wave_function_site_projection(data_controller):
         (list of band indices to project).
         Required attributes: ``nawf``, ``do_spin_orbit``, ``dimension``,
         ``k_proj`` (k-point index for the projection), ``opath``.
+
+    v_k : np.ndarray or None, optional
+        Eigenvectors ``(nk, nawf, nbands, nspin)`` to read instead of
+        ``arrays['v_k']`` (the sparse backend passes the one path point it
+        solved); ``k_index`` is then the index into them.
+    k_index : int or None, optional
 
     Returns
     -------
@@ -45,7 +51,6 @@ def wave_function_site_projection(data_controller):
     This function is valid only for non-magnetic or non-collinear calculations
     (spin channel 0 is used exclusively).
     """
-    import numpy as np
     from os.path import join
 
     from ..utils.constants import ANGSTROM_AU
@@ -53,8 +58,10 @@ def wave_function_site_projection(data_controller):
     arry, attr = data_controller.data_dicts()
 
     tau = arry['tau'] / ANGSTROM_AU
-    naw, v_k = arry['naw'], arry['v_k']
-    bands, k_index = arry['bands_proj'], attr['k_proj']
+    naw = arry['naw']
+    bands = arry['bands_proj']
+    if v_k is None:
+        v_k, k_index = arry['v_k'], attr['k_proj']
 
     do_spin_orbit = attr['do_spin_orbit']
     nawf, dim = attr['nawf'], attr['dimension']
@@ -64,33 +71,9 @@ def wave_function_site_projection(data_controller):
         # open file
         f = open(join(attr['opath'], 'site-projected-wave-function-' + str(bnd_idx) + '.dat'), 'w')
         for n in range(tau.shape[0]):
-            # Do to the doubling of the Hamiltonian when SOC is included in the PAO Hamiltonian.
-            if do_spin_orbit:
-                # creating masks to consirer only the n site.
-                # seting up the nonzero parts of the mask and the wave-function
-                idx = int(np.sum(naw[0:n]))  # initial
-                fdx = int(idx + naw[n])  # final
-                s = int(nawf / 2)
-
-                usector_idx = np.arange(idx, fdx, dtype=int)
-                dsector_idx = np.arange(idx + s, fdx + s, dtype=int)
-                idx_list = list(np.append(usector_idx, dsector_idx))
-
-                total = 0
-                total += np.sum(
-                    np.absolute(np.square(v_k[k_index : k_index + 1, idx_list, bnd_idx, 0]))
-                )
-
-            else:  # no SOC or SOC form QE.
-                # creating masks to consirer only the n site.
-                # seting up the nonzero parts of the mask and the wave-function
-                idx = int(np.sum(naw[0:n]))  # initial
-                fdx = int(idx + naw[n])  # final
-
-                total = 0
-                total += np.sum(
-                    np.absolute(np.square(v_k[k_index : k_index + 1, idx:fdx, bnd_idx, 0]))
-                )
+            total = site_weight(
+                v_k[k_index : k_index + 1, :, bnd_idx, 0], naw, n, nawf, do_spin_orbit
+            )
 
             if dim == 3:  # ploting for 3D system
                 # we sum a very small part 0.0001 for ploting purpose.
@@ -106,3 +89,40 @@ def wave_function_site_projection(data_controller):
                 f.write(('%5.4f %5.4f  \n') % (tau[n, 2], total + 0.0001))
 
         f.close()
+
+
+def site_weight(v_row, naw, n: int, nawf: int, do_spin_orbit: bool):
+    """Weight :math:`\\sum_{\\mu \\in n} |v_\\mu|^2` of one state on atom ``n``.
+
+    Parameters
+    ----------
+    v_row : np.ndarray, shape ``(1, nawf)``
+        The state's coefficients (one k-point, one band).
+    naw : np.ndarray
+        Orbitals per atom.
+    n : int
+        Atom index.
+    nawf : int
+    do_spin_orbit : bool
+        Ad-hoc spin-orbit: the spin-down copy ``nawf / 2`` further on counts too.
+    """
+    import numpy as np
+
+    # creating masks to consirer only the n site.
+    # seting up the nonzero parts of the mask and the wave-function
+    idx = int(np.sum(naw[0:n]))  # initial
+    fdx = int(idx + naw[n])  # final
+    # Do to the doubling of the Hamiltonian when SOC is included in the PAO Hamiltonian.
+    if do_spin_orbit:
+        s = int(nawf / 2)
+
+        usector_idx = np.arange(idx, fdx, dtype=int)
+        dsector_idx = np.arange(idx + s, fdx + s, dtype=int)
+        idx_list = list(np.append(usector_idx, dsector_idx))
+
+        total = 0
+        total += np.sum(np.absolute(np.square(v_row[:, idx_list])))
+    else:  # no SOC or SOC form QE.
+        total = 0
+        total += np.sum(np.absolute(np.square(v_row[:, idx:fdx])))
+    return total

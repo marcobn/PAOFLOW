@@ -249,142 +249,24 @@ def calc_chi2(data_controller=None, tensor=None, prop=None, oper_matrix1=None, o
     """EQUATION (2)"""
     arry, attr = data_controller.data_dicts()
     nk, nbnd, nspin = arry['E_k'].shape
-    attr['emaxH'] = np.amin(np.array([attr['shift'], attr['emaxH']]))
-    ene = np.linspace(attr['eminH'], attr['emaxH'], attr['esize'])
+    ene = eqn245_energy_grid(attr)
     gamma = attr['gamma']
-    deltab = 0.001
-    # ------------------------------------------------------------
-    # Unit conversion
-    # ------------------------------------------------------------
-    if attr['twoD']:
-        av0 = arry['a_vectors'][0, :]
-        av1 = arry['a_vectors'][1, :]
-        cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
-    else:
-        cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
-
-    if prop == 'shc' or prop == 'ree':
-        # --------------------------------------------------------
-        # aux1 array is only nk x nbnd
-        # --------------------------------------------------------
+    for ispin in eqn245_spins(prop, nspin):
         aux1 = np.zeros((nk, nbnd), dtype=float)
         for ik in range(nk):
-            E = arry['E_k'][ik, :, 0]
-            # E_nm = (E_n - E_m)^2
-            E_nm = (E - E[:, None]) ** 2
-            # ----------------------------------------------------
-            # Numerator: oper_matrix1[n,m] * oper_matrix2[m,n]
-            # ----------------------------------------------------
-            aux = oper_matrix1[ik, :, :, 0] * oper_matrix2[ik, :, :, 0].T
-            # Remove diagonal contribution
-            np.fill_diagonal(aux, 0.0)
-            # ----------------------------------------------------
-            # Equation (2)
-            # ----------------------------------------------------
-            aux = 2.0 * np.imag(aux) * (gamma**2 - E_nm)
-            aux /= (E_nm + gamma**2) ** 2 + deltab**2
-            # Sum over m
-            aux1[ik, :] = np.sum(aux, axis=1)
-            aux = None
-            E_nm = None
-        # --------------------------------------------------------
-        # Directly accumulate the total contribution for every energy:
-        # response(E) = sum_k,n aux1[k,n] * smear[k,n]
-        # local_response has only esize elements.
-        # --------------------------------------------------------
-        local_response = np.zeros(len(ene), dtype=float)
-        for ie in range(len(ene)):
-            smear = intgaussian(arry['E_k'][:, :, 0], ene[ie], arry['deltakp'][:, :, 0])
-            # Sum over k and bands
-            local_response[ie] = np.sum(aux1 * smear)
-            smear = None
+            aux1[ik, :] = chi2_k(
+                oper_matrix1[ik, :, :, ispin],
+                oper_matrix2[ik, :, :, ispin],
+                arry['E_k'][ik, :, ispin],
+                gamma,
+                prop,
+            )
+        local_response = occupied_sum(
+            arry['E_k'][:, :, ispin], arry['deltakp'][:, :, ispin], aux1, ene
+        )
         aux1 = None
-        # --------------------------------------------------------
-        # Sum the contributions from all MPI ranks.
-        # Each rank contains only the k-points assigned to it.
-        # reduce_full performs:
-        # response_total(E)
-        #     = sum_rank response_rank(E)
-        # Result exists on rank 0.
-        # --------------------------------------------------------
-        aux2_full = reduce_full(local_response, sroot=0)
-        local_response = None
-        if rank == 0:
-            # Average over k-points
-            aux2_full = aux2_full / aux2_full.shape[0] if False else aux2_full
-            # Since reduce_full has already summed over k,now divide by total k-points.
-            aux2_full /= attr['nkpnts']
+        eqn245_finish(data_controller, local_response, ene, 'chi2', prop, tensor, ispin)
 
-            if prop == 'shc':
-                aux2_full *= cgs_conv
-            if prop == 'ree':
-                aux2_full *= bohr_to_cm
-
-        xzy = ['x', 'y', 'z']
-        if prop == 'shc':
-            spol, jpol, ipol = (tensor[0], tensor[1], tensor[2])
-            fname = f'SHC_EVEN_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat'
-            unit1 = 'Energy [eV]'
-            unit2 = 'Chi [(hbar/e)(S/cm)]'
-
-        if prop == 'ree':
-            spol, ipol = tensor[0], tensor[1]
-            fname = f'REE_ODD_{xzy[spol]}{xzy[ipol]}.dat'
-            unit1 = 'Energy [eV]'
-            unit2 = 'Chi [hbar*(cm/V)]'
-
-        # data_controller.write_file_row_col(fname,ene,aux2_full)
-        data_controller.write_file_row_col_units(fname, ene, aux2_full, unit1, unit2)
-        aux2_full = None
-    if prop == 'ahc':
-        for ispin in range(nspin):
-            # ----------------------------------------------------
-            # band-resolved quantity for every local k-point.
-            # ----------------------------------------------------
-            aux1 = np.zeros((nk, nbnd), dtype=float)
-            for ik in range(nk):
-                E = arry['E_k'][ik, :, ispin]
-                # E_nm = (E_n - E_m)^2
-                E_nm = (E - E[:, None]) ** 2
-                aux = oper_matrix1[ik, :, :, ispin] * oper_matrix2[ik, :, :, ispin].T
-                np.fill_diagonal(aux, 0.0)
-                aux = -2.0 * np.imag(aux) * (gamma**2 - E_nm)
-                aux /= (E_nm + gamma**2) ** 2 + deltab**2
-                # Sum over m
-                aux1[ik, :] = np.sum(aux, axis=1)
-                aux = None
-                E_nm = None
-            # ----------------------------------------------------
-            # Directly accumulate the energy-dependent result.
-            # No (nk, esize) array is created.
-            # ----------------------------------------------------
-            local_response = np.zeros(len(ene), dtype=float)
-            for ie in range(len(ene)):
-                smear = intgaussian(arry['E_k'][:, :, ispin], ene[ie], arry['deltakp'][:, :, ispin])
-                local_response[ie] = np.sum(aux1 * smear)
-                smear = None
-            aux1 = None
-            # ----------------------------------------------------
-            # MPI reduction over distributed k-points
-            # ----------------------------------------------------
-            aux2_full = reduce_full(local_response, sroot=0)
-            local_response = None
-            if rank == 0:
-                # Average over total number of k-points
-                aux2_full /= attr['nkpnts']
-                # Conductivity unit conversion
-                aux2_full *= cgs_conv
-            xzy = ['x', 'y', 'z']
-            cpol, ipol = (tensor[0], tensor[1])
-            if nspin == 1:
-                fname = f'AHC_{xzy[cpol]}{xzy[ipol]}.dat'
-            else:
-                fname = f'AHC_{xzy[cpol]}{xzy[ipol]}_ispin{ispin}.dat'
-            unit1 = 'Energy [eV]'
-            unit2 = 'AH Conductivity [S/cm]'
-            # data_controller.write_file_row_col(fname,ene,aux2_full)
-            data_controller.write_file_row_col_units(fname, ene, aux2_full, unit1, unit2)
-            aux2_full = None
     oper_matrix1 = None
     oper_matrix2 = None
 
@@ -393,292 +275,191 @@ def fermi_surf(data_controller=None, tensor=None, prop=None, oper_matrix1=None, 
     """Equation (4)"""
     arry, attr = data_controller.data_dicts()
     nk, nbnd, nspin = arry['E_k'].shape
-    gamma = attr['gamma']
-    deltab = 0.0001
-    attr['emaxH'] = np.amin(np.array([attr['shift'], attr['emaxH']]))
-    ene = np.linspace(attr['eminH'], attr['emaxH'], attr['esize'])
-    # ------------------------------------------------------------
-    # Unit conversion
-    # ------------------------------------------------------------
-    if attr['twoD']:
-        av0 = arry['a_vectors'][0, :]
-        av1 = arry['a_vectors'][1, :]
-        cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
-    else:
-        cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
-    # ============================================================
-    # SHC / REE
-    # ============================================================
-    if prop == 'shc' or prop == 'ree':
-        # --------------------------------------------------------
-        # Extract diagonal matrix elements.
-        # --------------------------------------------------------
-        oper_matrix1 = np.diagonal(oper_matrix1[:, :, :, 0], axis1=1, axis2=2)
-        oper_matrix2 = np.diagonal(oper_matrix2[:, :, :, 0], axis1=1, axis2=2)
-        # --------------------------------------------------------
-        # numerator = np.real(oper_matrix1 * oper_matrix2)
-        # Then symmetrize: ##HACK: seems like symmetrization doesn't really change the result
-        # 1/2 [A + A^T]
-        # --------------------------------------------------------
-        numerator = np.real(oper_matrix1 * oper_matrix2)
+    ene = eqn245_energy_grid(attr)
+    for ispin in eqn245_spins(prop, nspin):
+        numerator = np.zeros((nk, nbnd), dtype=float)
         for ik in range(nk):
-            numerator[ik, :] = 0.5 * (numerator[ik, :] + np.conj(numerator[ik, :].T))
-        oper_matrix1 = None
-        oper_matrix2 = None
-        # --------------------------------------------------------
-        # Instead of creating: aux_diag = (nk, esize)
-        # we directly accumulate the total contribution for each energy.
-        # local_response has only:(esize,)
-        # --------------------------------------------------------
-        local_response = np.zeros(len(ene), dtype=float)
-        # Flatten once so that the final contraction can be performed as a dot product.
-        numerator_flat = numerator.ravel()
-        for ie in range(len(ene)):
-            smear = gaussian(arry['E_k'][:, :, 0], ene[ie], arry['deltakp'][:, :, 0])
-            # Directly perform:
-            # sum_k,n numerator[k,n] * smear[k,n]
-            local_response[ie] = np.dot(numerator_flat, smear.ravel())
-            smear = None
-        numerator_flat = None
+            numerator[ik, :] = surf_k(
+                oper_matrix1[ik, :, :, ispin], oper_matrix2[ik, :, :, ispin], prop
+            )
+        local_response = surface_sum(
+            arry['E_k'][:, :, ispin], arry['deltakp'][:, :, ispin], numerator, ene
+        )
         numerator = None
-        # --------------------------------------------------------
-        # Sum contributions from all MPI ranks.
-        # Each rank contains only its local k-points.
-        # reduce_full gives the sum over ALL k-points on rank 0.
-        # --------------------------------------------------------
-        aux_full = reduce_full(local_response, sroot=0)
-        local_response = None
-        if rank == 0:
-            aux_full /= attr['nkpnts']
-            if prop == 'shc':
-                aux_full *= cgs_conv
-            if prop == 'ree':
-                aux_full *= bohr_to_cm
-            aux_full /= (-2.0 * gamma) + deltab
-        xzy = ['x', 'y', 'z']
-        if prop == 'shc':
-            spol, jpol, ipol = (tensor[0], tensor[1], tensor[2])
-            fname = f'SHC_ODD_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat'
-            unit1 = 'Energy [eV]'
-            unit2 = 'Chi [(hbar/e)(S/cm)]'
-        if prop == 'ree':
-            spol, ipol = (tensor[0], tensor[1])
-            fname = f'REE_EVEN_{xzy[spol]}{xzy[ipol]}.dat'
-            unit1 = 'Energy [eV]'
-            unit2 = 'Chi [hbar*(cm/V)]'
-        # data_controller.write_file_row_col(fname,ene,aux_full)
-        data_controller.write_file_row_col_units(fname, ene, aux_full, unit1, unit2)
-        aux_full = None
-    # ============================================================
-    # CONDUCTIVITY
-    # ============================================================
-    if prop == 'cond':
-        for ispin in range(nspin):
-            # ----------------------------------------------------
-            # Extract diagonal matrix elements for this spin.
-            # ----------------------------------------------------
-            oper_matrix1_spin = np.diagonal(oper_matrix1[:, :, :, ispin], axis1=1, axis2=2)
-            oper_matrix2_spin = np.diagonal(oper_matrix2[:, :, :, ispin], axis1=1, axis2=2)
-            # ----------------------------------------------------
-            # Numerator
-            # ----------------------------------------------------
-            numerator = np.real(oper_matrix1_spin * oper_matrix2_spin)
-            oper_matrix1_spin = None
-            oper_matrix2_spin = None
-            # ----------------------------------------------------
-            # Direct energy accumulation.
-            # No (nk, esize) aux_diag array.
-            # ----------------------------------------------------
-            local_response = np.zeros(len(ene), dtype=float)
-            numerator_flat = numerator.ravel()
-            for ie in range(len(ene)):
-                smear = gaussian(arry['E_k'][:, :, ispin], ene[ie], arry['deltakp'][:, :, ispin])
-                local_response[ie] = np.dot(numerator_flat, smear.ravel())
-                smear = None
-            numerator_flat = None
-            numerator = None
-            # ----------------------------------------------------
-            # Sum over all MPI ranks / k-points.
-            # ----------------------------------------------------
-            aux_full = reduce_full(local_response, sroot=0)
-            local_response = None
-            # ----------------------------------------------------
-            # Global normalization and conductivity factor.
-            # ----------------------------------------------------
-            if rank == 0:
-                aux_full /= attr['nkpnts']
-                aux_full *= cgs_conv
-                # no minus sign for conductivity
-                aux_full /= (2.0 * gamma) + deltab
-            # ----------------------------------------------------
-            # Output
-            # ----------------------------------------------------
-            cpol, ipol = (tensor[0], tensor[1])
-            xzy = ['x', 'y', 'z']
-            if nspin == 1:
-                fname = f'Cond_{xzy[cpol]}{xzy[ipol]}.dat'
-            else:
-                fname = f'Cond_{xzy[cpol]}{xzy[ipol]}_ispin{ispin}.dat'
-            unit1 = 'Energy [eV]'
-            unit2 = 'Conductivity [S/cm]'
+        eqn245_finish(data_controller, local_response, ene, 'surf', prop, tensor, ispin)
 
-            # data_controller.write_file_row_col(fname,ene,aux_full)
-            data_controller.write_file_row_col_units(fname, ene, aux_full, unit1, unit2)
-            aux_full = None
-        oper_matrix1 = None
-        oper_matrix2 = None
+    oper_matrix1 = None
+    oper_matrix2 = None
 
 
 def fermi_sea(data_controller=None, tensor=None, prop=None, oper_matrix1=None, oper_matrix2=None):
     """EQUATION (5)"""
     arry, attr = data_controller.data_dicts()
     nk, nbnd, nspin = arry['E_k'].shape
-    deltab = 0.001
+    ene = eqn245_energy_grid(attr)
     gamma = attr['gamma']
+    for ispin in eqn245_spins(prop, nspin):
+        aux_odd = np.zeros((nk, nbnd), dtype=float)
+        for ik in range(nk):
+            aux_odd[ik, :] = sea_k(
+                oper_matrix1[ik, :, :, ispin],
+                oper_matrix2[ik, :, :, ispin],
+                arry['E_k'][ik, :, ispin],
+                gamma,
+                prop,
+            )
+        local_response = occupied_sum(
+            arry['E_k'][:, :, ispin], arry['deltakp'][:, :, ispin], aux_odd, ene
+        )
+        aux_odd = None
+        eqn245_finish(data_controller, local_response, ene, 'sea', prop, tensor, ispin)
+
+    oper_matrix1 = None
+    oper_matrix2 = None
+
+
+# Broadening of the energy denominators of equations (2), (4) and (5)
+_DELTAB = {'chi2': 0.001, 'surf': 0.0001, 'sea': 0.001}
+
+
+def eqn245_energy_grid(attr):
+    """Energy grid of equations (2), (4), (5); clips ``attr['emaxH']`` to ``shift`` in place."""
     attr['emaxH'] = np.amin(np.array([attr['shift'], attr['emaxH']]))
-    ene = np.linspace(attr['eminH'], attr['emaxH'], attr['esize'])
-    # ------------------------------------------------------------
-    # Unit conversion
-    # ------------------------------------------------------------
+    return np.linspace(attr['eminH'], attr['emaxH'], attr['esize'])
+
+
+def eqn245_spins(prop, nspin):
+    """Spin channels summed: SHC and REE read spin 0 only, conductivity and AHC each one."""
+    return [0] if prop in ('shc', 'ree') else list(range(nspin))
+
+
+def chi2_k(op1, op2, E, gamma, prop):
+    """Equation (2) band vector at one k-point and spin.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nbnd,)``
+        :math:`\\pm 2 \\sum_{m \\ne n} \\mathrm{Im}[O_{1,nm} O_{2,mn}]
+        (\\gamma^2 - E_{nm}^2) / ((E_{nm}^2 + \\gamma^2)^2 + \\delta^2)`,
+        ``+`` for SHC/REE, ``-`` for AHC.
+    """
+    deltab = _DELTAB['chi2']
+    sign = 2.0 if prop in ('shc', 'ree') else -2.0
+    E_nm = (E - E[:, None]) ** 2
+    aux = op1 * op2.T
+    np.fill_diagonal(aux, 0.0)
+    aux = sign * np.imag(aux) * (gamma**2 - E_nm)
+    aux /= (E_nm + gamma**2) ** 2 + deltab**2
+    return np.sum(aux, axis=1)
+
+
+def surf_k(op1, op2, prop):
+    """Equation (4) intraband numerator :math:`\\mathrm{Re}[O_{1,nn} O_{2,nn}]` at one k-point and spin."""
+    numerator = np.real(np.diagonal(op1) * np.diagonal(op2))
+    if prop in ('shc', 'ree'):
+        numerator = 0.5 * (numerator + np.conj(numerator.T))
+    return numerator
+
+
+def sea_k(op1, op2, E, gamma, prop):
+    """Equation (5) band vector at one k-point and spin (``+2`` SHC/REE, ``-2`` conductivity)."""
+    deltab = _DELTAB['sea']
+    sign = 2.0 if prop in ('shc', 'ree') else -2.0
+    E_nm = E - E[:, None]
+    aux = op1 * op2.T
+    np.fill_diagonal(aux, 0.0)
+    aux = sign * np.real(aux) * gamma * E_nm
+    aux /= (E_nm**2 + gamma**2) ** 2 + deltab**2
+    return np.sum(aux, axis=1)
+
+
+def occupied_sum(E_k, deltakp, aux, ene):
+    """Fermi-sea sum :math:`\\sum_{kn} a_{kn} f(E_{kn})` over a block of k-points, per energy.
+
+    The dense kernel passes its whole k-slice, the sparse backend one
+    k-point at a time; ``E_k``, ``deltakp`` and ``aux`` are ``(nk, nbnd)``.
+    """
+    local_response = np.zeros(len(ene), dtype=float)
+    for ie in range(len(ene)):
+        smear = intgaussian(E_k, ene[ie], deltakp)
+        local_response[ie] = np.sum(aux * smear)
+        smear = None
+    return local_response
+
+
+def surface_sum(E_k, deltakp, numerator, ene):
+    """Fermi-surface sum :math:`\\sum_{kn} a_{kn} \\delta(E_{kn} - E)` over a block of k-points."""
+    local_response = np.zeros(len(ene), dtype=float)
+    numerator_flat = numerator.ravel()
+    for ie in range(len(ene)):
+        smear = gaussian(E_k, ene[ie], deltakp)
+        local_response[ie] = np.dot(numerator_flat, smear.ravel())
+        smear = None
+    return local_response
+
+
+def eqn245_finish(data_controller, local_response, ene, kind, prop, tensor, ispin):
+    """Reduce, normalize and write one component of equation (2), (4) or (5).
+
+    Parameters
+    ----------
+    local_response : np.ndarray, shape ``(esize,)``
+        This rank's block sums for spin ``ispin``.
+    kind : {'chi2', 'surf', 'sea'}
+        Equation (2), (4) or (5).
+    prop : {'shc', 'ree', 'ahc', 'cond'}
+    """
+    arry, attr = data_controller.data_dicts()
+    nspin = arry['E_k'].shape[2]
+    gamma = attr['gamma']
+    deltab = _DELTAB[kind]
+
     if attr['twoD']:
         av0 = arry['a_vectors'][0, :]
         av1 = arry['a_vectors'][1, :]
         cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
     else:
         cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
-    # ============================================================
-    # SHC / REE
-    # ============================================================
-    if prop == 'shc' or prop == 'ree':
-        oper_matrix1 = oper_matrix1[:, :, :, 0]
-        oper_matrix2 = oper_matrix2[:, :, :, 0]
-        aux_odd = np.zeros((nk, nbnd), dtype=float)
-        for ik in range(nk):
-            E = arry['E_k'][ik, :, 0]
-            # NO SQUARE HERE
-            E_nm = E - E[:, None]
-            aux = oper_matrix1[ik, :, :] * oper_matrix2[ik, :, :].T
-            np.fill_diagonal(aux, 0.0)
-            aux = 2.0 * np.real(aux) * gamma * E_nm
-            aux /= (E_nm**2 + gamma**2) ** 2 + deltab**2
-            aux_odd[ik, :] = np.sum(aux, axis=1)
-            aux = None
-        oper_matrix1 = None
-        oper_matrix2 = None
 
-        # --------------------------------------------------------
-        # IMPORTANT OPTIMIZATION:
-        # Don't need to store the response for every k-point.
-        # Only need the total contribution for each energy.
-        # local_response: (esize,)
-        # --------------------------------------------------------
-        local_response = np.zeros(len(ene), dtype=float)
-        # --------------------------------------------------------
-        # Calculate energy-dependent Fermi-surface smearing.
-        # --------------------------------------------------------
-        for ie in range(len(ene)):
-            smear = intgaussian(arry['E_k'][:, :, 0], ene[ie], arry['deltakp'][:, :, 0])
-            local_response[ie] = np.sum(aux_odd * smear)
-            smear = None
-        aux_odd = None
-
-        # --------------------------------------------------------
-        # MPI reduction.
-        # Each rank has:
-        # local_response = sum over its local k-points
-        # reduce_full() gives rank 0: sum over ALL k-points
-        # --------------------------------------------------------
-        shc_aux_full = reduce_full(local_response, sroot=0)
-        local_response = None
-        # --------------------------------------------------------
-        # Global k-point normalization and units.
-        # --------------------------------------------------------
-        if rank == 0:
-            shc_aux_full /= attr['nkpnts']
-            if prop == 'shc':
-                shc_aux_full *= cgs_conv
-            if prop == 'ree':
-                shc_aux_full *= bohr_to_cm
-        # --------------------------------------------------------
-        # Output
-        # --------------------------------------------------------
-        xzy = ['x', 'y', 'z']
-        if prop == 'shc':
-            spol, jpol, ipol = (tensor[0], tensor[1], tensor[2])
-            fname = f'SHC_ODD_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat'
-            unit1 = 'Energy [eV]'
-            unit2 = 'Chi [(hbar/e)(S/cm)]'
+    # reduce_full gives the sum over ALL k-points on rank 0.
+    aux_full = reduce_full(local_response, sroot=0)
+    local_response = None
+    if rank == 0:
+        # Since reduce_full has already summed over k,now divide by total k-points.
+        aux_full /= attr['nkpnts']
+        if prop in ('shc', 'ahc', 'cond'):
+            aux_full *= cgs_conv
         if prop == 'ree':
-            spol, ipol = (tensor[0], tensor[1])
-            fname = f'REE_EVEN_{xzy[spol]}{xzy[ipol]}.dat'
-            unit1 = 'Energy [eV]'
-            unit2 = 'Chi [hbar*(cm/V)]'
-        # data_controller.write_file_row_col(fname,ene,shc_aux_full)
-        data_controller.write_file_row_col_units(fname, ene, shc_aux_full, unit1, unit2)
-        shc_aux_full = None
-
-    # ============================================================
-    # CONDUCTIVITY
-    # ============================================================
-    if prop == 'cond':
-        nk, nbnd, nspin = arry['E_k'].shape
-        for ispin in range(nspin):
-            # oper_matrix1 = oper_matrix1[:, :, :, ispin]
-            # oper_matrix2 = oper_matrix2[:, :, :, ispin]
-            # ----------------------------------------------------
-            # Energy-independent part.
-            # Shape:(local_nk, nbnd)
-            # ----------------------------------------------------
-            aux_odd = np.zeros((nk, nbnd), dtype=float)
-            for ik in range(nk):
-                E = arry['E_k'][ik, :, ispin]
-                # NO SQUARE HERE
-                E_nm = E - E[:, None]
-                aux = oper_matrix1[ik, :, :, ispin] * oper_matrix2[ik, :, :, ispin].T
-                np.fill_diagonal(aux, 0.0)
-                # Minus sign for conductivity
-                aux = -2.0 * np.real(aux) * gamma * E_nm
-                aux /= (E_nm**2 + gamma**2) ** 2 + deltab**2
-                aux_odd[ik, :] = np.sum(aux, axis=1)
-                aux = None
-            # oper_matrix1 = None
-            # oper_matrix2 = None
-            # ----------------------------------------------------
-            # No (nk, esize) array.
-            # ----------------------------------------------------
-            local_response = np.zeros(len(ene), dtype=float)
-            for ie in range(len(ene)):
-                smear = intgaussian(arry['E_k'][:, :, ispin], ene[ie], arry['deltakp'][:, :, ispin])
-                local_response[ie] = np.sum(aux_odd * smear)
-                smear = None
-            aux_odd = None
-            # ----------------------------------------------------
-            # MPI reduction.
-            # ----------------------------------------------------
-            shc_aux_full = reduce_full(local_response, sroot=0)
-            local_response = None
-            # ----------------------------------------------------
-            # Global normalization and units.
-            # ----------------------------------------------------
-            if rank == 0:
-                shc_aux_full /= attr['nkpnts']
-                shc_aux_full *= cgs_conv
-            # ----------------------------------------------------
-            # Output
-            # ----------------------------------------------------
-            cpol, ipol = (tensor[0], tensor[1])
-            xzy = ['x', 'y', 'z']
-            if nspin == 1:
-                fname = f'Cond_{xzy[cpol]}{xzy[ipol]}.dat'
+            aux_full *= bohr_to_cm
+        if kind == 'surf':
+            if prop in ('shc', 'ree'):
+                aux_full /= (-2.0 * gamma) + deltab
             else:
-                fname = f'Cond_{xzy[cpol]}{xzy[ipol]}_ispin{ispin}.dat'
-            unit1 = 'Energy [eV]'
-            unit2 = 'Conductivity [S/cm]'
-            # data_controller.write_file_row_col(fname,ene,shc_aux_full)
-            data_controller.write_file_row_col_units(fname, ene, shc_aux_full, unit1, unit2)
-            shc_aux_full = None
-        oper_matrix1 = None
-        oper_matrix2 = None
+                aux_full /= (2.0 * gamma) + deltab
+
+    xzy = ['x', 'y', 'z']
+    even = kind == 'chi2'
+    if prop == 'shc':
+        spol, jpol, ipol = (tensor[0], tensor[1], tensor[2])
+        fname = f'SHC_{"EVEN" if even else "ODD"}_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat'
+        unit1 = 'Energy [eV]'
+        unit2 = 'Chi [(hbar/e)(S/cm)]'
+    elif prop == 'ree':
+        spol, ipol = (tensor[0], tensor[1])
+        fname = f'REE_{"ODD" if even else "EVEN"}_{xzy[spol]}{xzy[ipol]}.dat'
+        unit1 = 'Energy [eV]'
+        unit2 = 'Chi [hbar*(cm/V)]'
+    else:
+        cpol, ipol = (tensor[0], tensor[1])
+        stem = 'AHC' if prop == 'ahc' else 'Cond'
+        if nspin == 1:
+            fname = f'{stem}_{xzy[cpol]}{xzy[ipol]}.dat'
+        else:
+            fname = f'{stem}_{xzy[cpol]}{xzy[ipol]}_ispin{ispin}.dat'
+        unit1 = 'Energy [eV]'
+        unit2 = 'AH Conductivity [S/cm]' if prop == 'ahc' else 'Conductivity [S/cm]'
+    data_controller.write_file_row_col_units(fname, ene, aux_full, unit1, unit2)
+    aux_full = None
 
 
 def do_spin_current(data_controller=None, tensor=None):

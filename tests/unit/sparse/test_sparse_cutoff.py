@@ -80,7 +80,7 @@ def test_rcut_drops_only_long_bonds():
     """Every kept bond is inside the cutoff and every dropped one is not
     (up to the magnitude threshold, which is off here)."""
     dc = _make_dc(np.random.default_rng(3))
-    rcut = 18.0
+    rcut = 10.0
     sph = SparseHamiltonian.from_data_controller(dc, threshold=0.0, rcut=rcut)
     dist = _symmetric_distance(dc)
     triples = sph.R_int[sph.ridx]
@@ -105,7 +105,7 @@ def test_rcut_preserves_hermiticity():
     """
     for seed in (5, 6, 7):
         dc = _make_dc(np.random.default_rng(seed))
-        for rcut in (12.0, 18.0, 25.0):
+        for rcut in (4.0, 6.0, 8.0):
             sph = SparseHamiltonian.from_data_controller(dc, threshold=0.0, rcut=rcut)
             assert sph.hermiticity_error() < 1e-12, (seed, rcut)
             bonds = _bond_set(sph)
@@ -124,17 +124,18 @@ def test_rcut_commutes_with_doubling():
     """cutoff-then-double == double-of-cutoff, bond for bond.
 
     Doubling is a pure rearrangement of bond content, so applying the
-    cutoff at the base cell and then doubling must reproduce exactly what
-    the dense doubling kernel produces from the already-cut H(R).  This
+    cutoff at the base cell and then doubling must reproduce exactly the
+    bonds the dense doubling kernel produces from the already-cut H(R).  This
     is the property that lets rcut live at the single sanctioned
     dense->sparse boundary.
     """
     seed = 51
     dc = _make_dc(np.random.default_rng(seed))
-    rcut = 20.0
+    rcut = 9.0
     early = double_axis(
         SparseHamiltonian.from_data_controller(dc, threshold=0.0, rcut=rcut),
         0,
+        split_nyquist=False,
     )
 
     # dense reference: zero the cut entries in HRs, then run the real kernel
@@ -163,7 +164,13 @@ def test_rcut_commutes_with_doubling():
             continue  # explicit zero the sparse path never stored
         assert key in idx, key
         assert np.allclose(early.vals[idx[key]], late.vals[b], atol=1e-14)
-        assert np.allclose(early.dnm[idx[key]], late.dnm[b], atol=1e-14)
+
+    # dnm: double_axis keeps x_i - x_j of the doubled cell, where the dense
+    # kernel zeroes the cross-replica pairs, so it is checked against the
+    # orbital positions instead of the dense output
+    x = dc.data_dicts()[0]['Dnm'][:, 0, :]
+    x = np.concatenate((x, x + ALAT * A_VECTORS[0]))
+    assert np.allclose(early.dnm, x[early.rows] - x[early.cols], atol=1e-13)
 
 
 def test_rcut_eig_bound_is_a_bound():
@@ -171,10 +178,11 @@ def test_rcut_eig_bound_is_a_bound():
     magnitude threshold, since rcut is folded into the same keep mask."""
     dc = _make_dc(np.random.default_rng(23))
     exact = SparseHamiltonian.from_data_controller(dc, threshold=0.0)
-    trunc = SparseHamiltonian.from_data_controller(dc, threshold=0.0, rcut=15.0)
+    trunc = SparseHamiltonian.from_data_controller(dc, threshold=0.0, rcut=7.0)
     bound = trunc.drop_report['eig_bound']
     assert bound > 0.0
-    assert trunc.drop_report['rcut'] == 15.0
+    assert trunc.drop_report['rcut_requested'] == 7.0
+    assert trunc.drop_report['rcut'] <= 7.0 + 1.0e-3
     rng = np.random.default_rng(24)
     for _ in range(4):
         kfrac = rng.standard_normal(3)
@@ -198,7 +206,7 @@ def test_cutoff_must_be_applied_before_doubling():
     never be applied to a cell whose dnm has already been zeroed on
     cross-replica blocks (after which the bond vector is unrecoverable)."""
     dc = _make_dc(np.random.default_rng(41))
-    base = SparseHamiltonian.from_data_controller(dc, threshold=0.0, rcut=20.0)
+    base = SparseHamiltonian.from_data_controller(dc, threshold=0.0, rcut=7.0)
     assert not base._doubled
     doubled = double_axis(base, 0)
     assert doubled._doubled

@@ -119,6 +119,24 @@ def band_loop_H(data_controller, kq_aux):
     return Haux
 
 
+def set_band_path(data_controller, ibrav, band_path, high_sym_points, nk, write_QE_path):
+    """Store the path arguments of ``PAOFLOW.bands`` in the run data (dense and sparse)."""
+    arrays, attr = data_controller.data_dicts()
+    if ibrav is not None:
+        attr['ibrav'] = ibrav
+    if 'ibrav' not in attr and 'kq' not in arrays:
+        if band_path is None or high_sym_points is None:
+            if rank == 0:
+                print("Must specify the high-symmetry path, 'kq', or 'ibrav'")
+    if 'nk' not in attr:
+        attr['nk'] = nk
+    if band_path is not None:
+        attr['band_path'] = band_path
+    if high_sym_points is not None:
+        arrays['high_sym_points'] = high_sym_points
+    attr['write_QE_bands'] = write_QE_path
+
+
 def do_bands(data_controller):
     """Compute the electronic band structure along a k-path via Fourier interpolation.
 

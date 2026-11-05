@@ -9,6 +9,7 @@ order).
 import numpy as np
 import pytest
 
+import PAOFLOW.boltzmann.do_Boltz_tensors as boltz
 from PAOFLOW.boltzmann.do_Boltz_tensors import L_loop, L_loop_hall
 from PAOFLOW.utils.smearing import gaussian, metpax
 
@@ -41,6 +42,9 @@ def _make_data(nk, nbnd, nspin=1, seed=0):
 
 
 _TTENSOR = np.array([[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]])
+
+# 8 bytes * 5 bands * 21 energies * 3 k-points: blocks of 3, 3 and 2 of the 8 k-points
+_BLOCKS = [None, 8 * 5 * 21 * 3]
 
 
 def _ref_L(dc, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
@@ -133,7 +137,10 @@ def _ref_hall(dc, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
 
 @pytest.mark.parametrize('smearing', [None, 'gauss', 'm-p'])
 @pytest.mark.parametrize('alpha', [0, 1, 2])
-def test_L_loop_parity(smearing, alpha):
+@pytest.mark.parametrize('block_bytes', _BLOCKS)
+def test_L_loop_parity(smearing, alpha, block_bytes, monkeypatch):
+    if block_bytes:
+        monkeypatch.setattr(boltz, 'BLOCK_BYTES', block_bytes)
     dc, velkp = _make_data(8, 5, seed=3)
     ene = np.linspace(-4.0, 4.0, 21)
     ref = _ref_L(dc, 0.025, smearing, ene, velkp, _TTENSOR, alpha, 0)
@@ -142,7 +149,10 @@ def test_L_loop_parity(smearing, alpha):
 
 
 @pytest.mark.parametrize('smearing', [None, 'gauss', 'm-p'])
-def test_L_loop_hall_parity(smearing):
+@pytest.mark.parametrize('block_bytes', _BLOCKS)
+def test_L_loop_hall_parity(smearing, block_bytes, monkeypatch):
+    if block_bytes:
+        monkeypatch.setattr(boltz, 'BLOCK_BYTES', block_bytes)
     dc, velkp = _make_data(8, 5, seed=4)
     ene = np.linspace(-4.0, 4.0, 21)
     ref = _ref_hall(dc, 0.025, smearing, ene, velkp, _TTENSOR, 0, 0)

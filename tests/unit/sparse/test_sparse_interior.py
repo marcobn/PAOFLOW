@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from scipy.sparse import csr_matrix, diags
 
-from PAOFLOW.sparse.solver import count_in_window, solve_interior
+from PAOFLOW.sparse.solver import solve_interior
 
 
 def _hermitian(n, seed=0, density=0.05):
@@ -55,7 +55,6 @@ def test_count_matches_a_full_diagonalization():
     ev = _spectrum(H)
     elo, ehi = -1.5, 2.5
     expected = int(((ev >= elo) & (ev <= ehi)).sum())
-    assert count_in_window(H, elo, ehi) == expected
     E, _ = solve_interior(H, elo, ehi, hk_solver='sparse', k0=2)
     assert len(E) == expected
 

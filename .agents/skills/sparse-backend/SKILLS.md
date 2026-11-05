@@ -37,6 +37,13 @@ and computes properties from per-k iterative eigensolves.
      the degeneracy loop);
    - ONE per-k `(nawf, nawf)` scratch inside `solver._solve_dense`, freed
      on return, and only while `nawf <= dense_n_max` (4096 → ≤ 268 MB);
+   - when a property needs interband sums over every state
+     (`needs = {'full_spectrum'}`: band curvature / Hall transport, the
+     anomalous/spin/orbital Hall family, linear response, path Berry
+     curvature), the per-k `V` is `(nawf, nawf)` and the per-k matrices built
+     from it (`KPoint.pksp` `(3, nawf, nawf)`, operator pairs) live for that
+     k-point only; still bounded by `dense_n_max`, above which the pass raises
+     naming the Sternheimer follow-up;
    - the base-cell (pre-doubling) input stage: `Hks`/`HRs` at the small
      original `nawf` is inherently dense QE input processing; it is
      converted by `SparseHamiltonian.from_data_controller` (the **single
@@ -91,11 +98,15 @@ measured 1.11–1.31 s vs 0.53 s at n=1152).
 |---|---|
 | `method='dense'` / `'arpack'` | honoured verbatim (A/B validation) |
 | `nev + guard >= n - 1` | dense (no Krylov room) |
-| `nev + guard > n/8`, `n <= 4096` | dense |
-| `nev + guard > n/8`, `n > 4096` | loud `NotImplementedError` naming both exits |
+| `nev + guard > dense_ratio*n`, `n <= dense_n_max` | dense |
+| `nev + guard > dense_ratio*n`, `n > dense_n_max` | loud `NotImplementedError` naming both exits |
 | otherwise | arpack, unchanged |
 
-**What this costs**: the backend is capped at `nawf ≈ 4096`. Past it the
+`dense_ratio` (default 1/8) and `dense_n_max` (default 4096) are `sparse_config`
+keys; the defaults are policy values still to be calibrated by
+`benchmarks/sparse_scaling`.
+
+**What this costs**: by default the backend is capped at `nawf ≈ 4096`. Past it the
 per-k `(n, n)` scratch stops being cheap and `select_method` raises **by
 design** — `nx=3` (`nawf=9216`, 1.36 GB/rank, ~270 s/k) needs the
 distributed bond list flagged below plus a distributed eigensolver
@@ -111,36 +122,51 @@ folding, `Dnm` or `perturb_split` convention moved.
 ## Architecture map
 
 ```
-SparsePAOFLOW.py          driver; mirrors the dense PAOFLOW method names so an
-                          example script is a 2-line diff. Delegates input
-                          stages to a wrapped dense PAOFLOW; everything after
-                          pao_hamiltonian is sparse. Unknown methods raise
-                          NotImplementedError via __getattr__.
-sparse/hamiltonian.py     SparseHamiltonian: the bond list (rows, cols, ridx,
-                          vals, dnm) + fixed-pattern CSR assembly plan +
-                          hermitize() + compact(). The only data structure in
-                          the backend. Bond keys are packed into one int64
-                          (encode_bond/unique_R) rather than sorted as (n,5)
-                          void views -- same ordering, ~11x faster, 8 B/row.
+PAOFLOW.py                the only driver. Each public method has a role
+                          (sparse/dispatch.py): @sparse_override (engine method
+                          or registered property), @sparse_shared, @sparse_base_cell
+                          (densify -> dense body -> re-sparsify), or dense-only
+                          with a reason in DENSE_ONLY_REASONS.
+sparse/engine.py          SparseEngine: pipeline stages (pao_hamiltonian, doubling,
+                          windows, interpolation, bands), the mesh/path pass
+                          bookkeeping (_ensure_mesh, _run_path, fused(),
+                          run_base_cell), and __getattr__ -> property REGISTRY.
+sparse/properties/        one MeshProperty subclass per PAOFLOW property:
+                          on_k(KPoint) + finalize(dc), class attributes needs /
+                          products / interior / streaming / path / with_dnm /
+                          uses_mesh. The module docstring has the "adding a
+                          property" checklist. DenseBody = run the dense method
+                          after the pass (band-diagonal properties).
+sparse/kpoint.py          KPoint: one live k-point (E, V, hk, dhk, vel, delta) with
+                          lazily cached degen, pksp, d2hk, delta_all, delta2,
+                          project(op) -- shared by every consumer at that k.
+sparse/mesh.py            run_mesh: the fused BZ pass. Stores E_k/velkp/deltakp
+                          (+ d2Ed2k product) for the window; solves the full
+                          spectrum when a consumer needs it.
+sparse/bands.py           bands; prepare_path + run_path: the band-path pass
+                          (sign=+1, cart=True) for path properties.
+sparse/operators.py       Sj/Lj as lists of CSR matrices (base cell, doubled by
+                          doubling_attr_arry), projection_operator.
+sparse/hamiltonian.py     SparseHamiltonian: bond list + fixed-pattern CSR plan;
+                          assemble_derivatives(order=1|2, with_dnm) gives H, dH/dk
+                          and d2H/dk_i dk_j from one product.
 sparse/doubling.py        double_axis: O(nnz) index arithmetic replicating the
                           dense doubling kernel bond-for-bond.
-sparse/solver.py          solve_lowest: select_method dispatch (dense/ARPACK),
-                          shift-invert eigsh with a widened ncv, degenerate-
-                          group re-orthonormalization, retry ladder, loud
-                          failure. count_below for energy-window probes.
-sparse/bands.py           k-path eigenvalues (mirrors do_bands scaffolding).
-sparse/mesh.py            THE core: one fused pass over the BZ mesh producing
-                          E_k / velkp / deltakp and feeding per-k consumers.
-sparse/pdos.py            PdosConsumer: the model for every new property.
+sparse/solver.py          solve_lowest: dense/ARPACK dispatch, widened ncv,
+                          degenerate-group re-orthonormalization, loud failure.
+sparse/bridge.py          sparsify / densify: the single dense<->sparse boundary.
 ```
 
-Reused dense code, verbatim (never copied, never modified):
-`kpnts_interpolation_mesh`, `get_K_grid_fft(_crystal)`, `get_R_grid_fft`,
-`communication.scatter_full/gather_full`, `do_eigh.get_degeneracies`,
-`utils.smearing`, `do_dos.do_dos_adaptive`, `do_pdos._build_orbital_prefixes`,
-the whole Boltzmann stack (`do_transport`/`do_Boltz_tensors` via the existing
-`'velkp' in arrays` branch in `PAOFLOW.transport`), `doubling_attr_arry`,
-the `DataController` writers.
+Dense kernels are reused through **per-k functions split out of them**
+(the dense loop calls the same function, so its output is byte-identical):
+`momentum_k`, `adaptive_widths`, `band_curvature_k_ij`, `velocity_products_k`,
+`texture_k`, the `do_Hall` Berry/AC block functions, `eps_accumulate`,
+`ree_intra_products_k`, the `linear_response_eqn*` per-k and block sums,
+`ipr_k`, `accumulate_density_k`, the `do_topology`/`do_berry_curvature` path
+functions, `site_weights_k`, the `do_berry_phase` Wilson-loop steps; and
+their reduce/write halves. Band-diagonal dense bodies (Boltzmann stack,
+`do_dos_adaptive`, `do_effective_mass`, `do_doping`, `do_fermisurf`) run
+unchanged on the stored mesh arrays.
 
 ## Conventions that took real debugging to establish
 
@@ -196,6 +222,43 @@ are *plausibly wrong* — off by conventions, not by crashes.
   bug produced eV-scale errors that looked like "ARPACK can't do
   degeneracies". It can.
 
+## Gauge zones of the dense conventions (2026-10-04)
+
+Measured while porting the interband properties. They are properties of
+the dense kernels, reproduced faithfully, not sparse defects:
+
+- **Window-edge pairs.** `get_degeneracies(E, bnd)` drops a degenerate group
+  that straddles `bnd`, so its gauge is whatever the eigensolver returned
+  (zheevd dense, zheevr sparse). Through `get_degeneracies` on the rotated
+  velocities this decides whether bands far below, with velocity zero by
+  symmetry, form a "velocity-degenerate" block in `band_curvature_k_ij`:
+  O(10%) curvature changes there (64 of 4096 k on Si). The dielectric sums
+  agree to 3e-13 once those k are excluded.
+- **The non-projectable block.** Bands above `bnd` sit at `shift`, exactly
+  degenerate at every k and never rotated. Kernels summing over all `nawf`
+  (Hall, AC conductivity, intra-band REE, linear response) pick up their
+  gauge-random velocities (adaptive widths up to 1.6 eV on Fe) and in-block
+  Berry pairs (denominator only delta^2). The sparse window kernels
+  (conductivity, intra-band REE) sum over `bnd` and match dense truncated
+  to the window.
+- **Dense path kernels evaluate the raw base-grid HRs.** With one sign of R
+  on the folded Nyquist plane that H(k) is non-Hermitian off the mesh (0.2
+  eV on Fe 12^3, bands off by 47 meV). The bond list assembles the
+  Nyquist-split H(k), which is the zero-padded interpolant; the path tests
+  compare against dense kernels run on a hand-padded HRs.
+- **Z2 via Pf/sqrt(det)** depends on the sqrt branch, i.e. on the gauge;
+  on magnetic Fe even a 1e-13 change of H flips indicators.
+
+## Fused properties and run data
+
+Dense kernels read parameters from the run data (`attr['eminH']`,
+`attr['response']`, `arrays['s_tensor']`...), set by the dense method just
+before the kernel. Inside `fused()` all properties are set up before any
+runs, so the engine records each property's writes
+(`MeshProperty.remember_context`) and restores them before every `on_k` and
+`finalize` (`activate`). New properties get this for free as long as they
+set their run data in `__init__`/`prepare`.
+
 ## The environment landmine (read this even if you skip the rest)
 
 numpy < 2.3 under **CPython 3.14** silently corrupts large (> ~256 KB)
@@ -206,50 +269,25 @@ production-size runs are garbage. `pyproject.toml` pins
 `numpy>=2.3.2,<2.5` on 3.14. If results are structurally wrong and the code
 looks provably correct, check `numpy.__version__` before doubting the code.
 
-## Extending to a new property: the decision tree
+## Extending to a new property
 
-Ask, in order:
+Follow the checklist in `sparse/properties/__init__.py`: split the dense
+kernel into a per-k function and a reduce/write function (byte-identical,
+diffed), write a `MeshProperty`, mark the PAOFLOW method
+`@sparse_override`, add a parity test. Which kind of property it is:
 
-1. **Is the property a function of band-diagonal quantities only**
-   (`E_k`, `velkp`, `deltakp`, occupations)?
-   → Reuse the dense kernel verbatim, exactly like DOS and transport.
-   No sparse code needed at all; just make sure `_ensure_mesh()` ran.
-   Examples: Seebeck/σ/κ variants, carrier concentration, Fermi surface
-   from `E_k`.
+| kind | example | sparse side |
+| --- | --- | --- |
+| band-diagonal, stored arrays only | transport, effective_mass, doping | `DenseBody` (+ `products`) |
+| per-k eigenvector data, window bands | PDOS, textures, conductivity, dielectric | streaming `on_k` |
+| interband sums over every state | Hall family, linear response | `needs = {'full_spectrum'}` |
+| band path | berry_curvature, topology | `path = True` (`with_dnm` as the dense kernel) |
+| base-cell H(R) transform | add_external_fields, cutting | `@sparse_base_cell` |
+| genuinely dense (DFT phonons, Z2Pack) | phonons, mirror_chern_number | `DENSE_ONLY_REASONS` |
 
-2. **Does it need per-k eigenvector information, consumed additively over
-   k** (a BZ sum/integral)?
-   → Write a **consumer** (the `PdosConsumer` pattern): a class with
-   `on_k(ik, ispin, E, V, vel, delta)` that accumulates into a small
-   fixed-size array, and `finalize(dc)` that does `comm.Reduce`,
-   normalization, and file writing (mirror the dense kernel's tail
-   line-for-line, including filenames and normalization constants).
-   Register it in the `run_mesh` call. **Never store V; never return it.**
-   Examples: spin texture (needs `Sj` expectation values per k), orbital
-   projections, Berry-phase-free spectral functions.
-
-3. **Does it need interband matrix elements** `⟨n|Ô|m⟩` (epsilon, Berry
-   curvature, spin Hall, `deltakp2`-style interband smearing)?
-   → This is the first genuinely new machinery. The rule: compute the
-   `(nev, nev)` interband block **per k inside the consumer** as
-   `V† (O_sparse @ V)` — a tall-skinny sparse-matvec block plus a small
-   dense `(nev, nev)` product — accumulate the property, discard the block.
-   `(nev, nev)` per k is allowed (it is O(nev²), not O(nawf²)); an array of
-   them over k is **not**. The energy denominators / smearing come from `E`
-   and `delta` already in hand. Degenerate subspaces: reuse the
-   `perturb_split` convention (diagonalize the group block of the operator,
-   per direction independently — see `mesh.py`).
-
-4. **Does it need the Hamiltonian at perturbed/shifted k** (finite-difference
-   Berry curvature, effective mass by curvature)?
-   → Assembly is cheap and stateless: call `assemble_hk` at the shifted k
-   inside the consumer. Do not build auxiliary grids of stored H(k).
-
-5. **Does it genuinely need the full spectrum or full-BZ eigenvectors at
-   once** (exact diagonalization features, some topology invariants)?
-   → It does not fit this backend's contract. Say so with a loud
-   `NotImplementedError` in the driver stub rather than approximating
-   silently. The dense pipeline exists for systems that fit in memory.
+Per-k objects that are not k-indexed (`(nk, esize)` scans gathered for a
+bxsf, the previous point's occupied block of a Wilson loop) are allowed;
+an array of per-k `(nawf, nawf)` matrices is not.
 
 ## Dos
 
@@ -289,9 +327,15 @@ Ask, in order:
   implementation "went sparse" by wrapping the dense doubling — which is
   precisely the allocation that OOMs. `double_axis` exists; it is
   bond-for-bond identical (tested).
-- **Don't touch dense code.** The backend imports dense kernels; it never
-  edits them. If a dense kernel almost-fits, write the sparse counterpart
-  next to it (like `pdos.py`), don't add flags to the dense one.
+- **Don't copy dense kernels.** Split them: extract the per-k body and
+  the reduce/write tail into functions the dense kernel itself calls, and
+  prove the dense outputs byte-identical: run every affected dense property
+  from a `git worktree` of HEAD and from the working tree (example01 Si and
+  spin-orbit example04 Fe, one property per process since some kernels call
+  `comm.Abort()`) and `filecmp` every output file, `np.array_equal` every
+  `.npz`. This
+  *replaces* the earlier "don't touch dense code" rule; flags that change
+  dense behaviour are still out.
 - **Don't hermitize per k, per assembly, or inside doubling.** Hermitize is
   once, after all doubling, on the bond list. Doubling must stay raw to
   remain dense-parity-testable.
@@ -300,64 +344,96 @@ Ask, in order:
   the dense choice looks arbitrary. Reproducibility against dense is the
   product; physical elegance is not. Document oddities in docstrings
   instead.
-- **Don't add tolerance-gated validation.** The user's explicit decision:
-  end-to-end validation is *visual*, via
-  `examples/qe_examples/example01/compare_sparse.ipynb` only. Unit tests
-  guard component correctness (mechanisms, not outputs); keep that split.
+- **Tolerances bound measured noise, nothing else.** End-to-end validation
+  stays visual (the comparison notebook). Parity tests are index-wise and
+  tight away from degeneracies; where a dense convention is gauge-sensitive
+  they either feed both codes the same eigenvectors (mechanism tests) or
+  compare integrated files to a tolerance a few times the *measured*
+  difference, quoted in the test.
 - **Don't let `nev` creep toward `nawf`** in new features. The V block is
   O(nawf·nev) and the dense scratch O(nawf²); `nev` is what decides
   whether this backend scales. The old enforcement — `solve_lowest`
   raising at `nev + guard >= n-1` — is now a *dispatch trigger* rather
   than an error, so the mechanism no longer punishes creep. The intent
-  survives as a loud warning from `describe_method` whenever
-  `nev/nawf > 0.5`, and as `energy_window()` pushing in the other
-  direction. Neither is automatic: **sizing `nev` is still the caller's
-  job.**
+  survives as a log warning (`solver.creep_warning`) whenever
+  `nev/nawf > 0.5`, and the automatic window (below) pushes in the other
+  direction by sizing `nev` from the property ranges. A new property with
+  an energy range must declare it (`MeshProperty.energy_range`), or the
+  window cannot cover it.
 - **Don't name new test modules with basenames that exist elsewhere**
   (`test_hamiltonian.py` collides with the transport suite — pytest
   imports break). Prefix with `test_sparse_`.
 
 ## Known limits and the intended next steps
 
-- **`nev = bnd = nawf/2` is a milestone choice, not the destiny.**
-  `SparsePAOFLOW.energy_window(emin, emax, margin)` now sizes `nev` from
-  the property range instead: it probes `count_below(ehi)` (zheevr
-  `subset_by_value`, eigenvalues only) at 16 deterministic k-points, pads
-  by `max(8, 2%)`, and sets `attr['bnd'] = nev`. Coverage is guarded per
-  k-point and reduced once after the loop, so a short window raises with
-  the exact `nev` to re-run at rather than truncating silently.
-  **It must be called after `doubling_Hamiltonian()`** — `doubling_attr_arry`
-  doubles `attr['bnd']` on every call — and the driver raises if the order
-  is wrong.
-  Two honest caveats. `attr['bnd']` **changes meaning** (from "projectable
-  bands × cell multiplier" to "bands inside the window"), so `bands_*.dat`
-  gains or loses columns and is not column-comparable across runs with and
-  without a window; the downstream math is unaffected (`do_dos_adaptive`'s
-  two `bnd` factors cancel, transport slices are `bnd`-independent). And
-  the window is **not** a route back to "strictly sparse": the fraction of
+- **The solve window is derived per pass, never configured.**
+  `SparseEngine._resolve_window(props)` runs before every mesh, path and
+  band pass (`sparse/window.py` holds the arithmetic). Each property
+  declares `energy_range() -> (emin, emax, kind, tmax)`; the margin kinds
+  are `'smearing'` (4 x the largest adaptive width, estimated from the
+  steepest band at the probe points), `'thermal'` (10 kB tmax) and
+  `'none'`. From the bottom: `ehi = min(ptop, max(emax + margin))`; `nev`
+  is the projectable count when `ehi` reaches `ptop` (no probe), the given
+  `sparse_config['nev']`, or the probe count below `ehi` padded by
+  `max(8, 2%)` and **capped at the projectable count** (no k-point has more
+  real states; placeholders sit above `ptop`). `interior_window={}` wraps
+  the ranges with the same margins; explicit bounds clamp the ranges to the
+  window with the thermal margin only.
+  Rules that keep it correct:
+  - **Only a pass writes `attr['bnd']`** (`_ensure_mesh`, `_run_path`);
+    `_resolve_window` never does, and `_execute` restores the mesh pass's
+    `bnd` (`_mesh_bnd`) after a path pass with a different count.
+  - **`prepare()` runs after the window is known** (`_execute`), because an
+    interior clamp needs it; `merge_context` keeps what `prepare()` wrote
+    restorable by `activate()` inside `fused()`.
+  - **A new window with another `nev` invalidates stored products**
+    (`d2Ed2k` of pass 1 no longer matches `E_k` of pass 2).
+  - **The probe is collective and cached** until the Hamiltonian changes
+    (`run_base_cell` resets it). Probe points are Γ, the zone corners
+    (band extrema, for the count) and R3-sequence generic points (band
+    velocities vanish on symmetry points; strided mesh points
+    underestimated the steepest band by 34% on example01). It densifies
+    H(k), so from the bottom above `dense_n_max` it is skipped and `nev`
+    falls back to the projectable count.
+  - **Doubling after any pass raises**: `doubling_attr_arry` doubles
+    `attr['bnd']`, and a pass already sized it for the smaller cell.
+  The window is **not** a route back to "strictly sparse": the fraction of
   the spectrum below a fixed `emax` is scale-invariant under folding
   (43/144 = 344/1152 ≈ 0.30), so `nev/nawf` stays put as the cell grows and
-  stays above the 1/8 dispatch threshold. For a DOS-from-`emin` run the
-  dense branch is permanent. Only an *interior* window (shift-invert near
-  E_F, transport only) would change that, and that is a different solver.
+  stays above the 1/8 dispatch threshold. Only an interior window changes
+  that, and that is a different solver.
+- **`sparse.log` is key/value only.** Section titles, `log.field(key,
+  value)` lines and one-line `log.warning(...)` (stdout and log, rank 0). No
+  sentence explaining the algorithm goes in the log; put the reason in the
+  docstring of the function that writes the line. A key appears only when
+  it applies to the run. `test_sparse_log.py` enforces the format and a
+  list of banned prose phrases.
 - **The bond list is replicated per rank** (167 MB at 1e-4 here — fine).
   For very large systems, distribute bonds by rows and turn `assemble_hk`
   into a distributed operator for a distributed-memory solver. That is a
   large step; don't take it implicitly.
 - **Threshold semantics**: applied once, at the base cell, in eV, on
   `|H_ij(R)|`; doubling commutes with it (pure rearrangement — tested).
+  It does **not** preserve symmetry (Si 12³, 1e-3 alone: 55 meV
+  degeneracy splitting); say so wherever it is offered.
   Example01 sweep: 1e-3 → ~160 meV band error, 1e-4 → ~10 meV (at the
   Hermitization-convention floor), 1e-5 → ~9 meV. At the small base cell
   the bond list can exceed the dense array in bytes (44 B/bond); the win
   is that it grows ×2 per doubling while dense grows ×4 — don't panic at
   base-cell stats.
-- **`rcut` semantics** (optional, **default `None`**): a *second and
-  physically different* truncation axis — bond length
+- **`rcut` / `bond_order` semantics** (optional, **default `None`**): a
+  *different* truncation axis — bond length
   `|alat·R_cart + tau_i - tau_j|` in Bohr, not matrix-element magnitude.
-  The two interact, so a run with `rcut` set is **not** comparable with
-  one without, and the threshold sweep above no longer characterises the
-  truncation on its own. Both are folded into the same `keep` mask, so
-  the printed `eig_bound` covers both. Like `threshold` it must be
+  **Exclusive with a positive `hopping_threshold`** (the `sparse_config` key;
+  `SparseHamiltonian` and the archive still call it `threshold`;
+  `config.resolve_threshold`):
+  the geometric cut keeps whole atom-pair blocks by a length every
+  space-group op preserves, while an element threshold keeps different
+  elements of equivalent bonds and splits symmetry-protected degeneracies
+  (Si 12³, `bond_order=36`: 0 → 22 meV split with 1e-3 on top, for −38%
+  nnz). `threshold=None` therefore resolves to `0.0` with a geometric cut
+  and to `1e-3` without one. The cut is folded into the same `keep` mask,
+  so the printed `eig_bound` covers it. Like `threshold` it must be
   applied at the base cell: `double_axis` zeroes `dnm` on cross-replica
   blocks (deliberately — it replicates `block_diag(Dnm, Dnm)`), after
   which the true bond vector is unrecoverable. The container carries a
@@ -367,6 +443,26 @@ Ask, in order:
   maps onto `R` itself and the two partners have *different* lengths
   (tens of Bohr apart), so an unsymmetrized mask silently breaks
   Hermiticity. `test_sparse_cutoff.py` pins this.
+  **An explicit `rcut` is snapped** (`shells.snap_cutoff`) to
+  `start + distance_tol` of the outermost shell starting at or below
+  `rcut + distance_tol`, so it always sits in a shell gap, as `bond_order`
+  does. Without it, a radius on a shell distance keeps an arbitrary,
+  rounding-decided part of that shell and breaks symmetry. Shells are
+  grouped from the symmetrized `dist` array itself, not from `tau`, so the
+  snap also holds in tests whose `Dnm` is unrelated to `tau`. `drop_report`
+  carries both `rcut` (applied) and `rcut_requested`.
+  **Representable range, enforced by raising** (no warning-only mode): an
+  explicit `rcut` past `aliasing_safe_radius` raises (one grid value mixes
+  several bonds there; `bond_order` can't get there since shells are only
+  counted inside it). Separately, within `|tau_i - tau_j|` of that radius a
+  bond can be stored at a longer image than its shortest, because the
+  folding box picks `R` alone; `shells.misplaced_bond_length` finds the
+  shortest such bond (27-image search, per distinct `Dnm` row) and a cutoff
+  of *either* form reaching it raises, naming the max `bond_order`. Si fcc:
+  hits the outer 1–3 shells on 3,4,5,7,9³; nothing inside the safe radius on
+  even grids ≥ 6³ (12³: first one at 37.3 > 35.5 Bohr). The mask's
+  `(j,i,-R)` partner min is exactly the shortest-image rule for the Nyquist
+  plane, which is why Nyquist bonds are not counted as misplaced.
   No default value is blessed: the 20 Bohr figure that has been floated
   comes from slot-count geometry, not an accuracy sweep. Calibrate
   against `output/` at `nx=1` before adopting one.
