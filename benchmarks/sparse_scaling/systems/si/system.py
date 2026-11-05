@@ -119,7 +119,7 @@ SYSTEM = {
             # The window of the fused pass follows the property ranges
             'sparse_config': {'bond_order': 36, 'dense_n_max': 10**9},
             'properties': WINDOW_PROPERTIES,
-            'max_doublings': 8,
+            'max_doublings': 4,
         },
         # the full-spectrum pass: every state at every k-point, for the band
         # curvature (effective masses, Hall coefficient) and the interband
@@ -132,7 +132,7 @@ SYSTEM = {
             'sparse_config': {'bond_order': 36, 'dense_n_max': 10**9},
             'properties': CURVATURE_PROPERTIES,
             'property_args': {'transport': {'do_hall': True}},
-            'max_doublings': 8,
+            'max_doublings': 4,
         },
         'sparse_interior': {
             'sparse': True,
@@ -151,7 +151,7 @@ SYSTEM = {
                 'transport': {'emin': -1.2, 'emax': 1.7},
                 'conductivity': {'emin': -1.2, 'emax': 1.7},
             },
-            'max_doublings': 8,
+            'max_doublings': 4,
         },
         # Si PAO hoppings decay slowly: one row of H(k) holds ~8500 nonzeros
         # at bond_order=36 (rcut 32 Bohr) but ~890 at bond_order=8 (15 Bohr),
@@ -159,6 +159,7 @@ SYSTEM = {
         # ladder measures the truly sparse regime; its accuracy cost shows in
         # the per-cell comparison with the reference.
         'sparse_interior_bo8': {
+            'enabled': False,
             'sparse': True,
             'sparse_config': {
                 'bond_order': 8,
@@ -176,7 +177,7 @@ SYSTEM = {
     # per-k solver sweep: LAPACK against ARPACK at fixed n over nev/n, to
     # calibrate dense_ratio, and the per-k scratch memory of each kernel
     'solver_sweep': {
-        'enabled': True,
+        'enabled': False,
         'doublings': [3, 5, 7, 8],
         'nev_fractions': [0.01, 0.02, 0.05, 0.10, 0.125, 0.20, 0.30, 0.50],
         'nk_probe': 3,
