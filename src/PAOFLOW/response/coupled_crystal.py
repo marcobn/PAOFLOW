@@ -31,6 +31,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+
+from ..utils.parallel_resources import core_budget
 from numpy.typing import NDArray
 
 from .coupled_response import HARTREE_EV, lda_kernels
@@ -137,7 +139,11 @@ def sphere_to_grid(
     n = coeff.shape[0]
     box = np.zeros((n,) + tuple(nr), dtype=complex)
     box[:, mill[0] % nr[0], mill[1] % nr[1], mill[2] % nr[2]] = coeff
-    u = sfft.ifftn(box, axes=(1, 2, 3), workers=-1) * (float(np.prod(nr)) / np.sqrt(float(omega)))
+    # FFT workers within this rank's core budget (workers=-1 took every core of the node per rank)
+    workers = core_budget()
+    u = sfft.ifftn(box, axes=(1, 2, 3), workers=workers) * (
+        float(np.prod(nr)) / np.sqrt(float(omega))
+    )
     return np.ascontiguousarray(u.reshape(n, -1).T)
 
 
