@@ -247,6 +247,9 @@ class PeriodicKernel:
             self.f_xc, self.g_xc = lda_kernels(
                 np.asarray(n0, dtype=float).reshape(-1), threshold=density_threshold
             )
+        #: the kernel acts on the induced density on the grid (Hartree G != 0 or ALDA); a
+        #: long-range term alone only needs the macroscopic polarization
+        self.grid_active = self.hartree or self.f_xc is not None
         parts = []
         if hartree:
             parts.append('hartree')
@@ -485,12 +488,21 @@ def first_order_crystal(
             dP[ik] = c[ik] * V_band_fn(ik)
         return dP
 
+    grid = kernel.grid_active
+
+    def density_polarization(dP):
+        # the first-order density matrix has no diagonal (populations): Tr[r dP] is the full
+        # macroscopic polarization; the density is only needed by a grid kernel
+        if grid:
+            return ch.density_and_polarization(dP)
+        return np.zeros(nr_tot, dtype=complex), ch.polarization_of(dP)
+
     def induced(X):
         dn, P = X[:nr_tot], X[nr_tot:]
-        V_grid = kernel.apply_density(dn)
+        V_grid = kernel.apply_density(dn) if grid else None
 
         def V_band(ik):
-            V = ch.band_potential(V_grid, ik)
+            V = ch.band_potential(V_grid, ik) if grid else 0.0
             if kernel.lrc_alpha:
                 V = V + kernel.lrc_alpha * np.einsum('a,aij->ij', P, ch.position[ik])
             return V
@@ -505,13 +517,13 @@ def first_order_crystal(
             'polarization': ch.polarization_of(dP0),
             'iterations': 0,
         }
-    dn0, P0 = ch.density_and_polarization(dP0)
+    dn0, P0 = density_polarization(dP0)
     X0 = np.concatenate([dn0, P0])
 
     def matvec(X):
         count[0] += 1
         dP = induced(X)
-        dn, P = ch.density_and_polarization(dP)
+        dn, P = density_polarization(dP)
         return X - np.concatenate([dn, P])
 
     op = LinearOperator((X0.size, X0.size), matvec=matvec, dtype=complex)
@@ -522,8 +534,8 @@ def first_order_crystal(
     if info != 0:
         raise RuntimeError('crystal response did not converge (GMRES info %d)' % info)
     dP = dP0 + induced(X)
-    dn, P = ch.density_and_polarization(dP)
-    return {'dP': dP, 'density': dn, 'polarization': P, 'iterations': count[0]}
+    dn, P = density_polarization(dP)
+    return {'dP': dP, 'density': dn if grid else None, 'polarization': P, 'iterations': count[0]}
 
 
 def dielectric_function_crystal(
@@ -643,16 +655,27 @@ def second_order_crystal(
     c2 = fnm[None] / d2
     nr_tot = int(np.prod(ch.nr))
     active = kernel.label != 'none'
+    grid = active and kernel.grid_active
     alpha = kernel.lrc_alpha if active else 0.0
     V_grid = (
         {
             'b': kernel.apply_density(first_b['density']),
             'c': kernel.apply_density(first_c['density']),
         }
-        if active
+        if grid
         else {}
     )
-    V_g = kernel.second_order_density(first_b['density'], first_c['density']) if active else None
+    V_g = kernel.second_order_density(first_b['density'], first_c['density']) if grid else None
+
+    def density_polarization(dP):
+        # the macroscopic polarization of a second-order density matrix is the one of its
+        # current, J/(-2 i omega): the diagonal (population) part carries the intraband
+        # polarization that Tr[r_inter dP] misses; the density on the grid only for a grid
+        # kernel.  _current_polarization carries the e > 0 output convention (-1): the field
+        # alpha P of the kernel needs the physical sign of the first-order solve
+        dn = ch.density_and_polarization(dP)[0] if grid else np.zeros(nr_tot, dtype=complex)
+        return dn, -_current_polarization(ch, dP, w)
+
     P1 = {'b': first_b['dP'], 'c': first_c['dP']}
     pol1 = {'b': first_b['polarization'], 'c': first_c['polarization']}
     dirs = {'b': int(b), 'c': int(c)}
@@ -666,18 +689,29 @@ def second_order_crystal(
             a_ = dirs[lab]
             Vt[lab] = r[a_].copy()
             Vd[lab] = ch.position_derivative[ik][:, a_].copy()  # [direction] -> r^a_{;direction}
-            if active:
-                dV = ch.band_potential(V_grid[lab], ik)
-                if alpha:
-                    dV = dV + alpha * np.einsum('a,aij->ij', pol1[lab], r)
-                Vt[lab] = Vt[lab] + dV
+            if grid:
+                Vt[lab] = Vt[lab] + ch.band_potential(V_grid[lab], ik)
                 Vd[lab] = Vd[lab] + ch.band_potential_derivative(V_grid[lab], ik, derivative_step)
+            if active:
+                if alpha:
+                    # macroscopic field alpha P of the long-range kernel: alpha P.r and its
+                    # covariant derivative alpha P_b r^b_{;d}, the same dressing as the grid potential
+                    Vt[lab] = Vt[lab] + alpha * np.einsum('a,aij->ij', pol1[lab], r)
+                    Vd[lab] = Vd[lab] + alpha * np.einsum(
+                        'b,dbij->dij', pol1[lab], ch.position_derivative[ik]
+                    )
         dd = d1[ik]
         D = {}
         for lab, other in (('c', 'b'), ('b', 'c')):
-            a_ = dirs[other]
-            comm_v = vin[a_] @ Vt[lab] - Vt[lab] @ vin[a_]
-            D[lab] = fnm * (Vd[lab][a_] / dd + comm_v / dd**2)
+            # derivative of leg `lab` along the macroscopic field of the other leg: the bare
+            # axis plus, with the long-range kernel, alpha times its induced polarization
+            e_eff = np.zeros(3, dtype=complex)
+            e_eff[dirs[other]] = 1.0
+            if alpha:
+                e_eff = e_eff + alpha * pol1[other]
+            v_eff = np.einsum('d,dij->ij', e_eff, vin)
+            comm_v = v_eff @ Vt[lab] - Vt[lab] @ v_eff
+            D[lab] = fnm * (np.einsum('d,dij->ij', e_eff, Vd[lab]) / dd + comm_v / dd**2)
         Pb, Pc = P1['b'][ik], P1['c'][ik]
         S = 0.5 * (Vt['b'] @ Pc - Pc @ Vt['b'] + Vt['c'] @ Pb - Pb @ Vt['c']) + 0.5j * (
             D['c'] + D['b']
@@ -686,12 +720,14 @@ def second_order_crystal(
         P_block[ik] = np.where(vv, Q, 0.0) - np.where(oo, Q, 0.0)
         S_e[ik] = np.where(oo | vv, 0.0, S / d2[ik])
     if active:
-        dn_blk, P_blk = ch.density_and_polarization(P_block)
-        Vb_grid = kernel.apply_density(dn_blk)
-        if V_g is not None:
-            Vb_grid = Vb_grid + 0.5 * V_g
+        dn_blk, P_blk = density_polarization(P_block)
+        Vb_grid = None
+        if grid:
+            Vb_grid = kernel.apply_density(dn_blk)
+            if V_g is not None:
+                Vb_grid = Vb_grid + 0.5 * V_g
         for ik in range(ch.nk_local):
-            Vk = ch.band_potential(Vb_grid, ik)
+            Vk = ch.band_potential(Vb_grid, ik) if grid else 0.0
             if alpha:
                 Vk = Vk + alpha * np.einsum('a,aij->ij', P_blk, ch.position[ik])
             S_e[ik] = S_e[ik] + c2[ik] * Vk
@@ -699,22 +735,22 @@ def second_order_crystal(
 
     def induced(X):
         dn, P = X[:nr_tot], X[nr_tot:]
-        Vg = kernel.apply_density(dn)
+        Vg = kernel.apply_density(dn) if grid else None
         out = np.empty_like(c2)
         for ik in range(ch.nk_local):
-            Vk = ch.band_potential(Vg, ik)
+            Vk = ch.band_potential(Vg, ik) if grid else 0.0
             if alpha:
                 Vk = Vk + alpha * np.einsum('a,aij->ij', P, ch.position[ik])
             out[ik] = c2[ik] * Vk
         return out
 
     if active:
-        dn0, P0 = ch.density_and_polarization(S_e)
+        dn0, P0 = density_polarization(S_e)
         X0 = np.concatenate([dn0, P0])
 
         def matvec(X):
             count[0] += 1
-            dn, P = ch.density_and_polarization(induced(X))
+            dn, P = density_polarization(induced(X))
             return X - np.concatenate([dn, P])
 
         op = LinearOperator((X0.size, X0.size), matvec=matvec, dtype=complex)
@@ -729,6 +765,20 @@ def second_order_crystal(
         dP = S_e + induced(X) + P_block
     else:
         dP = S_e + P_block
+    return {'dP': dP, 'polarization': _current_polarization(ch, dP, w), 'iterations': count[0]}
+
+
+def _current_polarization(ch: CrystalChannel, dP: NDArray, w: float) -> NDArray[np.complex128]:
+    r"""Macroscopic polarization :math:`P_a = J_a/(-2i\omega)` of a second-order density matrix.
+
+    The current :math:`J_a = -\sum_k w_k\,{\rm Tr}[\delta P\, v^a]/\Omega` uses the interband
+    velocity :math:`v^a_{nm} = i\omega_{nm} r^a_{nm}` and the intraband (diagonal) velocity; the
+    latter carries the polarization of the population changes, absent from
+    :math:`{\rm Tr}[r_{\rm inter}\,\delta P]`.  Sign convention of
+    :func:`~PAOFLOW.response.nonlinear_optics.nonlinear_optical_spectra` (the charge enters as
+    :math:`e^3` with :math:`e > 0`): the electronic polarization (charge -1) is multiplied by -1.
+    """
+    e = ch.energies
     J = np.zeros(3, dtype=complex)
     for ik in range(ch.nk_local):
         om = e[ik][:, None] - e[ik][None, :]  # omega'_nm
@@ -738,9 +788,7 @@ def second_order_crystal(
             J[a_] -= ch.weights[ik] * np.einsum('nm,mn->', dP[ik], v)
     ch.allreduce(J)
     J /= ch.omega
-    # sign convention of nonlinear_optical_spectra (the charge enters as e^3 with e > 0): the
-    # electronic polarization computed here (charge -1) is multiplied by -1
-    return {'dP': dP, 'polarization': -J / (-2.0j * w), 'iterations': count[0]}
+    return -J / (-2.0j * w)
 
 
 #: chi^(2) in pm/V per atomic unit (P = eps0 chi E E; e^3 / (eps0 E_h^2) = 24.43 pm/V)

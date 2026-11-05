@@ -499,6 +499,24 @@ two-orbital polar crystal on 6³): with the kernel off the real parts of five co
 `nonlinear_optical_spectra` to 0.05–0.4 % off resonance and 1–4 % near the $2\omega$ resonance; the
 imaginary parts differ off resonance by the damping placement (a few per cent of the dominant component).
 
+**Long-range kernel at second order** (fixed 4 November 2026, after the GaAs decomposition showed the
+bootstrap and LRC terms *reducing* $\chi^{(2)}$ by exactly the inverse of the linear enhancement). The
+macroscopic field $\alpha\mathbf P$ dresses each first-order leg completely: the potential
+$\alpha\,\mathbf P^{(1)}_b\cdot\mathbf r$, its covariant derivative $\alpha\,P^{(1)}_{b,d}\,r^d_{;a}$, and the
+*direction* of the derivative of the other leg, which is the effective field
+$\hat e_b + \alpha\mathbf P^{(1)}_b$ (the intraband velocity and $r_{;}$ are contracted with it), so that the
+source is the kernel-off bilinear form evaluated at the two effective fields. The $2\omega$ feedback uses the
+macroscopic polarization of the current, $J/(-2i\omega)$ with the physical sign (the first-order solve's
+convention; the e > 0 output convention of `nonlinear_optical_spectra` is applied only to the result): the
+population (diagonal) part of $\delta P^{(2)}$ carries an intraband polarization that
+${\rm Tr}[r_{\rm inter}\delta P^{(2)}]$ misses (a third of the total on the test crystal). With an LRC-only
+kernel the result must be $\chi^{(2)}_{\rm LRC} = F(2\omega)\,\chi^{(2)}_0\,F(\omega)F(\omega)$ with
+$F = (1 - \alpha\chi^{(1)})^{-1}$: the dressing reproduces $\chi^{(2)}_0 F F$ to $10^{-13}$ and the feedback
+$F(2\omega)\chi^{(2)}_0$ to $0.4\,\%$ at $\eta = 5$ meV ($4\,\%$ at 50 meV, linear in $\eta$ and independent of the
+grid: the current- and position-based polarizations of the $2\omega$ response differ by $O(\eta)$),
+`test_long_range_kernel_second_order_closed_form`. Grid-only kernels (Hartree, ALDA) do not use the
+macroscopic polarization and were not affected; an LRC-only kernel (`grid_active` False) skips the density.
+
 **Limits.** One spin channel, norm-conserving; full k-grid (the induced density breaks the point group); the
 bootstrap is the head-only form (one number), the full $\mathbf G\mathbf G'$ body is not implemented; the
 second-order kernel dressing is validated with the kernel off (the GaAs decomposition is the next run).

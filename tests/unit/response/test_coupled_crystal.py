@@ -191,3 +191,45 @@ def test_kernel_off_shg_matches_the_independent_particle_driver():
             scale = np.abs(ref['shg'][:, ie]).max()
             assert abs(m.real - r.real) < 0.01 * scale, (cmp, ie, m, r)
             assert abs(m.imag - r.imag) < 0.15 * scale, (cmp, ie, m, r)
+
+
+def test_long_range_kernel_second_order_closed_form():
+    """LRC-only chi2 = F(2w) chi2_0 F(w) F(w), F = (1 - alpha chi1)^-1 (macroscopic field alpha P).
+
+    The dressing of the first-order legs (potential, its covariant derivative and the derivative
+    direction) is exact; the 2w feedback uses the current-based polarization and differs from the
+    position-based chi1 by O(eta), hence the small eta."""
+    HRs, at, alat, omega, pos = _polar_crystal()
+    nk, w, eta, alpha = (4, 4, 4), 0.3, 0.005, 5.0
+    ch = cc.channel_from_HRs(
+        HRs, at, alat, omega, pos, 2.0, nk, scissor_ev=0.0, degeneracy_tol=1e-6
+    )
+    k0 = cc.PeriodicKernel((1, 1, 1), at * alat, omega, hartree=False)
+    kl = cc.PeriodicKernel((1, 1, 1), at * alat, omega, hartree=False, lrc_alpha=alpha)
+    assert not kl.grid_active and kl.label == 'lrc(5.000)'
+    chi1 = (cc.dielectric_function_crystal(ch, k0, [w, 2 * w], eta)['epsilon'] - np.eye(3)) / (
+        4 * np.pi
+    )
+    F1 = np.linalg.inv(np.eye(3) - alpha * chi1[0])
+    F2 = np.linalg.inv(np.eye(3) - alpha * chi1[1])
+    comps = [(a, b, c) for a in range(3) for b in range(3) for c in range(3)]
+    c0 = cc.shg_crystal(ch, k0, comps, [w], eta)['chi_au'][:, 0].reshape(3, 3, 3)
+    cl = cc.shg_crystal(ch, kl, comps, [w], eta)['chi_au'][:, 0].reshape(3, 3, 3)
+    closed = np.einsum('aA,Abc,bB,cC->aBC', F2, c0, F1, F1)
+    assert np.linalg.norm(cl - c0) > 0.5 * np.linalg.norm(c0)  # a strong enhancement (F ~ 1.4)
+    assert np.linalg.norm(cl - closed) < 2.0e-2 * np.linalg.norm(closed)
+    # the dressing alone is exact: dressed first-order legs, negligible feedback
+    wh, eh = w / cc.HARTREE_EV, eta / cc.HARTREE_EV
+    tiny = cc.PeriodicKernel((1, 1, 1), at * alat, omega, hartree=False, lrc_alpha=1e-12)
+    first = {b: cc.first_order_crystal(ch, kl, b, wh, eh) for b in range(3)}
+    dressed = {
+        b: dict(first[b], polarization=first[b]['polarization'] * (alpha / 1e-12)) for b in range(3)
+    }
+    cB = np.array(
+        [
+            cc.second_order_crystal(ch, tiny, 0, c, wh, eh, dressed[0], dressed[c])['polarization']
+            for c in range(3)
+        ]
+    ).T
+    closedB = np.einsum('abc,bB,cC->aBC', c0, F1, F1)[:, 0, :]
+    assert np.allclose(cB, closedB, rtol=1e-8, atol=1e-10)
