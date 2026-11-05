@@ -76,7 +76,7 @@ def test_nev_too_close_to_n_raises_when_sparse_is_forced():
     rng = np.random.default_rng(11)
     H, _ = _random_sparse_hermitian(rng, 30)
     with pytest.raises(NotImplementedError):
-        solve_lowest(H, 28, guard=4, hk_solver='sparse')
+        solve_lowest(H, 28, hk_solver='sparse')
 
 
 def test_nev_too_close_to_n_dispatches_dense():
@@ -84,7 +84,7 @@ def test_nev_too_close_to_n_dispatches_dense():
     rng = np.random.default_rng(11)
     H, A = _random_sparse_hermitian(rng, 30)
     assert select_hk_solver(30, 28)[0] == 'dense'
-    E, V = solve_lowest(H, 28, guard=4)
+    E, V = solve_lowest(H, 28)
     assert np.allclose(E, np.linalg.eigvalsh(A)[:28], atol=1e-10)
     assert V.shape == (30, 28)
 
@@ -122,7 +122,7 @@ def test_select_hk_solver_rule():
     # no Krylov room at all
     assert select_hk_solver(100, 97)[0] == 'dense'
     # past the ratio and past dense_n_max: loud, naming both exits
-    with pytest.raises(NotImplementedError, match='energy_window'):
+    with pytest.raises(NotImplementedError, match="'nev'"):
         select_hk_solver(9216, 4608)
     # explicit choices are honoured verbatim, including ones auto would refuse
     assert select_hk_solver(9216, 4608, hk_solver='dense')[0] == 'dense'
@@ -215,28 +215,11 @@ def test_degenerate_block_is_orthonormal(hk_solver):
 
 
 def test_dense_ignores_v0_and_returns_contiguous():
-    """v0/tol/sigma/guard are ARPACK-only; the dense branch must accept and
-    ignore them, and hand back a C-contiguous block (zheevr does not)."""
+    """v0 is ARPACK-only; the dense branch must accept and ignore it, and
+    hand back a C-contiguous block (zheevr does not)."""
     rng = np.random.default_rng(13)
     H, A = _random_sparse_hermitian(rng, 120)
     nev = 60
-    E, V = solve_lowest(
-        H, nev, hk_solver='dense', v0=rng.standard_normal(120), tol=1e-3, sigma=-99.0
-    )
+    E, V = solve_lowest(H, nev, hk_solver='dense', v0=rng.standard_normal(120))
     assert V.flags['C_CONTIGUOUS']
     assert np.allclose(E, np.linalg.eigvalsh(A)[:nev], atol=1e-10)
-
-
-def test_count_below_matches_dense_count():
-    from PAOFLOW.sparse.solver import count_below
-
-    rng = np.random.default_rng(19)
-    H, A = _random_sparse_hermitian(rng, 150)
-    ref = np.linalg.eigvalsh(A)
-    # midpoints between eigenvalues: an ehi placed exactly on an eigenvalue is
-    # a coin flip at the last bit (LAPACK's range is half-open and its own
-    # eigenvalue differs from numpy's in the final ulp), and a real energy
-    # window never lands there
-    probes = [ref[0] - 1.0, 0.5 * (ref[36] + ref[37]), 0.5 * (ref[99] + ref[100]), ref[-1] + 1.0]
-    for ehi in probes:
-        assert count_below(H, ehi) == int((ref <= ehi).sum())

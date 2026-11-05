@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Any
+
 import numpy as np
 
 # Fixed generic direction: the common basis of a degenerate subspace diagonalises dH/dk along it.
@@ -55,6 +60,41 @@ def momentum_in_eigenbasis(dhk: np.ndarray, v_k: np.ndarray, degen: list) -> np.
     for lo, hi in blocks:
         for l in range(3):
             pk[l, lo:hi, lo:hi] = np.diag(np.linalg.eigvalsh(pk[l, lo:hi, lo:hi]))
+    return pk
+
+
+def momentum_k(dhk: Sequence[Any], v_k: np.ndarray, degen: list[np.ndarray]) -> np.ndarray:
+    """Momentum matrix elements in the Bloch eigenstate basis at one k-point.
+
+    Parameters
+    ----------
+    dhk : sequence of np.ndarray or scipy.sparse matrix
+        The three Cartesian derivatives ``dH/dk_l``, each ``(nawf, nawf)``.
+    v_k : np.ndarray, shape ``(nawf, m)``
+        Eigenvectors at this k-point (columns).
+    degen : list of np.ndarray
+        Degenerate band groups at this k-point, as from
+        :func:`~PAOFLOW.spectrum.do_eigh.get_degeneracies`.
+
+    Returns
+    -------
+    np.ndarray, shape ``(3, m, m)``, complex
+        :math:`p^l_{nm} = \\langle n | \\partial H/\\partial k_l | m \\rangle`,
+        each direction projected by :func:`perturb_split` and Hermitized.
+
+    Notes
+    -----
+    The per-k body of :func:`do_momentum`, which loops over it; the sparse
+    backend calls it with CSR operators.
+    """
+    from ..utils.perturb_split import perturb_split
+
+    m = v_k.shape[1]
+    pk = np.zeros((3, m, m), dtype=complex)
+    for l in range(3):
+        pk[l], _ = perturb_split(dhk[l], dhk[l], v_k, degen)
+        #  impose hermiticity
+        pk[l] = (pk[l] + np.conj(pk[l].T)) / 2.0
     return pk
 
 

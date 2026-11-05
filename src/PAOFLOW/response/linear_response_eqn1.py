@@ -144,6 +144,48 @@ def calc_chi1(data_controller=None, tensor=None):
             )
             prop_aux[:, ispin] += surface_kernel(arry['E_k'][ks, :, ispin], pair, ene, gamma)[0]
 
+    oper_matrix1 = None
+    oper_matrix2 = None
+    eqn1_finish(data_controller, prop_aux, ene, tensor)
+
+
+def eqn1_response_k(op1, op2, E_k, ene, gamma):
+    """Equation (1) contribution of one k-point and spin, on the energy grid.
+
+    Parameters
+    ----------
+    op1, op2 : np.ndarray, shape ``(nbnd, nbnd)``, complex
+        The two operators in the band basis (``perturb_split``).
+    E_k : np.ndarray, shape ``(nbnd,)``
+        Every eigenvalue at this k-point.
+    ene : np.ndarray, shape ``(ne,)``
+    gamma : float
+        Lorentzian broadening.
+
+    Returns
+    -------
+    np.ndarray, shape ``(ne,)``
+        :math:`\\pi \\sum_{nm} L_n \\mathrm{Re}[O_{1,nm} O_{2,mn}] L_m`, the one-k
+        :func:`~PAOFLOW.response.kubo_kernels.surface_kernel` of the dense loop.
+    """
+    return surface_kernel(E_k, op1 * op2.T, ene, gamma)[0]
+
+
+def eqn1_finish(data_controller, prop_aux, ene, tensor):
+    """Reduce, normalize and write the equation (1) response of one tensor component.
+
+    Parameters
+    ----------
+    prop_aux : np.ndarray, shape ``(ne, nspin)``
+        This rank's sum of :func:`eqn1_response_k` over its k-points.
+    """
+    arry, attr = data_controller.data_dicts()
+    if attr['response'] == 'shc':
+        spol, jpol, ipol = tensor
+    else:
+        cpol, ipol = tensor
+        spol = cpol
+
     # ============================================================
     # MPI REDUCTION
     # IMPORTANT: This is a SUM, NOT a gather.
@@ -190,8 +232,6 @@ def calc_chi1(data_controller=None, tensor=None):
     # ============================================================
     # Free memory
     # ============================================================
-    oper_matrix1 = None
-    oper_matrix2 = None
     prop_aux_full = None
 
 
@@ -200,3 +240,46 @@ def spin_current(data_controller=None, tensor=None) -> np.ndarray:
     from .do_Hall import do_spin_current as spin_current_operator
 
     return spin_current_operator(data_controller, tensor[0], tensor[1])
+
+
+def linear_response_tensors(
+    arry: dict,
+    response: str,
+    a_tensor: list | np.ndarray | None,
+    s_tensor: list | np.ndarray | None,
+) -> None:
+    """Set ``ree_tensor`` and ``shc_tensor`` of ``PAOFLOW.linear_response`` (dense and sparse).
+
+    Parameters
+    ----------
+    arry : dict
+        DataController arrays; ``a_tensor``/``s_tensor`` of an earlier ``anomalous_Hall``/
+        ``spin_Hall`` are the fallbacks.
+    response : {'shc', 'ree', 'cond', 'ahc'}
+    a_tensor, s_tensor : array_like or None
+        The components given to ``linear_response``.
+
+    Raises
+    ------
+    ValueError
+        No tensor given for ``response`` and none stored by an earlier call.
+
+    Notes
+    -----
+    Each tensor list falls back to the one stored by an earlier call only when it is not given
+    here. Until 14 Nov 2026 ``a_tensor`` was read only when ``s_tensor`` was also given.
+    """
+    if a_tensor is not None:
+        arry['ree_tensor'] = np.array(a_tensor)
+    elif response != 'shc':
+        if 'a_tensor' not in arry:
+            raise ValueError(f"linear_response(response='{response}') needs a_tensor")
+        arry['ree_tensor'] = arry['a_tensor']
+
+    if s_tensor is not None:
+        arry['shc_tensor'] = np.array(s_tensor)
+    elif response == 'shc':
+        if 's_tensor' not in arry:
+            raise ValueError("linear_response(response='shc') needs s_tensor")
+        # spin_Hall stores (current, field, spin); this method reads (spin, current, field)
+        arry['shc_tensor'] = np.atleast_2d(arry['s_tensor'])[:, [2, 0, 1]]

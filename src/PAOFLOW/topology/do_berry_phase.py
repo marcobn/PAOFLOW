@@ -41,10 +41,16 @@ def occupied_band_count(arry: dict, attr: dict) -> int:
     the Wilson loops took the lowest ``nelec`` bands, twice the occupied subspace of a
     spin-degenerate system.
     """
-    nawf, nspin = arry['HRs'].shape[0], arry['HRs'].shape[-1]
+    nawf = _orbital_count(arry, attr)
+    nspin = arry['HRs'].shape[-1] if 'HRs' in arry else attr['nspin']
     if nspin == 2:
         from ..response.nonlinear_optics import channel_electron_counts
 
+        if 'HRs' not in arry:
+            raise ValueError(
+                'the occupied bands of a collinear spin-polarized run are counted from HRs, '
+                'which the sparse backend does not keep: pass the band indices with sub=[...]'
+            )
         count = channel_electron_counts(arry['HRs'])[0]
     else:
         spin_factor = 1.0 if attr.get('dftSO', False) else 2.0
@@ -58,6 +64,11 @@ def occupied_band_count(arry: dict, attr: dict) -> int:
     if not 0 < nocc <= nawf:
         raise ValueError(f'{nocc} occupied bands of {nawf}: check nelec')
     return nocc
+
+
+def _orbital_count(arry: dict, attr: dict) -> int:
+    """Number of orbitals: from ``HRs``, or ``nawf`` when the sparse backend has released it."""
+    return arry['HRs'].shape[0] if 'HRs' in arry else int(attr['nawf'])
 
 
 def orbital_fractional_positions(arry: dict, attr: dict) -> NDArray[np.float64]:
@@ -89,11 +100,83 @@ def orbital_fractional_positions(arry: dict, attr: dict) -> NDArray[np.float64]:
     """
     from ..hamiltonian.orbital_centres import orbital_centres_bohr
 
+    if 'HRs' not in arry:
+        # sparse backend: orbital_centres_bohr only reads the orbital count from HRs
+        arry = {**arry, 'HRs': np.empty((int(attr['nawf']), 0))}
     centres_alat = orbital_centres_bohr(arry, attr) / float(attr['alat'])
     return centres_alat @ np.linalg.inv(np.asarray(arry['a_vectors'], dtype=float))
 
 
-def do_berry_phase(self):
+def berry_phase_settings(
+    data_controller,
+    kspace_method,
+    berry_path,
+    high_sym_points,
+    kpath_funct,
+    nk1,
+    nk2,
+    closed,
+    method,
+    sub,
+    occupied,
+    kradius,
+    kcenter,
+    kxlim,
+    kylim,
+    eigvals,
+    fname,
+    contin,
+) -> None:
+    """Store the arguments of ``PAOFLOW.berry_phase`` as the ``berry_*`` run data.
+
+    Shared by the dense method and the sparse backend, which then run
+    :func:`do_berry_phase` with their own contour solve.
+    """
+    arry, attr = data_controller.data_dicts()
+
+    kspace_method = kspace_method.lower()
+    attr['berry_kspace_method'] = kspace_method
+
+    attr['berry_path'] = berry_path
+    arry['berry_high_sym_points'] = high_sym_points
+
+    attr['berry_nk'] = nk1
+    attr['berry_nk1'] = nk1
+    attr['berry_nk2'] = nk2
+
+    attr['berry_kpath_funct'] = kpath_funct
+
+    arry['berry_kxlim'] = kxlim
+    arry['berry_kylim'] = kylim
+
+    if kspace_method != 'square':
+        attr['berry_eigvals'] = eigvals
+    else:
+        attr['berry_eigvals'] = False
+
+    attr['berry_kradius'] = kradius
+    arry['berry_kcenter'] = np.array(kcenter)
+    attr['berry_eigvals'] = eigvals
+
+    method = method.lower()
+    if method in ['berry', 'zak']:
+        attr['berry_method'] = method
+    else:
+        print("method should be either berry or zak. Falling back to method = 'berry'")
+        attr['berry_method'] = 'berry'
+
+    arry['berry_sub'] = sub
+    if sub != None or (sub == None and not occupied):
+        attr['berry_occupied'] = False
+    else:
+        attr['berry_occupied'] = occupied
+
+    attr['berry_closed'] = closed
+    attr['berry_contin'] = contin
+    attr['berry_fname'] = fname
+
+
+def do_berry_phase(self, contour_phase=None):
     """Compute the Berry or Zak phase for a set of occupied (or selected) bands.
 
     Dispatches to one of four k-space sampling strategies based on
@@ -154,13 +237,16 @@ def do_berry_phase(self):
     elif sub != None:
         ovr_ndim = len(sub)
     else:
-        ovr_ndim = arry['HRs'].shape[0]
+        ovr_ndim = attr['nawf']
+
+    if contour_phase is None:
+        # dense: every eigenvector of the contour, then the Wilson loop
+        def contour_phase(data_controller):
+            do_berry_bands(data_controller)
+            return do_phase(data_controller)
 
     if attr['berry_kspace_method'] == 'path':
-        # Calculate the bands
-        do_berry_bands(self.data_controller)
-        # Calculate the Berry/Zak phase
-        phase = do_phase(self.data_controller)
+        phase = contour_phase(self.data_controller)
 
         if not attr['berry_eigvals']:
             attr['berry_phase'] = phase
@@ -188,8 +274,7 @@ def do_berry_phase(self):
         for ik, k in enumerate(kpts):
             attr['berry_path'], arry['berry_high_sym_points'] = kpath_funct(k)
 
-            do_berry_bands(self.data_controller)
-            phase[ik] = do_phase(self.data_controller)
+            phase[ik] = contour_phase(self.data_controller)
 
         if not attr['berry_eigvals']:
             if contin:
@@ -231,8 +316,7 @@ def do_berry_phase(self):
         arry['berry_kq'] = np.array(path).T
         arry['berry_contour'] = np.copy(arry['berry_kq'])
 
-        do_berry_bands(self.data_controller)
-        phase = do_phase(self.data_controller)
+        phase = contour_phase(self.data_controller)
 
         attr['berry_phase'] = phase
 
@@ -272,8 +356,7 @@ def do_berry_phase(self):
                 arry['berry_contour'] = np.copy(arry['berry_kq'])
                 kgrid_centers[ik, jk] = np.array([k00, k10, k11, k01, k00]).mean(axis=0)
 
-                do_berry_bands(self.data_controller)
-                phases[ik, jk] = do_phase(self.data_controller)
+                phases[ik, jk] = contour_phase(self.data_controller)
 
         arry['berry_kgrid'] = kpts
         arry['berry_kgrid_centers'] = kgrid_centers
@@ -363,16 +446,53 @@ def do_phase(data_controller: DataController) -> float | NDArray[np.float64]:
     arry, attr = data_controller.data_dicts()
 
     v_kp = arry['berry_v_k']
-
     nkpts = v_kp.shape[0]
+    settings = wilson_settings(data_controller)
+    if settings['method'] == 'zak' and settings['contour'].shape[1] != nkpts:
+        raise ValueError(
+            f'the contour has {settings["contour"].shape[1]} points, the eigenvectors {nkpts}'
+        )
 
-    berry_eigvals = attr['berry_eigvals']
+    prd = np.eye(settings['dim'], dtype=complex)
+    states = wilson_states(v_kp[0, :, :, 0], 0, settings)
+    for ik in range(1, nkpts):
+        following = wilson_states(v_kp[ik, :, :, 0], ik, settings)
+        prd = wilson_step(prd, states, following)
+        states = following
+
+    if settings['closed']:
+        prd = wilson_step(prd, states, wilson_states(v_kp[0, :, :, 0], 0, settings, closing=True))
+
+    return wilson_phase(prd, settings)
+
+
+def wilson_settings(data_controller: DataController) -> dict:
+    """Run-wide parameters of the discretized Berry phase of one contour.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        As for :func:`do_phase`, without ``berry_v_k``.
+
+    Returns
+    -------
+    dict
+        ``berry_eigvals``, ``closed``, ``method``, ``occ_idx`` (band indices of the subspace),
+        ``dim`` (their number), ``contour`` (crystal coordinates, ``(3, nkpts)``) and, for
+        ``method='zak'``, the cell-centring factors ``phases`` (``(nkpts, nawf)``) and
+        ``closing_phase`` (``(nawf,)``) of :func:`do_phase`.
+
+    Notes
+    -----
+    A contour whose first and last points coincide is treated as open (the closing link is
+    already in it); the Zak phase always closes. Shared by :func:`do_phase` and the sparse
+    backend, which walks the contour keeping two points' states at a time.
+    """
+    arry, attr = data_controller.data_dicts()
 
     closed = attr['berry_closed']
     method = attr['berry_method'].lower()
     sub = arry['berry_sub']
-    occupied = attr['berry_occupied']
-
     contour = arry['berry_contour']
 
     if np.allclose(contour[:, 0], contour[:, -1]):
@@ -382,55 +502,93 @@ def do_phase(data_controller: DataController) -> float | NDArray[np.float64]:
         closed = True
 
     # assumes that occupancy does not change throughout the choosen path
-    if occupied:
+    if attr['berry_occupied']:
         occ_idx = np.arange(occupied_band_count(arry, attr))
     elif sub is not None:
         occ_idx = np.asarray(sub, dtype=int)
     else:
-        occ_idx = np.arange(arry['HRs'].shape[0])
-    dim = len(occ_idx)
+        occ_idx = np.arange(_orbital_count(arry, attr))
 
-    states = v_kp[:, :, :, 0][:, :, occ_idx]
-    closing = states[0]
+    settings = {
+        'berry_eigvals': attr['berry_eigvals'],
+        'closed': closed,
+        'method': method,
+        'occ_idx': occ_idx,
+        'dim': len(occ_idx),
+        'contour': contour,
+    }
     if method == 'zak':
-        if contour.shape[1] != nkpts:
-            raise ValueError(f'the contour has {contour.shape[1]} points, the eigenvectors {nkpts}')
         frac = orbital_fractional_positions(arry, attr)
         kcrys = np.asarray(contour, dtype=float).T
-        states = np.exp(-2.0j * np.pi * kcrys @ frac.T)[:, :, None] * states
         G = np.rint(kcrys[-1] - kcrys[0])
-        closing = (
-            np.exp(-2.0j * np.pi * (kcrys[0] + G) @ frac.T)[:, None] * v_kp[0, :, :, 0][:, occ_idx]
-        )
+        settings['phases'] = np.exp(-2.0j * np.pi * kcrys @ frac.T)
+        settings['closing_phase'] = np.exp(-2.0j * np.pi * (kcrys[0] + G) @ frac.T)
+    return settings
 
-    prd = np.eye(dim, dtype=complex)
 
-    for ik in range(nkpts - 1):
-        ovr = np.dot(states[ik].conj().T, states[ik + 1])
-        Z_ovr, _, W_dag_ovr = la.svd(ovr)
-        ovr = np.matmul(Z_ovr, W_dag_ovr)
+def wilson_states(
+    v_k: NDArray[np.complex128], ik: int, settings: dict, closing: bool = False
+) -> NDArray[np.complex128]:
+    """The subspace states of contour point ``ik`` that enter the Wilson loop.
 
-        prd = np.dot(prd, ovr)
+    Parameters
+    ----------
+    v_k : ndarray, shape ``(nawf, m)``
+        Eigenvectors at the point (at least the columns ``settings['occ_idx']``).
+    ik : int
+        Index of the point on the contour.
+    settings : dict
+        From :func:`wilson_settings`.
+    closing : bool
+        The states that close the loop: those of the first point (``ik = 0``), for
+        ``method='zak'`` at :math:`\\mathbf k_0 + \\mathbf G`.
 
-    if closed:
-        ovr = np.dot(states[nkpts - 1].conj().T, closing)
+    Returns
+    -------
+    ndarray, shape ``(nawf, dim)``
+        The selected columns, cell-centred for ``method='zak'`` (see :func:`do_phase`).
+    """
+    states = v_k[:, settings['occ_idx']]
+    if settings['method'] == 'zak':
+        phase = settings['closing_phase'] if closing else settings['phases'][ik]
+        states = phase[:, None] * states
+    return states
 
-        Z_ovr, _, W_dag_ovr = la.svd(ovr)
-        ovr = np.matmul(Z_ovr, W_dag_ovr)
 
-        prd = np.dot(prd, ovr)
+def wilson_step(
+    prd: NDArray[np.complex128],
+    left_states: NDArray[np.complex128],
+    right_states: NDArray[np.complex128],
+) -> NDArray[np.complex128]:
+    """Multiply the loop product by one link: the unitary part of the overlap of two state sets.
 
-    if not berry_eigvals:
+    Parameters
+    ----------
+    prd : ndarray, shape ``(dim, dim)``
+        Product of the links so far.
+    left_states, right_states : ndarray, shape ``(nawf, dim)``
+        :func:`wilson_states` of two consecutive points (or of the last and the closing one).
+
+    Returns
+    -------
+    ndarray, shape ``(dim, dim)``
+    """
+    ovr = np.dot(left_states.conj().T, right_states)
+    Z_ovr, _, W_dag_ovr = la.svd(ovr)
+    ovr = np.matmul(Z_ovr, W_dag_ovr)
+    return np.dot(prd, ovr)
+
+
+def wilson_phase(prd: NDArray[np.complex128], settings: dict) -> float | NDArray[np.float64]:
+    """Berry phase of the loop product: :math:`-\\arg\\det` or the sorted eigenphases."""
+    if not settings['berry_eigvals']:
         det = la.det(prd)
         ret = -1.0 * np.angle(det)
-
         return ret
-
     else:
         evals, _ = la.eig(prd)
         ret = -1.0 * np.angle(evals)
         ret = np.sort(ret)
-
         return ret
 
 
@@ -580,6 +738,24 @@ def do_berry_bands(data_controller):
     # Define real space lattice vectors
     get_R_grid_fft(data_controller, nk1, nk2, nk3)
 
+    # Define the contour (k-point mesh for bands interpolation), Cartesian
+    prepare_contour(data_controller)
+
+    # Compute the bands along the path in the IBZ
+    arry['berry_E_k'], arry['berry_v_k'] = bands_calc(data_controller)
+
+    # Angstrom to Bohr
+    attr['alat'] *= ANGSTROM_AU
+
+
+def prepare_contour(data_controller) -> None:
+    """Build the contour (``path``/``track``) and rotate ``berry_kq`` to Cartesian.
+
+    Called with ``alat`` in Angstrom, as inside :func:`do_berry_bands`;
+    ``berry_contour`` keeps the unrotated points.
+    """
+    arry, attr = data_controller.data_dicts()
+
     # Define k-point mesh for bands interpolation
     if attr['berry_kspace_method'] == 'path' or attr['berry_kspace_method'] == 'track':
         berry_kpnts_interpolation_mesh(data_controller)
@@ -587,12 +763,6 @@ def do_berry_bands(data_controller):
     nkpi = arry['berry_kq'].shape[1]
     for n in range(nkpi):
         arry['berry_kq'][:, n] = np.dot(arry['berry_kq'][:, n], arry['b_vectors'])
-
-    # Compute the bands along the path in the IBZ
-    arry['berry_E_k'], arry['berry_v_k'] = bands_calc(data_controller)
-
-    # Angstrom to Bohr
-    attr['alat'] *= ANGSTROM_AU
 
 
 def berry_kpnts_interpolation_mesh(data_controller):

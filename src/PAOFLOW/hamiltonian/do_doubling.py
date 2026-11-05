@@ -286,7 +286,8 @@ def doubling_attr_arry(data_controller, shift_bohr=None, centres_bohr=None):
         Attributes updated: ``omega``, ``nawf``, ``natoms`` (if present),
         ``nelec`` (if present), ``nbnds`` (if present), ``bnd`` (if present).
         Arrays updated: ``b_vectors``, ``naw``, ``sh``, ``nl``, ``atoms`` (if present),
-        ``Sj`` (if present), ``Dnm`` (if present).
+        ``Sj`` and ``Lj`` (if present, dense or the sparse engine's list of
+        CSR components), ``Dnm`` (if present).
 
     Returns
     -------
@@ -299,7 +300,7 @@ def doubling_attr_arry(data_controller, shift_bohr=None, centres_bohr=None):
     shift of the replica, ``shift_bohr`` (the lattice vector before the step, bohr), and the
     orbital centres before the step, ``centres_bohr``.
     The cell volume ``omega`` and the reciprocal vectors ``b_vectors`` are recomputed from the
-    updated ``a_vectors`` and ``alat``.  The spin operator ``Sj`` is extended block-diagonally.
+    updated ``a_vectors`` and ``alat``.  The spin and orbital operators ``Sj``/``Lj`` are extended block-diagonally.
     ``Dnm`` (:math:`\\tau_n - \\tau_m`, bohr) becomes ``[[D, D - shift], [D + shift, D]]``, the
     orbital centres ``orbital_centres`` ``[c, c + shift]``. Until 16 Nov 2026 ``Dnm`` was extended
     block-diagonally (zero between the replicas), which gave the band velocities of doubled cells
@@ -335,14 +336,22 @@ def doubling_attr_arry(data_controller, shift_bohr=None, centres_bohr=None):
         arry['nl'] = np.append(arry['nl'], arry['nl'])
     if 'atoms' in arry:
         arry['atoms'] = np.append(arry['atoms'], arry['atoms'])
-    # if Sj is already computed, then double it
-    if 'Sj' in arry:
+    # if Sj (or Lj) is already computed, then double it
+    for key in ('Sj', 'Lj'):
+        if key not in arry:
+            continue
+        from ..sparse.operators import double_operator, is_sparse_operator
+
+        if is_sparse_operator(arry[key]):
+            # sparse engine: a list of CSR components, doubled the same way
+            arry[key] = double_operator(arry[key])
+            continue
         Sj_double = np.zeros((3, attr['nawf'], attr['nawf']), dtype=complex)
         for spol in range(3):
-            Sj = arry['Sj'][spol]
+            Sj = arry[key][spol]
             Sj_double[spol] = la.block_diag(*[Sj, Sj])
 
-        arry['Sj'] = Sj_double
+        arry[key] = Sj_double
         Sj_double = None
 
     if 'Dnm' in arry:
