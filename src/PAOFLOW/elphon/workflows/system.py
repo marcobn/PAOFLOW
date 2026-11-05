@@ -168,7 +168,7 @@ class Electrons:
 
 @dataclass
 class ElphonSystem:
-    """Configuration of one crystal for the electron-phonon workflows.
+    r"""Configuration of one crystal for the electron-phonon workflows.
 
     Parameters
     ----------
@@ -238,6 +238,16 @@ class ElphonSystem:
         Storage precision of the node-shared ``g(R_e, R_p)`` of the dense-q drivers
         (``cell_dtype`` of :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`);
         ``'complex64'`` halves the per-node memory of large (spinor) cells.
+    vertex_bands : {'good', 'all'}, optional
+        Bands of the coupling save that rotate the DFPT / EPW vertex into the PAO basis.
+        ``'good'`` (default): the ``bnd`` bands above the projectability threshold, the
+        subspace of the PAO Hamiltonian
+        :math:`H = A_c\varepsilon_cA_c^\dagger + \eta(1 - A_c(A_c^\dagger A_c)^{-1}A_c^\dagger)`,
+        so the vertex and the bands it is interpolated with live in the same space and the
+        result does not depend on ``nbnd`` of the nscf.  ``'all'``: every band of the save
+        (the behaviour before 5 Nov 2026), which feeds the poorly projectable bands into the
+        vertex and makes it depend on ``nbnd`` (Nb, 8^3 DFPT: lambda 1.045 with 20 bands,
+        0.677 with 40, 1.189 for both with ``'good'``); kept for comparisons.
     """
 
     prefix: str
@@ -264,9 +274,12 @@ class ElphonSystem:
     fd_dir: str | None = None
     fd_options: dict = field(default_factory=dict)
     vertex_dtype: str = 'complex128'
+    vertex_bands: str = 'good'
     extra: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.vertex_bands not in ('good', 'all'):
+            raise ValueError("vertex_bands must be 'good' or 'all', got %r" % self.vertex_bands)
         if self.coupling_source not in ('dfpt', 'epw', 'fd'):
             raise ValueError(
                 "coupling_source must be 'dfpt', 'epw' or 'fd', got %r" % self.coupling_source
@@ -403,6 +416,67 @@ class ElphonSystem:
             verbose=False,
         )
 
+    def rotation_projections(self, coupling: PAOElectrons) -> NDArray[np.complex128]:
+        r"""Projections that rotate the coupling into the PAO basis (see ``vertex_bands``).
+
+        Parameters
+        ----------
+        coupling : PAOElectrons
+            The PAO run on the coupling save.
+
+        Returns
+        -------
+        ndarray ``(nbnd, nawf, nk)``
+            ``coupling.projections`` itself for ``vertex_bands='all'`` (or when every band is
+            good); otherwise a copy with the rows of the bands ``>= bnd`` set to zero, which is
+            the band restriction of
+            :meth:`~PAOFLOW.elphon.dfpt_vertex.CoarseVertexSetup.pao_vertex_k` (``bands``) and,
+            for EPW, the intersection with the kept bands.
+
+        Notes
+        -----
+        The PAO Hamiltonian is built from the ``bnd`` bands whose projectability exceeds
+        ``pthr`` and completes the rest of the orbital space at the shift :math:`\eta`.  A vertex
+        rotated with every band, :math:`g = A_{k+q}^{T} d\,A_k^{*}` over ``nbnd`` bands, carries
+        the components of the poorly projectable bands, which the Hamiltonian replaces by the
+        completion; restricted to the good bands, the two live in the same subspace.
+        """
+        A = coupling.projections
+        if A is None or self.vertex_bands == 'all':
+            return A
+        bnd = self.good_bands(coupling.data_controller)
+        if bnd >= A.shape[0]:
+            return A
+        A = np.array(A, copy=True)
+        A[bnd:] = 0.0
+        return A
+
+    @staticmethod
+    def good_bands(data_controller) -> int:
+        """Number of bands of the PAO Hamiltonian (``bnd``: projectability above ``pthr``)."""
+        return int(data_controller.data_dicts()[1]['bnd'])
+
+    def vertex_cache_tag(self, data_controller) -> str:
+        """Cache tag of the coarse vertex: the basis signature, plus the rotation subspace.
+
+        Parameters
+        ----------
+        data_controller : DataController
+            Of the coupling save.
+
+        Returns
+        -------
+        str
+            :func:`~PAOFLOW.elphon.coupling_cache.basis_tag` with ``|bands=good<bnd>`` appended
+            for the DFPT and EPW sources with ``vertex_bands='good'``, so that a vertex rotated
+            with every band (the caches written before 5 Nov 2026) is never reused for it; the
+            finite-difference source does not rotate and keeps the plain tag.
+        """
+        tag = basis_tag(data_controller, self.pthr)
+        if self.coupling_source != 'fd' and self.vertex_bands == 'good':
+            tag = '%s|bands=good%d' % (tag, self.good_bands(data_controller))
+        return tag
+
     def electrons(
         self,
         electrons_save: str | None = None,
@@ -452,9 +526,10 @@ class ElphonSystem:
             'electrons_dft': kind(coupling),
             'electrons_hubbard': format_hubbard_info(coupling.hubbard),
         }
+        rotation = self.rotation_projections(coupling)
         if electrons_save is None:
             return Electrons(
-                coupling.projections,
+                rotation,
                 coupling.HRs,
                 coupling.nscf,
                 coupling.data_controller,
@@ -479,7 +554,7 @@ class ElphonSystem:
             electrons_hubbard=format_hubbard_info(electrons.hubbard),
         )
         return Electrons(
-            coupling.projections,
+            rotation,
             electrons.HRs,
             nscf,
             coupling.data_controller,
@@ -575,7 +650,7 @@ class ElphonSystem:
             kwargs['sym_rots'] = nscf['s_cryst']
         if cache and self.cache_path:
             kwargs['cache_dir'] = self.cache_path
-            kwargs['cache_tag'] = basis_tag(electrons.data_controller, self.pthr)
+            kwargs['cache_tag'] = self.vertex_cache_tag(electrons.data_controller)
         if self.coupling_source == 'fd':
             kwargs['fd_options'] = dict(
                 basispath=self.basis_path,

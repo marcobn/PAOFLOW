@@ -22,7 +22,6 @@ from ..elph_bloch import (
     vertex_phases,
     vertex_ws_coefficients,
 )
-from ..coupling_cache import basis_tag
 from ..long_range import LongRangeModel
 from ..quadrupoles import (
     DIRECTIONS,
@@ -234,7 +233,7 @@ def long_range_path(
         # the shared g(R_e, R_p) cache of the system folder; the key carries the long-range
         # signature, so every variant below has its own entry
         common['cache_dir'] = system.cache_path
-        common['cache_tag'] = basis_tag(electrons.data_controller, system.pthr)
+        common['cache_tag'] = system.vertex_cache_tag(electrons.data_controller)
     vertex = {}
     variants = [(name, {'long_range': m}) for name, m in models.items()]
     variants.append(('plain', {'allow_missing_long_range': True}))

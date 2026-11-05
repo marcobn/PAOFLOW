@@ -171,6 +171,33 @@ the fully relativistic projectors); ultrasoft and PAW pseudopotentials are not (
 See [DFPT coupling port](dfpt-coupling-port.md) for the design, the parity with EPW and
 the limits.
 
+**Rotation subspace: the good bands (5 November 2026).** The PAO Hamiltonian is built from
+the `bnd` bands whose projectability exceeds `pthr`,
+$H(\mathbf k) = A_c\varepsilon_cA_c^\dagger + \eta\,(1 - A_c(A_c^\dagger A_c)^{-1}A_c^\dagger)$, and
+completes the rest of the orbital space at the shift $\eta$. The vertex must be rotated with
+the same bands. Rotated with every band of the coupling save (`bands=None`, and every
+EPW-kept band in `vertex_from_epw`), it carries the components of the poorly projectable
+bands, which the Hamiltonian replaces by its completion, and it then depends on how many
+bands the nscf happens to carry. Nb (8³ DFPT, standard pseudo-atomic basis, 19 orbitals,
+`bnd` = 10), λ at k 48³ with adaptive smearing:
+
+| rotation | q 2³ | q 4³ |
+|---|---|---|
+| every band, 20-band nscf | 0.977 | 1.045 |
+| every band, 40-band nscf | 0.712 | 0.677 |
+| good bands, 20- or 40-band nscf | 1.163 | 1.189 |
+| fixed-basis finite differences (no rotation) | 1.133 (2×2×2 cell) | 1.324 (4×4×4 cell) |
+
+Restricted to the good bands, the vertex is independent of `nbnd` and, back-rotated at a
+coarse k with the eigenvectors of the good bands, returns the DFPT band-basis elements
+exactly (`tests/unit/elphon/test_vertex_bands.py`). The workflows do this by default
+(`ElphonSystem(vertex_bands='good')`: `Electrons.projections` has the rows of the bands
+`>= bnd` set to zero, and the vertex cache tag gains `|bands=good<bnd>`, so a vertex
+rotated with every band is never reused). `vertex_bands='all'` restores the old rotation
+for comparisons. Results computed through the DFPT or EPW sources before this date used
+the old rotation; the low-level drivers (`prepare_dense_vertex`, the coarse-q routes of
+`do_pao_eph`) still rotate with whatever projections they receive.
+
 ---
 
 ## Module map
