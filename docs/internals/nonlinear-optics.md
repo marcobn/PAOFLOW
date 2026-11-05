@@ -470,8 +470,10 @@ sum rule.
 basis (54 orbitals; valence projectabilities 0.999–1.000 against 0.85–0.88 on the all-electron set), position
 dipoles, scissor 0.86 eV; the independent-particle baseline on that basis gives $|\chi_{xyz}(0)|$ = 180.9 pm/V at
 40³ (178.4 on the all-electron set, 166–180 measured). $\epsilon_{xx}(0)$ at 24³: independent particles 11.36,
-local fields 10.38 (−8.6 %), + ALDA 10.81 (−4.8 %; measured $\epsilon_\infty$ 10.9); at 16³ the long-range term adds
-+3.7 % (bootstrap head, $\alpha$ = 0.108) or +12 % (LRC, $\alpha$ = 0.2) and sharpens the E1/E2 region; kernel off
+local fields 10.38 (−8.6 %), + ALDA 10.81 (+4.2 % on top, −4.8 % net; measured $\epsilon_\infty$ 10.9); the levels
+are nested (each adds one kernel term; the long-range variants are alternatives on the Hartree + ALDA base): at 16³
+the long-range term adds +8.8 % on top of Hartree + ALDA with the bootstrap head ($\alpha$ = 0.108) or +17.8 % with
+the LRC $\alpha$ = 0.2 (+3.7 % / +12.3 % against the independent particles) and sharpens the E1/E2 region; kernel off
 reproduces `dielectric_tensor` to 0.2 %, and the PAO ground-state density matches the DFT charge density to 0.5 %
 (`read_charge_density`, the check that caught a units error in the first periodic parts). Full tables in the report
 of that folder.
