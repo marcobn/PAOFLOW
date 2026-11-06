@@ -119,7 +119,7 @@ SYSTEM = {
             # The window of the fused pass follows the property ranges
             'sparse_config': {'bond_order': 36, 'dense_n_max': 10**9},
             'properties': WINDOW_PROPERTIES,
-            'max_doublings': 4,
+            'max_doublings': 3,
         },
         # the full-spectrum pass: every state at every k-point, for the band
         # curvature (effective masses, Hall coefficient) and the interband
@@ -132,9 +132,10 @@ SYSTEM = {
             'sparse_config': {'bond_order': 36, 'dense_n_max': 10**9},
             'properties': CURVATURE_PROPERTIES,
             'property_args': {'transport': {'do_hall': True}},
-            'max_doublings': 4,
+            'max_doublings': 3,
         },
         'sparse_interior': {
+            'enabled': False,
             'sparse': True,
             'sparse_config': {
                 'bond_order': 36,

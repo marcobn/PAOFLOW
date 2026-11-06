@@ -12,7 +12,9 @@ Sizes
 -----
 Doubling ``d`` times multiplies ``nawf`` by ``2**d``.  The doublings are
 spread over the three axes in turn, (1,0,0), (1,1,0), (1,1,1), (2,1,1), ...,
-so consecutive sizes differ by a factor of two.
+so consecutive sizes differ by a factor of two.  ``CONFIG['extra_doublings']``
+adds other patterns to the sparse ladders; a case's ``id`` carries the pattern,
+``sparse_d01_001``, when it is not the ladder's one for that ``d``.
 
 k-mesh
 ------
@@ -50,15 +52,11 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 SYSTEMS_DIR = os.path.join(HERE, 'systems')
 
 CONFIG = {
-    # the systems submit.py submits, each into systems/<name>/runs.  Pt, Fe and Te
-    # were submitted 2026-11; Si reruns d = 0..4 (sparse, sparse_curvature,
-    # sparse_interior and the reference) to match them
-    'systems': ['si'],
-    # submit only the sizes d >= rerun_from_d, plus every case without a finished
-    # ('ok') record (failed, killed or never run); None submits everything.  2: the
-    # doubling fix of 2026-11-03 (1c16cf7a) changed the results of d >= 2 only.  The
-    # old directory of a resubmitted case moves to runs/superseded/
-    'rerun_from_d': 2,
+    # the systems submit.py submits, each into systems/<name>/runs
+    'systems': ['fe', 'pt', 'si', 'te'],
+    # doubling counts (nx, ny, nz) run on top of each sparse ladder.  (0, 0, 1) is d = 1 along
+    # the third axis (Pt mesh 48 x 48 x 24), to compare with the ladder's (1, 0, 0)
+    'extra_doublings': [(0, 0, 1)],
     # random on-site energies (meV, Gaussian sigma) added to the sparse bond
     # list after doubling.  They break the exact folding degeneracies, the
     # worst case of ARPACK, at the price of the exact per-cell reference.

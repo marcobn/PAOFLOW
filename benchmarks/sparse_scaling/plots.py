@@ -14,6 +14,7 @@ import numpy as np
 
 import observables
 from config import load_system, output_root
+from ladder import doubling_pattern
 
 REFERENCE = 'reference_d00'
 
@@ -156,23 +157,30 @@ class Benchmark:
             print('no finished %s yet: the figures show the sparse sizes only' % REFERENCE)
         self.runs = {}
         for pipeline in self.pipelines:
-            paths = sorted(glob.glob(os.path.join(self.root, pipeline + '_d[0-9][0-9]')))
+            paths = sorted(glob.glob(os.path.join(self.root, pipeline + '_d[0-9][0-9]*')))
             cases = [c for c in map(self._load, paths) if c is not None]
             if cases:
                 self.runs[pipeline] = cases
                 print('%-20s d = %s' % (pipeline, ', '.join(str(c['d']) for c in cases)))
 
     @staticmethod
-    def _load(path):
+    def _load(path: str) -> dict | None:
         if not os.path.exists(os.path.join(path, 'record.json')):
             return None
         rec = observables.load_record(path)
         if rec.get('status') != 'ok':
             print('skipping %s: status %s' % (os.path.basename(path), rec.get('status')))
             return None
+        d = rec['case']['d']
+        doublings = tuple(rec['case']['doublings'])
+        nawf = rec['hamiltonian']['nawf']
+        ladder = doublings == doubling_pattern(d)
         return {
-            'd': rec['case']['d'],
-            'nawf': rec['hamiltonian']['nawf'],
+            'd': d,
+            'nawf': nawf,
+            # an extra pattern shares its color with its size, dashed
+            'label': 'd=%d (nawf %d)' % (d, nawf) if ladder else 'd=%d %s' % (d, doublings),
+            'style': style(d) if ladder else dict(style(d), ls='--'),
             'curves': observables.load(path, pdos=False, optics=True),
         }
 
@@ -190,7 +198,7 @@ class Benchmark:
             parts.append('interior window from the property ranges')
         return '%s %s: %s' % (self.system['label'].split(' (')[0], pipeline, ', '.join(parts))
 
-    def show(self, names, ncol=3, normalized=False):
+    def show(self, names: list[str], ncol: int = 3, normalized: bool = False) -> None:
         """One figure per pipeline, one panel per curve it has.
 
         ``normalized`` divides every curve by its ``scale`` (the norm of its
@@ -212,8 +220,8 @@ class Benchmark:
                     ax.plot(
                         cv['x'],
                         cv['y'] / norm(cv),
-                        label='d=%d (nawf %d)' % (c['d'], c['nawf']),
-                        **style(c['d']),
+                        label=c['label'],
+                        **c['style'],
                     )
                 if name in self.ref:
                     r = self.ref[name]

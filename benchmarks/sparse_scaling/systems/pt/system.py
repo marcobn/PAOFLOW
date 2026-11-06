@@ -1,7 +1,7 @@
 """Bulk Pt (example05): a cubic metal with spin-orbit coupling from the DFT run.
 
 The base cell has ``nawf = 18`` (6s, 6p, 5d with spin), the same as Si, so the
-sizes match the Si ladder.  The ladder runs to ``d = 4`` (``nawf = 288``) for
+sizes match the Si ladder.  The ladder runs to ``d = 3`` (``nawf = 144``) for
 now; ``d = 7`` would be ``nawf = 2304``.  Pt tests:
 
 - the spin and orbital Hall conductivities, by the Berry-curvature route
@@ -131,7 +131,7 @@ SYSTEM = {
             'bands': True,
             'sparse_config': SPARSE,
             'properties': WINDOW_PROPERTIES,
-            'max_doublings': 4,
+            'max_doublings': 3,
         },
         # every property that sums over all states (spin/orbital Hall, Kubo)
         # or needs the band curvature (Hall, Nernst, effective masses)
@@ -141,7 +141,7 @@ SYSTEM = {
             'sparse_config': SPARSE,
             'properties': FULL_PROPERTIES,
             'property_args': {'transport': {'do_hall': True}},
-            'max_doublings': 4,
+            'max_doublings': 3,
         },
         # a window through the Fermi surface: the use case of a metal
         'sparse_interior': {
