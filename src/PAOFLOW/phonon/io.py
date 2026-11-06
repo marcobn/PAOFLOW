@@ -151,6 +151,43 @@ def _structure_card_ibrav(cell, pp_filenames, frac_qe):
     return species + '\n' + '\n'.join(pos) + '\n'
 
 
+def occupation_lines(attr: dict) -> list[str]:
+    """``&system`` lines of the occupations of a (super)cell run: those of the parent ``pw.x`` run.
+
+    Parameters
+    ----------
+    attr : dict
+        The data attributes of the parent run: ``qe_smearing`` and ``qe_degauss`` (Ry) as read
+        from its ``data-file-schema.xml`` by
+        :func:`PAOFLOW.inputs.read_QE_xml.qe_occupations`, and ``insulator``.
+
+    Returns
+    -------
+    list of str
+        No lines for an insulator (fixed occupations); otherwise ``occupations``, ``smearing``
+        and ``degauss`` with the parent run's type and width.  A parent read from an older file
+        without these attributes falls back to Methfessel-Paxton, 0.02 Ry.
+
+    Notes
+    -----
+    The supercells (special-displacement, displaced finite-difference and Raman cells) must use
+    the occupations of the run their force constants and electrons come from.  For Fermi-Dirac
+    occupations (``'fd'``) the width is the electronic temperature :math:`k_B T`, which is how
+    hot electrons enter the thermal cells.  PAOFLOW's own ``degauss`` attribute (eV, the
+    broadening of DOS and dielectric functions) is unrelated and is not used here.
+    """
+    if bool(attr.get('insulator', True)):
+        return []
+    smearing = attr.get('qe_smearing') or 'mp'
+    degauss = attr.get('qe_degauss')
+    degauss = 0.02 if degauss is None else float(degauss)
+    return [
+        "    occupations = 'smearing'",
+        "    smearing = '%s'" % smearing,
+        '    degauss = %.8f' % degauss,
+    ]
+
+
 def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines=None, nbnd=None):
     """Assemble the ``&control/&system/&electrons`` namelist block."""
     _, attr = data_controller.data_dicts()
@@ -160,7 +197,6 @@ def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines
     ecutwfc = float(attr.get('ecutwfc', 60.0))  # Ry
     ecutrho = float(attr.get('ecutrho', 4.0 * ecutwfc))  # Ry
     nspin = int(attr.get('nspin', 1))
-    insulator = bool(attr.get('insulator', True))
 
     lines = []
     lines.append('&control')
@@ -181,10 +217,7 @@ def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines
     lines.append('    ecutrho = %.2f' % ecutrho)
     if nbnd is not None:
         lines.append('    nbnd = %d' % int(nbnd))
-    if not insulator:
-        lines.append("    occupations = 'smearing'")
-        lines.append("    smearing = 'mp'")
-        lines.append('    degauss = %.4f' % float(attr.get('degauss', 0.02)))
+    lines.extend(occupation_lines(attr))
     if nspin == 2:
         lines.append('    nspin = 2')
         lines.append('    starting_magnetization(1) = 0.1')
@@ -396,7 +429,6 @@ def _raman_scf_namelists(data_controller, cell, prefix, pp_dir, nbnd=None):
     ecutwfc = float(attr.get('ecutwfc', 60.0))
     ecutrho = float(attr.get('ecutrho', 4.0 * ecutwfc))
     nspin = int(attr.get('nspin', 1))
-    insulator = bool(attr.get('insulator', True))
 
     lines = []
     lines.append('&control')
@@ -416,10 +448,7 @@ def _raman_scf_namelists(data_controller, cell, prefix, pp_dir, nbnd=None):
     lines.append('    ecutrho = %.2f' % ecutrho)
     if nbnd is not None:
         lines.append('    nbnd = %d' % int(nbnd))
-    if not insulator:
-        lines.append("    occupations = 'smearing'")
-        lines.append("    smearing = 'mp'")
-        lines.append('    degauss = %.4f' % float(attr.get('degauss', 0.02)))
+    lines.extend(occupation_lines(attr))
     if nspin == 2:
         lines.append('    nspin = 2')
         lines.append('    starting_magnetization(1) = 0.1')

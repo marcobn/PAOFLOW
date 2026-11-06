@@ -215,8 +215,10 @@ def test_scissor_shifts_the_delta_spectra_rigidly():
     assert np.allclose(shifted['injectc'][0, 10:], plain['injectc'][0, :-10], rtol=1e-10, atol=1e-6)
 
 
-def direct_shg(model, nk, energy, components, eta, tol=1e-4):
-    """Slow reference: Eqs. (C2)-(C3) evaluated with explicit denominators on the grid."""
+def direct_shg(model, nk, energy, components, eta, tol=1e-4, split=False):
+    """Slow reference: Eqs. (C2)-(C3) evaluated with explicit denominators on the grid.
+
+    With ``split`` the result is a dict over the names of ``nlo.SHG_TERMS``."""
     axes = [np.arange(n) / n for n in nk]
     kpts = np.stack(np.meshgrid(*axes, indexing='ij'), axis=-1).reshape(-1, 3)
     g = geometry_at(model, kpts, tol)
@@ -225,7 +227,9 @@ def direct_shg(model, nk, energy, components, eta, tol=1e-4):
     f[:nocc] = 1.0
     w = energy + 1j * eta  # resonance at w_mn - w - i eta
     w2 = 2.0 * energy + 1j * eta  # resonance at w_mn - 2w - i eta (one common i eta)
-    out = np.zeros((len(components), energy.size), dtype=complex)
+    parts = {
+        name: np.zeros((len(components), energy.size), dtype=complex) for name in nlo.SHG_TERMS
+    }
     n = model.nawf
     for ik in range(kpts.shape[0]):
         E, r, rd, dv = (
@@ -246,17 +250,16 @@ def direct_shg(model, nk, energy, components, eta, tol=1e-4):
                     t2 = (rd[c, a, i, j] * r[b, j, i] + rd[b, a, i, j] * r[c, j, i]) / (
                         wmn * (wmn - w)
                     )
-                    t3 = (
-                        r[a, i, j]
-                        * (r[b, j, i] * dv[c, j, i] + r[c, j, i] * dv[b, j, i])
-                        / wmn**2
-                        * (1 / (wmn - w) - 4 / (wmn - w2))
-                    )
+                    t3 = r[a, i, j] * (r[b, j, i] * dv[c, j, i] + r[c, j, i] * dv[b, j, i]) / wmn**2
                     t4 = -(r[b, j, i] * rd[a, c, i, j] + r[c, j, i] * rd[a, b, i, j]) / (
                         2 * wmn * (wmn - w)
                     )
                     t5 = -dv[a, j, i] * np.real(r[b, i, j] * r[c, j, i]) / (2 * wmn**2 * (wmn - w))
-                    out[ic] += 1j * fnm * (t1 + t2 + t3 + t4 + t5)
+                    parts['intraband_2w_derivative'][ic] += 1j * fnm * t1
+                    parts['intraband_2w_velocity'][ic] += 1j * fnm * t3 * (-4 / (wmn - w2))
+                    parts['intraband_w_derivative'][ic] += 1j * fnm * (t2 + t4)
+                    parts['intraband_w_velocity'][ic] += 1j * fnm * t3 / (wmn - w)
+                    parts['intraband_w_todd'][ic] += 1j * fnm * t5
                     for l in range(n):
                         if l == i or l == j:
                             continue
@@ -264,12 +267,15 @@ def direct_shg(model, nk, energy, components, eta, tol=1e-4):
                         if abs(den) < tol:
                             continue
                         T = r[a, i, j] * (r[b, j, l] * r[c, l, i] + r[c, j, l] * r[b, l, i]) / den
-                        out[ic] += T * (
-                            2 * fnm / (wmn - w2)
-                            + (f[l] - f[i]) / ((E[l] - E[i]) - w)
+                        parts['interband_2w'][ic] += T * 2 * fnm / (wmn - w2)
+                        parts['interband_w'][ic] += T * (
+                            (f[l] - f[i]) / ((E[l] - E[i]) - w)
                             + (f[j] - f[l]) / ((E[j] - E[l]) - w)
                         )
-    return nlo.C_SHG * 2.0 / (kpts.shape[0] * model.volume) * out
+    scale = nlo.C_SHG * 2.0 / (kpts.shape[0] * model.volume)
+    if split:
+        return {name: scale * part for name, part in parts.items()}
+    return scale * sum(parts.values())
 
 
 def test_shg_histograms_match_direct_evaluation():
@@ -283,6 +289,37 @@ def test_shg_histograms_match_direct_evaluation():
     scale = np.max(np.abs(reference))
     assert scale > 1e-3
     assert np.allclose(fast['shg'], reference, atol=2e-3 * scale)
+
+
+def test_shg_terms_match_the_direct_split_and_sum_to_the_total():
+    """Each interband / intraband term at w or 2w against the explicit-denominator reference."""
+    model = random_hopping_model(seed=8, time_reversal=False)
+    energy = np.linspace(0.1, 6.0, 40)
+    components = [(0, 1, 2), (1, 1, 1), (2, 0, 0)]
+    options = dict(components=components, eta=0.15, shg_bin=0.15 / 100, want=('shg',))
+    reference = direct_shg(model, (3, 3, 3), energy, components, eta=0.15, split=True)
+    plain = spectra(model, (3, 3, 3), energy, **options)
+    split = spectra(model, (3, 3, 3), energy, shg_terms=True, **options)
+    assert np.array_equal(split['shg'], plain['shg'])  # the total is accumulated as before
+    assert set(split['shg_terms']) == set(nlo.SHG_TERMS)
+    scale = np.max(np.abs(plain['shg']))
+    assert np.allclose(sum(split['shg_terms'].values()), plain['shg'], atol=1e-10 * scale)
+    for name, value in split['shg_terms'].items():
+        assert np.allclose(value, reference[name], atol=2e-3 * scale), name
+    # broken time reversal: the T-odd term is present
+    assert np.max(np.abs(reference['intraband_w_todd'])) > 1e-2 * scale
+
+
+def test_shg_t_odd_term_vanishes_with_time_reversal():
+    model = random_hopping_model(seed=8, time_reversal=True)
+    energy = np.linspace(0.1, 6.0, 20)
+    res = spectra(
+        model, (4, 4, 4), energy, components=[(0, 1, 2), (1, 1, 1)], eta=0.15, want=('shg',),
+        shg_terms=True,
+    )  # fmt: skip
+    scale = np.max(np.abs(res['shg']))
+    assert scale > 0.0
+    assert np.max(np.abs(res['shg_terms']['intraband_w_todd'])) < 1e-10 * scale
 
 
 def test_kleinman_symmetry_of_the_static_limit():

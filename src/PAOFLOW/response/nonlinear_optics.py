@@ -10,7 +10,8 @@ tight-binding approximation (orbital centres as the position operator):
 
 .. math::
 
-    r^b_{nm;a} = \\frac{i}{\\omega_{nm}}\\Big[\\frac{v^b_{nm}\\Delta^a_{nm}}{\\omega_{nm}} - w^{ab}_{nm}
+    r^b_{nm;a} = \\frac{i}{\\omega_{nm}}\\Big[\\frac{v^b_{nm}\\Delta^a_{nm} + v^a_{nm}\\Delta^b_{nm}}{\\omega_{nm}}
+    - w^{ab}_{nm}
     + \\sum_{p\\neq n,m}\\Big(\\frac{v^b_{np}v^a_{pm}}{\\omega_{pm}} - \\frac{v^a_{np}v^b_{pm}}{\\omega_{np}}\\Big)\\Big],
 
 with :math:`w^{ab}_{nm} = \\langle n|\\partial_a\\partial_b H|m\\rangle`.  Conventions (``hbar = 1``
@@ -82,6 +83,21 @@ C_INJECT = 2.0 * np.pi * ELECTRON_CHARGE_SI**3 / HBAR_SI**2
 C_SHG = 1.0e12 * ELECTRON_CHARGE_SI / (2.0 * EPSILON0_SI)
 LABELS = 'xyz'
 RESPONSES = ('shift', 'injection', 'shg')
+#: Terms of the SHG susceptibility returned with ``shg_terms=True`` (they sum to the total):
+#: name -> resonance, 1 for :math:`\omega_{mn} = \omega` and 2 for :math:`\omega_{mn} = 2\omega`.
+#: ``interband_*``: the three-band term (virtual transitions through a third band);
+#: ``intraband_*``: the two-band terms, built from the generalized derivative :math:`r_{;a}`
+#: (``*_derivative``) or the velocity difference :math:`\Delta` (``*_velocity``); ``*_todd``: the
+#: T-odd term :math:`\Delta^a_{mn}\mathrm{Re}[r^b_{nm}r^c_{mn}]`, zero with time-reversal symmetry.
+SHG_TERMS = {
+    'interband_2w': 2,
+    'interband_w': 1,
+    'intraband_2w_derivative': 2,
+    'intraband_2w_velocity': 2,
+    'intraband_w_derivative': 1,
+    'intraband_w_velocity': 1,
+    'intraband_w_todd': 1,
+}
 
 
 # --------------------------------------------------------------------------- components
@@ -501,7 +517,9 @@ def accumulate_shg_histograms(
     bin_edges : ndarray ``(nbins + 1,)``
     components : sequence of ``(a, b, c)``
     out : dict
-        ``'hist1'``, ``'hist2'``.
+        ``'hist1'``, ``'hist2'``; optionally ``'term:<name>'`` for every name of
+        :data:`SHG_TERMS`, which then receive the same weights split by term (each binned at
+        its own resonance, :math:`\\omega` or :math:`2\\omega`).
     degeneracy_tol : float
     chunk : int, optional
         k-points per inner chunk of the three-band term (default about ``2e6 / n^3``, at
@@ -524,8 +542,12 @@ def accumulate_shg_histograms(
     ``130 nkc n^2 s`` bytes (``den``, ``D``, ``B``, ``T`` and the binning temporaries); the
     mixed terms are ``(k, n, n)`` arrays.  For a molecule (one k-point, large ``n``) this is
     what makes ``n`` of a few thousand feasible.
+
+    The split by term (``'term:<name>'`` keys) bins the same weights a second time; the totals
+    ``'hist1'`` and ``'hist2'`` are accumulated exactly as without it.
     """
     nbins = bin_edges.size - 1
+    split_terms = 'term:interband_2w' in out
     width = bin_edges[1] - bin_edges[0]
     nb, n = geometry.energies.shape
     chunk = chunk or max(1, int(2.0e6 // max(n**3, 1)))
@@ -586,6 +608,17 @@ def accumulate_shg_histograms(
                 out['hist2'][ic] += _bincount_complex(
                     om_mn, 1j * fnm * (t1 - 4.0 * x3), edge0, width, nbins
                 )
+                if split_terms:
+                    for name, term_weight in (
+                        ('intraband_2w_derivative', t1),
+                        ('intraband_2w_velocity', -4.0 * x3),
+                        ('intraband_w_derivative', t2 + t4),
+                        ('intraband_w_velocity', x3),
+                        ('intraband_w_todd', t5),
+                    ):
+                        out['term:' + name][ic] += _bincount_complex(
+                            om_mn, 1j * fnm * term_weight, edge0, width, nbins
+                        )
         unit += 1
         # ---- interband (three-band) term r^a_nm (r^b_ml r^c_ln + r^c_ml r^b_ln) / (w_ln - w_ml),
         # in slabs of the third index l: arrays (k, n, m, s)
@@ -610,21 +643,28 @@ def accumulate_shg_histograms(
                 )
                 T = np.einsum('knm,kmln,knml->knml', r[:, a], B, D)
                 # 2 f_nm / (w_mn - 2w)
-                out['hist2'][ic] += _bincount_complex(
+                resonant_2w = _bincount_complex(
                     om_mn[:, :, :, None], 2.0 * fnm[:, :, :, None] * T, edge0, width, nbins
                 )
+                out['hist2'][ic] += resonant_2w
                 # f_ln / (w_ln - w): [n, l] arrays
-                out['hist1'][ic] += _bincount_complex(
+                resonant_w_nl = _bincount_complex(
                     om_mn[:, :, None, ls],
                     fnm.transpose(0, 2, 1)[:, :, None, ls] * T,
                     edge0,
                     width,
                     nbins,
                 )
+                out['hist1'][ic] += resonant_w_nl
                 # f_ml / (w_ml - w): [m, l] arrays
-                out['hist1'][ic] += _bincount_complex(
+                resonant_w_ml = _bincount_complex(
                     om_nm[:, None, :, ls], fnm[:, None, :, ls] * T, edge0, width, nbins
                 )
+                out['hist1'][ic] += resonant_w_ml
+                if split_terms:
+                    out['term:interband_2w'][ic] += resonant_2w
+                    out['term:interband_w'][ic] += resonant_w_nl
+                    out['term:interband_w'][ic] += resonant_w_ml
 
 
 def shg_from_histograms(
@@ -721,6 +761,7 @@ def nonlinear_optical_spectra(
     comm=None,
     progress: bool = False,
     shg_band_slab: int | None = None,
+    shg_terms: bool = False,
 ) -> dict:
     """Shift current, injection currents and SHG of ``HRs`` on a uniform k-grid.
 
@@ -799,6 +840,9 @@ def nonlinear_optical_spectra(
     shg_band_slab : int, optional
         Bands per slab of the three-band SHG term (:func:`accumulate_shg_histograms`);
         default from a memory budget of about ``2e6`` elements per slab.
+    shg_terms : bool, optional
+        Also return the SHG split into the terms of :data:`SHG_TERMS` (interband and intraband,
+        resonant at :math:`\\omega` or :math:`2\\omega`); costs a second binning of the weights.
 
     Returns
     -------
@@ -806,7 +850,24 @@ def nonlinear_optical_spectra(
         ``'energy_ev'``, ``'components'`` (labels), ``'shift'`` and ``'shiftm'`` ``(ncomp, ne)`` in
         A/V^2, ``'injectc'`` and ``'injectm'`` in A V^-2 s^-1, ``'shg'`` ``(ncomp, ne)`` complex in
         pm/V (keys present for the responses in ``want``), ``'nocc'``, ``'gap_ev'``,
-        ``'direct_gap_ev'``, ``'nk'``, ``'scissor_ev'``, ``'eta_ev'``, ``'spin_factor'``.
+        ``'direct_gap_ev'``, ``'nk'``, ``'scissor_ev'``, ``'eta_ev'``, ``'spin_factor'``; with
+        ``shg_terms``, ``'shg_terms'``: a dict term name -> ``(ncomp, ne)`` complex in pm/V whose
+        sum is ``'shg'``.
+
+    Notes
+    -----
+    The SHG terms follow the standard length-gauge split (Hughes and Sipe 1996; Cabellos *et al.*
+    2009): the three-band (interband) term
+
+    .. math::
+
+        \\chi_{e} \\propto \\sum_{nml}\\frac{r^a_{nm}\\{r^b_{ml}r^c_{ln}\\}}{\\omega_{ln}-\\omega_{ml}}
+        \\left[\\frac{2f_{nm}}{\\omega_{mn}-2\\omega}+\\frac{f_{ln}}{\\omega_{ln}-\\omega}
+        +\\frac{f_{ml}}{\\omega_{ml}-\\omega}\\right]
+
+    and the two-band (intraband) terms, in which the intraband motion enters through
+    :math:`r^b_{nm;a}` and :math:`\\Delta^a_{nm}`; each is resonant at :math:`\\omega` or at
+    :math:`2\\omega`, which gives the ``*_w`` and ``*_2w`` parts.
     """
     rank, size = 0, 1
     if comm is not None:
@@ -897,6 +958,9 @@ def nonlinear_optical_spectra(
     }
     do_delta = 'shift' in want or 'injection' in want
     do_shg = 'shg' in want
+    if do_shg and shg_terms:
+        for name in SHG_TERMS:
+            hist['term:' + name] = np.zeros((ncomp, nbins), dtype=complex)
     # k loop
     from ..utils.communication import load_balancing
 
@@ -1000,6 +1064,20 @@ def nonlinear_optical_spectra(
         )
         results['shg'] = C_SHG * norm * chi
         results['shg_bin_ev'] = bin_width
+        if shg_terms:
+            no_weight = np.zeros_like(hist['hist1'])
+            results['shg_terms'] = {
+                name: C_SHG
+                * norm
+                * shg_from_histograms(
+                    hist['term:' + name] if resonance == 1 else no_weight,
+                    hist['term:' + name] if resonance == 2 else no_weight,
+                    bin_centres,
+                    energy_grid,
+                    float(eta),
+                )
+                for name, resonance in SHG_TERMS.items()
+            }
     return results
 
 
@@ -1066,6 +1144,7 @@ __all__ = [
     'C_SHIFT',
     'OUTPUT_FILES',
     'RESPONSES',
+    'SHG_TERMS',
     'BandGeometry',
     'accumulate_shg_histograms',
     'accumulate_shift_and_injection',
