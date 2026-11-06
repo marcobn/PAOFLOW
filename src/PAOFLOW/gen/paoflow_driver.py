@@ -488,6 +488,129 @@ def _projection_lines(
     return [f'{indent}{var}.projections(basispath={basispath}, configuration={configuration})']
 
 
+def _nonlinear_constant_lines(cfg):
+    """Editable constants of the non-linear (and coupled) optics run in main.py."""
+    molecule = bool(cfg.get('nlo_molecule', False))
+    two_d = bool(cfg.get('is_2d', False))
+    nk = 1 if molecule else int(cfg.get('nlo_nk', 40))
+    responses = cfg.get('nlo_responses', ('shift', 'injection', 'shg'))
+    lines = [
+        '# Non-linear optics (nonlinear_optics): dense k-grid, photon window (eV), broadening (eV),',
+        "# scissor of the conduction bands (eV). It runs on the extended basis of the run's own",
+        '# pseudopotentials (BASIS_PS) with the Löwdin position dipoles, the validated setting: the',
+        '# dipoles make the SHG independent of the basis (GaAs: 178 / 181 pm/V on two bases, while',
+        '# the orbital centres alone give 103 / 218).',
+        'NLO_NK = ({n}, {n}, {n})'.format(n=nk),
+        'NLO_EMIN, NLO_EMAX, NLO_NE = {}, {}, {}'.format(
+            cfg.get('nlo_emin', 0.0), cfg.get('nlo_emax', 4.0), cfg.get('nlo_ne', 401)
+        ),
+        'NLO_ETA = {}'.format(cfg.get('nlo_eta', 0.05)),
+        'NLO_SCISSOR = {}'.format(cfg.get('nlo_scissor', 0.0)),
+        "NLO_COMPONENTS = {!r}   # 'all', 'diag' or a list such as ['xyz', 'yyy']".format(
+            'all' if molecule else cfg.get('nlo_components', 'all')
+        ),
+        'NLO_RESPONSES = {!r}   # any of shift, injection, shg'.format(tuple(responses)),
+        'NLO_DIPOLES = {}   # Löwdin position dipoles in r and r_{{;a}} (needs the internal basis)'.format(
+            bool(cfg.get('nlo_dipoles', not _uses_projwfc(cfg)))
+        ),
+        'NLO_SYMMETRY = True   # irreducible wedge of the dense grid (QE symmetries)',
+        'NLO_SHG_TERMS = {}   # SHG split into interband / intraband terms at w and 2w'.format(
+            bool(cfg.get('nlo_shg_terms', False))
+        ),
+        'NLO_TWOD = {}   # sheet units of a 2D material (shift nm uA/V^2, SHG pm^2/V)'.format(
+            two_d
+        ),
+        'NLO_SLAB_HEIGHT = None   # bohr; None = the cell height along c',
+        'NLO_MOLECULE = {}   # isolated molecule in a box: Gamma point, beta tensor and beta_HRS'.format(
+            molecule
+        ),
+        "NLO_COUPLING = {!r}   # molecules: 'none', 'monopole', 'hartree', 'hartree+alda'".format(
+            cfg.get('nlo_coupling', 'hartree+alda')
+        ),
+        'NLO_COMPLEMENT_SHIFT = 30.0   # molecules: PAO complement this far above the HOMO (eV)',
+        '',
+    ]
+    if cfg.get('nlo_coupled'):
+        lines += [
+            '# Coupled optical response (coupled_optical_response): the dielectric function and the',
+            '# SHG with local fields, ALDA and a long-range kernel, level by level (3D crystals,',
+            '# one spin channel, norm-conserving pseudopotentials). Each level is a self-consistent',
+            '# solve per energy: start from 12^3-16^3, converge the k-grid (GaAs: 24^3-32^3).',
+            'COUPLED_NK = ({n}, {n}, {n})'.format(n=int(cfg.get('coupled_nk', 16))),
+            'COUPLED_KERNELS = {!r}'.format(
+                tuple(
+                    cfg.get(
+                        'coupled_kernels',
+                        ('none', 'hartree', 'hartree+alda', 'hartree+alda+bootstrap'),
+                    )
+                )
+            ),
+            'COUPLED_EMIN, COUPLED_EMAX, COUPLED_NE = {}, {}, {}'.format(
+                cfg.get('coupled_emin', 0.0),
+                cfg.get('coupled_emax', 5.0),
+                cfg.get('coupled_ne', 51),
+            ),
+            'COUPLED_SHG_ENERGIES = {!r}   # fundamental photon energies of the coupled SHG; [] skips it'.format(
+                list(cfg.get('coupled_shg_energies', [0.1]))
+            ),
+            'COUPLED_COMPONENTS = {!r}'.format(cfg.get('coupled_components', ['xyz'])),
+            'COUPLED_ETA = {}'.format(cfg.get('coupled_eta', 0.1)),
+            'COUPLED_LRC_ALPHA = 0.2   # alpha of the LRC level (Botti et al. 2004)',
+            '',
+        ]
+    return lines
+
+
+def _nonlinear_run_lines(cfg):
+    """run_nonlinear() of main.py: nonlinear_optics and, optionally, coupled_optical_response."""
+    lines = [
+        '',
+        'def run_nonlinear():',
+        '    """Shift / injection currents and SHG from the real-space PAO Hamiltonian.',
+        '',
+        '    nonlinear_optics() (and coupled_optical_response()) interpolate HRs on their own dense',
+        '    grids, so they run right after pao_hamiltonian() (before interpolated_hamiltonian /',
+        "    pao_eigh release HRs), on the extended basis of the run's pseudopotentials.",
+        '    """',
+        '    p = PAOFLOW.PAOFLOW(',
+        '        workpath=HERE,',
+        '        outputdir=OUTPUTDIR,',
+        '        savedir=SAVEDIR,',
+        '        smearing=SMEARING,',
+        '        npool=NPOOL,',
+        '        save_overlaps=SAVE_OVERLAPS,',
+        '        verbose=False,',
+        '    )',
+        '',
+    ]
+    lines.extend(_projection_lines(cfg, configuration="'extended'"))
+    lines += [
+        '    p.projectability(pthr=PTHR)',
+        '    p.pao_hamiltonian()',
+        '    p.nonlinear_optics(',
+        '        nk=NLO_NK, emin=NLO_EMIN, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA, scissor=NLO_SCISSOR,',
+        "        components=NLO_COMPONENTS, shift_current='shift' in NLO_RESPONSES,",
+        "        injection_current='injection' in NLO_RESPONSES,",
+        "        second_harmonic='shg' in NLO_RESPONSES, position_dipoles=NLO_DIPOLES,",
+        '        symmetry=NLO_SYMMETRY, shg_terms=NLO_SHG_TERMS, twoD=NLO_TWOD,',
+        '        slab_height=NLO_SLAB_HEIGHT, molecule=NLO_MOLECULE,',
+        '        coupling=(NLO_COUPLING if NLO_MOLECULE else None),',
+        '        complement_shift=NLO_COMPLEMENT_SHIFT,',
+        '    )',
+    ]
+    if cfg.get('nlo_coupled'):
+        lines += [
+            '    p.coupled_optical_response(',
+            '        nk=COUPLED_NK, kernels=COUPLED_KERNELS, emin=COUPLED_EMIN, emax=COUPLED_EMAX,',
+            '        ne=COUPLED_NE, second_harmonic=bool(COUPLED_SHG_ENERGIES),',
+            '        shg_energies=COUPLED_SHG_ENERGIES, components=COUPLED_COMPONENTS, eta=COUPLED_ETA,',
+            '        scissor=NLO_SCISSOR, lrc_alpha=COUPLED_LRC_ALPHA, position_dipoles=NLO_DIPOLES,',
+            '    )',
+        ]
+    lines += ['', '    p.finish_execution()', '']
+    return lines
+
+
 def build_run_script(cfg):
     """Assemble a full property-run main.py from the collected config."""
     props = cfg['properties']
@@ -544,23 +667,7 @@ def build_run_script(cfg):
         lines.append('NFFT = None')
     lines.append('')
     if has_nonlinear:
-        lines.append(
-            '# Non-linear optics: dense k-grid, photon window (eV), broadening, scissor (eV)'
-        )
-        lines.append('NLO_NK = ({n}, {n}, {n})'.format(n=cfg.get('nlo_nk', 40)))
-        lines.append('NLO_EMAX, NLO_NE = {}, 401'.format(cfg.get('nlo_emax', 4.0)))
-        lines.append('NLO_ETA = {}'.format(cfg.get('nlo_eta', 0.05)))
-        lines.append('NLO_SCISSOR = {}'.format(cfg.get('nlo_scissor', 0.0)))
-        lines.append(
-            'NLO_DIPOLES = False   # True: Löwdin position dipoles in r and r_{;a} (beyond tight binding)'
-        )
-        lines.append('NLO_SYMMETRY = True   # irreducible wedge of the dense grid (QE symmetries)')
-        lines.append(
-            "NLO_COMPONENTS = {!r}   # 'all', 'diag' or a list such as ['xyz', 'yyy']".format(
-                cfg.get('nlo_components', 'all')
-            )
-        )
-        lines.append('')
+        lines.extend(_nonlinear_constant_lines(cfg))
 
     # ---- basis generation --------------------------------------------- #
     lines.append(BASIS_GEN_BLOCK)
@@ -644,40 +751,9 @@ def build_run_script(cfg):
         lines.append('    p.finish_execution()')
         lines.append('')
 
-    # ---- non-linear optics (standard basis, needs HRs) ----------------- #
+    # ---- non-linear optics (extended basis, needs HRs) ----------------- #
     if has_nonlinear:
-        lines.append('')
-        lines.append('def run_nonlinear():')
-        lines.append(
-            '    """Shift / injection currents and SHG from the real-space PAO Hamiltonian.'
-        )
-        lines.append('')
-        lines.append(
-            '    nonlinear_optics() interpolates HRs on NLO_NK on the fly, so it runs right'
-        )
-        lines.append(
-            '    after pao_hamiltonian() (before interpolated_hamiltonian / pao_eigh release HRs).'
-        )
-        lines.append('    """')
-        lines.append('    p = PAOFLOW.PAOFLOW(')
-        lines.append('        workpath=HERE,')
-        lines.append('        outputdir=OUTPUTDIR,')
-        lines.append('        savedir=SAVEDIR,')
-        lines.append('        smearing=SMEARING,')
-        lines.append('        npool=NPOOL,')
-        lines.append('        save_overlaps=SAVE_OVERLAPS,')
-        lines.append('        verbose=False,')
-        lines.append('    )')
-        lines.append('')
-        lines.extend(_projection_lines(cfg, configuration='STD_BASIS'))
-        lines.append('    p.projectability(pthr=PTHR)')
-        lines.append('    p.pao_hamiltonian()')
-        lines.append('    p.nonlinear_optics(nk=NLO_NK, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA,')
-        lines.append('                       scissor=NLO_SCISSOR, components=NLO_COMPONENTS,')
-        lines.append('                       position_dipoles=NLO_DIPOLES, symmetry=NLO_SYMMETRY)')
-        lines.append('')
-        lines.append('    p.finish_execution()')
-        lines.append('')
+        lines.extend(_nonlinear_run_lines(cfg))
 
     # ---- main --------------------------------------------------------- #
     lines.append('')
@@ -1729,6 +1805,68 @@ def _plot_func(name, body_lines):
     return [f'def {name}():'] + ['    ' + ln for ln in body_lines] + ['']
 
 
+def _nonlinear_plot_entries(cfg, funcs, menu):
+    """plot.py functions and menu entries of the non-linear and coupled optics run."""
+    two_d = bool(cfg.get('is_2d', False))
+
+    def guarded(call_lines):
+        # every GPAO NLO plot raises FileNotFoundError when the run did not write its files
+        return (
+            ['try:']
+            + ['    ' + ln for ln in call_lines]
+            + ['except FileNotFoundError:', '    _missing(None)']
+        )
+
+    entries = [
+        ('Shift current', 'plot_shift_current',
+         [f"pplt.plot_nonlinear(OUTPUTDIR, 'shift', two_d={two_d}, y_lim=_ylim())"]),
+        ('Injection current', 'plot_injection_current',
+         [f"pplt.plot_nonlinear(OUTPUTDIR, 'injectc', two_d={two_d}, y_lim=_ylim())"]),
+        ('SHG susceptibility (|chi|, Re, Im)', 'plot_shg',
+         [f"pplt.plot_nonlinear(OUTPUTDIR, 'shg', part=part, two_d={two_d}, y_lim=_ylim())"]),
+    ]  # fmt: skip
+    for label, fname, call in entries:
+        body = guarded(call)
+        if fname == 'plot_shg':
+            body = ["for part in ('abs', 'real', 'imag'):"] + ['    ' + ln for ln in body]
+        funcs += _plot_func(fname, body)
+        menu.append((label, fname))
+    if cfg.get('nlo_shg_terms'):
+        funcs += _plot_func(
+            'plot_shg_terms',
+            [
+                '# one figure per SHG component: interband / intraband terms at w and 2w',
+                "comps = [os.path.basename(f)[5:-4] for f in _many('shgr_*.dat')]",
+                'comps = [c for c in comps if len(c) == 3]',
+                'if not comps:',
+                '    _missing(None)',
+                'for comp in comps:',
+                f'    pplt.plot_shg_terms(OUTPUTDIR, comp, two_d={two_d})',
+            ],
+        )
+        menu.append(('SHG by term (interband / intraband, w / 2w)', 'plot_shg_terms'))
+    if cfg.get('nlo_coupled'):
+        funcs += _plot_func(
+            'plot_coupled_dielectric',
+            guarded(
+                [
+                    "pplt.plot_coupled_response(OUTPUTDIR, 'epsilon', 'imag')",
+                    "pplt.plot_coupled_response(OUTPUTDIR, 'epsilon', 'real')",
+                ]
+            ),
+        )
+        menu.append(('Dielectric function at the kernel levels', 'plot_coupled_dielectric'))
+        funcs += _plot_func(
+            'plot_coupled_shg',
+            guarded(["pplt.plot_coupled_response(OUTPUTDIR, 'shg', 'abs')"]),
+        )
+        menu.append(('SHG at the kernel levels', 'plot_coupled_shg'))
+    if cfg.get('nlo_molecule'):
+        funcs += _plot_func('plot_molecular_beta', guarded(['pplt.plot_molecular_beta(OUTPUTDIR)']))
+        menu.append(('Molecular hyperpolarizability (beta)', 'plot_molecular_beta'))
+    return funcs, menu
+
+
 def build_plot_script(cfg):
     """Assemble a plot.py that mimics the property selection in *cfg*."""
     props = cfg['properties']
@@ -1988,25 +2126,7 @@ def build_plot_script(cfg):
         menu.append(('Visible color (sRGB swatch)', 'plot_visible_color'))
 
     if 'nonlinear' in props:
-        nonlinear_groups = [
-            ('Shift current', 'plot_shift_current', ['shift_*.dat', 'shiftm_*.dat']),
-            ('Injection current', 'plot_injection_current', ['injectc_*.dat', 'injectm_*.dat']),
-            ('SHG susceptibility', 'plot_shg', ['shgr_*.dat', 'shgi_*.dat', 'shga_*.dat']),
-        ]
-        for label, fname, globs in nonlinear_groups:
-            glob_calls = ' + '.join(f'_many({gl!r})' for gl in globs)
-            funcs += _plot_func(
-                fname,
-                [
-                    f'files = {glob_calls}',
-                    'if not files:',
-                    '    _missing(None)',
-                    '    return',
-                    'pplt.plot_dielectric(files if len(files) > 1 else files[0],',
-                    f'                     title={label!r}, y_lim=_ylim(), legend_outside=True)',
-                ],
-            )
-            menu.append((label, fname))
+        funcs, menu = _nonlinear_plot_entries(cfg, funcs, menu)
 
     if has_emissivity:
         funcs += _plot_func(
@@ -2990,15 +3110,76 @@ def collect_run(common):
     )
     cfg['nfft'] = ask_int('FFT grid size per direction', 24) if cfg['interpolate'] else 0
     if 'nonlinear' in props:
-        print('\nNon-linear optics (shift / injection currents, SHG):')
-        cfg['nlo_nk'] = ask_int('  dense k-grid per direction', 40)
-        cfg['nlo_emax'] = ask_float('  largest photon energy (eV)', 4.0)
-        cfg['nlo_eta'] = ask_float('  broadening eta (eV)', 0.05)
-        cfg['nlo_scissor'] = ask_float('  scissor shift of the conduction bands (eV)', 0.0)
-        cfg['nlo_components'] = ask("  tensor components ('all', 'diag' or e.g. xyz,yyy)", 'all')
-        if ',' in cfg['nlo_components']:
-            cfg['nlo_components'] = [c.strip() for c in cfg['nlo_components'].split(',')]
+        collect_nonlinear(cfg)
     cfg['plot'] = ask_yes_no('Also generate a plotting script (plot.py)?', True)
+    return cfg
+
+
+def collect_nonlinear(cfg):
+    """Prompt for the non-linear (and coupled) optics run; fills the ``nlo_*`` / ``coupled_*`` keys.
+
+    Parameters
+    ----------
+    cfg : dict
+        Run configuration (``is_2d`` and the projection mode already set); modified in place.
+
+    Returns
+    -------
+    dict
+        ``cfg``.
+    """
+    internal = not _uses_projwfc(cfg)
+    print('\nNon-linear optics (shift / injection currents, SHG):')
+    molecule = False
+    if not cfg.get('is_2d'):
+        molecule = ask_yes_no('  isolated molecule in a box (Gamma point, beta tensor)?', False)
+    cfg['nlo_molecule'] = molecule
+    if not molecule:
+        cfg['nlo_nk'] = ask_int('  dense k-grid per direction', 40)
+    cfg['nlo_emin'] = ask_float('  smallest photon energy (eV)', 0.0)
+    cfg['nlo_emax'] = ask_float('  largest photon energy (eV)', 4.0)
+    cfg['nlo_ne'] = ask_int('  number of photon energies', 401)
+    cfg['nlo_eta'] = ask_float('  broadening eta (eV)', 0.05)
+    cfg['nlo_scissor'] = ask_float('  scissor shift of the conduction bands (eV)', 0.0)
+    if not molecule:
+        comps = ask("  tensor components ('all', 'diag' or e.g. xyz,yyy)", 'all')
+        cfg['nlo_components'] = [c.strip() for c in comps.split(',')] if ',' in comps else comps
+    responses = ask('  responses (any of shift,injection,shg)', 'shift,injection,shg')
+    cfg['nlo_responses'] = tuple(r.strip() for r in responses.split(',') if r.strip())
+    cfg['nlo_dipoles'] = (
+        ask_yes_no('  Löwdin position dipoles (recommended: basis-independent results)?', True)
+        if internal
+        else False
+    )
+    cfg['nlo_shg_terms'] = ask_yes_no(
+        '  split the SHG into interband / intraband terms at w and 2w?', False
+    )
+    if molecule:
+        cfg['nlo_coupling'] = ask(
+            '  coupled response of the molecule (none, monopole, hartree, hartree+alda)',
+            'hartree+alda',
+        )
+    cfg['nlo_coupled'] = False
+    if internal and not molecule and not cfg.get('is_2d'):
+        cfg['nlo_coupled'] = ask_yes_no(
+            '  coupled optical response (local fields, ALDA, long-range kernels)?', False
+        )
+    if cfg['nlo_coupled']:
+        cfg['coupled_nk'] = ask_int('    coupled-response k-grid per direction', 16)
+        kernels = ask(
+            '    kernel levels (none,hartree,hartree+alda,hartree+alda+lrc,hartree+alda+bootstrap)',
+            'none,hartree,hartree+alda,hartree+alda+bootstrap',
+        )
+        cfg['coupled_kernels'] = tuple(k.strip() for k in kernels.split(',') if k.strip())
+        cfg['coupled_emax'] = ask_float(
+            '    largest photon energy of the dielectric function (eV)', 5.0
+        )
+        cfg['coupled_ne'] = ask_int('    number of photon energies', 51)
+        shg = ask(
+            '    SHG photon energies (eV, comma separated; blank skips the coupled SHG)', '0.1'
+        )
+        cfg['coupled_shg_energies'] = [float(x) for x in shg.split(',') if x.strip()]
+        cfg['coupled_eta'] = ask_float('    broadening eta (eV)', 0.1)
     return cfg
 
 

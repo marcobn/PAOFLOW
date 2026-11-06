@@ -1103,6 +1103,10 @@ def write_nonlinear_outputs(
 ) -> list[str]:
     """Write ``<prefix>_<abc><suffix>.dat`` (energy, value) through the data controller.
 
+    With ``results['shg_terms']`` (``shg_terms=True``) every SHG term is also written, real and
+    imaginary parts: ``shgtr_<term>_<abc><suffix>.dat`` and ``shgti_<term>_<abc><suffix>.dat``
+    (``<term>`` a name of :data:`SHG_TERMS`, same units as ``shgr``).
+
     Parameters
     ----------
     data_controller : DataController
@@ -1135,6 +1139,12 @@ def write_nonlinear_outputs(
             name = '%s_%s%s.dat' % (prefix, label, suffix)
             data_controller.write_file_row_col(name, energy, scale * transform(results[key][ic]))
             written.append(name)
+    for term, values in results.get('shg_terms', {}).items():
+        for ic, label in enumerate(results['components']):
+            for prefix, part in (('shgtr', np.real), ('shgti', np.imag)):
+                name = '%s_%s_%s%s.dat' % (prefix, term, label, suffix)
+                data_controller.write_file_row_col(name, energy, scale_pm * part(values[ic]))
+                written.append(name)
     return written
 
 

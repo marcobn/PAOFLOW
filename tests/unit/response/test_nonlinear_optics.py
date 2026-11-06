@@ -371,6 +371,13 @@ def test_prefactors_components_and_writer(tmp_path):
     nlo.write_nonlinear_outputs(dc2, results, slab_height_bohr=10.0, suffix='_0')
     assert np.allclose(dc2.files['shift_xyz_0.dat'][1], 10.0 * 0.0529177)  # nm uA/V^2
     assert np.allclose(dc2.files['shgr_yyy_0.dat'][1], 10.0 * 52.9177)  # pm^2/V
+    # the SHG terms: real and imaginary parts per term and component, SHG units
+    results['shg_terms'] = {name: (0.5 - 1.0j) * np.ones((2, 6)) for name in nlo.SHG_TERMS}
+    dc3 = DC()
+    names3 = nlo.write_nonlinear_outputs(dc3, results, slab_height_bohr=10.0)
+    assert len(names3) == 14 + 2 * 2 * len(nlo.SHG_TERMS)
+    assert np.allclose(dc3.files['shgtr_interband_2w_xyz.dat'][1], 0.5 * 10.0 * 52.9177)
+    assert np.allclose(dc3.files['shgti_intraband_w_todd_yyy.dat'][1], -1.0 * 10.0 * 52.9177)
 
 
 def test_occupations_and_delta_kernels():
@@ -691,3 +698,30 @@ def test_irreducible_wedge_reproduces_the_full_grid():
     bad = pg.fractional_k_from_cartesian(pg._rot('z', 90.0), bg)
     with pytest.raises(ValueError):
         spectra(model, (18, 18, 1), energy, symmetry_ops_cryst=np.rint(bad), **kwargs)
+
+
+def test_orchestrator_writes_the_shg_terms_and_checks_the_coupled_inputs(tmp_path):
+    """PAOFLOW.nonlinear_optics(shg_terms=True) on the gapped-graphene model, and the input checks
+    of PAOFLOW.coupled_optical_response (a model has no internal projections)."""
+    from PAOFLOW import PAOFLOW
+
+    model = {'label': 'graphene', 't': 2.7, 'delta': 1.0}
+    pao = PAOFLOW.PAOFLOW(model=model, outputdir=str(tmp_path / 'out'), verbose=False)
+    res = pao.nonlinear_optics(
+        nk=(12, 12, 1), emin=0.5, emax=3.0, ne=11, eta=0.2, components=['yyy', 'yxx'], nelec=2,
+        twoD=True, shift_current=False, injection_current=False, shg_terms=True,
+    )  # fmt: skip
+    assert set(res['shg_terms']) == set(nlo.SHG_TERMS)
+    assert np.allclose(
+        sum(res['shg_terms'].values()), res['shg'], atol=1e-10 * np.abs(res['shg']).max()
+    )
+    opath = pao.data_controller.data_dicts()[1]['opath']
+    for name in (
+        'shgtr_interband_2w_yyy.dat',
+        'shgti_intraband_w_derivative_yxx.dat',
+        'shgr_yyy.dat',
+    ):
+        assert (Path(opath) / name).exists(), name
+    assert pao.data_controller.data_dicts()[1]['nonlinear_optics']['shg_terms'] is True
+    with pytest.raises(ValueError, match='internal projections'):
+        pao.coupled_optical_response(nk=(2, 2, 1))

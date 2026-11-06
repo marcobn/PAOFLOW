@@ -15,20 +15,50 @@ Phys. Rev. B **96**, 115147 (2017) and Chen, Ye, Zou, Gu, Xu and Duan, Phys. Rev
 
 ```python
 pf = PAOFLOW.PAOFLOW(savedir='GaAs.save', ...)
-pf.read_atomic_proj_QE(); pf.projectability(); pf.pao_hamiltonian()
-spectra = pf.nonlinear_optics(nk=(60, 60, 60), emax=4.0, eta=0.05, scissor=0.86,
-                              components=['xyz'])
+pf.projections(basispath='BASIS_PS', configuration='extended')   # paoflow-genbasis-ps tables
+pf.projectability(pthr=0.95)
+pf.pao_hamiltonian()
+spectra = pf.nonlinear_optics(nk=(40, 40, 40), emax=5.0, eta=0.05, scissor=0.86,
+                              components=['xyz'], position_dipoles=True, shg_terms=True)
+coupled = pf.coupled_optical_response(nk=(16, 16, 16), emax=5.0, ne=51, eta=0.1, scissor=0.86,
+                                      second_harmonic=True, shg_energies=[0.1])
 pf.finish_execution()
 ```
+
+The validated setting is the extended basis of the run's own pseudopotentials with the Löwdin position
+dipoles: on GaAs the dipoles make the SHG independent of the basis (χ_xyz(0) = 178 and 181 pm/V on two
+different bases, against 103 and 218 pm/V with the orbital centres alone), and `paoflow-gen` writes this
+setting by default (`docs/internals/cli-generators.md`).
 
 `nonlinear_optics` needs `HRs`, so it runs after `pao_hamiltonian()` (and `add_external_fields`)
 and before `interpolated_hamiltonian()` / `pao_eigh()`, which release it. It writes two-column
 files (photon energy in eV, value): `shift_<abc>.dat` and `shiftm_<abc>.dat` (µA/V²),
 `injectc_<abc>.dat` and `injectm_<abc>.dat` (A V⁻² s⁻¹), `shgr_/shgi_/shga_<abc>.dat`
 (Re, Im, |χ| in pm/V). With `twoD=True` the sheet responses are written instead (multiplied by
-the slab height: nm µA/V², nm A V⁻² s⁻¹, pm²/V). `GPAO.plot_optical` knows the prefixes.
+the slab height: nm µA/V², nm A V⁻² s⁻¹, pm²/V). With `shg_terms=True` the SHG is also split into
+its terms (section "SHG by term" below): `shgtr_<term>_<abc>.dat` and `shgti_<term>_<abc>.dat`.
 Tight-binding models (`PAOFLOW(model=...)`) work the same way, with the orbital centres taken
 from the model's `tau`/`naw` (or passed as `orbital_positions`).
+
+Figures: `GPAO.plot_nonlinear(path, response, part, two_d)` (components overlaid, 3D or sheet units),
+`GPAO.plot_shg_terms(path, component)`, `GPAO.plot_coupled_response(path, quantity, part)` (the kernel levels
+of `coupled_optical_response`) and `GPAO.plot_molecular_beta(path)`; the drawing is in
+`PAOFLOW.graphics.nonlinear_plots`.
+
+### SHG by term (`shg_terms=True`)
+
+The SHG susceptibility is the sum of the seven terms of `SHG_TERMS`, in the length-gauge form of Chen *et al.*
+(2022), Eqs. (C1)–(C3) (Hughes and Sipe 1996; Cabellos *et al.* 2009): the interband three-band term resonant at
+2ω (`interband_2w`) and at ω (`interband_w`), and the intraband two-band terms, built from the generalized
+derivative $r_{;k}$ (`intraband_2w_derivative`, `intraband_w_derivative`) or the velocity difference
+$\Delta$ (`intraband_2w_velocity`, `intraband_w_velocity`), and the T-odd term `intraband_w_todd`
+($\Delta^a_{mn}\mathrm{Re}[r^b_{nm}r^c_{mn}]$, zero with time reversal). The totals are accumulated as before (the
+split bins the same weights a second time). The ω/2ω split of the absorptive part is physical; the
+interband/intraband split depends on the form of the equations ($r_{;k}$ is itself a sum over a third band).
+GaAs, 40³ (`Workspace/PAOFLOW/validation/nonlinear_optics_GaAs/paoflow_nc/ipa_terms/REPORT.md`, with the
+equations of every term): χ_xyz(0) = −181 pm/V = +281 (interband 2ω) − 466 (intraband 2ω) − 113 (interband ω)
++ 116 (intraband ω); the velocity terms vanish (T_d is not gyrotropic); the E₁ two-photon peak is the intraband
+2ω term; the measured minimum near 2ħω = 4.6 eV is where the two 2ω terms cancel.
 
 ## Conventions
 
@@ -518,15 +548,29 @@ grid: the current- and position-based polarizations of the $2\omega$ response di
 macroscopic polarization and were not affected; an LRC-only kernel (`grid_active` False) skips the density.
 
 **Limits.** One spin channel, norm-conserving; full k-grid (the induced density breaks the point group); the
-bootstrap is the head-only form (one number), the full $\mathbf G\mathbf G'$ body is not implemented; the
-second-order kernel dressing is validated with the kernel off (the GaAs decomposition is the next run).
+bootstrap is the head-only form (one number), the full $\mathbf G\mathbf G'$ body is not implemented.
+
+**From a script: `PAOFLOW.coupled_optical_response`** (6 November 2026). After `pao_hamiltonian()` with the
+internal projections: `coupled_optical_response(nk, kernels='all', dielectric=True, emin, emax, ne,
+second_harmonic=False, shg_energies=(0.1,), components=('xyz',), directions='x', eta=0.1, scissor=0.0,
+lrc_alpha=0.2, bootstrap_alpha=None, position_dipoles=True, cache_gb=8.0, low_memory=False)` builds the channel
+(`build_crystal_channel`) and runs `coupled_optical_spectra`, which computes every requested level of
+`CRYSTAL_KERNELS` in turn (`kernel_for_level`; the bootstrap α from the static independent-particle and local-field
+constants unless given). Files (`write_coupled_outputs`), with the level tags `ipa`, `lf`, `alda`, `lrc`,
+`boot`: `cepsr_<tag>_<bb>.dat`, `cepsi_<tag>_<bb>.dat`, `cshgr/cshgi/cshga_<tag>_<abc>.dat` and the summary
+`coupled_response.dat` (static constants, α of the long-range levels). It raises for spin-polarised or
+spin-orbit runs and without the internal projections, and warns for ultrasoft/PAW pseudopotentials (the periodic
+parts lack the augmentation charge). GaAs at 32³ (the GaAs report, section 4): ε∞ 11.28 / 10.30 / 10.73 / 11.71
+(bootstrap) / 12.51 (LRC) against the measured 10.9, and the E₁ and E₂ peak heights within 2 and 4 % at the
+bootstrap level, with E₁ and E₂ 0.1 and 0.3 eV too high at every level (rigid scissor). Tests:
+`test_coupled_optical_spectra_nested_levels_and_bootstrap`, `test_coupled_optical_spectra_second_order_and_errors`.
 
 ## Not implemented (follow-ups)
 
-Position dipoles beyond the tight-binding approximation (`position_dipoles.py` in $r$ and $r_{;a}$),
-the U(N)-covariant derivative for degenerate bands and the symmetry reduction of the k-grid are planned
-in [nonlinear-optics-phase2-plan.md](nonlinear-optics-phase2-plan.md); k-resolved integrand maps and a
-Rust kernel for the post-`eigh` algebra come after.
+The $\mathbf G\mathbf G'$ body of the bootstrap kernel and frequency-dependent kernels; spin-orbit coupling and
+ultrasoft/PAW augmentation in the coupled crystal response; a k-dependent quasiparticle correction instead of the
+rigid scissor (it places E₁ and E₂ of GaAs 0.1 and 0.3 eV too high); k-resolved integrand maps; a Rust kernel for
+the post-`eigh` algebra.
 
 ## References
 

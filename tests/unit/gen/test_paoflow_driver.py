@@ -348,17 +348,69 @@ def test_build_run_script_nonlinear_optics_block():
         nlo_eta=0.04, nlo_scissor=0.86, nlo_components=['xyz'],
     )  # fmt: skip
     text = d.build_run_script(cfg)
+    compile(text, 'main.py', 'exec')
     assert 'def run_nonlinear():' in text and '    run_nonlinear()' in text
     assert 'NLO_NK = (24, 24, 24)' in text and 'NLO_SCISSOR = 0.86' in text
     assert "NLO_COMPONENTS = ['xyz']" in text
-    assert 'p.nonlinear_optics(nk=NLO_NK, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA,' in text
-    # the non-linear run has its own PAOFLOW instance and never interpolates (HRs must survive)
+    # the validated defaults: extended basis of the run's pseudopotentials, position dipoles
+    assert 'NLO_DIPOLES = True' in text and 'NLO_SHG_TERMS = False' in text
     block = text[text.index('def run_nonlinear():') :].split('def main')[0]
+    assert "configuration='extended'" in block
+    assert 'p.nonlinear_optics(' in block and 'shg_terms=NLO_SHG_TERMS' in block
+    assert 'coupling=(NLO_COUPLING if NLO_MOLECULE else None)' in block
+    # the non-linear run has its own PAOFLOW instance and never interpolates (HRs must survive)
     assert 'p.interpolated_hamiltonian(' not in block
+    assert 'p.coupled_optical_response(' not in block
     assert (
         'nonlinear',
         'Non-linear optics (shift / injection currents, SHG) on the PAO Hamiltonian',
     ) in d.PROPERTY_MENU
     plot = d.build_plot_script(cfg)
-    assert 'def plot_shg' in plot and "_many('shga_*.dat')" in plot
+    compile(plot, 'plot.py', 'exec')
+    assert 'def plot_shg' in plot and "pplt.plot_nonlinear(OUTPUTDIR, 'shg'" in plot
     assert 'plot_shift_current' in plot and 'plot_injection_current' in plot
+    assert 'plot_shg_terms' not in plot and 'plot_coupled' not in plot
+
+
+def test_build_run_script_nonlinear_terms_coupled_molecule_and_2d():
+    cfg = _run_cfg(
+        ibrav=2, is_2d=False, properties=['nonlinear'], nlo_nk=24, nlo_shg_terms=True,
+        nlo_coupled=True, coupled_nk=12, coupled_kernels=('none', 'hartree'),
+        coupled_shg_energies=[0.1, 1.0], nlo_responses=('shg',),
+    )  # fmt: skip
+    text = d.build_run_script(cfg)
+    compile(text, 'main.py', 'exec')
+    assert 'NLO_SHG_TERMS = True' in text and "NLO_RESPONSES = ('shg',)" in text
+    assert 'COUPLED_NK = (12, 12, 12)' in text and "COUPLED_KERNELS = ('none', 'hartree')" in text
+    assert 'COUPLED_SHG_ENERGIES = [0.1, 1.0]' in text and 'p.coupled_optical_response(' in text
+    plot = d.build_plot_script(cfg)
+    compile(plot, 'plot.py', 'exec')
+    for name in ('plot_shg_terms', 'plot_coupled_dielectric', 'plot_coupled_shg'):
+        assert 'def %s():' % name in plot
+    # a molecule: Gamma point, every component, the coupled response of the molecule, beta plots
+    mol = _run_cfg(
+        ibrav=1, is_2d=False, properties=['nonlinear'], nlo_molecule=True, nlo_coupling='hartree',
+    )  # fmt: skip
+    text = d.build_run_script(mol)
+    compile(text, 'main.py', 'exec')
+    assert 'NLO_NK = (1, 1, 1)' in text and 'NLO_MOLECULE = True' in text
+    assert "NLO_COUPLING = 'hartree'" in text and "NLO_COMPONENTS = 'all'" in text
+    assert 'def plot_molecular_beta():' in d.build_plot_script(mol)
+    # a 2D material: sheet units in main.py and in the plots
+    sheet = _run_cfg(ibrav=4, is_2d=True, properties=['nonlinear'])
+    assert 'NLO_TWOD = True' in d.build_run_script(sheet)
+    assert 'two_d=True' in d.build_plot_script(sheet)
+    # projwfc projections: no internal basis, hence no dipoles
+    projwfc = _run_cfg(ibrav=2, is_2d=False, properties=['nonlinear'], projector='projwfc')
+    assert 'NLO_DIPOLES = False' in d.build_run_script(projwfc)
+
+
+def test_collect_nonlinear_prompts(monkeypatch):
+    answers = iter(['n', '30', '0.0', '5.0', '501', '0.1', '0.86', 'xyz', 'shg', 'y', 'y', 'y',
+                    '12', 'none,hartree,hartree+alda', '5.5', '56', '0.1,1.0', '0.1'])  # fmt: skip
+    monkeypatch.setattr('builtins.input', lambda *_: next(answers))
+    cfg = d.collect_nonlinear({'is_2d': False, 'projector': 'internal'})
+    assert cfg['nlo_nk'] == 30 and cfg['nlo_ne'] == 501 and cfg['nlo_components'] == 'xyz'
+    assert cfg['nlo_responses'] == ('shg',) and cfg['nlo_dipoles'] and cfg['nlo_shg_terms']
+    assert cfg['nlo_coupled'] and cfg['coupled_kernels'] == ('none', 'hartree', 'hartree+alda')
+    assert cfg['coupled_shg_energies'] == [0.1, 1.0] and cfg['coupled_ne'] == 56

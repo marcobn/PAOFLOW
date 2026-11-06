@@ -3539,6 +3539,7 @@ class PAOFLOW:
         coupling=None,
         coupling_options=None,
         complement_shift=30.0,
+        shg_terms=False,
     ):
         r"""Second-order optical responses: shift and injection currents, second-harmonic generation.
 
@@ -3676,6 +3677,14 @@ class PAOFLOW:
             The automatic shift of ``projectability`` sits just above the last projected band and
             over-screens the response; 30 eV reproduces the measured polarizability and
             hyperpolarizability of PNA. ``None`` keeps the Hamiltonian as built.
+        shg_terms : bool, optional
+            Also split the SHG susceptibility into its terms
+            (:data:`~PAOFLOW.response.nonlinear_optics.SHG_TERMS`: the interband three-band term and
+            the intraband two-band terms, each resonant at :math:`\omega` or :math:`2\omega`, the
+            intraband ones split into generalized-derivative, velocity-difference and T-odd parts;
+            they sum to the total). Writes ``shgtr_<term>_<abc>.dat`` and ``shgti_<term>_<abc>.dat``
+            (real and imaginary parts, units of ``shgr``); the results carry ``'shg_terms'``. Costs a
+            second binning of the SHG weights.
         coupling_options : dict, optional
             ``energies_ev`` (photon energies of the coupled solve, default ``[0, emax/2]``),
             ``eta_ev`` (default ``eta``), ``hubbard_u`` (``{species: U (Hartree)}``), ``grid``
@@ -3831,6 +3840,7 @@ class PAOFLOW:
                         symmetry_ops_cryst=ops_cryst,
                         comm=self.comm,
                         progress=bool(attr.get('verbose', False)),
+                        shg_terms=bool(shg_terms),
                     )  # fmt: skip
                 )
             total = dict(per_spin[0])
@@ -3838,6 +3848,11 @@ class PAOFLOW:
                 for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg'):
                     if key in total:
                         total[key] = per_spin[0][key] + per_spin[1][key]
+                if 'shg_terms' in total:
+                    total['shg_terms'] = {
+                        term: per_spin[0]['shg_terms'][term] + per_spin[1]['shg_terms'][term]
+                        for term in per_spin[0]['shg_terms']
+                    }
                 for ispin, result in enumerate(per_spin):
                     write_nonlinear_outputs(
                         self.data_controller, result, slab, suffix='_%d' % ispin
@@ -3978,6 +3993,7 @@ class PAOFLOW:
                 'symmetry': total.get('symmetry'), 'molecule': bool(molecule),
                 'coupling': (coupling if molecule else None),
                 'complement_shift_ev': (complement_shift if molecule else None),
+                'shg_terms': bool(shg_terms and 'shg' in want),
             }  # fmt: skip
             if self.rank == 0 and molecule and 'beta_T_au' in total:
                 i0 = int(np.argmin(np.abs(energy)))
@@ -4013,6 +4029,189 @@ class PAOFLOW:
 
         self.report_module_time('Nonlinear Optics')
         return total
+
+    def coupled_optical_response(
+        self,
+        nk,
+        kernels='all',
+        dielectric=True,
+        emin=0.0,
+        emax=5.0,
+        ne=51,
+        second_harmonic=False,
+        shg_energies=(0.1,),
+        components=('xyz',),
+        directions='x',
+        eta=0.1,
+        scissor=0.0,
+        lrc_alpha=0.2,
+        bootstrap_alpha=None,
+        position_dipoles=True,
+        degeneracy_tol=1.0e-4,
+        cache_gb=8.0,
+        low_memory=False,
+    ):
+        r"""Dielectric function and SHG of a crystal with local fields and exchange-correlation kernels.
+
+        The macroscopic response of the self-consistent (TDDFT-level) equation of motion of the
+        density matrix in the PAO basis, at a series of nested kernel levels: independent
+        particles, + local fields (the G ≠ 0 Hartree potential of the induced density), + ALDA,
+        + a long-range kernel :math:`-\alpha/q^2` on top of Hartree + ALDA (the empirical LRC
+        :math:`\alpha` or the RPA bootstrap, two alternatives). The difference between two levels
+        is what that term does to the response. Call it right after ``pao_hamiltonian()`` (it
+        interpolates ``HRs`` on the dense grid itself) with the internal projections.
+
+        Parameters
+        ----------
+        nk : tuple of int
+            Dense k-grid (the full grid: the induced density breaks the point group).
+        kernels : 'all', str or sequence of str, optional
+            Levels of :data:`~PAOFLOW.response.coupled_crystal.CRYSTAL_KERNELS`: ``'none'``,
+            ``'hartree'``, ``'hartree+alda'``, ``'hartree+alda+lrc'``,
+            ``'hartree+alda+bootstrap'``.
+        dielectric : bool, optional
+            Compute :math:`\epsilon_M(\omega)` on ``np.linspace(emin, emax, ne)`` (eV).
+        emin, emax : float, optional
+        ne : int, optional
+        second_harmonic : bool, optional
+            Compute :math:`\chi^{(2)}(-2\omega;\omega,\omega)` at ``shg_energies`` (eV, fundamental).
+        shg_energies : sequence of float, optional
+        components : 'all', 'diag' or sequence, optional
+            SHG tensor components, as in :meth:`nonlinear_optics`.
+        directions : str or sequence, optional
+            Field directions of the dielectric tensor: ``'x'``, ``'xyz'``, ``'diag'`` or a list of
+            0, 1, 2. One direction is enough for cubic crystals.
+        eta : float, optional
+            Broadening (eV), the same :math:`i\eta` in every resonance.
+        scissor : float, optional
+            Rigid shift of the conduction bands (eV).
+        lrc_alpha : float, optional
+            :math:`\alpha` of the LRC level (Botti *et al.* 2004: 0.2 for GaAs).
+        bootstrap_alpha : float, optional
+            :math:`\alpha` of the bootstrap level; default from the static independent-particle
+            and local-field constants, :math:`4\pi\,\epsilon_M^{-1}(0)/[\epsilon_{\rm IPA}(0) - 1]`.
+        position_dipoles : bool or {'full', 'intra-atomic'}, optional
+            Löwdin position dipoles in the interband position matrix (default on: the
+            validated setting; they make the result independent of the basis).
+        degeneracy_tol : float, optional
+            Bands closer than it are treated as degenerate (eV).
+        cache_gb : float, optional
+            Memory per rank for the cached periodic-part tables on the cell grid.
+        low_memory : bool, optional
+            Store the periodic parts and their tables in single precision (half the memory;
+            slower per k-point on some machines).
+
+        Returns
+        -------
+        dict
+            Of :func:`~PAOFLOW.response.coupled_crystal.coupled_optical_spectra`: ``'epsilon'``
+            and ``'chi'`` per level, ``'static_epsilon'``, ``'alpha_lrc'``, ``'alpha_boot'``;
+            ``None`` on failure when ``abort_on_exception`` is off. Writes
+            ``cepsr_<tag>_<bb>.dat``, ``cepsi_<tag>_<bb>.dat``, ``cshgr/cshgi/cshga_<tag>_<abc>.dat``
+            (``<tag>``: ``ipa``, ``lf``, ``alda``, ``lrc``, ``boot``) and ``coupled_response.dat``,
+            and stores the run parameters in ``attr['coupled_optical_response']``.
+
+        Raises
+        ------
+        KeyError
+            Without ``HRs`` (call after ``pao_hamiltonian()``).
+        ValueError
+            Without the internal projections (the periodic parts come from the PAO basis
+            functions) or for an unknown kernel level.
+        NotImplementedError
+            For spin-polarised or spin-orbit runs (one spin channel only).
+
+        Notes
+        -----
+        Validated on GaAs (norm-conserving, pseudo-atomic extended basis, position dipoles,
+        scissor 0.86 eV): :math:`\epsilon_\infty` 11.28 / 10.30 / 10.73 / 11.71 (bootstrap) /
+        12.51 (LRC) at 32³ against the measured 10.9, and the E₁ and E₂ peak heights within
+        2 and 4 % at the bootstrap level; see ``docs/internals/nonlinear-optics.md``. Each level
+        is a GMRES solve per energy and direction (several per SHG energy); the cost per k-point
+        and matrix-vector product is that of a few FFTs of the cell grid. With ultrasoft or PAW
+        pseudopotentials the periodic parts lack the augmentation charge (a warning is printed).
+        """
+        import numpy as np
+
+        from .response import coupled_crystal as cc
+        from .response.nonlinear_optics import parse_components
+
+        arrays, attr = self.data_controller.data_dicts()
+        results = None
+        try:
+            if 'HRs' not in arrays:
+                raise KeyError(
+                    "coupled_optical_response needs 'HRs': call it after pao_hamiltonian() and "
+                    'before interpolated_hamiltonian() / pao_eigh() (or keep free_HRs=False).'
+                )
+            if 'basis' not in arrays:
+                raise ValueError(
+                    'coupled_optical_response needs the internal projections '
+                    '(projections(basispath=..., configuration=...)): the periodic parts of the '
+                    'Bloch functions are built from the PAO basis functions'
+                )
+            if attr.get('dftSO', False) or arrays['HRs'].shape[-1] != 1:
+                raise NotImplementedError(
+                    'coupled_optical_response: one spin channel without spin-orbit coupling only'
+                )
+            if arrays.get('augmentation') is not None and self.rank == 0:
+                print(
+                    'WARNING: ultrasoft / PAW pseudopotentials: the periodic parts of the coupled '
+                    'response lack the augmentation charge (validated with norm-conserving ones)'
+                )
+            if isinstance(kernels, str):
+                levels = list(cc.CRYSTAL_KERNELS) if kernels == 'all' else [kernels]
+            else:
+                levels = list(kernels)
+            axis = {'x': 0, 'y': 1, 'z': 2}
+            if isinstance(directions, str):
+                dirs = (0, 1, 2) if directions == 'diag' else tuple(axis[c] for c in directions)
+            else:
+                dirs = tuple(int(b) for b in directions)
+            comps = parse_components(components)
+            dtype = np.complex64 if low_memory else np.complex128
+            verbose = bool(attr.get('verbose', False)) and self.rank == 0
+            channel = cc.build_crystal_channel(
+                self.data_controller, tuple(int(n) for n in nk), scissor_ev=scissor,
+                position_dipoles=position_dipoles, degeneracy_tol=degeneracy_tol,
+                coeff_dtype=dtype, comm=self.comm, progress=verbose,
+            )  # fmt: skip
+            results = cc.coupled_optical_spectra(
+                channel, levels,
+                dielectric_energies_ev=(np.linspace(emin, emax, int(ne)) if dielectric else None),
+                shg_energies_ev=(list(shg_energies) if second_harmonic else None),
+                components=comps, directions=dirs, eta_ev=eta, lrc_alpha=lrc_alpha,
+                alpha_boot=bootstrap_alpha, cache_gb=cache_gb, cache_dtype=dtype, progress=verbose,
+            )  # fmt: skip
+            written = cc.write_coupled_outputs(self.data_controller, results)
+            attr['coupled_optical_response'] = {
+                'nk': tuple(int(n) for n in nk), 'levels': levels, 'eta_ev': float(eta),
+                'scissor_ev': float(scissor), 'alpha_lrc': results['alpha_lrc'],
+                'alpha_boot': results['alpha_boot'], 'position_dipoles': position_dipoles,
+                'static_epsilon': dict(results['static_epsilon']),
+            }  # fmt: skip
+            if self.rank == 0:
+                static = ', '.join(
+                    '%s %.3f' % (cc.KERNEL_TAGS[level], value)
+                    for level, value in results['static_epsilon'].items()
+                )
+                print(
+                    'Coupled optical response: %d k-points, %d orbitals, grid %s, levels %s; static '
+                    'eps_%s %s%s; wrote %d files'
+                    % (int(np.prod(nk)), channel.n, 'x'.join(str(n) for n in channel.nr),
+                       ', '.join(cc.KERNEL_TAGS[level] for level in levels), 'xyz'[dirs[0]] * 2,
+                       static or '(no static point)',
+                       ('; bootstrap alpha %.4f' % results['alpha_boot']
+                        if 'hartree+alda+bootstrap' in levels else ''),
+                       len(written))
+                )  # fmt: skip
+        except Exception as e:
+            self.report_exception('coupled_optical_response')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Coupled Optical Response')
+        return results
 
     def jdos(self, delta=0.1, emin=0.0, emax=10.0, ne=501, jdos_smeartype='gauss'):
         """

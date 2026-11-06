@@ -878,6 +878,235 @@ def bootstrap_alpha(eps_ipa_static: float, eps_lfe_static: float) -> float:
     return 4.0 * np.pi / (float(eps_lfe_static) * (float(eps_ipa_static) - 1.0))
 
 
+#: File tag of every kernel level of :data:`CRYSTAL_KERNELS` (``cepsr_<tag>_xx.dat``, ...).
+KERNEL_TAGS = {
+    'none': 'ipa',
+    'hartree': 'lf',
+    'hartree+alda': 'alda',
+    'hartree+alda+lrc': 'lrc',
+    'hartree+alda+bootstrap': 'boot',
+}
+
+
+def kernel_for_level(
+    ch: CrystalChannel,
+    level: str,
+    n0: NDArray[np.float64] | None = None,
+    lrc_alpha: float = 0.2,
+    alpha_boot: float | None = None,
+) -> PeriodicKernel:
+    """The :class:`PeriodicKernel` of a nested kernel level of :data:`CRYSTAL_KERNELS`.
+
+    Parameters
+    ----------
+    ch : CrystalChannel
+    level : str
+        ``'none'`` (independent particles), ``'hartree'`` (local fields, the G ≠ 0 Hartree
+        potential), ``'hartree+alda'``, ``'hartree+alda+lrc'`` (long-range kernel
+        :math:`-\\alpha/q^2` with ``lrc_alpha``) or ``'hartree+alda+bootstrap'`` (the same with
+        ``alpha_boot``).
+    n0 : ndarray, optional
+        Ground-state density on the grid, required by the ALDA levels.
+    lrc_alpha, alpha_boot : float, optional
+
+    Returns
+    -------
+    PeriodicKernel
+
+    Raises
+    ------
+    ValueError
+        For an unknown level, or an ALDA level without ``n0``, or the bootstrap level without
+        ``alpha_boot``.
+    """
+    if level not in CRYSTAL_KERNELS:
+        raise ValueError('unknown kernel level %r (choose from %s)' % (level, CRYSTAL_KERNELS))
+    if level == 'none':
+        return PeriodicKernel(ch.nr, ch.at_bohr, ch.omega, hartree=False)
+    if level == 'hartree':
+        return PeriodicKernel(ch.nr, ch.at_bohr, ch.omega)
+    if n0 is None:
+        raise ValueError('kernel level %r needs the ground-state density n0' % level)
+    alpha = 0.0
+    if level == 'hartree+alda+lrc':
+        alpha = float(lrc_alpha)
+    elif level == 'hartree+alda+bootstrap':
+        if alpha_boot is None:
+            raise ValueError('the bootstrap level needs alpha_boot')
+        alpha = float(alpha_boot)
+    return PeriodicKernel(ch.nr, ch.at_bohr, ch.omega, xc='lda', n0=n0, lrc_alpha=alpha)
+
+
+def coupled_optical_spectra(
+    ch: CrystalChannel,
+    levels=CRYSTAL_KERNELS,
+    dielectric_energies_ev=None,
+    shg_energies_ev=None,
+    components=((0, 1, 2),),
+    directions=(0,),
+    eta_ev: float = 0.1,
+    lrc_alpha: float = 0.2,
+    alpha_boot: float | None = None,
+    tol: float = 1.0e-8,
+    cache_gb: float = 8.0,
+    cache_dtype=np.complex128,
+    progress: bool = False,
+) -> dict:
+    r"""Macroscopic dielectric function and SHG of a crystal at a series of kernel levels.
+
+    The levels are nested (:data:`CRYSTAL_KERNELS`): independent particles, + local fields
+    (G ≠ 0 Hartree), + ALDA, + a long-range kernel on top of Hartree + ALDA (LRC with
+    ``lrc_alpha`` or the RPA bootstrap, alternatives). For the bootstrap level
+    :math:`\alpha = 4\pi\,\epsilon_M^{-1}(0)/[\epsilon_{\rm IPA}(0) - 1]` (:func:`bootstrap_alpha`)
+    is computed from the static independent-particle and local-field values along
+    ``directions[0]`` unless ``alpha_boot`` is given.
+
+    Parameters
+    ----------
+    ch : CrystalChannel
+        Of :func:`build_crystal_channel` (the grid levels need the periodic parts).
+    levels : sequence of str, optional
+        Subset of :data:`CRYSTAL_KERNELS`, computed in the given order.
+    dielectric_energies_ev : array_like, optional
+        Photon energies of :math:`\epsilon_M(\omega)` (eV); ``None`` skips the linear response.
+    shg_energies_ev : array_like, optional
+        Fundamental photon energies of :math:`\chi^{(2)}(-2\omega;\omega,\omega)` (eV); ``None``
+        skips the second order.
+    components : sequence of ``(a, b, c)``, optional
+        SHG tensor components.
+    directions : sequence of int, optional
+        Field directions of the dielectric tensor (0, 1, 2 for x, y, z).
+    eta_ev, lrc_alpha, alpha_boot, tol, cache_gb, cache_dtype, progress
+        As :func:`dielectric_function_crystal` and :func:`shg_crystal`.
+
+    Returns
+    -------
+    dict
+        ``'levels'``; ``'dielectric_energy_ev'`` and ``'epsilon'`` (level ->
+        ``(ne, 3, 3)`` complex, the columns of ``directions`` filled); ``'shg_energy_ev'`` and
+        ``'chi'`` (level -> ``(ncomp, nshg)`` complex, pm/V); ``'components'``,
+        ``'directions'``; ``'static_epsilon'`` (level -> :math:`\epsilon_{bb}(0)` along
+        ``directions[0]`` for the levels where it was computed); ``'alpha_lrc'``,
+        ``'alpha_boot'`` (NaN when the bootstrap level is not requested).
+
+    Notes
+    -----
+    Every level is a separate self-consistent solve (GMRES on the induced density and
+    polarization); its cost is that of :func:`first_order_crystal` per energy and direction, and
+    twice that plus the second-order solve per SHG energy. The periodic-part tables are cached on
+    the channel by the first grid level and reused by the next ones.
+    """
+    levels = [str(level) for level in levels]
+    for level in levels:
+        if level not in CRYSTAL_KERNELS:
+            raise ValueError('unknown kernel level %r (choose from %s)' % (level, CRYSTAL_KERNELS))
+    comps = [tuple(int(x) for x in cmp) for cmp in components]
+    directions = tuple(int(b) for b in directions)
+    ckw = dict(tol=tol, cache_gb=cache_gb, cache_dtype=cache_dtype)
+    n0 = ch.ground_state_density() if any('alda' in level for level in levels) else None
+    out = {
+        'levels': levels, 'components': comps, 'directions': directions,
+        'dielectric_energy_ev': None, 'shg_energy_ev': None, 'epsilon': {}, 'chi': {},
+        'static_epsilon': {}, 'alpha_lrc': float(lrc_alpha), 'alpha_boot': float('nan'),
+    }  # fmt: skip
+    b0 = directions[0]
+
+    def static_epsilon(level: str) -> float:
+        if level not in out['static_epsilon']:
+            kernel = kernel_for_level(ch, level, n0, lrc_alpha, alpha_boot)
+            first = first_order_crystal(ch, kernel, b0, 0.0, float(eta_ev) / HARTREE_EV, **ckw)
+            out['static_epsilon'][level] = float(1.0 + 4.0 * np.pi * first['polarization'][b0].real)
+        return out['static_epsilon'][level]
+
+    if 'hartree+alda+bootstrap' in levels:
+        if alpha_boot is None:
+            alpha_boot = bootstrap_alpha(static_epsilon('none'), static_epsilon('hartree'))
+        out['alpha_boot'] = float(alpha_boot)
+    if dielectric_energies_ev is not None:
+        out['dielectric_energy_ev'] = np.atleast_1d(np.asarray(dielectric_energies_ev, dtype=float))
+    if shg_energies_ev is not None:
+        out['shg_energy_ev'] = np.atleast_1d(np.asarray(shg_energies_ev, dtype=float))
+    for level in levels:
+        kernel = kernel_for_level(ch, level, n0, lrc_alpha, alpha_boot)
+        if out['dielectric_energy_ev'] is not None:
+            eps = dielectric_function_crystal(
+                ch, kernel, out['dielectric_energy_ev'], eta_ev, directions=directions,
+                progress=progress, **ckw,
+            )['epsilon']  # fmt: skip
+            out['epsilon'][level] = eps
+            zero = np.flatnonzero(np.abs(out['dielectric_energy_ev']) < 1.0e-12)
+            if zero.size:
+                out['static_epsilon'].setdefault(level, float(eps[zero[0], b0, b0].real))
+        if out['shg_energy_ev'] is not None:
+            out['chi'][level] = shg_crystal(
+                ch, kernel, comps, out['shg_energy_ev'], eta_ev, progress=progress, **ckw
+            )['chi']
+    return out
+
+
+def write_coupled_outputs(data_controller, results: dict) -> list[str]:
+    """Write the spectra of :func:`coupled_optical_spectra` through the data controller.
+
+    Files (energy, value), ``<tag>`` of :data:`KERNEL_TAGS` (``ipa``, ``lf``, ``alda``, ``lrc``,
+    ``boot``): ``cepsr_<tag>_<bb>.dat`` and ``cepsi_<tag>_<bb>.dat`` (real and imaginary
+    :math:`\\epsilon_{M,bb}`), ``cshgr_<tag>_<abc>.dat``, ``cshgi_<tag>_<abc>.dat`` and
+    ``cshga_<tag>_<abc>.dat`` (pm/V), and the summary ``coupled_response.dat`` (levels, static
+    constants, long-range :math:`\\alpha`).
+
+    Parameters
+    ----------
+    data_controller : DataController
+    results : dict
+        Of :func:`coupled_optical_spectra`.
+
+    Returns
+    -------
+    list of str
+        File names written (rank 0 writes; every rank returns the list).
+    """
+    import os
+
+    written = []
+    for level in results['levels']:
+        tag = KERNEL_TAGS[level]
+        if level in results['epsilon']:
+            w = results['dielectric_energy_ev']
+            for b in results['directions']:
+                label = 'xyz'[b] * 2
+                for prefix, part in (('cepsr', np.real), ('cepsi', np.imag)):
+                    name = '%s_%s_%s.dat' % (prefix, tag, label)
+                    data_controller.write_file_row_col(
+                        name, w, part(results['epsilon'][level][:, b, b])
+                    )
+                    written.append(name)
+        if level in results['chi']:
+            w = results['shg_energy_ev']
+            for ic, cmp in enumerate(results['components']):
+                label = ''.join('xyz'[x] for x in cmp)
+                for prefix, part in (('cshgr', np.real), ('cshgi', np.imag), ('cshga', np.abs)):
+                    name = '%s_%s_%s.dat' % (prefix, tag, label)
+                    data_controller.write_file_row_col(name, w, part(results['chi'][level][ic]))
+                    written.append(name)
+    _, attr = data_controller.data_dicts()
+    if data_controller.rank == 0:
+        lines = [
+            '# kernel level, file tag, static eps_M along %s (NaN if not computed)'
+            % 'xyz'[results['directions'][0]]
+        ]
+        for level in results['levels']:
+            lines.append(
+                '%-24s %-5s %.6f'
+                % (level, KERNEL_TAGS[level], results['static_epsilon'].get(level, float('nan')))
+            )
+        lines.append('# alpha_lrc %.6f' % results['alpha_lrc'])
+        lines.append('# alpha_boot %.6f' % results['alpha_boot'])
+        with open(os.path.join(attr['opath'], 'coupled_response.dat'), 'w') as fh:
+            fh.write('\n'.join(lines) + '\n')
+    data_controller.comm.Barrier()
+    written.append('coupled_response.dat')
+    return written
+
+
 # --------------------------------------------------------------------------- builder
 def channel_from_HRs(
     HRs: NDArray,
@@ -1086,19 +1315,23 @@ def build_crystal_channel(
 
 __all__ = [
     'CRYSTAL_KERNELS',
+    'KERNEL_TAGS',
     'CrystalChannel',
     'PeriodicKernel',
     'bootstrap_alpha',
     'build_crystal_channel',
     'channel_from_HRs',
     'check_periodic_parts',
+    'coupled_optical_spectra',
     'dielectric_function_crystal',
     'first_order_crystal',
     'grid_for_sphere',
+    'kernel_for_level',
     'miller_sphere',
     'periodic_parts_at_k',
     'read_charge_density',
     'second_order_crystal',
     'shg_crystal',
     'sphere_to_grid',
+    'write_coupled_outputs',
 ]

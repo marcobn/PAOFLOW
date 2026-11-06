@@ -1471,3 +1471,269 @@ class GPAO:
                 dict(data), temps=temps, iso_data=iso_data, title=title, filename=filename,
                 distribution_scale=distribution_scale,
             )  # fmt: skip
+
+    def plot_nonlinear(
+        self,
+        path: str = '.',
+        response: str = 'shg',
+        part: str = 'abs',
+        components: list[str] | None = None,
+        spin: int | None = None,
+        two_d: bool = False,
+        title: str | None = None,
+        x_lim: tuple[float, float] | None = None,
+        y_lim: tuple[float, float] | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot a second-order response of ``nonlinear_optics`` (components overlaid, with units).
+
+        Parameters
+        ----------
+        path : str, optional
+            Output directory of the run.
+        response : {'shg', 'shift', 'shiftm', 'injectc', 'injectm'}, optional
+        part : {'abs', 'real', 'imag'}, optional
+            Part of the SHG susceptibility (``shga``, ``shgr``, ``shgi`` files); ignored otherwise.
+        components : list of str, optional
+            Tensor components (default: every file found).
+        spin : int, optional
+            Spin channel of a collinear spin-polarised run (``_0``, ``_1`` files).
+        two_d : bool, optional
+            Units of a 2D sheet (the run used ``twoD=True``).
+        title, x_lim, y_lim, filename : optional
+
+        Returns
+        -------
+        None
+            Shows the figure (:func:`PAOFLOW.graphics.nonlinear_plots.plot_nonlinear_spectra`).
+
+        Raises
+        ------
+        FileNotFoundError
+            When no file of the response is found in ``path``.
+        """
+        import numpy as np
+
+        from .graphics.nonlinear_plots import NONLINEAR_UNITS, component_files
+        from .graphics.nonlinear_plots import plot_nonlinear_spectra as draw
+
+        prefix = (
+            {'abs': 'shga', 'real': 'shgr', 'imag': 'shgi'}[part] if response == 'shg' else response
+        )
+        files = component_files(path, prefix, spin)
+        if components is not None:
+            files = {c: f for c, f in files.items() if c in components}
+        if not files:
+            raise FileNotFoundError('no %s_<abc>.dat files in %s' % (prefix, path))
+        symbol, unit3d, unit2d = NONLINEAR_UNITS[response]
+        if response == 'shg':
+            symbol = {
+                'abs': r'$|\chi^{(2)}|$',
+                'real': r'Re $\chi^{(2)}$',
+                'imag': r'Im $\chi^{(2)}$',
+            }[part]
+        curves, energy = {}, None
+        for label, fname in files.items():
+            data = np.loadtxt(fname)
+            energy = data[:, 0]
+            curves[label] = data[:, 1]
+        y_label = '%s (%s)' % (symbol, unit2d if two_d else unit3d)
+        draw(energy, curves, y_label, title=title, x_lim=x_lim, y_lim=y_lim, filename=filename)
+
+    def plot_shg_terms(
+        self,
+        path: str = '.',
+        component: str = 'xyz',
+        grouped: bool = True,
+        spin: int | None = None,
+        two_d: bool = False,
+        title: str | None = None,
+        x_lim: tuple[float, float] | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot an SHG component split into its terms (``nonlinear_optics(shg_terms=True)``).
+
+        Parameters
+        ----------
+        path : str, optional
+            Output directory of the run (``shgtr_<term>_<abc>.dat``, ``shgti_...``, ``shgr/shgi``).
+        component : str, optional
+        grouped : bool, optional
+            Interband and intraband terms resonant at ω or 2ω (four curves); ``False`` draws the
+            seven terms.
+        spin : int, optional
+        two_d : bool, optional
+            Units of a 2D sheet.
+        title, x_lim, filename : optional
+
+        Returns
+        -------
+        None
+            Shows the figure (:func:`PAOFLOW.graphics.nonlinear_plots.plot_shg_terms`).
+
+        Raises
+        ------
+        FileNotFoundError
+            When the run has no SHG term files for the component.
+        """
+        import os
+
+        import numpy as np
+
+        from .graphics.nonlinear_plots import plot_shg_terms as draw
+        from .response.nonlinear_optics import SHG_TERMS
+
+        tail = '' if spin is None else '_%d' % int(spin)
+
+        def read(prefix: str) -> tuple:
+            data = np.loadtxt(os.path.join(path, '%s_%s%s.dat' % (prefix, component, tail)))
+            return data[:, 0], data[:, 1]
+
+        try:
+            energy, total_re = read('shgr')
+            total = total_re + 1j * read('shgi')[1]
+            terms = {
+                name: read('shgtr_' + name)[1] + 1j * read('shgti_' + name)[1] for name in SHG_TERMS
+            }
+        except OSError as err:
+            raise FileNotFoundError(
+                'SHG term files for %s not found in %s (run nonlinear_optics with shg_terms=True)'
+                % (component, path)
+            ) from err
+        draw(
+            energy, total, terms, unit='pm$^2$/V' if two_d else 'pm/V', grouped=grouped,
+            component=component, title=title, x_lim=x_lim, filename=filename,
+        )  # fmt: skip
+
+    def plot_coupled_response(
+        self,
+        path: str = '.',
+        quantity: str = 'epsilon',
+        part: str = 'imag',
+        component: str | None = None,
+        levels: list[str] | None = None,
+        title: str | None = None,
+        x_lim: tuple[float, float] | None = None,
+        y_lim: tuple[float, float] | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot a response of ``coupled_optical_response`` at its kernel levels.
+
+        Parameters
+        ----------
+        path : str, optional
+            Output directory of the run.
+        quantity : {'epsilon', 'shg'}, optional
+            Macroscopic dielectric function (``cepsr/cepsi`` files) or SHG susceptibility
+            (``cshgr/cshgi/cshga``).
+        part : {'imag', 'real', 'abs'}, optional
+            ``'abs'`` is available for the SHG only.
+        component : str, optional
+            ``'xx'`` (dielectric) or ``'xyz'`` (SHG) by default.
+        levels : list of str, optional
+            Kernel levels (default: every level found).
+        title, x_lim, y_lim, filename : optional
+
+        Returns
+        -------
+        None
+            Shows the figure (:func:`PAOFLOW.graphics.nonlinear_plots.plot_coupled_levels`); the
+            long-range :math:`\\alpha` of ``coupled_response.dat`` goes into the legend.
+
+        Raises
+        ------
+        FileNotFoundError
+            When no file of the quantity is found.
+        """
+        import os
+
+        import numpy as np
+
+        from .graphics.nonlinear_plots import plot_coupled_levels as draw
+        from .response.coupled_crystal import CRYSTAL_KERNELS, KERNEL_TAGS
+
+        if quantity == 'epsilon':
+            stem = {'real': 'cepsr', 'imag': 'cepsi'}[part]
+            component = component or 'xx'
+            symbol = {'real': r'Re $\epsilon_{%s}$', 'imag': r'Im $\epsilon_{%s}$'}[
+                part
+            ] % component
+        else:
+            stem = {'real': 'cshgr', 'imag': 'cshgi', 'abs': 'cshga'}[part]
+            component = component or 'xyz'
+            symbol = {'real': r'Re $\chi^{(2)}_{%s}$', 'imag': r'Im $\chi^{(2)}_{%s}$',
+                      'abs': r'$|\chi^{(2)}_{%s}|$'}[part] % component + ' (pm/V)'  # fmt: skip
+        curves = {}
+        for level in levels or CRYSTAL_KERNELS:
+            fname = os.path.join(path, '%s_%s_%s.dat' % (stem, KERNEL_TAGS[level], component))
+            if os.path.isfile(fname):
+                data = np.atleast_2d(np.loadtxt(fname))
+                curves[level] = (data[:, 0], data[:, 1])
+        if not curves:
+            raise FileNotFoundError('no %s_<level>_%s.dat files in %s' % (stem, component, path))
+        alphas = {}
+        summary = os.path.join(path, 'coupled_response.dat')
+        if os.path.isfile(summary):
+            for line in open(summary):
+                for key, level in (
+                    ('alpha_lrc', 'hartree+alda+lrc'),
+                    ('alpha_boot', 'hartree+alda+bootstrap'),
+                ):
+                    if line.startswith('# %s ' % key):
+                        alphas[level] = float(line.split()[2])
+        draw(
+            curves, symbol, alphas=alphas, title=title, x_lim=x_lim, y_lim=y_lim, filename=filename
+        )
+
+    def plot_molecular_beta(
+        self,
+        path: str = '.',
+        title: str | None = None,
+        x_lim: tuple[float, float] | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot the molecular hyperpolarisabilities of ``nonlinear_optics(molecule=True)``.
+
+        Parameters
+        ----------
+        path : str, optional
+            Output directory: ``beta_molecular.dat`` (:math:`\\beta_\\parallel`), ``beta_hrs.dat`` and,
+            with ``coupling``, ``beta_coupled.dat`` (independent particles against the coupled
+            response).
+        title, x_lim, filename : optional
+
+        Returns
+        -------
+        None
+            Shows the figure (:func:`PAOFLOW.graphics.nonlinear_plots.plot_molecular_beta`).
+
+        Raises
+        ------
+        FileNotFoundError
+            Without ``beta_molecular.dat`` and ``beta_coupled.dat``.
+        """
+        import os
+
+        import numpy as np
+
+        from .graphics.nonlinear_plots import plot_molecular_beta as draw
+
+        coupled = os.path.join(path, 'beta_coupled.dat')
+        panels = []
+        if os.path.isfile(coupled):
+            data = np.atleast_2d(np.loadtxt(coupled))
+            e = data[:, 0]
+            panels.append((r'Re $\beta_\parallel$ (a.u.)', e,
+                           {'independent particles': data[:, 1], 'coupled': data[:, 2]}))  # fmt: skip
+            panels.append((r'$\beta_{\rm HRS}$ (a.u.)', e,
+                           {'independent particles': data[:, 5], 'coupled': data[:, 6]}))  # fmt: skip
+        else:
+            for fname, label in (('beta_molecular.dat', r'Re $\beta_\parallel$ (a.u.)'),
+                                 ('beta_hrs.dat', r'$\beta_{\rm HRS}$ (a.u.)')):  # fmt: skip
+                full = os.path.join(path, fname)
+                if os.path.isfile(full):
+                    data = np.loadtxt(full)
+                    panels.append((label, data[:, 0], {'independent particles': data[:, 1]}))
+        if not panels:
+            raise FileNotFoundError('no beta_molecular.dat or beta_coupled.dat in %s' % path)
+        draw(panels, title=title, x_lim=x_lim, filename=filename)

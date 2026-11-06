@@ -233,3 +233,78 @@ def test_long_range_kernel_second_order_closed_form():
     ).T
     closedB = np.einsum('abc,bB,cC->aBC', c0, F1, F1)[:, 0, :]
     assert np.allclose(cB, closedB, rtol=1e-8, atol=1e-10)
+
+
+class _FakeController:
+    """The DataController surface used by the writers: data_dicts, rank, comm, write_file_row_col."""
+
+    def __init__(self, path):
+        self.files, self.rank, self.attr = {}, 0, {'opath': str(path)}
+
+        class _Comm:
+            def Barrier(self):
+                pass
+
+        self.comm = _Comm()
+
+    def data_dicts(self):
+        return {}, self.attr
+
+    def write_file_row_col(self, name, col1, col2):
+        self.files[name] = (np.asarray(col1), np.asarray(col2))
+
+
+def test_coupled_optical_spectra_nested_levels_and_bootstrap(tmp_path):
+    ch = _synthetic_channel()
+    energies, eta = [0.0, 0.1], 0.27
+    out = cc.coupled_optical_spectra(ch, dielectric_energies_ev=energies, eta_ev=eta)
+    assert out['levels'] == list(cc.CRYSTAL_KERNELS) and out['chi'] == {}
+    # the independent-particle level is the direct call; every level has its static constant
+    ipa = cc.PeriodicKernel(ch.nr, ch.at_bohr, ch.omega, hartree=False)
+    direct = cc.dielectric_function_crystal(ch, ipa, energies, eta, directions=(0,))['epsilon']
+    assert np.allclose(out['epsilon']['none'], direct)
+    assert set(out['static_epsilon']) == set(cc.CRYSTAL_KERNELS)
+    static = out['static_epsilon']
+    assert out['alpha_boot'] == pytest.approx(cc.bootstrap_alpha(static['none'], static['hartree']))
+    # the long-range kernels raise the static response above Hartree + ALDA
+    assert static['hartree+alda+lrc'] > static['hartree+alda']
+    assert static['hartree+alda+bootstrap'] > static['hartree+alda']
+    # a given bootstrap alpha is used as is
+    fixed = cc.coupled_optical_spectra(
+        ch,
+        levels=['hartree+alda+bootstrap'],
+        dielectric_energies_ev=[0.0],
+        eta_ev=eta,
+        alpha_boot=0.5,
+    )
+    assert fixed['alpha_boot'] == 0.5 and 'none' not in fixed['static_epsilon']
+    # writer: real and imaginary eps per level and direction, and the summary
+    dc = _FakeController(tmp_path)
+    names = cc.write_coupled_outputs(dc, out)
+    for tag in cc.KERNEL_TAGS.values():
+        assert 'cepsr_%s_xx.dat' % tag in names and 'cepsi_%s_xx.dat' % tag in names
+    assert np.allclose(dc.files['cepsr_ipa_xx.dat'][1], direct[:, 0, 0].real)
+    summary = (tmp_path / 'coupled_response.dat').read_text()
+    assert 'hartree+alda+bootstrap' in summary and 'alpha_boot %.6f' % out['alpha_boot'] in summary
+
+
+def test_coupled_optical_spectra_second_order_and_errors(tmp_path):
+    HRs, at, alat, omega, pos = _polar_crystal()
+    ch = cc.channel_from_HRs(HRs, at, alat, omega, pos, 2.0, (4, 4, 4), degeneracy_tol=1e-6)
+    comps = [(0, 1, 2), (0, 0, 0)]
+    out = cc.coupled_optical_spectra(
+        ch, levels=['none'], shg_energies_ev=[0.3], components=comps, eta_ev=0.05
+    )
+    kernel = cc.PeriodicKernel((1, 1, 1), at * alat, omega, hartree=False)
+    direct = cc.shg_crystal(ch, kernel, comps, [0.3], 0.05)['chi']
+    assert np.allclose(out['chi']['none'], direct) and out['epsilon'] == {}
+    dc = _FakeController(tmp_path)
+    names = cc.write_coupled_outputs(dc, out)
+    assert {'cshgr_ipa_xyz.dat', 'cshgi_ipa_xyz.dat', 'cshga_ipa_xxx.dat'} <= set(names)
+    assert np.allclose(dc.files['cshga_ipa_xyz.dat'][1], np.abs(direct[0]))
+    with pytest.raises(ValueError):
+        cc.coupled_optical_spectra(ch, levels=['rpa'])
+    with pytest.raises(ValueError):
+        cc.kernel_for_level(ch, 'hartree+alda')  # no ground-state density
+    with pytest.raises(ValueError):
+        cc.kernel_for_level(ch, 'hartree+alda+bootstrap', n0=np.ones(1))  # no alpha
