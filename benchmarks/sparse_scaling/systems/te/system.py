@@ -1,7 +1,7 @@
 """Trigonal Te (example11): a chiral semiconductor with spin-orbit coupling.
 
 The base cell has three atoms and ``nawf = 54`` (5s, 5p, 4d with spin).  The
-ladder runs to ``d = 4`` (``nawf = 864``) for now; ``d = 6`` would be
+ladder runs to ``d = 3`` (``nawf = 432``) for now; ``d = 6`` would be
 ``nawf = 3456``, about Si's ``d = 7.6``.  Te has no
 inversion centre, so its bands are spin split away from the time-reversal
 invariant points and carry a spin texture.  Te tests:
@@ -135,7 +135,7 @@ SYSTEM = {
             'bands': True,
             'sparse_config': SPARSE,
             'properties': WINDOW_PROPERTIES,
-            'max_doublings': 4,
+            'max_doublings': 3,
         },
         'sparse_curvature': {
             'sparse': True,
@@ -143,7 +143,7 @@ SYSTEM = {
             'sparse_config': SPARSE,
             'properties': FULL_PROPERTIES,
             'property_args': {'transport': {'do_hall': True}},
-            'max_doublings': 4,
+            'max_doublings': 3,
         },
     },
     'solver_sweep': {'enabled': False},

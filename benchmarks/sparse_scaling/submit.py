@@ -1,26 +1,22 @@
 """Write the case lists and the Slurm job arrays, and submit them.
 
 ``python submit.py`` takes no arguments: it reads ``CONFIG`` from
-:mod:`config` and submits every system of ``CONFIG['systems']``.  Each
-pipeline of a system (and its solver sweep) becomes one job array with one
+:mod:`config` and submits every case of every system of ``CONFIG['systems']``.
+Each pipeline of a system (and its solver sweep) becomes one job array with one
 task per size, all submitted at once; a size that fails is a data point, not
 a reason to stop the ladder.  A system's ``cases.json``, job scripts,
-``jobs.json`` and logs go into its ``systems/<name>/runs``.  A last job, held
-until every array has finished (``afterany``), runs :mod:`finalize` and
-:mod:`collect` on every submitted system, to add the scheduler's verdict
-(``OUT_OF_MEMORY``, ``TIMEOUT``, ``MaxRSS``) to each record and build the
-tables.
+``jobs.json`` and logs go into its ``systems/<name>/runs``.
 
-``CONFIG['rerun_from_d']`` limits a submission to the sizes that need
-running again (see :func:`needs_run`).  Set ``CONFIG['slurm']['dry_run'] =
-True`` to write the scripts without calling ``sbatch`` (and without moving
-any case directory).
+Case directories are written in place, so empty ``runs/`` before submitting:
+files of an earlier run would mix into the new ones.  Nothing runs after the
+arrays; :mod:`finalize` and :mod:`collect` are run by hand if wanted.  Set
+``CONFIG['slurm']['dry_run'] = True`` to write the scripts without calling
+``sbatch``.
 """
 
 import json
 import os
 import subprocess
-import time
 
 from config import load_system, output_root
 from ladder import build_cases, slurm_resources
@@ -28,41 +24,12 @@ from ladder import build_cases, slurm_resources
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def group_cases(config, name, system):
-    """``{group: [case, ...]}``: one group (job array) per pipeline, holding the
-    cases :func:`needs_run` keeps."""
+def group_cases(config: dict, name: str, system: dict) -> dict[str, list[dict]]:
+    """``{group: [case, ...]}``: one group (job array) per pipeline."""
     groups = {}
     for case in build_cases(config, name, system):
-        if needs_run(config, name, case):
-            groups.setdefault(case['pipeline'], []).append(case)
+        groups.setdefault(case['pipeline'], []).append(case)
     return groups
-
-
-def needs_run(config, name, case):
-    """Whether ``CONFIG['rerun_from_d']`` submits ``case``: every case when it is
-    ``None``, else the sizes ``d >= rerun_from_d`` and any case whose
-    ``record.json`` is missing or not ``'ok'``."""
-    start = config.get('rerun_from_d')
-    if start is None or case['d'] >= start:
-        return True
-    path = os.path.join(output_root(name), case['id'], 'record.json')
-    if not os.path.exists(path):
-        return True
-    with open(path) as f:
-        return json.load(f).get('status') != 'ok'
-
-
-def set_aside(name, groups):
-    """Move the directories of the cases about to run to ``runs/superseded/<id>_<time>``,
-    so no file of an earlier run (an ``error_rank*.json``, say) mixes into the new one."""
-    root = output_root(name)
-    stamp = time.strftime('%Y%m%d-%H%M%S')
-    for cases in groups.values():
-        for case in cases:
-            old = os.path.join(root, case['id'])
-            if os.path.isdir(old):
-                os.makedirs(os.path.join(root, 'superseded'), exist_ok=True)
-                os.rename(old, os.path.join(root, 'superseded', '%s_%s' % (case['id'], stamp)))
 
 
 def check_savedirs(systems):
@@ -103,20 +70,17 @@ def _sbatch_header(config, name, res, ntasks_array, log):
     return lines
 
 
-def write_scripts(config, name, system):
+def write_scripts(config: dict, name: str, system: dict) -> dict[str, str]:
     """Write one system's ``cases.json`` and one job script per group.
 
     Returns
     -------
-    (dict, dict)
-        ``{group: script path}`` and ``{group: [case, ...]}``.
+    dict
+        ``{group: script path}``.
     """
     root = output_root(name)
     os.makedirs(os.path.join(root, 'logs'), exist_ok=True)
     groups = group_cases(config, name, system)
-    if not groups:
-        # keep the cases.json the last submission's finalize reads
-        return {}, groups
     with open(os.path.join(root, 'cases.json'), 'w') as f:
         json.dump({'groups': groups, 'config': config, 'system': system}, f, indent=1, default=list)
 
@@ -128,7 +92,6 @@ def write_scripts(config, name, system):
             'sps_%s_%s' % (name, group),
             res,
             len(cases),
-            # %A: an array of resubmitted sizes must not overwrite the logs of the first one
             os.path.join(root, 'logs', group + '_%A_%a.out'),
         )
         lines += ['', 'set -uo pipefail']
@@ -149,30 +112,7 @@ def write_scripts(config, name, system):
         with open(path, 'w') as f:
             f.write('\n'.join(lines) + '\n')
         scripts[group] = path
-    return scripts, groups
-
-
-def write_finalize(config, names):
-    """The finalize job: :mod:`finalize`, then :mod:`collect`, per system."""
-    res = dict(
-        config['slurm'], ntasks=1, cpus_per_task=1, mem='2G', time='00:30:00', exclusive=False
-    )
-    # the one job that spans the systems lives in the top-level runs/
-    log_dir = os.path.join(HERE, 'runs')
-    os.makedirs(log_dir, exist_ok=True)
-    lines = _sbatch_header(config, 'sps_finalize', res, None, os.path.join(log_dir, 'finalize.out'))
-    lines += ['', 'set -uo pipefail'] + res.get('setup', []) + ['cd %s' % HERE]
-    for name in names:
-        root = output_root(name)
-        lines += [
-            'export BENCH_OUTPUT_ROOT=%s' % root,
-            '%s finalize.py' % res['python'],
-            '%s collect.py' % res['python'],
-        ]
-    path = os.path.join(log_dir, 'job_finalize.sh')
-    with open(path, 'w') as f:
-        f.write('\n'.join(lines) + '\n')
-    return path
+    return scripts
 
 
 def _sbatch(args):
@@ -182,34 +122,24 @@ def _sbatch(args):
     return out.stdout.strip().split(';')[0]
 
 
-def submit(config):
+def submit(config: dict) -> dict[str, dict[str, str]]:
     """Write everything and submit it; returns ``{system: {group: job id}}``."""
     systems = {name: load_system(name) for name in config['systems']}
     check_savedirs(systems)
-    written = {name: write_scripts(config, name, system) for name, system in systems.items()}
-    scripts = {name: paths for name, (paths, _) in written.items() if paths}
-    if not scripts:
-        print('nothing to submit: every case below rerun_from_d has an ok record')
-        return {}
-    finalize = write_finalize(config, list(scripts))
+    scripts = {name: write_scripts(config, name, system) for name, system in systems.items()}
     if config['slurm'].get('dry_run'):
         for name, paths in scripts.items():
             for group, path in paths.items():
                 print('[dry run] %-4s %-20s %s' % (name, group, path))
-        print('[dry run] %-25s %s' % ('finalize', finalize))
         return {}
     jobs = {}
     for name, paths in scripts.items():
-        set_aside(name, written[name][1])
         jobs[name] = {}
         for group, path in paths.items():
             jobs[name][group] = _sbatch([path])
             print('submitted %-4s %-20s job %s' % (name, group, jobs[name][group]))
         with open(os.path.join(output_root(name), 'jobs.json'), 'w') as f:
             json.dump(jobs[name], f, indent=1)
-    ids = [job for groups in jobs.values() for job in groups.values()]
-    final = _sbatch(['--dependency=afterany:' + ':'.join(ids), finalize])
-    print('submitted %-25s job %s (after all arrays)' % ('finalize', final))
     return jobs
 
 

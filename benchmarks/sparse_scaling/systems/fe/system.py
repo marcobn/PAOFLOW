@@ -1,7 +1,7 @@
 """Bulk bcc Fe (example04): a ferromagnetic metal with spin-orbit coupling.
 
 The base cell has ``nawf = 26`` (3s, 4s, 3p, 4p, 3d with spin).  The ladder runs
-to ``d = 4`` (``nawf = 416``) for now; ``d = 7`` would be ``nawf = 3328``.  The
+to ``d = 3`` (``nawf = 208``) for now; ``d = 7`` would be ``nawf = 3328``.  The
 magnetization points along z (``starting_magnetization``,
 default angles), which breaks time reversal.  Fe tests:
 
@@ -125,7 +125,7 @@ SYSTEM = {
             'bands': True,
             'sparse_config': SPARSE,
             'properties': WINDOW_PROPERTIES,
-            'max_doublings': 4,
+            'max_doublings': 3,
         },
         'sparse_curvature': {
             'sparse': True,
@@ -133,7 +133,7 @@ SYSTEM = {
             'sparse_config': SPARSE,
             'properties': FULL_PROPERTIES,
             'property_args': {'transport': {'do_hall': True}},
-            'max_doublings': 4,
+            'max_doublings': 3,
         },
         'sparse_interior': {
             'enabled': False,

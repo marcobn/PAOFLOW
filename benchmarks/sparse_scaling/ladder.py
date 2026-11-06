@@ -47,8 +47,10 @@ def case_system(name, system):
     return out
 
 
-def build_cases(config, name, system):
-    """Every case of one system, in submission order.
+def build_cases(config: dict, name: str, system: dict) -> list[dict]:
+    """Every case of one system, in submission order: each pipeline's ladder
+    ``d = 0 .. max_doublings``, then ``config['extra_doublings']`` on the pipelines
+    that double.
 
     Parameters
     ----------
@@ -71,11 +73,15 @@ def build_cases(config, name, system):
     for pname, pipe in system['pipelines'].items():
         if not pipe.get('enabled', True):
             continue
-        for d in range(int(pipe['max_doublings']) + 1):
-            doublings = doubling_pattern(d)
+        sizes = [doubling_pattern(d) for d in range(int(pipe['max_doublings']) + 1)]
+        if len(sizes) > 1:
+            sizes += [tuple(pattern) for pattern in config['extra_doublings']]
+        for doublings in sizes:
+            d = sum(doublings)
+            tag = '' if doublings == doubling_pattern(d) else '_%d%d%d' % doublings
             cases.append(
                 {
-                    'id': '%s_d%02d' % (pname, d),
+                    'id': '%s_d%02d%s' % (pname, d, tag),
                     'kind': 'pipeline',
                     'pipeline': pname,
                     'sparse': bool(pipe['sparse']),
