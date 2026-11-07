@@ -7,6 +7,8 @@ selected with ``--source`` (default ``auto`` detects it from the identifier):
 * C2DB   -- material UID (e.g. ``2C-1``), material-page URL, or ``c2db:<uid>``
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys
@@ -124,6 +126,91 @@ def _build_parser():
     return parser
 
 
+def generate_qe_input(
+    identifier: str,
+    pseudo_dir: str,
+    source: str = 'auto',
+    soc: bool = False,
+    degauss: float = DEFAULT_DEGAUSS,
+    nbnd: int | None = None,
+    ibrav: str = 'auto',
+    symprec: float = 1.0e-4,
+    metallic: bool | None = None,
+    magnetic: bool | None = None,
+    kpoints: tuple[int, int, int] | None = None,
+    assume_isolated_2d: bool = True,
+):
+    """Fetch a database entry and build its Quantum ESPRESSO scf input.
+
+    Parameters
+    ----------
+    identifier : str
+        AFLOW URL, material page or ``aflow:<auid>``; C2DB UID, page or ``c2db:<uid>``.
+    pseudo_dir : str
+        Folder with ``<element>.upf``, ``PeriodicTableJSON.json`` and ``reference.json``.
+    source : str, optional
+        Database name, or ``'auto'`` to detect it from the identifier.
+    soc : bool, optional
+        Force the noncollinear spin-orbit cards.
+    degauss : float, optional
+        Smearing width (Ry) of metals.
+    nbnd : int, optional
+        Number of bands (default: from the extended PAO basis).
+    ibrav : str, optional
+        ``'auto'`` (detect ibrav and celldm) or ``'0'`` (explicit cell).
+    symprec : float, optional
+        Symmetry tolerance of the ibrav detection.
+    metallic, magnetic : bool, optional
+        Override the database metadata (``None`` keeps it).
+    kpoints : tuple of int, optional
+        Monkhorst-Pack grid override.
+    assume_isolated_2d : bool, optional
+        Write ``assume_isolated = '2D'`` for 2D entries.
+
+    Returns
+    -------
+    record : MaterialRecord
+        The normalised entry.
+    text : str
+        The ``pw.x`` input.
+
+    Raises
+    ------
+    RuntimeError, ValueError
+        When the entry cannot be fetched or converted.
+    """
+    database = detect_source(identifier) if source == 'auto' else get_source(source)
+    record = database.fetch(identifier, metallic=metallic, magnetic=magnetic, kpoints=kpoints)
+    if kpoints is not None:
+        record.kpoints = tuple(kpoints)
+    text = build_qe_input(
+        record,
+        pseudo_dir,
+        soc=soc,
+        degauss=degauss,
+        nbnd_override=nbnd,
+        ibrav_mode=ibrav,
+        symprec=symprec,
+        assume_isolated_2d=assume_isolated_2d,
+    )
+    return record, text
+
+
+def default_output_name(record) -> str:
+    """``<compound>.scf.in`` (``system.scf.in`` without a compound name).
+
+    Parameters
+    ----------
+    record : MaterialRecord
+        The fetched entry.
+
+    Returns
+    -------
+    str
+    """
+    return '{}.scf.in'.format(record.compound or 'system')
+
+
 def main(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -133,35 +220,25 @@ def main(argv=None):
         parser.error('pseudo-dir does not exist: {}'.format(pseudo_dir))
 
     try:
-        if args.source == 'auto':
-            source = detect_source(args.identifier)
-        else:
-            source = get_source(args.source)
-
-        record = source.fetch(
+        record, content = generate_qe_input(
             args.identifier,
-            metallic=args.metallic,
-            magnetic=args.magnetic,
-            kpoints=args.kpoints,
-        )
-        if args.kpoints is not None:
-            record.kpoints = tuple(args.kpoints)
-
-        content = build_qe_input(
-            record,
             pseudo_dir,
+            source=args.source,
             soc=args.soc,
             degauss=args.degauss,
-            nbnd_override=args.nbnd,
-            ibrav_mode=args.ibrav,
+            nbnd=args.nbnd,
+            ibrav=args.ibrav,
             symprec=args.symprec,
+            metallic=args.metallic,
+            magnetic=args.magnetic,
+            kpoints=tuple(args.kpoints) if args.kpoints is not None else None,
             assume_isolated_2d=args.assume_isolated_2d,
         )
     except (RuntimeError, ValueError) as exc:
         sys.stderr.write('Error: {}\n'.format(exc))
         return 1
 
-    out_path = args.out or '{}.scf.in'.format(record.compound or 'system')
+    out_path = args.out or default_output_name(record)
     with open(out_path, 'w', encoding='utf-8') as handle:
         handle.write(content)
 

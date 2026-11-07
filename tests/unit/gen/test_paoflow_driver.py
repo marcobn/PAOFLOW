@@ -414,3 +414,35 @@ def test_collect_nonlinear_prompts(monkeypatch):
     assert cfg['nlo_responses'] == ('shg',) and cfg['nlo_dipoles'] and cfg['nlo_shg_terms']
     assert cfg['nlo_coupled'] and cfg['coupled_kernels'] == ('none', 'hartree', 'hartree+alda')
     assert cfg['coupled_shg_energies'] == [0.1, 1.0] and cfg['coupled_ne'] == 56
+
+
+def test_plot_script_hall_coefficient_reads_smeared_three_column_file(tmp_path, monkeypatch):
+    """The Hall entry finds hall_trace_<smearing>_<spin>.dat (the name do_transport writes when a
+    smearing is set) and plots column 2 (R_H) against column 1 (E), one curve per temperature."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    cfg = _run_cfg(ibrav=2, is_2d=False, properties=['transport'])
+    plot = d.build_plot_script(cfg)
+    assert "_spin_channels('hall_trace*_0.dat')" in plot
+    rows = [
+        (300.0, -0.5, 1.0e-9),
+        (300.0, 0.0, 2.0e-9),
+        (600.0, -0.5, 3.0e-9),
+        (600.0, 0.0, 4.0e-9),
+    ]
+    (tmp_path / 'hall_trace_gauss_0.dat').write_text(
+        ''.join('%8.2f % .5f % 9.5e \n' % row for row in rows)
+    )
+    namespace = {'__name__': 'generated_plot', '__file__': str(tmp_path / 'plot.py')}
+    exec(compile(plot, 'plot.py', 'exec'), namespace)
+    namespace['OUTPUTDIR'] = str(tmp_path)
+    monkeypatch.setattr(plt, 'show', lambda *a, **k: None)
+    namespace['plot_hall_coefficient']()
+    lines = plt.gcf().axes[0].get_lines()
+    assert [line.get_label() for line in lines] == ['300 K', '600 K']
+    assert list(lines[1].get_xdata()) == [-0.5, 0.0]
+    assert list(lines[1].get_ydata()) == [3.0e-9, 4.0e-9]
+    plt.close('all')

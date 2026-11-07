@@ -11,8 +11,7 @@ subfolder per selected workflow (``phonons/``, ``coupling/``, ``superconductivit
 from __future__ import annotations
 
 import os
-import shutil
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -437,6 +436,38 @@ def workflow_files(cfg: dict[str, Any]) -> list[str]:
     return files
 
 
+def system_folder_files(cfg: dict[str, Any]) -> list:
+    """The files of the system folder, before anything is written.
+
+    Parameters
+    ----------
+    cfg : dict
+        The generator configuration (:func:`render_system_py`, :func:`qe_inputs`,
+        ``workflows``, ``metal``).
+
+    Returns
+    -------
+    list of PAOFLOW.gen.outputs.GeneratedFile
+        ``system.py``, the QE inputs (shell scripts executable) and the copied drivers, with
+        paths relative to the system folder.
+    """
+    from .outputs import GeneratedFile
+
+    texts = {'system.py': render_system_py(cfg)}
+    texts.update(qe_inputs(cfg))
+    files = [
+        GeneratedFile(rel, text=text, executable=rel.endswith('.sh')) for rel, text in texts.items()
+    ]
+    files += [
+        GeneratedFile(rel, template=os.path.join(TEMPLATE_DIR, rel)) for rel in workflow_files(cfg)
+    ]
+    return files
+
+
+#: Empty folders of every system folder (the shared vertex cache and the figures).
+SYSTEM_FOLDERS = ('cache', 'figures')
+
+
 def write_system_folder(cfg: dict[str, Any], out: str, force: bool = False) -> list[str]:
     """Write ``system.py``, the QE inputs and the workflow drivers of a system folder.
 
@@ -456,60 +487,25 @@ def write_system_folder(cfg: dict[str, Any], out: str, force: bool = False) -> l
         Written files.
     """
     out = os.path.abspath(out)
-    texts = {'system.py': render_system_py(cfg)}
-    texts.update(qe_inputs(cfg))
     written = []
-    for rel, text in texts.items():
-        path = os.path.join(out, rel)
+    for generated in system_folder_files(cfg):
+        path = os.path.join(out, generated.path)
         if os.path.exists(path) and not force:
             print('  %s exists (use --force to overwrite)' % path)
             continue
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as handle:
-            handle.write(text)
-        if rel.endswith('.sh'):
-            os.chmod(path, 0o755)
-        written.append(path)
-    for rel in workflow_files(cfg):
-        path = os.path.join(out, rel)
-        if os.path.exists(path) and not force:
-            print('  %s exists (use --force to overwrite)' % path)
-            continue
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        shutil.copyfile(os.path.join(TEMPLATE_DIR, rel), path)
-        written.append(path)
-    for rel in ('cache', 'figures'):
+        written.append(generated.write(out))
+    for rel in SYSTEM_FOLDERS:
         os.makedirs(os.path.join(out, rel), exist_ok=True)
     return written
 
 
 # ------------------------------------------------------------------------------ prompts
-def _floats(text: str) -> list[float]:
-    return [float(x) for x in text.replace(',', ' ').split() if x.strip()]
-
-
-def ask_divisible(ask_int, prompt: str, default: int, divisor: int, what: str) -> int:
-    """Ask for an integer that is a positive multiple of ``divisor`` (re-prompting otherwise)."""
-    while True:
-        value = ask_int(prompt, default)
-        if value > 0 and value % divisor == 0:
-            return value
-        print('  %s must be a positive multiple of %d.' % (what, divisor))
-
-
-def ask_workflows(ask, choices: Sequence[str], default: Sequence[str]) -> list[str]:
-    """Comma-separated multi-select among ``choices`` (re-prompts on an unknown name)."""
-    while True:
-        answer = ask('Workflows (comma-separated: %s)' % ', '.join(choices), ', '.join(default))
-        names = [x.strip() for x in answer.replace(',', ' ').split() if x.strip()]
-        unknown = [n for n in names if n not in choices]
-        if not unknown:
-            return list(dict.fromkeys(names))
-        print('  unknown workflow(s): %s' % ', '.join(unknown))
 
 
 def collect_elphon_system(args, workdir: str) -> dict[str, Any]:
     """Prompt for the electron-phonon system configuration.
+
+    The questions are :data:`PAOFLOW.gen.questions.elphon.ELPHON_ITEMS` (shared with the GUI).
 
     Parameters
     ----------
@@ -523,441 +519,9 @@ def collect_elphon_system(args, workdir: str) -> dict[str, Any]:
     dict
         The configuration of :func:`write_system_folder`.
     """
-    from . import paoflow_driver as pd
-    from .epw_inputs import parse_exclude_bands, species_masses
+    from .questions import collect
 
-    cfg: dict[str, Any] = {'workdir': workdir}
-    template = pd.ask(
-        'pw.x input of the system (gives qe/phonon/scf.in and the nscf inputs; blank = none)',
-        pd.detect_pw_input(workdir) or '',
-    )
-    cfg['pw_template'] = template
-    cfg['pw_template_text'] = None
-    template_pseudo_dir = None
-    if template:
-        path = os.path.join(workdir, os.path.expanduser(template))
-        try:
-            with open(path, 'r', encoding='utf-8', errors='replace') as handle:
-                cfg['pw_template_text'] = handle.read()
-        except OSError:
-            print('  (%s not readable; the scf and nscf inputs are not written)' % path)
-        else:
-            template_pseudo_dir = pd._read_namelist_value(cfg['pw_template_text'], 'pseudo_dir')
-            if template_pseudo_dir is not None:
-                template_pseudo_dir = os.path.normpath(
-                    os.path.join(os.path.dirname(os.path.abspath(path)), template_pseudo_dir)
-                )
-    default_prefix = (
-        pd._read_namelist_value(cfg['pw_template_text'], 'prefix')
-        if cfg['pw_template_text']
-        else None
-    )
-    cfg['prefix'] = args.prefix or pd.ask('Prefix', (default_prefix or 'pwscf').strip('\'"'))
-    cfg['name'] = pd.ask('System name (titles of the figures)', cfg['prefix'])
-    out = os.path.abspath(os.path.expanduser(args.out or workdir))
-    cfg['out'] = out
-    if template_pseudo_dir is None:
-        template_pseudo_dir = workdir
-    # qe/phonon, qe/nscf and qe/optics are siblings, so one relative path serves all three.
-    default_pseudo = os.path.relpath(template_pseudo_dir, os.path.join(out, 'qe', 'phonon'))
-    cfg['pseudo_dir'] = pd.ask(
-        'pseudo_dir of the QE run directories', default_pseudo.rstrip('/') + '/'
-    )
-    source = pd.ask_choice(
-        "Coupling source (dfpt = PAOFLOW's vertex from ph.x dvscf, norm-conserving; "
-        'epw = EPW epbwrite, any pseudopotential)',
-        ['dfpt', 'epw'],
-        'dfpt',
-    )
-    cfg['coupling_source'] = source
-    kg = pd.ask_int('Coarse k-grid per axis (nscf)', 6)
-    while True:
-        qg = pd.ask_int('Coarse q-grid per axis (ph.x; must divide the k-grid)', kg)
-        if qg > 0 and kg % qg == 0:
-            break
-        print('  The q-grid must divide the k-grid (%d).' % kg)
-    cfg['kgrid'], cfg['qgrid'] = [kg] * 3, [qg] * 3
-    cfg['irreducible'] = True
-    if source == 'dfpt':
-        cfg['irreducible'] = pd.ask_yes_no(
-            'nscf on the irreducible wedge (K_POINTS automatic, unfolded by symmetry)? '
-            '(No = explicit full list)',
-            True,
-        )
-    else:
-        print('  (EPW needs the explicit full k list: K_POINTS crystal)')
-        cfg['irreducible'] = False
-    cfg['nbnd'] = pd.ask_int('Bands in the nscf run (nbnd, > number of PAO orbitals)', 0)
-    cfg['exclude_bands'] = []
-    if source == 'epw':
-        while True:
-            try:
-                cfg['exclude_bands'] = parse_exclude_bands(
-                    pd.ask(
-                        'Bands to exclude from the coupling (EPW exclude_bands, e.g. 1:5; blank = none)',
-                        '',
-                    )
-                )
-                break
-            except ValueError as err:
-                print('  %s' % err)
-    default_masses = species_masses(cfg['pw_template_text'] or '')
-    masses = pd.ask(
-        'Atomic mass of each species (amu), comma-separated',
-        ', '.join('%g' % m for m in default_masses),
-    )
-    cfg['masses_amu'] = _floats(masses)
-    cfg['nelec'] = pd.ask_int('Valence electrons (nelec)', 0)
-    cfg['metal'] = pd.ask_yes_no('Is the system a metal?', False)
-    cfg['basisdir'] = pd.ask('Basis directory name (paoflow-genbasis-ps)', 'BASIS_PS')
-    cfg['configuration'] = 'standard'
-    cfg['pthr'] = pd.ask_float('Projectability threshold (pthr)', 0.95)
-    cfg['spin_degeneracy'] = None
-    cfg['long_range'] = True
-    cfg['quadrupoles'] = None
-    cfg['cache_dir'] = 'cache'
-    if not cfg['metal']:
-        print(
-            '  (ph.in gets epsil = .true.: the dielectric tensor and Born charges of the '
-            'long-range model; quadrupoles come from coupling/quadrupoles.py)'
-        )
-    default = (
-        ['superconductivity', 'transport', 'arpes']
-        if cfg['metal']
-        else ['optics', 'transport', 'arpes']
-    )
-    choices = [
-        'phonons',
-        'coupling',
-        'superconductivity',
-        'optics',
-        'transport',
-        'arpes',
-        'thermal',
-    ]
-    cfg['workflows'] = ask_workflows(pd.ask, choices, default)
-    cfg['optics_nscf'] = False
-    if 'superconductivity' in cfg['workflows']:
-        _collect_superconductivity(cfg, pd, kg)
-    if 'optics' in cfg['workflows']:
-        _collect_optics(cfg, pd, kg)
-    if 'transport' in cfg['workflows']:
-        _collect_transport(cfg, pd, kg)
-    if 'arpes' in cfg['workflows']:
-        _collect_arpes(cfg, pd, kg)
-    if 'thermal' in cfg['workflows']:
-        _collect_thermal(cfg, pd, kg)
-    if 'phonons' in cfg['workflows']:
-        cfg['phonons'] = dict(units='cm-1', mesh=(24, 24, 24), sigma=3.0)
-    if 'coupling' in cfg['workflows']:
-        cfg['coupling'] = dict(nk=24, direction=(1.0, 0.0, 0.0))
-    if cfg['optics_nscf']:
-        cfg['optics_kgrid'] = [pd.ask_int('Optics nscf: Monkhorst-Pack grid per axis', 8)] * 3
-        cfg['optics_nbnd'] = pd.ask_int(
-            'Optics nscf: bands (more than the orbitals of the extended PAO basis)', 60
-        )
-    if cfg['nbnd'] <= 0 or not cfg['masses_amu'] or cfg['nelec'] <= 0:
-        print(
-            '\nNote: nbnd, masses_amu and nelec are system-specific; edit system.py and qe/ before running.'
-        )
-    return cfg
-
-
-def _collect_superconductivity(cfg, pd, kg: int) -> None:
-    nq = pd.ask_int('Superconductivity: dense phonon q-grid per axis (NQ_DENSE)', 4 * kg)
-    nk = ask_divisible(
-        pd.ask_int,
-        'Superconductivity: dense electron k-grid per axis (NK_DENSE)',
-        8 * kg,
-        nq,
-        'NK_DENSE',
-    )
-    adaptive = pd.ask_float(
-        'Adaptive Fermi-surface smearing prefactor a (Yates; 0.7 production, 0 = fixed width)', 0.7
-    )
-    sigma = pd.ask_float(
-        'Fermi-surface smearing (eV): floor of the adaptive widths, or the fixed width (EPW degaussw)',
-        0.001 if adaptive else 0.05,
-    )
-    mu_star = pd.ask_float('Coulomb pseudopotential mu* (for Tc)', 0.10)
-    transport = pd.ask_yes_no(
-        'Also the transport Eliashberg function (resistivity, infrared optics, emissivity)?',
-        cfg.get('metal', False) and 'transport' in cfg['workflows'],
-    )
-    fs_coupling = pd.ask_yes_no(
-        'Store the Fermi-surface pair coupling for the anisotropic Migdal-Eliashberg equations '
-        '(needs nk == nq)?',
-        nk == nq,
-    )
-    fsthick = (
-        pd.ask_float('Fermi window of the anisotropic states (eV, EPW fsthick)', 0.2)
-        if fs_coupling
-        else None
-    )
-    temps = _floats(pd.ask('Migdal-Eliashberg temperatures (K): Tmin, Tmax, nstemp', '0.5, 10, 20'))
-    if len(temps) == 3 and temps[2] >= 2:
-        me_temps = [round(float(t), 3) for t in np.linspace(temps[0], temps[1], int(temps[2]))]
-    else:
-        me_temps = temps or [1.0, 2.0, 4.0]
-    cfg['superconductivity'] = dict(
-        nk=nk,
-        nq=nq,
-        sigma_ev=sigma,
-        adaptive_smearing=adaptive or None,
-        mu_star=mu_star,
-        transport=transport,
-        fs_coupling=fs_coupling,
-        fsthick_ev=fsthick,
-        me_temps=me_temps,
-        me_linear_temps=(me_temps[0], me_temps[-1], len(me_temps)),
-        me_aniso_temps=me_temps,
-        wscut=0.1,
-        wscut_aniso=0.5,
-        degaussq_mev=0.15,
-        degaussq_linear_mev=0.5,
-        npade=90.0,
-    )
-
-
-def _collect_optics(cfg, pd, kg: int) -> None:
-    nq = pd.ask_int('Optics: dense phonon q-grid per axis (EPW nqf)', kg)
-    nk = ask_divisible(
-        pd.ask_int, 'Optics: dense electron k-grid per axis (EPW nkf)', 2 * nq, nq, 'NK_DENSE'
-    )
-    electrons_save = (
-        pd.ask(
-            'QE save of an eACBN0 (DFT+U+V, ortho-atomic) nscf in the same PAO basis, whose PAO '
-            'Hamiltonian replaces the PBE one (blank = PBE electrons)',
-            '',
-        )
-        or None
-    )
-    gap = pd.ask('Target indirect gap for a scissor (eV; blank = the Hamiltonian gap)', '')
-    gap_reference = None
-    if not electrons_save:
-        gap_reference = (
-            pd.ask(
-                'QE save of an eACBN0 (DFT+U+V) run whose PAO gap is the target (blank = none)', ''
-            )
-            or None
-        )
-    varshni = _floats(
-        pd.ask('Temperature-dependent gap: Varshni alpha (eV/K), beta (K) (blank = fixed)', '')
-    )
-    eps = pd.ask(
-        'Screening correction of the coupling (Poncé 2018): target static dielectric constant '
-        '(Si 11.94; blank = DFPT screening)',
-        '',
-    )
-    emissivity = pd.ask_yes_no(
-        'Also compute the thermal emissivity of a slab vs temperature (Kirchhoff)?', False
-    )
-    thickness, angles, direct_dir = 500.0, (0.0, 30.0, 60.0), None
-    if emissivity:
-        thickness = pd.ask_float('Slab thickness (um)', 500.0)
-        angles = tuple(
-            _floats(pd.ask('Emission angles (deg), comma-separated', '0, 30, 60')) or [0.0]
-        )
-        cfg['optics_nscf'] = pd.ask_yes_no(
-            'Direct dielectric function from an extended-basis run (qe/optics nscf + optics/dielectric.py)?',
-            True,
-        )
-        direct_dir = '../qe/optics/output' if cfg['optics_nscf'] else None
-    omega = (
-        pd.ask_float('Lowest photon energy (eV, EPW omegamin)', 0.01 if emissivity else 0.05),
-        pd.ask_float('Highest photon energy (eV, EPW omegamax)', 3.0),
-        pd.ask_float('Photon-energy step (eV, EPW omegastep)', 0.01 if emissivity else 0.05),
-    )
-    temps = _floats(
-        pd.ask(
-            'Temperatures (K), comma-separated',
-            '300, 500, 700, 900, 1100, 1300, 1500' if emissivity else '300',
-        )
-    ) or [300.0]
-    degauss = pd.ask_float('Delta smearing (eV, EPW degaussw)', 0.01 if emissivity else 0.05)
-    fsthick = pd.ask_float('Energy window around E_F (eV, EPW fsthick)', 4.0)
-    n_r = pd.ask(
-        'Constant refractive index n_r for alpha (blank = n(omega) of the direct run, else 3.4)', ''
-    )
-    cfg['optics'] = dict(
-        nk=nk,
-        nq=nq,
-        omega_ev=omega,
-        temps_k=temps,
-        degauss_ev=degauss,
-        adaptive_smearing=None,
-        fsthick_ev=fsthick,
-        refractive_index=float(n_r) if n_r.strip() else None,
-        position_dipoles=pd.ask_yes_no(
-            'Position dipoles of the PAO orbitals in the velocity operator?', True
-        ),
-        target_gap_ev=float(gap) if gap.strip() else None,
-        gap_reference_save=gap_reference,
-        varshni=tuple(varshni) if len(varshni) == 2 else None,
-        electrons_save=electrons_save,
-        screening_eps=float(eps) if eps.strip() else None,
-        emissivity=emissivity,
-        thickness_um=thickness,
-        angles=angles,
-        direct_dielectric_dir=direct_dir,
-        kk_omega_max_ev=10.0,
-        dielectric=dict(nfft=24, emin=0.01, emax=10.0, ne=1000, delta=0.1, intraband=True),
-    )
-
-
-def _collect_transport(cfg, pd, kg: int) -> None:
-    if cfg.get('metal'):
-        temps = _floats(
-            pd.ask('Resistivity: temperatures (K)', '20, 50, 100, 200, 300, 400, 500, 600')
-        )
-        rho0 = pd.ask_float('Residual resistivity (micro-ohm cm)', 0.0)
-        b_ee = pd.ask_float('Electron-electron (Fermi-liquid) coefficient b (1/eV)', 0.0)
-        interband = pd.ask_yes_no(
-            'Interband dielectric function from an extended-basis run (qe/optics nscf + '
-            'optics/dielectric.py --interband-only) for the emissivity?',
-            False,
-        )
-        if interband:
-            cfg['optics_nscf'] = True
-        cfg['transport'] = dict(
-            temps_k=temps or [300.0],
-            rho0_uohm_cm=rho0,
-            b_ee_per_ev=b_ee,
-            omega_ev=(0.005, 2.0, 0.005),
-            thickness_um=float('inf'),
-            angles=(0.0, 30.0, 60.0),
-            interband_dielectric_dir='../qe/optics/output' if interband else None,
-            extended_drude=True,
-        )
-        if interband and 'optics' not in cfg['workflows']:
-            cfg['optics'] = dict(
-                dielectric=dict(
-                    nfft=36,
-                    emin=0.002,
-                    emax=6.0,
-                    ne=3000,
-                    delta=0.1,
-                    intraband=False,
-                    smearing='gauss',
-                )
-            )
-        return
-    nq = pd.ask_int('Mobility: dense phonon q-grid per axis (mobilities need >= 48)', 8 * kg)
-    nk = ask_divisible(pd.ask_int, 'Mobility: dense electron k-grid per axis', nq, nq, 'NK_DENSE')
-    temps = _floats(
-        pd.ask('Temperatures (K), comma-separated', '200, 250, 300, 350, 400, 500')
-    ) or [300.0]
-    doping = pd.ask_float('Net doping (cm^-3; > 0 n type, < 0 p type, 0 intrinsic)', 0.0)
-    window = pd.ask_float('Energy window from the band edges (eV, EPW fsthick)', 0.3)
-    smearing = pd.ask_float('Delta smearing (eV, EPW degaussw)', 0.01)
-    electrons_save = (
-        pd.ask(
-            'QE save of an eACBN0 (DFT+U+V, ortho-atomic) nscf in the same PAO basis (blank = PBE electrons)',
-            '',
-        )
-        or None
-    )
-    gap = pd.ask(
-        'Target indirect gap for the carrier statistics (eV; blank = the Hamiltonian gap)', ''
-    )
-    varshni = []
-    if gap.strip() or electrons_save:
-        varshni = _floats(
-            pd.ask('Temperature-dependent gap: Varshni alpha (eV/K), beta (K) (blank = fixed)', '')
-        )
-    eps = pd.ask(
-        'Screening correction of the coupling (Poncé 2018): target static dielectric constant '
-        '(Si 11.94; blank = DFPT screening)',
-        '',
-    )
-    cfg['transport'] = dict(
-        nk=nk,
-        nq=nq,
-        temps_k=temps,
-        doping_cm3=doping,
-        window_ev=window,
-        smearing_ev=smearing,
-        adaptive_smearing=None,
-        target_gap_ev=float(gap) if gap.strip() else None,
-        varshni=tuple(varshni) if len(varshni) == 2 else None,
-        electrons_save=electrons_save,
-        screening_eps=float(eps) if eps.strip() else None,
-    )
-
-
-def _collect_arpes(cfg, pd, kg: int) -> None:
-    metal = cfg.get('metal', False)
-    photon = pd.ask_float('ARPES: photon energy (eV; He I 21.2)', 21.2)
-    work = pd.ask_float('Work function (eV)', 4.5)
-    direction = _floats(
-        pd.ask('Path: end point of the line from Gamma (crystal coordinates)', '0.5 0 0.5')
-    )
-    label = pd.ask('Its label', 'X')
-    sc = cfg.get('superconductivity', {})
-    if metal:
-        kinds = ['isotropic'] if 'superconductivity' in cfg['workflows'] else ['fan-migdal']
-        if sc.get('fs_coupling'):
-            kinds.append('anisotropic')
-    else:
-        kinds = ['fan-migdal']
-    cfg['arpes'] = dict(
-        photon_ev=photon,
-        work_function_ev=work,
-        polarization=(1.0, 0.0, 1.0),
-        direction=tuple(direction) if len(direction) == 3 else (0.5, 0.0, 0.5),
-        direction_label=label,
-        window=(-0.1, 0.02, 401) if metal else (-13.0, 1.5, 581),
-        resolution=(0.002, 0.0) if metal else (0.05, 0.0),
-        self_energy=kinds,
-        temps_k=[10.0] if metal else [10.0, 300.0, 600.0],
-        segment_ev=0.12 if metal else None,
-        npts=81 if metal else 41,
-        nq=18 if metal else 12,
-        eta_ev=0.005 if metal else 0.02,
-        adaptive_smearing=0.7 if metal else None,
-        intensity_power=1.0 if metal else 0.3,
-    )
-
-
-def _collect_thermal(cfg, pd, kg: int) -> None:
-    metal = cfg.get('metal', False)
-    temps = _floats(pd.ask('Thermal (ZG supercells): temperatures (K), comma-separated', '0, 300'))
-    dims = pd.ask_int('ZG supercell per axis (3 for tests, 4 and more for production)', 3)
-    kgrid = pd.ask_int('k-grid per axis of the supercell scf', max(1, -(-kg // dims)))
-    nat = pd._read_namelist_value(cfg.get('pw_template_text') or '', 'nat')
-    try:
-        nat = max(1, int(float(str(nat).strip(' ,\'"'))))
-    except (TypeError, ValueError):
-        nat = 1
-    default_bands = int(np.ceil(cfg['nbnd'] / nat)) if cfg.get('nbnd', 0) > 0 else 12
-    nbnd_per_atom = pd.ask_int(
-        'Bands per atom of the supercell scf (above the PAO orbitals per atom)',
-        max(4, default_bands),
-    )
-    nconf = pd.ask_int('Configurations per temperature (seeds of the sign search)', 1)
-    cfg['thermal'] = dict(
-        temps_k=temps or [0.0, 300.0],
-        supercell=(dims,) * 3,
-        kgrid=(kgrid,) * 3,
-        nbnd_per_atom=nbnd_per_atom,
-        force_constants=None,
-        seeds=list(range(max(1, nconf))),
-        error_thresh=0.05,
-        reference=True,
-        path='G-X' if metal else 'L-G-X',
-        sym_points=None,
-        nk_per_seg=100,
-        energy_window=(-0.3, 0.3, 601) if metal else (-2.0, 3.0, 1001),
-        broadening_ev=0.005 if metal else 0.02,
-        crossing_ev=0.0,
-        half_window_ev=0.25 if metal else 0.5,
-        dielectric=None if metal else dict(nfft=24, emin=0.05, emax=6.0, ne=1200, delta=0.05),
-        fd_mode='random',
-        fd_nconfig=60,
-        fd_distance=0.03,
-        lambda_nk=12,
-        lambda_sigma_ev=0.05,
-    )
+    return collect('elphon', args, workdir)
 
 
 def main_elphon(args, workdir: str) -> int:

@@ -1,0 +1,204 @@
+"""Security of the local GUI server: session token, Host/Origin checks and the path sandbox.
+
+The server binds to the loopback interface only, but on a shared machine (an HPC login node)
+every user can reach ``127.0.0.1:<port>``, and any web page open in the user's browser can try
+cross-site requests or DNS rebinding.  Hence:
+
+* a random token, given once in the URL and then kept in an ``HttpOnly; SameSite=Strict`` cookie,
+  is required on every request;
+* the ``Host`` header must name the loopback address and the server port, and state-changing
+  requests must come from the same origin;
+* every path the browser sends is resolved under the server root (symbolic links included), and
+  anything outside it is refused.
+"""
+
+from __future__ import annotations
+
+import hmac
+import secrets
+from pathlib import Path
+
+COOKIE_NAME = 'paoflow_studio_token'
+TOKEN_HEADER = 'X-PAOFLOW-Token'
+LOOPBACK_NAMES = ('127.0.0.1', 'localhost', '[::1]')
+
+#: Headers sent with every response.
+SECURITY_HEADERS = {
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Content-Security-Policy': (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; "
+        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+    ),
+}
+
+
+def new_token() -> str:
+    """A random session token (256 bits, URL safe).
+
+    Returns
+    -------
+    str
+    """
+    return secrets.token_urlsafe(32)
+
+
+def same_token(given: str | None, expected: str) -> bool:
+    """Constant-time comparison of a presented token with the session token.
+
+    Parameters
+    ----------
+    given : str or None
+        Token of the request.
+    expected : str
+        Session token.
+
+    Returns
+    -------
+    bool
+    """
+    return bool(given) and hmac.compare_digest(given.encode(), expected.encode())
+
+
+def cookie_token(cookie_header: str | None) -> str | None:
+    """The session token of a ``Cookie`` header.
+
+    Parameters
+    ----------
+    cookie_header : str or None
+        The header value.
+
+    Returns
+    -------
+    str or None
+    """
+    if not cookie_header:
+        return None
+    for part in cookie_header.split(';'):
+        name, _, value = part.strip().partition('=')
+        if name == COOKIE_NAME:
+            return value
+    return None
+
+
+def session_cookie(token: str) -> str:
+    """``Set-Cookie`` value of the session token.
+
+    Parameters
+    ----------
+    token : str
+        The session token.
+
+    Returns
+    -------
+    str
+    """
+    return '%s=%s; HttpOnly; SameSite=Strict; Path=/' % (COOKIE_NAME, token)
+
+
+def allowed_hosts(port: int) -> set[str]:
+    """``Host`` header values accepted by a server on ``port``.
+
+    Parameters
+    ----------
+    port : int
+        The server port.
+
+    Returns
+    -------
+    set of str
+    """
+    return {'%s:%d' % (name, port) for name in LOOPBACK_NAMES}
+
+
+def host_allowed(host_header: str | None, port: int) -> bool:
+    """Whether the ``Host`` header names this loopback server (DNS-rebinding guard).
+
+    Parameters
+    ----------
+    host_header : str or None
+        The header value.
+    port : int
+        The server port.
+
+    Returns
+    -------
+    bool
+    """
+    return (host_header or '').strip().lower() in allowed_hosts(port)
+
+
+def origin_allowed(origin_header: str | None, port: int) -> bool:
+    """Whether a state-changing request comes from the GUI itself.
+
+    Parameters
+    ----------
+    origin_header : str or None
+        The ``Origin`` header (browsers send it on POST); absent for non-browser clients.
+    port : int
+        The server port.
+
+    Returns
+    -------
+    bool
+    """
+    if origin_header is None:
+        return True
+    return origin_header.strip().lower() in {'http://' + host for host in allowed_hosts(port)}
+
+
+class Sandbox:
+    """Resolve browser paths under the server root and refuse anything outside it.
+
+    Parameters
+    ----------
+    root : str or Path
+        The root folder (``paoflow-studio --root``).
+    """
+
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root).expanduser().resolve()
+
+    def resolve(self, path: str | Path | None) -> Path:
+        """Absolute path of ``path`` (relative to the root, or absolute inside it).
+
+        Parameters
+        ----------
+        path : str or Path or None
+            Path from the browser; blank means the root.
+
+        Returns
+        -------
+        Path
+
+        Raises
+        ------
+        PermissionError
+            If the path (after resolving symbolic links and ``..``) leaves the root.
+        """
+        text = '' if path is None else str(path).strip()
+        candidate = Path(text).expanduser() if text else self.root
+        if not candidate.is_absolute():
+            candidate = self.root / candidate
+        resolved = candidate.resolve()
+        if resolved != self.root and not resolved.is_relative_to(self.root):
+            raise PermissionError('%s is outside the GUI root %s' % (text, self.root))
+        return resolved
+
+    def relative(self, path: str | Path) -> str:
+        """Path relative to the root (``'.'`` for the root itself).
+
+        Parameters
+        ----------
+        path : str or Path
+            An absolute path inside the root.
+
+        Returns
+        -------
+        str
+        """
+        relative = Path(path).resolve().relative_to(self.root)
+        return str(relative) if str(relative) != '.' else '.'

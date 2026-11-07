@@ -1,3 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+
+
 class DataController:
     """Central data store and I/O manager for a PAOFLOW run.
 
@@ -173,7 +181,7 @@ class DataController:
     ----------------------
     write_bands(fname, bands)
         Write per-spin band structure files ``<fname>_<ispin>.dat``.
-    write_bxsf(fname, bands, nbnd, indices)
+    write_bxsf(fname, bands, nbnd, indices, skeaf_sheets)
         Write Fermi-surface data in ``.bxsf`` format (for XCrysDen /
         SKEAF).
     write_HRs(fname)
@@ -720,17 +728,35 @@ class DataController:
                 f.writelines(f'{x:12.5f} {y:25.15e}\n' for x, y in zip(col1, col2))
         self.comm.Barrier()
 
-    def write_bxsf(self, fname, bands, nbnd, indices=None):
-        """
-        Write a file in the bxsf format
+    def write_bxsf(
+        self,
+        fname: str,
+        bands: np.ndarray,
+        nbnd: int,
+        indices: np.ndarray | list[int] | None = None,
+        skeaf_sheets: bool = True,
+    ) -> None:
+        """Write a BXSF file and, for Fermi surfaces, the per-band SKEAF sheets.
 
-        Arguments:
-            fname (str): Name of the file (written to outputdir)
-            bands (ndarray): The data array of values to be written
-            nbnd (int): Number of values from array to write
+        Parameters
+        ----------
+        fname : str
+            Name of the BXSF file (written to ``outputdir``).
+        bands : numpy.ndarray, shape ``(nk1, nk2, nk3, nbnd)``
+            Values on the k-grid (band energies in eV, or any scalar field).
+        nbnd : int
+            Number of bands to write.
+        indices : array_like of int, optional
+            Band indices of the written bands (1-based in the file).
+        skeaf_sheets : bool, optional
+            Also write ``Fermi_surf_band_{n}.bxsf`` (one band per file, Rydberg) for
+            pyskeaf.  Only band energies belong in those files: callers that write another
+            field (the Berry curvature of the Hall runs) pass ``False`` so the Fermi-surface
+            sheets of an earlier ``fermi_surface()`` call are not overwritten.
 
-        Returns:
-            None
+        Returns
+        -------
+        None
         """
         attr = self.data_attributes
 
@@ -739,7 +765,8 @@ class DataController:
             from .writers.write2bxsf4skeaf import write2bxsf4skeaf
 
             write2bxsf(self, fname, bands, nbnd, indices, attr['fermi_up'], attr['fermi_dw'])
-            write2bxsf4skeaf(self, bands, nbnd, indices)
+            if skeaf_sheets:
+                write2bxsf4skeaf(self, bands, nbnd, indices)
 
     def write_bands(self, fname, bands):
         """

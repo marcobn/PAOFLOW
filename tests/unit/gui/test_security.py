@@ -1,0 +1,88 @@
+"""Session token, Host/Origin checks, the path sandbox and read-only sessions."""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+from PAOFLOW.gui import security
+
+
+def test_requests_need_the_token(client):
+    assert client.get('/api/session', token=False)[0] == 403
+    status, _, _ = client.get('/api/session', headers={'X-PAOFLOW-Token': 'wrong'}, token=False)
+    assert status == 403
+    status, body, _ = client.get('/api/session')
+    assert status == 200 and body['read_only'] is False
+
+
+def test_token_in_the_url_becomes_a_cookie(client):
+    status, _, response = client.get('/?token=%s' % client.app.token, token=False)
+    assert status == 303 and response.getheader('Location') == '/'
+    cookie = response.getheader('Set-Cookie')
+    assert 'HttpOnly' in cookie and 'SameSite=Strict' in cookie
+    value = cookie.split(';')[0]
+    status, _, _ = client.get('/api/session', token=False, headers={'Cookie': value})
+    assert status == 200
+    assert client.get('/?token=nope', token=False)[0] == 403
+
+
+def test_index_without_token_explains_how_to_open(client):
+    status, body, response = client.get('/', token=False)
+    assert status == 403 and b'?token=' in body
+
+
+def test_foreign_host_and_origin_are_refused(client):
+    assert client.get('/api/session', headers={'Host': 'evil.example:80'})[0] == 403
+    status, _, _ = client.post('/api/gen/resolve', {}, headers={'Origin': 'http://evil.example'})
+    assert status == 403
+    origin = 'http://127.0.0.1:%d' % client.app.port
+    status, _, _ = client.post(
+        '/api/gen/resolve', {'workflow': 'run', 'workdir': 'Si'}, headers={'Origin': origin}
+    )
+    assert status == 200
+
+
+def test_security_headers(client):
+    _, _, response = client.get('/api/session')
+    assert "default-src 'self'" in response.getheader('Content-Security-Policy')
+    assert response.getheader('X-Content-Type-Options') == 'nosniff'
+
+
+def test_paths_stay_inside_the_root(client, gui_root, tmp_path):
+    assert client.get('/api/fs/list?path=..')[0] == 403
+    assert client.get('/api/fs/list?path=/etc')[0] == 403
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    os.symlink(outside, gui_root / 'link')
+    assert client.get('/api/fs/list?path=link')[0] == 403
+    names = [e['name'] for e in client.get('/api/fs/list')[1]['entries']]
+    assert 'link' not in names and 'Si' in names
+
+
+def test_static_files_and_traversal(client):
+    status, body, response = client.get('/static/js/app.js')
+    assert status == 200 and response.getheader('Content-Type').startswith('text/javascript')
+    assert client.get('/static/../server.py')[0] == 404
+    assert client.get('/static/%2e%2e/server.py')[0] == 404
+
+
+def test_read_only_session_refuses_writes(make_client):
+    client = make_client(read_only=True)
+    status, body, _ = client.post(
+        '/api/gen/write', {'workflow': 'run', 'workdir': 'Si', 'answers': {'properties': ['bands']}}
+    )
+    assert status == 403 and 'read-only' in body['error']
+
+
+def test_sandbox_unit(tmp_path):
+    box = security.Sandbox(tmp_path)
+    assert box.resolve(None) == tmp_path.resolve()
+    assert box.resolve('a/../b') == (tmp_path / 'b').resolve()
+    with pytest.raises(PermissionError):
+        box.resolve('../x')
+    assert security.host_allowed('localhost:8765', 8765) and not security.host_allowed(
+        'localhost:1', 8765
+    )
+    assert security.origin_allowed(None, 8765) and not security.origin_allowed('null', 8765)

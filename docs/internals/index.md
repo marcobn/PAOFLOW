@@ -89,6 +89,7 @@ agentic-nlo
 agentic-sscha
 sk-edtb
 cli-generators
+web-gui-plan
 
 ```
 

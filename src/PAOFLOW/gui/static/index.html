@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PAOFLOW Studio</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/css/app.css" />
+    <script type="module" src="/static/js/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">PAOFLOW <span class="brand-studio">Studio</span> <small id="version"></small></div>
+      <nav class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="setup" aria-selected="true">Setup</button>
+        <button class="tab" role="tab" data-tab="runs" aria-selected="false">Runs</button>
+        <button class="tab" role="tab" data-tab="results" aria-selected="false">Results</button>
+      </nav>
+      <div class="spacer"></div>
+      <div class="session">
+        <span id="root" class="ellipsis mono" title="GUI root"></span>
+        <span id="readonly" class="chip warn" hidden>read-only</span>
+        <button id="theme" class="icon-btn" title="Light / dark theme" aria-label="Toggle theme">◐</button>
+      </div>
+    </header>
+    <main>
+      <section id="view-setup" class="view active" role="tabpanel"></section>
+      <section id="view-runs" class="view" role="tabpanel"></section>
+      <section id="view-results" class="view" role="tabpanel"></section>
+    </main>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+  </body>
+</html>

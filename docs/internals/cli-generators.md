@@ -26,6 +26,23 @@ Converts an AFLOW database entry into a ready-to-run Quantum ESPRESSO `scf` inpu
 
 Generates a PAOFLOW property-calculation driver (`main.py`) from a completed QE run, along with an optional plotting script (`plot.py`) that visualizes the properties you selected.
 
+The questions of every workflow are data: the `Question` and `Note` lists of `PAOFLOW.gen.questions` (one module
+per workflow), plus an `assemble` function that turns the answers into the configuration the script builders
+read. The terminal prompts (`paoflow-gen`) and the browser form (`paoflow-gen --gui`, or the Setup tab of
+`paoflow-studio`) both read them, so a new option needs one `Question`. Mark it `cli=False` for a GUI-only refinement
+that the CLI leaves at the builder default.
+
+The tests in `tests/unit/gen/` keep the two routes identical:
+
+- `test_questions_parity.py` runs the frozen pre-refactor prompts (`legacy_collect.py`) and the declarative ones
+  on the same answers, and requires the same prompts, configuration and files;
+- the builder-coverage test fails when a builder reads a key that no question sets.
+
+`PAOFLOW.gen.outputs` lists the files of a workflow before writing (`workflow_outputs`) and its commands
+(`run_plan`). Some defaults come from the QE save and the `pw.x` template (`PAOFLOW.gen.system_summary`):
+`ibrav`, spin-orbit and 2D; for the electron–phonon workflow, metal, `nelec`, `nbnd` and the coupling source.
+See [the browser interface](../tutorials/howtos/browser-gui.md).
+
 **Supported workflows** (chosen at the first prompt):
 
 **Workflow A — ACBN0/eACBN0:** Self-consistent Hubbard U calculations, with or without intersite V terms. See [ACBN0 Module](acbn0.md) for details on the underlying implementation.

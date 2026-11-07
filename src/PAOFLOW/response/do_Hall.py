@@ -105,7 +105,7 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
         Om_kps = np.empty((nk1, nk2, nk3, 2), dtype=float) if rank == 0 else None
         if rank == 0:
             Om_kps[:, :, :, 0] = Om_kps[:, :, :, 1] = Om_k[:, :, :]
-        data_controller.write_bxsf(fBerry, Om_kps, 2)
+        data_controller.write_bxsf(fBerry, Om_kps, 2, skeaf_sheets=False)
 
         Om_k = Om_kps = None
 
@@ -239,7 +239,7 @@ def do_orbital_Hall(data_controller, twoD, do_ac, P):
         Om_kps = np.empty((nk1, nk2, nk3, 2), dtype=float) if rank == 0 else None
         if rank == 0:
             Om_kps[:, :, :, 0] = Om_kps[:, :, :, 1] = Om_k[:, :, :]
-        data_controller.write_bxsf(fBerry, Om_kps, 2)
+        data_controller.write_bxsf(fBerry, Om_kps, 2, skeaf_sheets=False)
 
         Om_k = Om_kps = None
 
@@ -354,7 +354,7 @@ def do_anomalous_Hall(data_controller, do_ac):
         Om_kps = np.empty((nk1, nk2, nk3, 2), dtype=float) if rank == 0 else None
         if rank == 0:
             Om_kps[:, :, :, 0] = Om_kps[:, :, :, 1] = Om_k[:, :, :]
-        data_controller.write_bxsf(fBerry, Om_kps, 2)
+        data_controller.write_bxsf(fBerry, Om_kps, 2, skeaf_sheets=False)
 
         Om_k = Om_kps = None
 

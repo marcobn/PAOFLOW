@@ -33,6 +33,7 @@ thermo_optics = ["pymupdf>=1.23", "matplotlib", "pillow"]
 phonon = ["phonopy>=2.21", "phono3py>=2.3", "seekpath>=2.0"]
 sscha = ["python-sscha>=1.6", "cellconstructor>=1.6", "ase>=3.22"]
 fast = ["numba>=0.58"]
+gui = ["plotly>=5.18"]
 dev = ["pre-commit>=2.20.0", "pytest>=7"]
 docs = [
     "sphinx>=8",
@@ -55,6 +56,7 @@ paoflow-genbasis-ps = "PAOFLOW.basis_gen.cli:main"
 paoflow-gen-qe = "PAOFLOW.gen.aflow_qe:main"
 paoflow-gen = "PAOFLOW.gen.paoflow_driver:main"
 fermi-plotter = "PAOFLOW.gen.fermi_plotter:main"
+paoflow-studio = "PAOFLOW.gui.cli:main"
 
 [tool.ruff]
 line-length = 100

@@ -11,14 +11,6 @@ from __future__ import annotations
 import glob
 import os
 
-from .paoflow_driver import (
-    ask,
-    ask_choice,
-    ask_float,
-    ask_int,
-    detect_prefix,
-    detect_savedir,
-)
 
 #: Default configurations per population (the last value repeats).
 DEFAULT_POPULATIONS = [100, 100, 200, 200, 300, 300, 400, 400]
@@ -438,12 +430,8 @@ def _detect_harmonic(workdir: str, prefix: str) -> str:
     return os.path.join('harmonic', prefix + '.dyn')
 
 
-def _ints(text: str) -> list[int]:
-    return [int(x) for x in text.replace(',', ' ').split()]
-
-
 def collect_sscha(args, workdir: str) -> dict:
-    """Prompts of the ``sscha`` workflow.
+    """Prompts of the ``sscha`` workflow (:data:`PAOFLOW.gen.questions.sscha.SSCHA_ITEMS`).
 
     Parameters
     ----------
@@ -457,77 +445,6 @@ def collect_sscha(args, workdir: str) -> dict:
     dict
         The configuration of :func:`build_sscha_script`.
     """
-    det_save = detect_savedir(workdir)
-    cfg = {'outputdir': 'output', 'workdir': workdir}
-    cfg['savedir'] = args.savedir or ask(
-        'Save directory of the scf (<prefix>.save)', det_save or 'pwscf.save'
-    )
-    cfg['prefix'] = args.prefix or ask('Prefix', detect_prefix(workdir, det_save))
-    cfg['pp_dir'] = ask('Pseudopotential directory (blank or "HERE" = script directory)', 'HERE')
-    temperatures = ask('Temperatures (K, comma-separated)', '300')
-    cfg['temperatures'] = [float(t) for t in temperatures.replace(',', ' ').split()]
-    cfg['supercell'] = ask_int('Supercell multiplicity (isotropic diagonal)', 2)
-    cfg['harmonic_dyn'] = ask(
-        'ph.x dynamical matrices (fildyn prefix <dir>/<prefix>.dyn; written by the harmonic phase if missing)',
-        _detect_harmonic(workdir, cfg['prefix']),
-    )
-    qgrid = ask_int(
-        'q-grid of the harmonic ph.x run if it is generated (multiple of the supercell; larger = better '
-        'harmonic dispersion)',
-        cfg['supercell'],
-    )
-    cfg['harmonic_qgrid'] = [qgrid] * 3
-    kgrid = ask(
-        'k-grid of the supercell force runs (e.g. "6 6 6"; blank = scf grid / supercell)', ''
-    )
-    cfg['kgrid'] = _ints(kgrid) if kgrid.strip() else None
-    electrons = ask_choice(
-        'Electrons of the force runs (parent = occupations of the scf; ionic = Fermi-Dirac at k_B T of each '
-        'temperature, hot electrons; fixed = Fermi-Dirac at one temperature)',
-        ['parent', 'ionic', 'fixed'],
-        'parent',
-    )
-    if electrons == 'ionic':
-        cfg['electronic_temperature'] = 'ionic'
-    elif electrons == 'fixed':
-        cfg['electronic_temperature'] = ask_float('  Electronic temperature (K)', 300.0)
-    else:
-        cfg['electronic_temperature'] = None
-    sizes = ask('Configurations per population (comma-separated; the last repeats)',
-                ', '.join(map(str, DEFAULT_POPULATIONS)))  # fmt: skip
-    cfg['population_sizes'] = _ints(sizes)
-    cfg['hessian_size'] = ask_int('Configurations of the free-energy Hessian population', 800)
-    cfg['launcher'] = ask_choice(
-        'Launcher of the pw.x runs (local = here; slurm = job arrays chained by step jobs; manual = write inputs)',
-        ['local', 'slurm', 'manual'],
-        'local',
-    )
-    cfg['qe_pw'] = ask("pw.x command (may include flags, e.g. 'pw.x -nk 4')", 'pw.x')
-    cfg['qe_ph'] = cfg['qe_pw'].replace('pw.x', 'ph.x') if 'pw.x' in cfg['qe_pw'] else 'ph.x'
-    if cfg['launcher'] == 'slurm':
-        print('\nSlurm settings of one configuration (array task) and of the step job:')
-        cfg['mpi_qe'] = ask('MPI launcher inside the jobs', 'srun')
-        partition = ask('  partition', 'normal')
-        nodes = ask_int('  nodes per configuration', 1)
-        ntasks = ask_int('  MPI tasks per configuration', 32)
-        walltime = ask('  wall time per configuration', '02:00:00')
-        account = ask('  account (blank = default)', '')
-        directives = ['#SBATCH -p %s' % partition, '#SBATCH -N %d' % nodes, '#SBATCH -n %d' % ntasks,
-                      '#SBATCH -t %s' % walltime]  # fmt: skip
-        if account:
-            directives.append('#SBATCH -A %s' % account)
-        cfg['slurm_directives'] = directives
-        step_tasks = ask_int('  cores of the step job (python minimisation)', 4)
-        step_time = ask('  wall time of the step job', '02:00:00')
-        step = ['#SBATCH -p %s' % partition, '#SBATCH -N 1', '#SBATCH -n %d' % step_tasks,
-                '#SBATCH -t %s' % step_time]  # fmt: skip
-        if account:
-            step.append('#SBATCH -A %s' % account)
-        cfg['slurm_step_directives'] = step
-        cfg['slurm_concurrent'] = ask_int('  array tasks running at the same time', 40)
-        setup = ask('  shell line that loads QE and PAOFLOW in a job (blank = none)', '')
-        cfg['env_setup'] = [setup] if setup else []
-        cfg['python'] = ask('  python of the step jobs', 'python')
-    else:
-        cfg['mpi_qe'] = ask('MPI command for pw.x / ph.x', 'mpirun -np 4')
-    return cfg
+    from .questions import collect
+
+    return collect('sscha', args, workdir)

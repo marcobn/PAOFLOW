@@ -26,6 +26,9 @@ PAOFLOW ships several optional extras. Install only what you need:
 # Matplotlib + VTK plotting support (and mendeleev for the basis generator)
 pip install "PAOFLOW[graphics]"
 
+# Browser interface (paoflow-studio: setup, runs, interactive results; Plotly)
+pip install "PAOFLOW[gui]"
+
 # Boltzmann transport extras (psutil, for the core budget of the joblib workers)
 pip install "PAOFLOW[transport]"
 
