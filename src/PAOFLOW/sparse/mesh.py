@@ -328,7 +328,7 @@ def run_mesh(
     from ..spectrum.do_band_curvature import band_curvature_k
     from ..utils.communication import scatter_full
     from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
-    from .kpoint import DenseOnDemand, KPoint
+    from .kpoint import DenseOnDemand, KPoint, degenerate_groups
     from .log import get_sparse_log
     from .solver import creep_warning, hk_solver_fields, solve_k
 
@@ -485,7 +485,9 @@ def run_mesh(
                 if dense_ops:
                     d2hk = DenseOnDemand(d2hk, cache=False)
                 kp.__dict__['d2hk'] = d2hk
-                d2Ed2k[:, ik, :bnd, ispin] = band_curvature_k(E, dhk, d2hk, V, kp.degen, bnd)
+                d2Ed2k[:, ik, :bnd, ispin] = band_curvature_k(
+                    E, dhk, d2hk, V, kp.degen, bnd, degenerate_groups(E, bnd)
+                )
 
             if interior is None:
                 solved_top = min(solved_top, float(E[nsolved - 1]))

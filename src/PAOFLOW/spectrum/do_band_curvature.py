@@ -101,6 +101,20 @@ def band_curvature_k_ij(
     return curvature
 
 
+def _velocity_groups(vel: np.ndarray, energy_groups: list[np.ndarray]) -> list[np.ndarray]:
+    """Sets of two or more states that share an energy group and a velocity (within 1e-5).
+
+    Unlike ``get_degeneracies`` the members need not be index neighbours: a folded cluster
+    ordered by ``v_x`` can hold equal ``v_y`` in the order ``(a, b, b, a)``.
+    """
+    groups = []
+    for e in energy_groups:
+        order = e[np.argsort(vel[e], kind='stable')]
+        cuts = np.flatnonzero(np.diff(vel[order]) > 1.0e-5) + 1
+        groups += [np.sort(g) for g in np.split(order, cuts) if len(g) > 1]
+    return groups
+
+
 def band_curvature_k(
     E: np.ndarray,
     dH: Sequence[Any],
@@ -108,11 +122,13 @@ def band_curvature_k(
     v_k: np.ndarray,
     degen: list[np.ndarray],
     bnd: int,
+    energy_groups: list[np.ndarray],
 ) -> np.ndarray:
     """All six components :math:`d^2E_n/dk_i dk_j` of the band curvature at one k-point.
 
     The same result as :func:`band_curvature_k_ij` for every ``(i, j)`` of
-    ``IJ_PAIRS``, up to rounding, with the work shared between the components.
+    ``IJ_PAIRS``, up to rounding, with the work shared between the components,
+    except where the dense kernel groups equal velocities of different energies.
 
     Parameters
     ----------
@@ -125,9 +141,14 @@ def band_curvature_k(
     v_k : np.ndarray, shape ``(nawf, nawf)``
         Eigenvectors matching ``E`` (columns).
     degen : list of np.ndarray
-        Degenerate band groups at this k-point, all below ``bnd``.
+        Degenerate band groups at this k-point, all below ``bnd``, in which ``dH/dk_i`` is
+        diagonalized per direction (the sparse ``KPoint.degen``).
     bnd : int
         Number of bands whose curvature is returned.
+    energy_groups : list of np.ndarray
+        Every degenerate energy group below ``bnd``, including those ``degen`` leaves out
+        (:func:`~PAOFLOW.sparse.kpoint.degenerate_groups`).  The velocity groups that take
+        the subspace ``eigh`` are searched within them.
 
     Returns
     -------
@@ -140,11 +161,9 @@ def band_curvature_k(
     ``d2H/dk_i dk_j`` twice each: 60 ``(nawf, nawf, nawf)`` products per
     k-point.  Every quantity it uses, though, needs only the first ``bnd``
     columns of the rotated operators (the curvature rows are ``< bnd``, the
-    operators are Hermitian, and the degenerate groups lie below ``bnd``),
-    plus the full diagonal of the rotated ``dH/dk_i``, from which
-    ``get_degeneracies`` drops every velocity group that reaches ``bnd``.
+    operators are Hermitian, and the degenerate groups lie below ``bnd``).
 
-    So each ``dH/dk_l V`` is formed once, kept as its diagonal and its first
+    So each ``dH/dk_l V`` is formed once, kept as its first
     ``bnd`` columns, and rotated for each direction ``i`` block by block
     within the degenerate groups.  Each ``d2H/dk_i dk_j`` is applied to the
     rotated ``bnd`` window bands only.  That is 3 full products and
@@ -153,14 +172,11 @@ def band_curvature_k(
     from numpy.linalg import eigh
 
     from ..hamiltonian.do_d2Hd2k import IJ_PAIRS
-    from ..spectrum.do_eigh import get_degeneracies
 
-    n = len(E)
     vb = v_k[:, :bnd]
-    diag, cols = [], []
+    cols = []
     for op in dH:
         av = np.asarray(op @ v_k)
-        diag.append(np.einsum('nm,nm->m', np.conj(v_k), av))
         cols.append(np.conj(v_k.T) @ av[:, :bnd])  # (V^+ dH V)[:, :bnd]
         av = None
 
@@ -184,8 +200,7 @@ def band_curvature_k(
             (g[0], g[-1] + 1, eigh(cols[i][g[0] : g[-1] + 1, g[0] : g[-1] + 1])[1]) for g in degen
         ]
         p_i = rotate(cols[i], blocks)
-        vel = np.concatenate([np.diagonal(p_i)[:bnd], diag[i][bnd:]])
-        vel_degen = get_degeneracies(vel.reshape((1, n, 1)), bnd)[0][0]
+        vel_degen = _velocity_groups(np.diagonal(p_i).real, energy_groups)
         rot.append((blocks, p_i, vel_degen))
 
     curvature = np.zeros((len(IJ_PAIRS), bnd), dtype=float)
@@ -201,13 +216,12 @@ def band_curvature_k(
         c += np.sum((2.0 * np.conj(p_i) * p_j).real / E_temp, axis=0)
 
         # second order perturbation for degeneracies of E and dE/dk_i
-        for group in vel_degen:
-            ll = group[0]
-            ul = group[-1] + 1
-            e_gg = E_temp[ll:ul, ll:ul].T
-            m = p_i[ll:ul, ll:ul] @ (p_j[ll:ul, ll:ul] / e_gg)
-            block = np.conj(vt[:, ll:ul].T) @ t[:, ll:ul] + m + np.conj(m.T)
-            c[ll:ul], _ = eigh(block)
+        # (groups need not be contiguous, hence index arrays)
+        for g in vel_degen:
+            gg = np.ix_(g, g)
+            m = p_i[gg] @ (p_j[gg] / E_temp[gg].T)
+            block = np.conj(vt[:, g].T) @ t[:, g] + m + np.conj(m.T)
+            c[g], _ = eigh(block)
         curvature[ij] = c
     return curvature
 
