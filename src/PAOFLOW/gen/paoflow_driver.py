@@ -3375,7 +3375,8 @@ def main(argv: list[str] | None = None) -> int:
     int
         Exit status (0 on success).  Writes the selected driver and its
         companion scripts; the electron-phonon workflow writes a system folder
-        instead (:func:`PAOFLOW.gen.elphon_system.main_elphon`).
+        instead (:func:`PAOFLOW.gen.elphon_system.main_elphon`) and the SSCHA
+        workflow ``main.sscha.py`` (:mod:`PAOFLOW.gen.sscha_driver`).
     """
     parser = argparse.ArgumentParser(
         description='Generate a PAOFLOW main.py driver script interactively.'
@@ -3398,7 +3399,7 @@ def main(argv: list[str] | None = None) -> int:
         '--out',
         default=None,
         help='Output script path (default: main.py for the run workflow, '
-        'main.acbn0.py for the acbn0 workflow); the system folder for elphon',
+        'main.acbn0.py for the acbn0 workflow, main.sscha.py for sscha); the system folder for elphon',
     )
     parser.add_argument(
         '--plot',
@@ -3420,7 +3421,7 @@ def main(argv: list[str] | None = None) -> int:
 
     workflow = ask_choice(
         'Which workflow?',
-        ['acbn0', 'run', 'phonon', 'elphon'],
+        ['acbn0', 'run', 'phonon', 'elphon', 'sscha'],
         'run',
     )
 
@@ -3429,6 +3430,19 @@ def main(argv: list[str] | None = None) -> int:
         from .elphon_system import main_elphon
 
         return main_elphon(args, workdir)
+    if workflow == 'sscha':
+        # Anharmonic phonons (python-sscha): main.sscha.py with its own prompts.
+        from .sscha_driver import build_sscha_script, collect_sscha
+
+        out_path = args.out or 'main.sscha.py'
+        if os.path.exists(out_path) and not args.force:
+            sys.stderr.write(f'Refusing to overwrite {out_path} (use --force).\n')
+            return 1
+        content = build_sscha_script(collect_sscha(args, workdir))
+        with open(out_path, 'w', encoding='utf-8') as handle:
+            handle.write(content)
+        print(f'\nWrote {os.path.abspath(out_path)}')
+        return 0
     # Each non-default workflow gets its own main.<workflow>.py name so it is
     # not confused with a regular PAOFLOW main.py; an explicit -o/--out wins.
     _default_out = {

@@ -388,6 +388,13 @@ unfolding an irreducible set of PAO vertices is not implemented.
   the `.dyn` files, including every star member listed in each file. Either one
   file per q of a full-grid run or the irreducible-q files of a symmetric run
   works, as long as the grid is covered.
+- **Anharmonic (SSCHA) phonons:** `ElphonSystem(phonon_source='sscha',
+  sscha_dynamical_matrices='<run>/force_constants_hessian/<prefix>.dyn')` builds
+  `phonon_at_q` with `phonon_interp_from_dyn` from the free-energy Hessian
+  exported by `PAOFLOW.sscha_force_constants` (on the q-grid of the coupling) and
+  passes it to every dense driver; the coarse vertex stays the harmonic DFPT one
+  and the cached `g(R_e, R_p)` (Cartesian displacement basis) is shared. See
+  [Anharmonic phonons at temperature](sscha.md).
 
 Both share `_phonon_interp_from_force_constants`, which delegates to
 `PAOFLOW.phonon.qe_force_constants`. The steps are the Fourier transform to

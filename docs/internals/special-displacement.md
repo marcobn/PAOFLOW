@@ -63,6 +63,14 @@ Pb demo in the validation README (`Workspace/PAOFLOW/validation/Pb_fd_fixed_basi
 zero-point curvature within 1–5 % of the harmonic phonons, 300 K LA hardened by 3–6 % at fixed volume, the
 regenerated 300 K cell within 0.5 % in rms displacement, i.e. converged at the first iteration for Pb.
 
+### SSCHA force constants (7 November 2026)
+
+`special_displacement(temperatures, force_constants_file='sscha')` builds the ZG cells from the auxiliary
+force constants of a converged SSCHA run (`sscha_force_constants('auxiliary')` sets
+`attr['sscha_force_constants_file']`): the Gaussian of the thermal ensemble at T, the consistent input of a special
+configuration when the lattice is harmonically unstable (δ-TaN) or strongly anharmonic. See
+[Anharmonic phonons at temperature](sscha.md).
+
 ## Orchestrator and workflow layer
 
 ```python

@@ -76,6 +76,8 @@ long-range-elphon-plan
 finite-difference-vertex
 special-displacement-plan
 special-displacement
+sscha-integration-plan
+sscha
 arpes-chinook-plan
 arpes
 elphon-examples-layout-plan
@@ -84,6 +86,7 @@ agentic-transport
 agentic-superconductivity
 agentic-arpes
 agentic-nlo
+agentic-sscha
 sk-edtb
 cli-generators
 

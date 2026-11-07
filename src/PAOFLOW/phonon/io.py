@@ -188,6 +188,36 @@ def occupation_lines(attr: dict) -> list[str]:
     ]
 
 
+def fermi_dirac_lines(temperature_k: float) -> list[str]:
+    """``&system`` occupation lines of Fermi-Dirac electrons at an electronic temperature.
+
+    Parameters
+    ----------
+    temperature_k : float
+        Electronic temperature :math:`T_e` (K).
+
+    Returns
+    -------
+    list of str
+        ``occupations = 'smearing'``, ``smearing = 'fd'`` and ``degauss`` :math:`= k_B T_e` in Ry
+        (:math:`6.3336 \times 10^{-6}` Ry/K).
+
+    Raises
+    ------
+    ValueError
+        If ``temperature_k`` is not positive.
+    """
+    from ..utils.constants import K_BOLTZMAN_AU
+
+    if not float(temperature_k) > 0.0:
+        raise ValueError('the electronic temperature must be positive, got %r' % temperature_k)
+    return [
+        "    occupations = 'smearing'",
+        "    smearing = 'fd'",
+        '    degauss = %.8f' % (2.0 * K_BOLTZMAN_AU * float(temperature_k)),
+    ]
+
+
 def _namelists(
     data_controller,
     supercell,
@@ -198,11 +228,14 @@ def _namelists(
     nbnd: int | None = None,
     conv_thr: float = 1.0e-8,
     mixing_beta: float = 0.7,
+    occupations: list[str] | None = None,
 ) -> str:
     """Assemble the ``&control/&system/&electrons`` namelist block.
 
     ``conv_thr`` and ``mixing_beta`` default to the values of the finite-displacement cells;
     the SSCHA configurations of :mod:`PAOFLOW.phonon.sscha_bridge` pass tighter ones.
+    ``occupations`` replaces the occupation lines of the parent run (:func:`occupation_lines`),
+    e.g. :func:`fermi_dirac_lines` for hot electrons.
     """
     _, attr = data_controller.data_dicts()
 
@@ -231,7 +264,7 @@ def _namelists(
     lines.append('    ecutrho = %.2f' % ecutrho)
     if nbnd is not None:
         lines.append('    nbnd = %d' % int(nbnd))
-    lines.extend(occupation_lines(attr))
+    lines.extend(occupation_lines(attr) if occupations is None else occupations)
     if nspin == 2:
         lines.append('    nspin = 2')
         lines.append('    starting_magnetization(1) = 0.1')

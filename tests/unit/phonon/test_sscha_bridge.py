@@ -69,6 +69,30 @@ class _StubController:
         return self._arry, self._attr
 
 
+def test_fermi_dirac_lines():
+    from PAOFLOW.phonon.io import fermi_dirac_lines
+
+    lines = fermi_dirac_lines(2800.0)
+    assert lines[1] == "    smearing = 'fd'" and lines[2] == '    degauss = 0.01773352'
+    with pytest.raises(ValueError, match='positive'):
+        fermi_dirac_lines(0.0)
+
+
+def test_missing_configurations(tmp_path):
+    from PAOFLOW.phonon.sscha_bridge import completed_outputs, missing_configurations
+
+    for index in range(3):
+        (tmp_path / ('cfg_%04d.in' % index)).write_text('input')
+    (tmp_path / 'cfg_0000.out').write_text('Total force = 0.1\n JOB DONE.')
+    (tmp_path / 'cfg_0001.out').write_text('partial: killed by the scheduler')
+    assert [os.path.basename(p) for p in missing_configurations(str(tmp_path))] == [
+        'cfg_0001.in',
+        'cfg_0002.in',
+    ]
+    outputs, n_inputs = completed_outputs(str(tmp_path))
+    assert [os.path.basename(p) for p in outputs] == ['cfg_0000.out'] and n_inputs == 3
+
+
 def test_configuration_input_carries_the_parent_occupations(cc_phonons):
     import sscha.Ensemble
 
@@ -369,10 +393,16 @@ def test_orchestrator_converges_to_the_harmonic_model(cc_phonons, tmp_path):
 
     pao.sscha_setup(2800.0, 2, HARMONIC, **setup)  # continuing the same run keeps its state
     assert pao._sscha_state()['minimized'] == result['population']
+    assert pao.sscha_status()['stage'] == 'forces'  # the Hessian population
+    with pytest.raises(ValueError, match='use another sscha_dir'):
+        pao.sscha_setup(2000.0, 2, HARMONIC, **setup)  # never overwrite another run
+    pao.sscha_setup(2800.0, 2, HARMONIC, **setup)
 
     for path in population['inputs']:
         _fake_pw_output(path, phi, reference)
+    assert pao.sscha_status()['stage'] == 'hessian'
     hessian = pao.sscha_hessian()
+    assert pao.sscha_status()['stage'] == 'export'
     assert hessian['stable']
     assert min(w for _, w in hessian['lowest_cm1']) == pytest.approx(expected[0], rel=1.0e-3)
 

@@ -1,7 +1,9 @@
 # SSCHA in PAOFLOW: design and implementation (7 November 2026)
 
-Status: M1-M3 implemented on `develop-marco` (uncommitted), unit-tested on a harmonic model; M4 (Slurm orchestration
-in `agentic/`) and M5 (TaN validation through the API) open. python-sscha 1.6.2 and CellConstructor 1.6.2 are
+Status: M1-M4 implemented (M1-M3 committed in 141dece6 on `develop-marco`; the `paoflow-gen` workflow `sscha`, the
+agentic workflow `agentic/sscha/` with `PAOFLOW.agentic.sscha`, `sscha_status`, `electronic_temperature` and
+`start_from` added on 7 November 2026); M5 (TaN validation through the API) open. The user and developer
+documentation is [Anharmonic phonons at temperature](sscha.md); this page keeps the design history. python-sscha 1.6.2 and CellConstructor 1.6.2 are
 installed in the `work` environment (Mac Studio) and in `~/venvs/sscha` on Snellius (build recipes in section 7). The
 TaN campaign (`production/XTa_project/snellius_workflow/sscha/`) is the prototype this code was distilled from.
 
@@ -150,30 +152,16 @@ Fixtures `tests/unit/phonon/data/sscha_tan/` (52 KB): δ-TaN 2³ harmonic matric
 Open: the slow integration test with a quartic model potential (convergence and an unstable verdict without DFT);
 validation of the API on the TaN 2800 / 4500 K production results (M5).
 
-## 7. Installation notes (what worked)
+## 7. Installation notes
 
-Mac Studio (`work`, Python 3.13, numpy on Accelerate): `/usr/local/bin` holds x86 `pkg-config` and `cmake` that
-cannot run on Apple silicon and break meson. Recipe:
-
-```bash
-E=/Users/marco/anaconda3/envs/work
-$E/bin/python -m pip install pkgconf          # arm64 pkg-config wheel
-# blas.pc, lapack.pc, openblas.pc pointing at the env's OpenBLAS (-lopenblas) in $E/share/sscha_build/pkgconfig
-export PATH=$E/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin PKG_CONFIG=$E/bin/pkgconf \
-       PKG_CONFIG_PATH=$E/share/sscha_build/pkgconfig:$E/lib/pkgconfig \
-       LDFLAGS="-L$E/lib -Wl,-rpath,$E/lib" SDKROOT=$(xcrun --show-sdk-path) FC=/opt/homebrew/bin/gfortran
-$E/bin/python -m pip install cellconstructor python-sscha     # only these two were added (dry run checked)
-```
-
-Snellius (foss-2025a, `~/venvs/sscha` with system site packages): libblas.so / liblapack.so symlinks to OpenBLAS and a
-blas.pc in `~/venvs/sscha/lib/blasfix`, exported by `~/sscha_env.sh`. Lonestar6 and aflowlib: not installed yet.
+Moved to [Anharmonic phonons at temperature](sscha.md), "Installation".
 
 ## 8. Milestones (agentic time)
 
 | | content | status |
 |---|---|---|
 | M1 | `sscha_bridge.py` with unit tests | done (7 Nov 2026) |
-| M2 | orchestrator methods, `special_displacement(force_constants_file='sscha')`, docstrings | done; a docs page and an example still to write |
+| M2 | orchestrator methods, `special_displacement(force_constants_file='sscha')`, docstrings, docs page | done (docs: `sscha.md`, `agentic-sscha.md`); the example is still to write |
 | M3 | electron-phonon with SSCHA phonons (`ElphonSystem(phonon_source='sscha')`) and the `phonon_at_q` keyword of the dense drivers | done |
-| M4 | port of the Slurm orchestration (self-chaining populations, monitors) to `agentic/` | open (1-2 h) |
+| M4 | `paoflow-gen` workflow `sscha` (`main.sscha.py`: local, self-chaining Slurm, manual launchers; `sscha_status` state machine) and the agentic workflow `agentic/sscha/` (`SSCHARun`, diagnostics, temperature scans, dispersions, figures; playbook, prompts, templates) | done (7 Nov 2026) |
 | M5 | validation: TaN at 2800 / 4500 K through the API; the stability-temperature scan | open (compute hours) |

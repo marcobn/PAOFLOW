@@ -5875,6 +5875,37 @@ class PAOFLOW:
             os.path.join(settings['sscha_dir'], 'pop%d' % population, 'dyn'), settings['nqirr']
         )
 
+    def _sscha_budget(self) -> dict:
+        """Population budget and minimiser settings of ``attr['sscha']``, recorded in ``state.json``."""
+        _, attr = self.data_controller.data_dicts()
+        keys = (
+            'population_sizes',
+            'hessian_size',
+            'min_step_dyn',
+            'kong_liu_ratio',
+            'meaningful_factor',
+        )
+        return {key: attr['sscha'][key] for key in keys}
+
+    def _sscha_start_from(self, start_from: str, nqirr: int):
+        """Matrices of ``start_from`` (an ``sscha_dir`` or a ``<dir>/dyn`` prefix) with ``nqirr`` stars."""
+        import json
+        import os
+
+        from .phonon.sscha_bridge import dynamical_matrix_files, require_sscha
+
+        cc_phonons, _ = require_sscha()
+        prefix = start_from
+        if os.path.isdir(start_from):
+            state = json.load(open(os.path.join(start_from, 'state.json')))
+            prefix = os.path.join(start_from, 'pop%d' % int(state['minimized']), 'dyn')
+        if len(dynamical_matrix_files(prefix)) != nqirr:
+            raise ValueError(
+                'start_from %s: %d dynamical matrices, the supercell has %d irreducible q'
+                % (start_from, len(dynamical_matrix_files(prefix)), nqirr)
+            )
+        return cc_phonons.Phonons(prefix, nqirr)
+
     def sscha_setup(
         self,
         temperature: float,
@@ -5892,6 +5923,8 @@ class PAOFLOW:
         conv_thr: float = 1.0e-10,
         mixing_beta: float = 0.3,
         positive_definite: bool = True,
+        electronic_temperature=None,
+        start_from: str | None = None,
     ) -> None:
         """Prepare a stochastic self-consistent harmonic approximation (SSCHA) at one temperature.
 
@@ -5925,6 +5958,16 @@ class PAOFLOW:
         positive_definite : bool, optional
             Make the imaginary harmonic frequencies positive in the starting matrices (needed for a
             harmonically unstable lattice).
+        electronic_temperature : float or bool, optional
+            Electrons of the force runs: ``None`` (default) keeps the occupations of the parent
+            save; a temperature (K) uses Fermi-Dirac occupations at :math:`k_B T_e`; ``True`` sets
+            :math:`T_e` equal to the ionic ``temperature`` (hot electrons in equilibrium with the
+            lattice).
+        start_from : str, optional
+            Start from converged matrices of the same supercell instead of the harmonic ones: the
+            ``sscha_dir`` of another run (its last minimised population, e.g. a neighbouring
+            temperature of a scan) or a path prefix ``<dir>/dyn``. The harmonic matrices remain the
+            support of :meth:`sscha_force_constants`.
 
         Returns
         -------
@@ -5932,19 +5975,24 @@ class PAOFLOW:
             Stores the settings in ``attr['sscha']``; writes ``<sscha_dir>/start`` (harmonic
             matrices of the supercell q) and ``<sscha_dir>/pop0`` (starting matrices).
 
+        Raises
+        ------
+        ValueError
+            If ``start_from`` holds no matrices with the q-points of the supercell.
+
         Notes
         -----
-        The force runs use the occupations of the parent save (Fermi-Dirac at k_B T for hot
-        electrons) through PAOFLOW's supercell writer. Workflow: :meth:`sscha_population`, pw.x on
-        its inputs, :meth:`sscha_minimize`, repeated to convergence; then :meth:`sscha_hessian` and
-        :meth:`sscha_force_constants`.
+        The force runs use PAOFLOW's supercell writer with the cutoffs and pseudopotentials of the
+        parent save. Workflow: :meth:`sscha_population`, pw.x on its inputs,
+        :meth:`sscha_minimize`, repeated to convergence; then :meth:`sscha_hessian` and
+        :meth:`sscha_force_constants`; :meth:`sscha_status` tells which step is next.
         """
         import os
 
         import numpy as np
 
         from .phonon.io import _supercell_kgrid
-        from .phonon.sscha_bridge import starting_matrices
+        from .phonon.sscha_bridge import RY_TO_CM1, dynamical_matrix_files, starting_matrices
 
         arry, attr = self.data_controller.data_dicts()
         try:
@@ -5956,6 +6004,10 @@ class PAOFLOW:
                 )
             if prefix is None:
                 prefix = os.path.basename(os.path.normpath(attr['savedir'])).replace('.save', '')
+            if electronic_temperature is True:
+                electronic_temperature = float(temperature)
+            elif electronic_temperature is False:
+                electronic_temperature = None
             attr['sscha'] = dict(
                 temperature=float(temperature), supercell=supercell,
                 harmonic_prefix=os.path.abspath(harmonic_dynamical_matrices), sscha_dir=sscha_dir,
@@ -5964,12 +6016,20 @@ class PAOFLOW:
                 kong_liu_ratio=float(kong_liu_ratio), meaningful_factor=float(meaningful_factor),
                 pp_dir=os.path.abspath(pp_dir or attr.get('fpath', '.')), prefix=prefix + '_sscha',
                 conv_thr=float(conv_thr), mixing_beta=float(mixing_beta),
+                electronic_temperature=None if electronic_temperature is None else float(electronic_temperature),
             )  # fmt: skip
             state = self._sscha_state() if os.path.isdir(sscha_dir) else {}
-            same = (
-                state.get('temperature') == float(temperature)
-                and tuple(state.get('supercell', ())) == supercell
-            )
+            if state and (
+                state.get('temperature') != float(temperature)
+                or tuple(state.get('supercell', ())) != supercell
+                or state.get('electronic_temperature') != attr['sscha']['electronic_temperature']
+            ):
+                raise ValueError(
+                    '%s holds the SSCHA run at %s K, supercell %s, electronic temperature %s: use another sscha_dir'
+                    % (sscha_dir, state.get('temperature'), state.get('supercell'),
+                       state.get('electronic_temperature'))
+                )  # fmt: skip
+            same = bool(state)
             if self.rank == 0:
                 os.makedirs(sscha_dir, exist_ok=True)
                 if not (same and os.path.isfile(os.path.join(sscha_dir, 'pop0', 'dyn1'))):
@@ -5977,13 +6037,18 @@ class PAOFLOW:
                         harmonic_dynamical_matrices, supercell, os.path.join(sscha_dir, 'start'),
                         positive_definite=positive_definite,
                     )  # fmt: skip
+                    nqirr = len(dynamical_matrix_files(os.path.join(sscha_dir, 'start', 'dyn')))
+                    if start_from is not None:
+                        matrices = self._sscha_start_from(start_from, nqirr)
+                        start_cm1 = np.sort(matrices.DiagonalizeSupercell()[0] * RY_TO_CM1)
                     os.makedirs(os.path.join(sscha_dir, 'pop0'), exist_ok=True)
                     matrices.save_qe(os.path.join(sscha_dir, 'pop0', 'dyn'))
                     state = dict(
-                        temperature=float(temperature), supercell=list(supercell),
-                        nqirr=len([f for f in os.listdir(os.path.join(sscha_dir, 'start'))
-                                   if f.startswith('dyn')]),
+                        temperature=float(temperature), supercell=list(supercell), nqirr=nqirr,
                         generated=0, minimized=0, converged=False, hessian_population=None,
+                        electronic_temperature=attr['sscha']['electronic_temperature'],
+                        **self._sscha_budget(),
+                        start_from=None if start_from is None else os.path.abspath(start_from),
                         harmonic_cm1=[float(w) for w in harmonic_cm1[:9]],
                         start_cm1=[float(w) for w in start_cm1[:9]],
                     )  # fmt: skip
@@ -5995,6 +6060,7 @@ class PAOFLOW:
                         temperature, 'x'.join(map(str, supercell)), np.round(harmonic_cm1[:6], 1),
                         np.round(start_cm1[3:9], 1)))  # fmt: skip
                 else:
+                    self._sscha_write_state(**self._sscha_budget())
                     print('SSCHA %g K: continuing %s (population %d generated, %d minimized)' % (
                         temperature, sscha_dir, state['generated'], state['minimized']))  # fmt: skip
             self.comm.Barrier()
@@ -6062,6 +6128,7 @@ class PAOFLOW:
                     self.data_controller, self._sscha_matrices(population - 1), settings['temperature'],
                     size, population_dir, '%s_p%d' % (settings['prefix'], population), settings['pp_dir'],
                     settings['kgrid'], settings['conv_thr'], settings['mixing_beta'],
+                    settings['electronic_temperature'],
                 )  # fmt: skip
                 print('SSCHA population %d: %d configurations in %s%s' % (
                     population, len(inputs), population_dir, ' (free-energy Hessian)' if hessian else ''))  # fmt: skip
@@ -6088,7 +6155,8 @@ class PAOFLOW:
         Returns
         -------
         dict or None
-            ``population``, ``converged``, ``free_energy_ry``, ``free_energy_error_ry`` and
+            ``population``, ``converged``, ``free_energy_ry``, ``free_energy_error_ry``,
+            ``kong_liu`` (final effective-sample ratio), ``size`` (configurations read) and
             ``lowest_cm1`` (lowest auxiliary frequencies); writes ``pop<p>/dyn*`` and
             ``pop<p>/summary.json``. ``None`` if there is nothing to minimise.
 
@@ -6138,7 +6206,8 @@ class PAOFLOW:
                 out['matrices'].save_qe(os.path.join(population_dir, 'dyn'))
                 result = dict(
                     population=population, converged=out['converged'], free_energy_ry=out['free_energy_ry'],
-                    free_energy_error_ry=out['free_energy_error_ry'],
+                    free_energy_error_ry=out['free_energy_error_ry'], kong_liu=out['kong_liu'],
+                    size=len(ensemble.structures),
                     lowest_cm1=[float(w) for w in out['frequencies_cm1'][3:9]],
                 )  # fmt: skip
                 with open(os.path.join(population_dir, 'summary.json'), 'w') as handle:
@@ -6297,6 +6366,7 @@ class PAOFLOW:
                 print('SSCHA %s force constants on %s: lowest %.1f cm-1, %d unstable q -> %s' % (
                     matrices, 'x'.join(map(str, fine_grid)), result['lowest_cm1'], result['unstable_q'], fc_path))  # fmt: skip
             result = self.comm.bcast(result, root=0)
+            self._sscha_write_state(exported=sorted(set(state.get('exported', [])) | {matrices}))
             attr.setdefault('sscha_dynamical_matrices', {})[matrices] = result['dynamical_matrices']
             if matrices == 'auxiliary':
                 attr['sscha_force_constants_file'] = result['force_constants_file']
@@ -6305,6 +6375,51 @@ class PAOFLOW:
             if attr.get('abort_on_exception', False):
                 raise e
         self.report_module_time('SSCHA force constants')
+        return result
+
+    def sscha_status(self, min_fraction: float = 0.95) -> dict | None:
+        """Where the SSCHA run of :meth:`sscha_setup` stands and which step comes next.
+
+        Parameters
+        ----------
+        min_fraction : float, optional
+            Fraction of finished configurations a population needs before it is minimised (the
+            threshold of :meth:`sscha_minimize`).
+
+        Returns
+        -------
+        dict or None
+            ``stage``, the next step: ``'generate'`` (:meth:`sscha_population`), ``'forces'`` (pw.x
+            on ``missing``), ``'minimize'`` (:meth:`sscha_minimize`), ``'hessian'``
+            (:meth:`sscha_hessian`), ``'export'`` (:meth:`sscha_force_constants`), ``'done'``, or
+            ``'failed'`` (not converged within ``population_sizes``); ``population`` (pending or
+            last minimised), ``inputs`` and ``missing`` (pw.x inputs of the pending population and
+            those without a finished output), ``converged``, ``stable`` (``None`` before the
+            Hessian), ``exported``, ``temperature``, ``electronic_temperature``, ``sscha_dir`` and
+            ``history`` (the ``summary.json`` of every minimised population). ``None`` after an
+            error.
+
+        Notes
+        -----
+        Reads only files (``state.json``, the population folders,
+        :func:`~PAOFLOW.phonon.sscha_bridge.run_status`), so a driver can call it at any time, e.g.
+        from a scheduler job that decides what to submit next.
+        """
+        from .phonon.sscha_bridge import run_status
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            settings = attr['sscha']
+            result = run_status(settings['sscha_dir'], min_fraction=min_fraction)
+            if self.rank == 0:
+                print('SSCHA %g K: next step %s (population %d, %d of %d configurations missing)' % (
+                    settings['temperature'], result['stage'], result['population'], len(result['missing']),
+                    len(result['inputs'])))  # fmt: skip
+        except Exception as e:
+            self.report_exception('sscha_status')
+            if attr.get('abort_on_exception', False):
+                raise e
         return result
 
     def electron_phonon(

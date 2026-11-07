@@ -60,7 +60,7 @@ def require_sscha() -> tuple[Any, Any]:
     except ImportError as exc:
         raise ImportError(
             'the SSCHA methods need python-sscha and CellConstructor: pip install "PAOFLOW[sscha]" '
-            '(Fortran compiler and BLAS/LAPACK required, see docs/internals/sscha-integration-plan.md)'
+            '(Fortran compiler and BLAS/LAPACK required, see docs/internals/sscha.md)'
         ) from exc
     return cc_phonons, sscha
 
@@ -188,6 +188,7 @@ def configuration_input(
     kgrid: Sequence[int],
     conv_thr: float = 1.0e-10,
     mixing_beta: float = 0.3,
+    electronic_temperature: float | None = None,
 ) -> str:
     """pw.x scf input (with forces) of one SSCHA configuration, written by PAOFLOW's supercell writer.
 
@@ -205,6 +206,9 @@ def configuration_input(
         Monkhorst-Pack grid of the supercell (Gamma-centred).
     conv_thr, mixing_beta : float, optional
         Self-consistency threshold (Ry) and mixing of the configuration.
+    electronic_temperature : float, optional
+        Fermi-Dirac electrons at this temperature (K) instead of the occupations of the parent run
+        (hot electrons: the electronic temperature of the ensemble).
 
     Returns
     -------
@@ -212,7 +216,7 @@ def configuration_input(
         The input text: ``ibrav = 0`` with ``CELL_PARAMETERS`` and ``ATOMIC_POSITIONS`` in Angstrom, in the atom
         order of the ensemble (the displacements are read back against it).
     """
-    from .io import _atomic_species_block, _namelists, _pp_filenames
+    from .io import _atomic_species_block, _namelists, _pp_filenames, fermi_dirac_lines
     from .structure import _element_symbol
 
     symbols = [_element_symbol(str(name)) for name in structure.atoms]
@@ -226,9 +230,13 @@ def configuration_input(
             return len(symbols)
 
     cell = _Cell()
-    text = _namelists(
-        data_controller, cell, prefix, pp_dir, ibrav=0, conv_thr=conv_thr, mixing_beta=mixing_beta
+    occupations = (
+        None if electronic_temperature is None else fermi_dirac_lines(electronic_temperature)
     )
+    text = _namelists(
+        data_controller, cell, prefix, pp_dir, ibrav=0, conv_thr=conv_thr, mixing_beta=mixing_beta,
+        occupations=occupations,
+    )  # fmt: skip
     lines = [
         text,
         _atomic_species_block(cell, _pp_filenames(data_controller)),
@@ -259,6 +267,7 @@ def generate_population(
     kgrid: Sequence[int],
     conv_thr: float = 1.0e-10,
     mixing_beta: float = 0.3,
+    electronic_temperature: float | None = None,
 ) -> list[str]:
     """Configurations of one SSCHA population and their pw.x inputs.
 
@@ -282,6 +291,8 @@ def generate_population(
         Supercell k-grid.
     conv_thr, mixing_beta : float, optional
         Self-consistency settings of the force runs.
+    electronic_temperature : float, optional
+        Fermi-Dirac electrons at this temperature (K) in the force runs (default: the parent's occupations).
 
     Returns
     -------
@@ -301,7 +312,8 @@ def generate_population(
         path = os.path.join(population_dir, 'cfg_%04d.in' % index)
         with open(path, 'w') as handle:
             handle.write(configuration_input(
-                data_controller, structure, '%s_%04d' % (prefix, index), pp_dir, kgrid, conv_thr, mixing_beta
+                data_controller, structure, '%s_%04d' % (prefix, index), pp_dir, kgrid, conv_thr, mixing_beta,
+                electronic_temperature,
             ))  # fmt: skip
         paths.append(path)
     return paths
@@ -325,10 +337,98 @@ def completed_outputs(population_dir: str) -> tuple[list[str], int]:
     n_inputs = len(glob.glob(os.path.join(population_dir, 'cfg_*.in')))
     done = []
     for path in sorted(glob.glob(os.path.join(population_dir, 'cfg_*.out'))):
-        text = open(path, errors='ignore').read()
-        if 'JOB DONE' in text and 'Total force' in text:
+        if _finished(path):
             done.append(path)
     return done, n_inputs
+
+
+def missing_configurations(population_dir: str) -> list[str]:
+    """Inputs of a population whose pw.x output is absent or unfinished.
+
+    Parameters
+    ----------
+    population_dir : str
+        Directory with ``cfg_XXXX.in`` and their outputs ``cfg_XXXX.out``.
+
+    Returns
+    -------
+    list of str
+        The ``cfg_XXXX.in`` files still to run (sorted), what a launcher submits or a restart reruns.
+    """
+    return [
+        path
+        for path in sorted(glob.glob(os.path.join(population_dir, 'cfg_*.in')))
+        if not _finished(path[:-3] + '.out')
+    ]
+
+
+def run_status(sscha_dir: str, min_fraction: float = 0.95) -> dict[str, Any]:
+    """State of an SSCHA run read from its directory, and the next step.
+
+    Parameters
+    ----------
+    sscha_dir : str
+        Directory of the run (``state.json`` written by ``PAOFLOW.sscha_setup`` and the population folders).
+    min_fraction : float, optional
+        Fraction of finished configurations a population needs before it is minimised.
+
+    Returns
+    -------
+    dict
+        ``stage`` (``'generate'``, ``'forces'``, ``'minimize'``, ``'hessian'``, ``'export'``, ``'done'`` or
+        ``'failed'``: not converged within ``population_sizes``), ``population``, ``inputs`` and ``missing`` (pw.x
+        inputs of the pending population and those without a finished output), ``converged``, ``stable`` (``None``
+        before the Hessian), ``exported``, ``temperature``, ``electronic_temperature``, ``supercell``,
+        ``sscha_dir`` and ``history`` (``summary.json`` of every minimised population).
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``sscha_dir`` has no ``state.json``.
+    """
+    import json
+
+    with open(os.path.join(sscha_dir, 'state.json')) as handle:
+        state = json.load(handle)
+    generated, minimized = int(state['generated']), int(state['minimized'])
+    inputs: list[str] = []
+    missing: list[str] = []
+    exported = list(state.get('exported', []))
+    budget = len(state.get('population_sizes') or []) or np.inf
+    if state.get('hessian_done'):  # the Hessian population is never "minimised": test this first
+        stage = 'done' if {'auxiliary', 'hessian'} <= set(exported) else 'export'
+    elif generated > minimized:
+        population_dir = os.path.join(sscha_dir, 'pop%d' % generated)
+        inputs = sorted(glob.glob(os.path.join(population_dir, 'cfg_*.in')))
+        missing = missing_configurations(population_dir)
+        if len(inputs) - len(missing) < min_fraction * max(len(inputs), 1):
+            stage = 'forces'
+        else:
+            stage = 'hessian' if state.get('hessian_population') == generated else 'minimize'
+    elif state.get('converged'):
+        stage = 'generate'
+    else:
+        stage = 'failed' if minimized >= budget else 'generate'
+    history = []
+    for population in range(1, minimized + 1):
+        path = os.path.join(sscha_dir, 'pop%d' % population, 'summary.json')
+        if os.path.isfile(path):
+            with open(path) as handle:
+                history.append(json.load(handle))
+    return dict(
+        stage=stage, population=generated, inputs=inputs, missing=missing, converged=bool(state.get('converged')),
+        stable=state.get('stable'), exported=exported, temperature=state.get('temperature'),
+        electronic_temperature=state.get('electronic_temperature'), supercell=state.get('supercell'),
+        sscha_dir=os.path.abspath(sscha_dir), history=history,
+    )  # fmt: skip
+
+
+def _finished(output: str) -> bool:
+    """True when a pw.x output reached ``JOB DONE`` and printed the total force."""
+    if not os.path.isfile(output):
+        return False
+    text = open(output, errors='ignore').read()
+    return 'JOB DONE' in text and 'Total force' in text
 
 
 def load_population(matrices, temperature: float, population_dir: str, min_fraction: float = 0.95):
@@ -401,8 +501,10 @@ def minimise(
     Returns
     -------
     dict
-        ``matrices`` (CellConstructor Phonons), ``free_energy_ry``, ``free_energy_error_ry``, ``converged`` and
-        ``frequencies_cm1`` (supercell frequencies of the new matrices, sorted).
+        ``matrices`` (CellConstructor Phonons), ``free_energy_ry``, ``free_energy_error_ry``, ``converged``,
+        ``frequencies_cm1`` (supercell frequencies of the new matrices, sorted) and ``kong_liu`` (final
+        effective-sample ratio :math:`N_\\mathrm{eff}/N`: a minimisation that stopped on ``kong_liu_ratio``
+        needs a new population, one that stops on it every time needs larger populations or a smaller step).
 
     Notes
     -----
@@ -431,6 +533,7 @@ def minimise(
         free_energy_error_ry=float(error),
         converged=bool(minimizer.is_converged()),
         frequencies_cm1=np.sort(minimizer.dyn.DiagonalizeSupercell()[0] * RY_TO_CM1),
+        kong_liu=float(ensemble.get_effective_sample_size() / max(ensemble.N, 1)),
     )
 
 
