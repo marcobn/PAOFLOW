@@ -30,3 +30,17 @@ repos:
       - id: ruff
         args: ["--fix", "--exit-non-zero-on-fix", "--show-fixes"]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: js-check
+        name: PAOFLOW Studio JavaScript (node --check, no HTML injection)
+        entry: python .github/lint/check_js.py
+        language: system
+        files: ^src/PAOFLOW/gui/static/js/.*\.js$
+      - id: biome
+        name: PAOFLOW Studio front end (Biome lint and format, biome.json)
+        entry: biome check --write --no-errors-on-unmatched --files-ignore-unknown=true
+        language: node
+        additional_dependencies: ["@biomejs/biome@2.6.6"]
+        files: ^src/PAOFLOW/gui/static/.*\.(js|css)$

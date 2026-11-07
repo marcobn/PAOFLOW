@@ -154,3 +154,21 @@ def test_qe_input_preview_and_write(client, gui_root, monkeypatch):
     assert status == 200 and body['filename'] == 'Si2.scf.in' and body['status'] == 'new'
     status, body, _ = client.post('/api/gen/qe-input/write', payload)
     assert status == 200 and (gui_root / 'Si' / 'Si2.scf.in').read_text() == '&control\n/\n'
+
+
+def test_band_path_preview_endpoint(client):
+    rows = [['gG', '0', '0', '0'], ['X', '0', '0.5', '0.5']]
+    status, body, _ = client.post(
+        '/api/gen/bandpath',
+        {'workdir': 'Si', 'savedir': 'silicon.save', 'band_path': 'gG-X', 'points': rows},
+    )
+    assert (
+        status == 200
+        and body['length'] > 0
+        and body['figure']['data'][1]['line']['color'] == 'series-1'
+    )
+    status, body, _ = client.post(
+        '/api/gen/bandpath',
+        {'workdir': 'Si', 'savedir': 'silicon.save', 'band_path': 'gG-X', 'points': [['gG', 'a']]},
+    )
+    assert 'error' in body

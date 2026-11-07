@@ -509,6 +509,27 @@ def register(app: 'GuiApp') -> None:
     def qe_write(request: Request) -> Response:
         return json_response(qe_input_write(app, request.json()))
 
+    @app.route('POST', '/api/gen/bandpath')
+    def band_path(request: Request) -> Response:
+        from ..gen.band_paths import path_figure
+        from ..gen.questions.run import point_row
+
+        payload = request.json()
+        workdir = app.resolve(payload.get('workdir'))
+        points = []
+        try:
+            for row in payload.get('points') or []:
+                cells = [str(cell).strip() for cell in row]
+                if any(cells):
+                    points.append(point_row(' '.join(cells)))
+        except ValueError as exc:
+            return json_response({'error': str(exc)})
+        return json_response(
+            path_figure(
+                str(workdir), payload.get('savedir'), payload.get('band_path') or '', points
+            )
+        )
+
     @app.route('POST', '/api/gen/basis/command')
     def basis(request: Request) -> Response:
         return json_response(basis_command(app, request.json()))

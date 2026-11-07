@@ -21,7 +21,12 @@ class Field {
     this.control = h('div', { class: 'control' });
     this.resetButton = h(
       'button',
-      { class: 'icon-btn reset', title: 'Back to the default', 'aria-label': 'Reset to default', onclick: () => this.reset() },
+      {
+        class: 'icon-btn reset',
+        title: 'Back to the default',
+        'aria-label': 'Reset to default',
+        onclick: () => this.reset(),
+      },
       '↺',
     );
     const wide = ['menu', 'names', 'rows'].includes(item.kind);
@@ -29,11 +34,23 @@ class Field {
       'label',
       { class: 'name', for: `field-${item.key}`, title: item.prompt.trim() },
       item.label,
-      item.level === 'advanced' ? h('span', { class: 'badge-advanced' }, item.gui_only ? 'advanced · GUI' : 'advanced') : null,
+      item.level === 'advanced'
+        ? h('span', { class: 'badge-advanced' }, item.gui_only ? 'advanced · GUI' : 'advanced')
+        : null,
     );
     const hints = [];
     if (item.hint) hints.push(h('div', { class: 'hint' }, item.hint));
     if (item.help) hints.push(h('div', { class: 'hint' }, item.help));
+    if (item.doc) {
+      hints.push(
+        h(
+          'details',
+          { class: 'doc' },
+          h('summary', {}, `docs · ${item.doc.source}`),
+          h('div', { class: 'hint' }, item.doc.text),
+        ),
+      );
+    }
     this.root = h(
       'div',
       { class: `field${wide ? ' wide' : ''}`, dataset: { key: item.key } },
@@ -45,7 +62,7 @@ class Field {
   }
 
   get edited() {
-    return Object.prototype.hasOwnProperty.call(this.form.answers, this.key);
+    return Object.hasOwn(this.form.answers, this.key);
   }
 
   set(value) {
@@ -63,7 +80,11 @@ class Field {
   build(item) {
     const kind = item.kind;
     if (kind === 'bool') {
-      this.input = h('input', { type: 'checkbox', id: `field-${item.key}`, onchange: () => this.set(this.input.checked) });
+      this.input = h('input', {
+        type: 'checkbox',
+        id: `field-${item.key}`,
+        onchange: () => this.set(this.input.checked),
+      });
       this.control.append(h('label', { class: 'switch' }, this.input, h('span')), this.resetButton);
     } else if (kind === 'choice') {
       this.choiceBox = h('div', { class: 'grow' });
@@ -90,7 +111,11 @@ class Field {
         autocomplete: 'off',
         oninput: () => this.set(this.input.value),
       });
-      append(this.control, [this.input, item.unit ? h('span', { class: 'unit' }, item.unit) : null, this.resetButton]);
+      append(this.control, [
+        this.input,
+        item.unit ? h('span', { class: 'unit' }, item.unit) : null,
+        this.resetButton,
+      ]);
     }
   }
 
@@ -103,7 +128,11 @@ class Field {
       const short = choices.length <= 4 && choices.every((c) => String(c).length <= 18);
       if (short) {
         this.segments = choices.map((choice) =>
-          h('button', { type: 'button', 'aria-pressed': 'false', onclick: () => this.set(choice) }, String(choice)),
+          h(
+            'button',
+            { type: 'button', 'aria-pressed': 'false', onclick: () => this.set(choice) },
+            String(choice),
+          ),
         );
         this.choiceBox.append(h('div', { class: 'segmented' }, this.segments));
         this.select = null;
@@ -137,13 +166,33 @@ class Field {
 
   addRow(cells) {
     const inputs = this.columns.map((column, index) =>
-      h('input', { type: 'text', placeholder: column, value: cells ? String(cells[index] ?? '') : '', oninput: () => this.collectRows() }),
+      h('input', {
+        type: 'text',
+        placeholder: column,
+        value: cells ? String(cells[index] ?? '') : '',
+        oninput: () => this.collectRows(),
+      }),
     );
     const row = h(
       'tr',
       {},
       inputs.map((input) => h('td', {}, input)),
-      h('td', {}, h('button', { class: 'icon-btn', title: 'Remove row', onclick: () => { row.remove(); this.collectRows(); } }, '✕')),
+      h(
+        'td',
+        {},
+        h(
+          'button',
+          {
+            class: 'icon-btn',
+            title: 'Remove row',
+            onclick: () => {
+              row.remove();
+              this.collectRows();
+            },
+          },
+          '✕',
+        ),
+      ),
     );
     this.table.append(row);
     if (!cells) inputs[0].focus();
@@ -161,7 +210,9 @@ class Field {
   }
 
   update(item) {
-    this.root.hidden = !item.visible || (this.level === 'advanced' && !this.form.showAdvanced && !this.edited && !item.error);
+    this.root.hidden =
+      !item.visible ||
+      (this.level === 'advanced' && !this.form.showAdvanced && !this.edited && !item.error);
     if (!item.visible) return;
     this.renderChoices(item);
     this.root.classList.toggle('edited', this.edited);
@@ -174,7 +225,9 @@ class Field {
     } else if (this.kind === 'choice') {
       const current = this.edited ? this.form.answers[this.key] : value;
       if (this.segments) {
-        this.segments.forEach((button, index) => button.setAttribute('aria-pressed', String(this.choices[index] === current)));
+        for (const [index, button] of this.segments.entries()) {
+          button.setAttribute('aria-pressed', String(this.choices[index] === current));
+        }
       } else if (this.select && document.activeElement !== this.select) {
         this.select.value = String(current);
       }
@@ -186,8 +239,15 @@ class Field {
       }
     } else if (this.kind === 'rows') {
       if (!this.table.children.length && Array.isArray(value)) {
-        this.table.append(h('tr', {}, this.columns.map((column) => h('th', {}, column)), h('th')));
-        value.forEach((row) => this.addRow(row));
+        this.table.append(
+          h(
+            'tr',
+            {},
+            this.columns.map((column) => h('th', {}, column)),
+            h('th'),
+          ),
+        );
+        for (const row of value) this.addRow(row);
         if (!value.length) this.addRow(['', '']);
       }
     } else if (document.activeElement !== this.input) {
@@ -226,7 +286,11 @@ export class FormView {
   section(name) {
     const title = name || 'Settings';
     if (!this.sections.has(title)) {
-      const box = h('div', { class: 'section', id: `section-${title.replace(/\W+/g, '-')}` }, h('h3', {}, title));
+      const box = h(
+        'div',
+        { class: 'section', id: `section-${title.replace(/\W+/g, '-')}` },
+        h('h3', {}, title),
+      );
       this.container.append(box);
       this.sections.set(title, box);
     }
@@ -267,6 +331,8 @@ export class FormView {
   }
 
   visibleSections() {
-    return [...this.sections.entries()].filter(([, box]) => !box.hidden).map(([name, box]) => [name, box]);
+    return [...this.sections.entries()]
+      .filter(([, box]) => !box.hidden)
+      .map(([name, box]) => [name, box]);
   }
 }

@@ -14,11 +14,20 @@ const TAG_LABELS = {
 };
 
 export function tagChips(tags) {
-  return (tags || []).map((tag) => h('span', { class: `chip ${tag === 'qe-save' || tag === 'elphon-system' ? 'accent' : ''}` }, TAG_LABELS[tag] || tag));
+  return (tags || []).map((tag) =>
+    h(
+      'span',
+      { class: `chip ${tag === 'qe-save' || tag === 'elphon-system' ? 'accent' : ''}` },
+      TAG_LABELS[tag] || tag,
+    ),
+  );
 }
 
 // Resolves with the chosen folder (relative to the root) or null.
-export async function pickFolder(start, { title = 'Choose the working folder', allowFiles = false } = {}) {
+export async function pickFolder(
+  start,
+  { title = 'Choose the working folder', allowFiles = false } = {},
+) {
   let current = start || '.';
   let selectedFile = null;
   const crumbs = h('div', { class: 'crumbs' });
@@ -39,12 +48,20 @@ export async function pickFolder(start, { title = 'Choose the working folder', a
     const parts = current === '.' ? [] : current.split('/');
     crumbs.append(h('button', { onclick: () => load('.') }, 'root'));
     parts.forEach((part, index) => {
-      crumbs.append(' / ', h('button', { onclick: () => load(parts.slice(0, index + 1).join('/')) }, part));
+      crumbs.append(
+        ' / ',
+        h('button', { onclick: () => load(parts.slice(0, index + 1).join('/')) }, part),
+      );
     });
     clear(list);
     if (listing.parent !== null) {
       list.append(
-        h('div', { class: 'browser-entry dir', onclick: () => load(listing.parent) }, h('span', { class: 'icon' }, '↰'), h('span', { class: 'muted' }, '..')),
+        h(
+          'div',
+          { class: 'browser-entry dir', onclick: () => load(listing.parent) },
+          h('span', { class: 'icon' }, '↰'),
+          h('span', { class: 'muted' }, '..'),
+        ),
       );
     }
     for (const entry of listing.entries) {
@@ -80,7 +97,11 @@ export async function pickFolder(start, { title = 'Choose the working folder', a
     body: h('div', {}, crumbs, list, status),
     actions: [
       { label: 'Cancel', value: null },
-      { label: allowFiles ? 'Use the selected file' : 'Use this folder', kind: 'primary', value: () => (allowFiles ? selectedFile : current) },
+      {
+        label: allowFiles ? 'Use the selected file' : 'Use this folder',
+        kind: 'primary',
+        value: () => (allowFiles ? selectedFile : current),
+      },
     ],
   });
 }

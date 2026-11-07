@@ -98,19 +98,22 @@ def label_and_hint(question: Question) -> tuple[str, str]:
     return prompt.rstrip(':'), ''
 
 
-def describe_question(question: Question) -> dict:
+def describe_question(question: Question, workflow: str = '') -> dict:
     """Static description of a question (what does not depend on the answers).
 
     Parameters
     ----------
     question : Question
         The question.
+    workflow : str, optional
+        Workflow name (selects the documentation table).
 
     Returns
     -------
     dict
         ``type``, ``key``, ``kind``, ``label``, ``prompt``, ``help``, ``unit``, ``section``,
-        ``level``, ``columns`` and ``gui_only``.
+        ``level``, ``columns``, ``gui_only``, ``widget`` and ``doc`` (the documentation of the
+        PAOFLOW parameter it feeds, :mod:`PAOFLOW.gen.questions.docs`).
     """
     label, hint = label_and_hint(question)
     return {
@@ -126,7 +129,16 @@ def describe_question(question: Question) -> dict:
         'level': question.level,
         'columns': list(question.columns),
         'gui_only': not question.cli,
+        'widget': question.widget,
+        'doc': _doc(workflow, question),
     }
+
+
+def _doc(workflow: str, question: Question) -> dict | None:
+    from .docs import question_doc
+
+    found = question_doc(workflow, question.key, question.doc)
+    return {'text': found[0], 'source': found[1]} if found else None
 
 
 def _number(question: Question, raw: Any) -> Any:
@@ -206,7 +218,7 @@ def interpret(question: Question, raw: Any, default: Any, choices: list) -> Any:
         return list(dict.fromkeys(str(name).strip() for name in raw if str(name).strip()))
     if kind == 'rows':
         rows = []
-        for row in [] if _blank(raw) else raw:
+        for row in (default or []) if _blank(raw) else raw:
             cells = [
                 str(cell).strip() for cell in (row if isinstance(row, (list, tuple)) else [row])
             ]
@@ -248,7 +260,7 @@ def resolve_form(workflow: Workflow, raw_answers: dict, context: Context) -> Res
                 }
             )
             continue
-        entry = describe_question(item)
+        entry = describe_question(item, workflow.name)
         shown = item.applies(form.answers, context)
         entry['visible'] = shown
         form.items.append(entry)

@@ -485,6 +485,9 @@ def load_pdos(ref: DatasetRef, root: str, options: dict) -> Dataset:
     )
     grouping = _choice(options, 'group', 'Group by', groupings, groupings[0])
     _option(dataset, 'group', 'Group by', groupings, grouping)
+    displays = ['lines', 'stacked']
+    display = _choice(options, 'display', 'Display', displays, 'lines')
+    _option(dataset, 'display', 'Display', displays, display)
     sums: 'OrderedDict[str, np.ndarray]' = OrderedDict()
     energy = None
     for file, label in zip(ref.files, labels):
@@ -513,7 +516,8 @@ def load_pdos(ref: DatasetRef, root: str, options: dict) -> Dataset:
     order = sorted(keys)
     for key in keys:
         role = 'neutral' if key.startswith('other') else CATEGORICAL[order.index(key) % 8]
-        dataset.series.append(Series(key, energy, sums[key], role=role))
+        meta = {'stack': 'pdos'} if display == 'stacked' else {}
+        dataset.series.append(Series(key, energy, sums[key], role=role, meta=meta))
     total = os.path.join(
         _path(root, ref.folder),
         re.sub(r'^.*_pdos(dk)?_', r'pdos\1_sum_', os.path.basename(ref.files[0])),

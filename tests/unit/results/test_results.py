@@ -220,3 +220,16 @@ def test_output_manifest(tmp_path):
     ]
     folder = ResultsFolder(str(out))
     assert folder.load(folder.find('manifest')).table[0]['name'] == 'paoflow'
+
+
+def test_stacked_pdos():
+    from PAOFLOW.results.palette import resolve_spec
+
+    kinds, _ = _by_kind(SI)
+    dataset = load(kinds['pdos'][0], str(SI), {'display': 'stacked'})
+    spec = resolve_spec(figure_spec(dataset), 'light')
+    stacked = [t for t in spec['data'] if t.get('stackgroup') == 'pdos']
+    assert len(stacked) == len(spec['data']) - 1 and stacked[0]['fillcolor'].startswith('rgba(')
+    assert spec['data'][-1]['name'] == 'total' and 'stackgroup' not in spec['data'][-1]
+    pytest.importorskip('matplotlib')
+    assert matplotlib_figure(dataset, 'png')[:4] == b'\x89PNG'

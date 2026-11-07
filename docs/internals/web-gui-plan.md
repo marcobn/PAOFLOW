@@ -69,15 +69,44 @@ Results; light and dark themes; the 3D Fermi surface. No console errors.
   - `tr2_ph`;
   - the SSCHA minimiser settings.
 
-**Open (not built):**
+**Second round (7 November 2026)** of the open items:
 
-- the band-path editor and Brillouin-zone preview in Setup;
-- field help taken from the method docstrings;
-- the clickable EDC/MDC cuts of ARPES maps;
-- a stacked PDOS view;
-- a JS linter in pre-commit;
-- Selenium end-to-end tests inside the suite;
-- a common reader layer for `GPAO`.
+- **Band-path editor.** `gen/band_paths.py` reads the default path of the lattice
+  (`kpnts_interpolation_mesh._getHighSymPoints` from the save's `ibrav` and cell, or the 2D tables). It also
+  validates a custom path and builds the preview: the path inside the first Brillouin zone (the
+  `fermi_plotter.brillouin_zone` geometry), served by `/api/gen/bandpath`.
+  - The questions are GUI-only: `band_path` (basic, `widget='bandpath'`) and `high_sym` (advanced point table).
+  - `assemble_run` fills in the side the user left untouched.
+  - `build_run_script` writes `BAND_PATH` and `HIGH_SYM`. An unchanged path writes the CLI's `main.py`.
+- **Field help from docstrings.** `gen/questions/docs.py` maps 102 questions (`FIELD_DOCS`, or `Question.doc`)
+  to the parameter of the PAOFLOW method they feed, or to the `system.py` comment dictionaries. Both docstring
+  styles are parsed (NumPy `Parameters` / `Other Parameters`, and `Arguments:`), and reST is reduced to plain text.
+  `test_field_docs.py` requires every reference to resolve.
+- **Clickable EDC/MDC cuts.** These are built in the browser from the heatmap data, for every map (ARPES,
+  spectral functions, Berry slices), with crosshairs on the map.
+- **Stacked PDOS.** A *display* option draws the PDOS as stacked areas: `role@alpha` colours, split by a
+  surface-coloured line, with the total as a line. The matplotlib export uses `stackplot`.
+- **`GPAO` on the shared parser.** `read_dos_PAO`, `read_bands_PAO` and `read_transport_PAO` now parse through
+  `results.columns.read_columns`, so `GPAO` and the Results tab read files the same way.
+  - The arrays are identical to the frozen copy (`tests/unit/inputs/legacy_read_pao_output.py`) on all 114
+    reference files checked.
+  - `#` headers are accepted.
+  - The Hall and Nernst layouts, and the sparse k-path layout, raise clear errors instead of misreading.
+- **Browser tests in the suite.** `tests/integration/gui/test_browser.py` (integration and slow) runs three tests:
+  Setup writes the resolved files and the zone preview draws; Results stacked PDOS and map cuts; a run from the
+  Runs tab. All check that the page logs no error.
+- **JS checks.** The pre-commit hook `js-check` and `test_static_js.py` (`.github/lint/check_js.py`) parse every
+  module with `node --check` and refuse HTML-string insertion, `eval` and `new Function`.
+
+- **Biome** (installed by the user, 2.6.6) lints and formats the front end:
+  - the configuration is `biome.json`: recommended rules, single quotes, line width 100;
+  - the pre-commit hook `biome` pins `@biomejs/biome@2.6.6`;
+  - the first pass reformatted the JavaScript and the CSS, and removed: assignments inside conditions (the code-view
+    tokenizer is now table driven), `forEach` callbacks that return values, unused bindings, a global `isNaN`, and
+    descending-specificity orders in the CSS (the `!important` of `[hidden]` is kept on purpose);
+  - the browser tests and the end-to-end flows passed again after the reformat.
+
+Nothing from the open list remains.
 
 ## 1. Goals and non-goals
 

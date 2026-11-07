@@ -1,10 +1,11 @@
 // Setup tab: working folder, paoflow-gen workflows as forms, live preview, writing the files.
 
 import { api } from './api.js';
-import { pickFolder, tagChips } from './browser.js';
+import { pickFolder } from './browser.js';
 import { codeView, diffView } from './codeview.js';
 import { clear, copyText, debounce, dialog, h, storage, toast } from './dom.js';
 import { FormView } from './form.js';
+import { renderFigure } from './plots.js';
 
 const STATUS_LABEL = { new: 'new', changed: 'changed', identical: 'unchanged' };
 
@@ -34,7 +35,9 @@ export class SetupView {
     this.side = h('div', { class: 'pane side' });
     this.center = h('div', { class: 'pane' });
     this.preview = h('div', { class: 'pane preview' });
-    this.root.append(h('div', { class: 'columns setup-grid' }, this.side, this.center, this.preview));
+    this.root.append(
+      h('div', { class: 'columns setup-grid' }, this.side, this.center, this.preview),
+    );
     this.folderCard = h('div', { class: 'card' });
     this.workflowCard = h('div', { class: 'card' });
     this.sectionCard = h('div', { class: 'card', hidden: true });
@@ -62,8 +65,10 @@ export class SetupView {
     this.renderFolder();
     this.renderWorkflows();
     const remembered = storage(`workflow:${this.session.root}:${this.workdir}`);
-    const suggested = this.detection.suggestions.find((s) => this.workflows.some((w) => w.name === s.workflow));
-    this.selectWorkflow(remembered || (suggested && suggested.workflow) || 'run');
+    const suggested = this.detection.suggestions.find((s) =>
+      this.workflows.some((w) => w.name === s.workflow),
+    );
+    this.selectWorkflow(remembered || suggested?.workflow || 'run');
   }
 
   renderFolder() {
@@ -74,11 +79,22 @@ export class SetupView {
       h(
         'div',
         { class: 'row' },
-        h('code', { class: 'grow ellipsis', title: d.absolute }, d.path === '.' ? '(root)' : d.path),
-        h('button', { class: 'btn small', onclick: async () => {
-          const chosen = await pickFolder(this.workdir);
-          if (chosen !== null) this.openFolder(chosen);
-        } }, 'Change…'),
+        h(
+          'code',
+          { class: 'grow ellipsis', title: d.absolute },
+          d.path === '.' ? '(root)' : d.path,
+        ),
+        h(
+          'button',
+          {
+            class: 'btn small',
+            onclick: async () => {
+              const chosen = await pickFolder(this.workdir);
+              if (chosen !== null) this.openFolder(chosen);
+            },
+          },
+          'Change…',
+        ),
       ),
     );
     const summary = d.save_summary;
@@ -86,34 +102,68 @@ export class SetupView {
     if (summary) {
       const lattice = summary.bravais_index ? `ibrav ${summary.bravais_index}` : 'cell';
       facts.push(['System', `${summary.formula} · ${summary.nat} atoms · ${lattice}`]);
-      facts.push(['Electrons', `${fmt(summary.nelec, 1)} e · ${summary.nbnd} bands${summary.spinorbit ? ' · SOC' : summary.lsda ? ' · spin-polarised' : ''}`]);
+      facts.push([
+        'Electrons',
+        `${fmt(summary.nelec, 1)} e · ${summary.nbnd} bands${summary.spinorbit ? ' · SOC' : summary.lsda ? ' · spin-polarised' : ''}`,
+      ]);
       facts.push([
         'Character',
-        summary.metal ? `metal (${summary.occupations})` : summary.gap_ev !== null ? `gap ${fmt(summary.gap_ev, 2)} eV` : summary.occupations || '?',
+        summary.metal
+          ? `metal (${summary.occupations})`
+          : summary.gap_ev !== null
+            ? `gap ${fmt(summary.gap_ev, 2)} eV`
+            : summary.occupations || '?',
       ]);
       if (summary.kgrid) facts.push(['k-grid', summary.kgrid.join(' × ')]);
       facts.push([
         'Pseudos',
-        summary.species.map((s) => `${s.name}${s.pseudo ? ` ${s.pseudo.pseudo_type}${s.pseudo.relativistic === 'full' ? ' FR' : ''}` : ' ?'}`).join(', '),
+        summary.species
+          .map(
+            (s) =>
+              `${s.name}${s.pseudo ? ` ${s.pseudo.pseudo_type}${s.pseudo.relativistic === 'full' ? ' FR' : ''}` : ' ?'}`,
+          )
+          .join(', '),
       ]);
       if (summary.two_dimensional) facts.push(['Geometry', '2D slab (vacuum along c)']);
     } else if (d.template_summary) {
       const t = d.template_summary;
       facts.push(['pw.x input', `${d.pw_inputs[0]} · prefix ${t.prefix || '?'}`]);
-      facts.push(['Atoms', Object.entries(t.counts).map(([k, v]) => `${k}${v > 1 ? v : ''}`).join(' ') || '?']);
+      facts.push([
+        'Atoms',
+        Object.entries(t.counts)
+          .map(([k, v]) => `${k}${v > 1 ? v : ''}`)
+          .join(' ') || '?',
+      ]);
       if (t.nelec !== null) facts.push(['Valence e', fmt(t.nelec, 1)]);
       facts.push(['Occupations', t.occupations || 'fixed']);
     }
     if (facts.length) {
-      this.folderCard.append(h('dl', { class: 'kv', style: { marginTop: '8px' } }, facts.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])));
+      this.folderCard.append(
+        h(
+          'dl',
+          { class: 'kv', style: { marginTop: '8px' } },
+          facts.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]),
+        ),
+      );
     }
     const found = [];
     if (d.saves.length) found.push(h('span', { class: 'chip accent' }, d.saves.join(', ')));
-    if (d.pw_inputs.length) found.push(h('span', { class: 'chip' }, `${d.pw_inputs.length} pw.x input${d.pw_inputs.length > 1 ? 's' : ''}`));
+    if (d.pw_inputs.length)
+      found.push(
+        h(
+          'span',
+          { class: 'chip' },
+          `${d.pw_inputs.length} pw.x input${d.pw_inputs.length > 1 ? 's' : ''}`,
+        ),
+      );
     if (d.drivers.length) found.push(h('span', { class: 'chip' }, d.drivers.join(', ')));
     if (d.system_py) found.push(h('span', { class: 'chip accent' }, 'system.py'));
-    if (found.length) this.folderCard.append(h('div', { class: 'row wrap', style: { marginTop: '8px' } }, found));
-    for (const warning of d.warnings) this.folderCard.append(h('div', { class: 'callout warn', style: { marginTop: '8px' } }, warning));
+    if (found.length)
+      this.folderCard.append(h('div', { class: 'row wrap', style: { marginTop: '8px' } }, found));
+    for (const warning of d.warnings)
+      this.folderCard.append(
+        h('div', { class: 'callout warn', style: { marginTop: '8px' } }, warning),
+      );
   }
 
   renderWorkflows() {
@@ -132,14 +182,25 @@ export class SetupView {
               dataset: { name: item.name },
               onclick: () => this.selectWorkflow(item.name),
             },
-            h('div', { class: 'title' }, item.title, suggested.has(item.name) ? h('span', { class: 'chip ok' }, 'suggested') : null),
+            h(
+              'div',
+              { class: 'title' },
+              item.title,
+              suggested.has(item.name) ? h('span', { class: 'chip ok' }, 'suggested') : null,
+            ),
             h('div', { class: 'desc' }, item.description),
           ),
         );
       }
     };
-    group('paoflow-gen', this.workflows.filter((w) => w.kind === 'workflow'));
-    group('tools', this.workflows.filter((w) => w.kind === 'tool'));
+    group(
+      'paoflow-gen',
+      this.workflows.filter((w) => w.kind === 'workflow'),
+    );
+    group(
+      'tools',
+      this.workflows.filter((w) => w.kind === 'tool'),
+    );
     this.workflowCard.append(list);
   }
 
@@ -168,17 +229,38 @@ export class SetupView {
     }
     const saved = storage(this.answersKey()) || {};
     this.options = saved.options || {};
-    const advanced = h('input', { type: 'checkbox', onchange: () => this.form.setShowAdvanced(advanced.checked) });
+    const advanced = h('input', {
+      type: 'checkbox',
+      onchange: () => this.form.setShowAdvanced(advanced.checked),
+    });
     this.center.append(
       h(
         'div',
         { class: 'form-head' },
-        h('div', { class: 'grow' }, h('h2', {}, info.title), h('div', { class: 'muted' }, info.description)),
-        h('label', { class: 'row small muted' }, h('span', { class: 'switch' }, advanced, h('span')), 'advanced'),
-        h('button', { class: 'btn small', title: 'Forget the answers of this form', onclick: () => {
-          storage(this.answersKey(), {});
-          this.selectWorkflow(name);
-        } }, 'Reset'),
+        h(
+          'div',
+          { class: 'grow' },
+          h('h2', {}, info.title),
+          h('div', { class: 'muted' }, info.description),
+        ),
+        h(
+          'label',
+          { class: 'row small muted' },
+          h('span', { class: 'switch' }, advanced, h('span')),
+          'advanced',
+        ),
+        h(
+          'button',
+          {
+            class: 'btn small',
+            title: 'Forget the answers of this form',
+            onclick: () => {
+              storage(this.answersKey(), {});
+              this.selectWorkflow(name);
+            },
+          },
+          'Reset',
+        ),
       ),
       this.renderOptions(name),
     );
@@ -205,20 +287,76 @@ export class SetupView {
     };
     const box = h('div', { class: 'section' }, h('h3', {}, 'Output'));
     const field = (label, control, hint) =>
-      h('div', { class: 'field' }, h('div', {}, h('label', { class: 'name' }, label), hint ? h('div', { class: 'hint' }, hint) : null), h('div', {}, h('div', { class: 'control' }, control)));
+      h(
+        'div',
+        { class: 'field' },
+        h(
+          'div',
+          {},
+          h('label', { class: 'name' }, label),
+          hint ? h('div', { class: 'hint' }, hint) : null,
+        ),
+        h('div', {}, h('div', { class: 'control' }, control)),
+      );
     if (name === 'elphon') {
-      const folder = h('input', { type: 'text', value: this.options.folder || '', placeholder: this.workdir, oninput: () => set('folder', folder.value.trim()) });
-      box.append(field('System folder', [folder, h('button', { class: 'btn small', onclick: async () => {
-        const chosen = await pickFolder(this.workdir, { title: 'System folder (created if missing below a chosen folder)' });
-        if (chosen !== null) { folder.value = chosen; set('folder', chosen); }
-      } }, 'Browse…')], 'relative to the root; default: the working folder (paoflow-gen -o)'));
+      const folder = h('input', {
+        type: 'text',
+        value: this.options.folder || '',
+        placeholder: this.workdir,
+        oninput: () => set('folder', folder.value.trim()),
+      });
+      box.append(
+        field(
+          'System folder',
+          [
+            folder,
+            h(
+              'button',
+              {
+                class: 'btn small',
+                onclick: async () => {
+                  const chosen = await pickFolder(this.workdir, {
+                    title: 'System folder (created if missing below a chosen folder)',
+                  });
+                  if (chosen !== null) {
+                    folder.value = chosen;
+                    set('folder', chosen);
+                  }
+                },
+              },
+              'Browse…',
+            ),
+          ],
+          'relative to the root; default: the working folder (paoflow-gen -o)',
+        ),
+      );
     } else {
-      const defaults = { run: 'main.py', acbn0: 'main.acbn0.py', phonon: 'main.phonon.py', sscha: 'main.sscha.py' };
-      const out = h('input', { type: 'text', value: this.options.out || '', placeholder: defaults[name], oninput: () => set('out', out.value.trim()) });
+      const defaults = {
+        run: 'main.py',
+        acbn0: 'main.acbn0.py',
+        phonon: 'main.phonon.py',
+        sscha: 'main.sscha.py',
+      };
+      const out = h('input', {
+        type: 'text',
+        value: this.options.out || '',
+        placeholder: defaults[name],
+        oninput: () => set('out', out.value.trim()),
+      });
       box.append(field('Driver file', out, 'in the working folder (paoflow-gen -o)'));
       if (name !== 'sscha') {
-        const plot = h('input', { type: 'checkbox', checked: Boolean(this.options.plot), onchange: () => set('plot', plot.checked) });
-        box.append(field('Always write the plot script', h('span', { class: 'switch' }, plot, h('span')), 'paoflow-gen --plot'));
+        const plot = h('input', {
+          type: 'checkbox',
+          checked: Boolean(this.options.plot),
+          onchange: () => set('plot', plot.checked),
+        });
+        box.append(
+          field(
+            'Always write the plot script',
+            h('span', { class: 'switch' }, plot, h('span')),
+            'paoflow-gen --plot',
+          ),
+        );
       }
     }
     return box;
@@ -239,10 +377,58 @@ export class SetupView {
     this.form.render(resolved);
     this.renderSections();
     this.renderPreview();
+    this.renderWidgets();
+  }
+
+  // Special fields: the band path gets a preview of the path in the first Brillouin zone.
+  renderWidgets() {
+    const items = this.resolved.items;
+    const value = (key) => items.find((i) => i.key === key)?.value;
+    for (const item of items) {
+      if (item.type !== 'question' || item.widget !== 'bandpath' || !item.visible) continue;
+      const field = this.form.fields.get(item.key);
+      if (!field || field.root.hidden) continue;
+      if (!field.preview) {
+        field.caption = h('div', { class: 'small muted bz-caption' });
+        field.preview = h('div', { class: 'bz-preview' });
+        field.root.append(field.caption, field.preview);
+      }
+      const request = {
+        workdir: this.workdir,
+        savedir: value('savedir'),
+        band_path: item.value,
+        points: value('high_sym') || [],
+      };
+      const key = JSON.stringify(request);
+      if (key === field.previewKey) continue;
+      field.previewKey = key;
+      api
+        .post('/api/gen/bandpath', request)
+        .then((result) => {
+          if (field.previewKey !== key) return;
+          if (result.error) {
+            field.caption.textContent = `Preview: ${result.error}`;
+            field.preview.hidden = true;
+            return;
+          }
+          field.preview.hidden = false;
+          field.caption.textContent = `Path in the first Brillouin zone · length ${result.length.toFixed(3)} (2π/a) · drag to rotate`;
+          renderFigure(field.preview, result.figure, 'band_path');
+        })
+        .catch((error) => {
+          field.caption.textContent = error.message;
+        });
+    }
   }
 
   payload(extra = {}) {
-    return { workflow: this.workflow, workdir: this.workdir, answers: this.form.answers, options: this.options, ...extra };
+    return {
+      workflow: this.workflow,
+      workdir: this.workdir,
+      answers: this.form.answers,
+      options: this.options,
+      ...extra,
+    };
   }
 
   renderSections() {
@@ -253,7 +439,21 @@ export class SetupView {
     for (const [name, box] of sections) {
       const errors = box.querySelectorAll('.field.invalid:not([hidden])').length;
       this.sectionCard.append(
-        h('div', {}, h('button', { class: 'btn link', onclick: () => box.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, name), errors ? h('span', { class: 'chip bad', style: { marginLeft: '6px' } }, `${errors}`) : null),
+        h(
+          'div',
+          {},
+          h(
+            'button',
+            {
+              class: 'btn link',
+              onclick: () => box.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+            },
+            name,
+          ),
+          errors
+            ? h('span', { class: 'chip bad', style: { marginLeft: '6px' } }, `${errors}`)
+            : null,
+        ),
       );
     }
   }
@@ -264,11 +464,32 @@ export class SetupView {
     this.previewTarget = h('span', { class: 'small muted ellipsis grow' });
     this.fileTabs = h('div', { class: 'file-tabs' });
     this.previewBody = h('div', { class: 'preview-body' });
-    this.diffToggle = h('input', { type: 'checkbox', onchange: () => { this.showDiff = this.diffToggle.checked; this.renderFile(); } });
-    this.writeButton = h('button', { class: 'btn primary', onclick: () => this.write() }, 'Write files');
+    this.diffToggle = h('input', {
+      type: 'checkbox',
+      onchange: () => {
+        this.showDiff = this.diffToggle.checked;
+        this.renderFile();
+      },
+    });
+    this.writeButton = h(
+      'button',
+      { class: 'btn primary', onclick: () => this.write() },
+      'Write files',
+    );
     this.statusLine = h('span', { class: 'small muted grow' });
     this.preview.append(
-      h('div', { class: 'preview-head' }, h('h3', {}, 'Files'), this.previewTarget, h('label', { class: 'row small muted' }, h('span', { class: 'switch' }, this.diffToggle, h('span')), 'diff')),
+      h(
+        'div',
+        { class: 'preview-head' },
+        h('h3', {}, 'Files'),
+        this.previewTarget,
+        h(
+          'label',
+          { class: 'row small muted' },
+          h('span', { class: 'switch' }, this.diffToggle, h('span')),
+          'diff',
+        ),
+      ),
       this.fileTabs,
       this.previewBody,
       h(
@@ -295,20 +516,41 @@ export class SetupView {
       const list = h('ul');
       for (const [key, message] of errors) {
         list.append(
-          h('li', {}, h('button', { class: 'btn link', onclick: () => {
-            const node = this.center.querySelector(`.field[data-key="${CSS.escape(key)}"]`);
-            if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          } }, key.startsWith('_') ? 'configuration' : key), ': ', message),
+          h(
+            'li',
+            {},
+            h(
+              'button',
+              {
+                class: 'btn link',
+                onclick: () => {
+                  const node = this.center.querySelector(`.field[data-key="${CSS.escape(key)}"]`);
+                  if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                },
+              },
+              key.startsWith('_') ? 'configuration' : key,
+            ),
+            ': ',
+            message,
+          ),
         );
       }
-      this.previewBody.append(h('div', { style: { padding: '16px' } }, h('div', { class: 'callout warn' }, 'Complete the form to see the files.'), list));
+      this.previewBody.append(
+        h(
+          'div',
+          { style: { padding: '16px' } },
+          h('div', { class: 'callout warn' }, 'Complete the form to see the files.'),
+          list,
+        ),
+      );
       return;
     }
     this.writeButton.disabled = this.session.read_only;
     const counts = { new: 0, changed: 0, identical: 0 };
     for (const file of r.files) counts[file.status] += 1;
     this.statusLine.textContent = `${r.files.length} files: ${counts.new} new, ${counts.changed} changed, ${counts.identical} unchanged`;
-    if (!this.selectedFile || !r.files.some((f) => f.path === this.selectedFile)) this.selectedFile = r.files[0].path;
+    if (!this.selectedFile || !r.files.some((f) => f.path === this.selectedFile))
+      this.selectedFile = r.files[0].path;
     for (const file of r.files) {
       this.fileTabs.append(
         h(
@@ -319,7 +561,8 @@ export class SetupView {
             title: `${file.location} (${STATUS_LABEL[file.status]})`,
             onclick: (ev) => {
               this.selectedFile = file.path;
-              for (const node of this.fileTabs.children) node.setAttribute('aria-selected', String(node === ev.currentTarget));
+              for (const node of this.fileTabs.children)
+                node.setAttribute('aria-selected', String(node === ev.currentTarget));
               this.renderFile();
             },
           },
@@ -332,20 +575,27 @@ export class SetupView {
   }
 
   renderFile() {
-    if (!this.resolved || !this.resolved.files) return;
+    if (!this.resolved?.files) return;
     const file = this.resolved.files.find((f) => f.path === this.selectedFile);
     clear(this.previewBody);
     if (!file) return;
-    if (this.showDiff && file.status === 'changed' && file.diff) this.previewBody.append(diffView(file.diff));
+    if (this.showDiff && file.status === 'changed' && file.diff)
+      this.previewBody.append(diffView(file.diff));
     else if (this.showDiff && file.status !== 'changed') {
-      this.previewBody.append(h('div', { class: 'empty' }, file.status === 'new' ? 'new file (nothing to compare)' : 'identical to the file on disk'));
+      this.previewBody.append(
+        h(
+          'div',
+          { class: 'empty' },
+          file.status === 'new' ? 'new file (nothing to compare)' : 'identical to the file on disk',
+        ),
+      );
     } else this.previewBody.append(codeView(file.text, file.path));
   }
 
   // ----------------------------------------------------------------------- actions
   async write() {
     const r = this.resolved;
-    if (!r || !r.complete) return;
+    if (!r?.complete) return;
     const changed = r.files.filter((f) => f.status === 'changed');
     let overwrite = [];
     let keepFiles = [];
@@ -374,31 +624,50 @@ export class SetupView {
       backup = keep.checked;
     }
     try {
-      const result = await api.post('/api/gen/write', this.payload({ overwrite, keep: keepFiles, backup }));
+      const result = await api.post(
+        '/api/gen/write',
+        this.payload({ overwrite, keep: keepFiles, backup }),
+      );
       const kept = result.kept.length ? `, kept ${result.kept.length}` : '';
-      toast(`Wrote ${result.written.length} file${result.written.length === 1 ? '' : 's'} in ${result.folder}${kept}`, 'ok');
+      toast(
+        `Wrote ${result.written.length} file${result.written.length === 1 ? '' : 's'} in ${result.folder}${kept}`,
+        'ok',
+      );
       this.app.notifyWritten(result);
       await this.resolve();
       this.showPlan(result.plan, result.folder);
     } catch (error) {
-      if (error.status === 409) toast(`Changed on disk meanwhile: ${error.details.conflicts.join(', ')}`, 'warn');
+      if (error.status === 409)
+        toast(`Changed on disk meanwhile: ${error.details.conflicts.join(', ')}`, 'warn');
       else toast(error.message, 'bad');
     }
   }
 
   showPython() {
-    if (!this.resolved || !this.resolved.complete) return toast('Complete the form first', 'warn');
+    if (!this.resolved?.complete) return toast('Complete the form first', 'warn');
     const text = this.resolved.python;
     dialog({
       title: 'Python equivalent',
-      body: h('div', {}, h('div', { class: 'small muted', style: { marginBottom: '8px' } }, 'Writes the same files without the GUI (paths relative to the working folder).'), codeView(text, 'gen.py')),
-      actions: [{ label: 'Copy', value: () => copyText(text) }, { label: 'Close', value: null }],
+      body: h(
+        'div',
+        {},
+        h(
+          'div',
+          { class: 'small muted', style: { marginBottom: '8px' } },
+          'Writes the same files without the GUI (paths relative to the working folder).',
+        ),
+        codeView(text, 'gen.py'),
+      ),
+      actions: [
+        { label: 'Copy', value: () => copyText(text) },
+        { label: 'Close', value: null },
+      ],
       wide: true,
     });
   }
 
   showPlan(plan, folder) {
-    plan = plan || (this.resolved && this.resolved.plan);
+    plan = plan || this.resolved?.plan;
     if (!plan) return toast('Complete the form first', 'warn');
     folder = folder || this.resolved.target;
     const list = h('ol', { class: 'steps' });
@@ -407,14 +676,33 @@ export class SetupView {
         h(
           'li',
           {},
-          h('div', { class: 'row' }, h('strong', { class: 'grow' }, step.label), step.mpi ? h('span', { class: 'chip accent' }, 'MPI') : null, step.ranks_env ? h('span', { class: 'chip accent' }, `${step.ranks_env}=ranks`) : null, step.interactive ? h('span', { class: 'chip' }, 'interactive') : null),
-          step.manual ? null : h('div', { class: 'cmd' }, h('code', {}, step.command), h('button', { class: 'icon-btn', title: 'Copy', onclick: () => copyText(step.command) }, '⧉')),
+          h(
+            'div',
+            { class: 'row' },
+            h('strong', { class: 'grow' }, step.label),
+            step.mpi ? h('span', { class: 'chip accent' }, 'MPI') : null,
+            step.ranks_env ? h('span', { class: 'chip accent' }, `${step.ranks_env}=ranks`) : null,
+            step.interactive ? h('span', { class: 'chip' }, 'interactive') : null,
+          ),
+          step.manual
+            ? null
+            : h(
+                'div',
+                { class: 'cmd' },
+                h('code', {}, step.command),
+                h(
+                  'button',
+                  { class: 'icon-btn', title: 'Copy', onclick: () => copyText(step.command) },
+                  '⧉',
+                ),
+              ),
           step.note ? h('div', { class: 'small muted' }, step.note) : null,
         ),
       );
     }
     const actions = [{ label: 'Close', value: null }];
-    if (this.app.runs && !this.session.read_only) actions.unshift({ label: 'Open in Runs', kind: 'primary', value: 'runs' });
+    if (this.app.runs && !this.session.read_only)
+      actions.unshift({ label: 'Open in Runs', kind: 'primary', value: 'runs' });
     dialog({ title: `Next steps in ${folder}`, body: list, actions }).then((choice) => {
       if (choice === 'runs') this.app.showRuns(folder, plan, this.workflow);
     });
@@ -422,38 +710,113 @@ export class SetupView {
 
   // ----------------------------------------------------------------------- tools
   renderQeInput(info) {
-    const state = storage(`qe-input:${this.session.root}`) || { source: 'auto', ibrav: 'auto', metallic: 'auto', magnetic: 'auto', assume_isolated_2d: true };
+    const state = storage(`qe-input:${this.session.root}`) || {
+      source: 'auto',
+      ibrav: 'auto',
+      metallic: 'auto',
+      magnetic: 'auto',
+      assume_isolated_2d: true,
+    };
     const save = () => storage(`qe-input:${this.session.root}`, state);
     const input = (key, placeholder) => {
-      const node = h('input', { type: 'text', value: state[key] ?? '', placeholder, oninput: () => { state[key] = node.value.trim(); save(); } });
+      const node = h('input', {
+        type: 'text',
+        value: state[key] ?? '',
+        placeholder,
+        oninput: () => {
+          state[key] = node.value.trim();
+          save();
+        },
+      });
       return node;
     };
     const select = (key, options) => {
-      const node = h('select', { onchange: () => { state[key] = node.value; save(); } }, options.map((o) => h('option', { value: o, selected: state[key] === o }, o)));
+      const node = h(
+        'select',
+        {
+          onchange: () => {
+            state[key] = node.value;
+            save();
+          },
+        },
+        options.map((o) => h('option', { value: o, selected: state[key] === o }, o)),
+      );
       return node;
     };
     const check = (key) => {
-      const node = h('input', { type: 'checkbox', checked: Boolean(state[key]), onchange: () => { state[key] = node.checked; save(); } });
+      const node = h('input', {
+        type: 'checkbox',
+        checked: Boolean(state[key]),
+        onchange: () => {
+          state[key] = node.checked;
+          save();
+        },
+      });
       return h('span', { class: 'switch' }, node, h('span'));
     };
-    const field = (label, control, hint) => h('div', { class: 'field' }, h('div', {}, h('label', { class: 'name' }, label), hint ? h('div', { class: 'hint' }, hint) : null), h('div', {}, h('div', { class: 'control' }, control)));
-    const kpoints = h('input', { type: 'text', value: (state.kpoints || []).join(' '), placeholder: 'database value', oninput: () => { const v = kpoints.value.trim().split(/[\s,]+/).filter(Boolean).map(Number); state.kpoints = v.length === 3 ? v : null; save(); } });
+    const field = (label, control, hint) =>
+      h(
+        'div',
+        { class: 'field' },
+        h(
+          'div',
+          {},
+          h('label', { class: 'name' }, label),
+          hint ? h('div', { class: 'hint' }, hint) : null,
+        ),
+        h('div', {}, h('div', { class: 'control' }, control)),
+      );
+    const kpoints = h('input', {
+      type: 'text',
+      value: (state.kpoints || []).join(' '),
+      placeholder: 'database value',
+      oninput: () => {
+        const v = kpoints.value
+          .trim()
+          .split(/[\s,]+/)
+          .filter(Boolean)
+          .map(Number);
+        state.kpoints = v.length === 3 ? v : null;
+        save();
+      },
+    });
     this.center.append(
-      h('div', { class: 'form-head' }, h('div', { class: 'grow' }, h('h2', {}, info.title), h('div', { class: 'muted' }, info.description))),
+      h(
+        'div',
+        { class: 'form-head' },
+        h(
+          'div',
+          { class: 'grow' },
+          h('h2', {}, info.title),
+          h('div', { class: 'muted' }, info.description),
+        ),
+      ),
       h(
         'div',
         { class: 'section' },
         h('h3', {}, 'Entry'),
-        field('Identifier', input('identifier', 'aflow:0a66d228d896a855 · 2C-1 · URL'), 'AFLOW AUID, AFLOWDATA or material-page URL; C2DB UID'),
+        field(
+          'Identifier',
+          input('identifier', 'aflow:0a66d228d896a855 · 2C-1 · URL'),
+          'AFLOW AUID, AFLOWDATA or material-page URL; C2DB UID',
+        ),
         field('Database', select('source', ['auto', 'aflow', 'c2db'])),
-        field('Pseudopotential folder', input('pseudo_dir', '.'), 'relative to the working folder: <element>.upf, PeriodicTableJSON.json, reference.json'),
+        field(
+          'Pseudopotential folder',
+          input('pseudo_dir', '.'),
+          'relative to the working folder: <element>.upf, PeriodicTableJSON.json, reference.json',
+        ),
         field('Output file', input('filename', '<compound>.scf.in')),
       ),
       h(
         'div',
         { class: 'section' },
         h('h3', {}, 'Overrides'),
-        field('Spin-orbit cards', check('soc'), 'automatic for fully relativistic pseudopotentials'),
+        field(
+          'Spin-orbit cards',
+          check('soc'),
+          'automatic for fully relativistic pseudopotentials',
+        ),
         field('Metallic', select('metallic', ['auto', 'true', 'false'])),
         field('Magnetic', select('magnetic', ['auto', 'true', 'false'])),
         field('k-point grid', kpoints, 'three integers (k3 = 1 for 2D)'),
@@ -464,7 +827,11 @@ export class SetupView {
         field("assume_isolated = '2D'", check('assume_isolated_2d')),
       ),
     );
-    const body = h('div', { class: 'preview-body' }, h('div', { class: 'empty' }, 'Fetch the entry to preview the input (needs the network).'));
+    const body = h(
+      'div',
+      { class: 'preview-body' },
+      h('div', { class: 'empty' }, 'Fetch the entry to preview the input (needs the network).'),
+    );
     const status = h('span', { class: 'small muted grow' });
     let last = null;
     const request = () => ({
@@ -473,38 +840,76 @@ export class SetupView {
       metallic: state.metallic === 'auto' || !state.metallic ? null : state.metallic === 'true',
       magnetic: state.magnetic === 'auto' || !state.magnetic ? null : state.magnetic === 'true',
     });
-    const fetchButton = h('button', { class: 'btn', onclick: async () => {
-      clear(body).append(h('div', { class: 'empty' }, h('span', { class: 'spinner' }), ' fetching…'));
-      try {
-        last = await api.post('/api/gen/qe-input/preview', request());
-      } catch (error) {
-        clear(body).append(h('div', { style: { padding: '16px' } }, h('div', { class: 'callout bad' }, error.message)));
-        return;
-      }
-      const rec = last.record;
-      status.textContent = `${last.filename} · ${STATUS_LABEL[last.status]} · ${rec.compound} (${rec.source}), ${rec.natoms} atoms, ${rec.dimensionality}${rec.metallic ? ', metallic' : ''}${rec.magnetic ? ', magnetic' : ''}`;
-      clear(body).append(codeView(last.text, last.filename));
-      writeButton.disabled = this.session.read_only;
-    } }, 'Fetch & preview');
-    const writeButton = h('button', { class: 'btn primary', disabled: true, onclick: async () => {
-      let overwrite = false;
-      if (last && last.status === 'changed') {
-        overwrite = await dialog({ title: 'Overwrite?', body: `${last.filename} exists with a different content.`, actions: [{ label: 'Cancel', value: false }, { label: 'Overwrite', kind: 'primary', value: true }] });
-        if (!overwrite) return;
-      }
-      try {
-        const result = await api.post('/api/gen/qe-input/write', { ...request(), overwrite });
-        toast(`Wrote ${result.written}`, 'ok');
-        this.openFolder(this.workdir);
-      } catch (error) {
-        toast(error.message, 'bad');
-      }
-    } }, 'Write');
-    this.preview.append(h('div', { class: 'preview-head' }, h('h3', {}, 'pw.x input')), body, h('div', { class: 'preview-foot' }, status, fetchButton, writeButton));
+    const fetchButton = h(
+      'button',
+      {
+        class: 'btn',
+        onclick: async () => {
+          clear(body).append(
+            h('div', { class: 'empty' }, h('span', { class: 'spinner' }), ' fetching…'),
+          );
+          try {
+            last = await api.post('/api/gen/qe-input/preview', request());
+          } catch (error) {
+            clear(body).append(
+              h(
+                'div',
+                { style: { padding: '16px' } },
+                h('div', { class: 'callout bad' }, error.message),
+              ),
+            );
+            return;
+          }
+          const rec = last.record;
+          status.textContent = `${last.filename} · ${STATUS_LABEL[last.status]} · ${rec.compound} (${rec.source}), ${rec.natoms} atoms, ${rec.dimensionality}${rec.metallic ? ', metallic' : ''}${rec.magnetic ? ', magnetic' : ''}`;
+          clear(body).append(codeView(last.text, last.filename));
+          writeButton.disabled = this.session.read_only;
+        },
+      },
+      'Fetch & preview',
+    );
+    const writeButton = h(
+      'button',
+      {
+        class: 'btn primary',
+        disabled: true,
+        onclick: async () => {
+          let overwrite = false;
+          if (last && last.status === 'changed') {
+            overwrite = await dialog({
+              title: 'Overwrite?',
+              body: `${last.filename} exists with a different content.`,
+              actions: [
+                { label: 'Cancel', value: false },
+                { label: 'Overwrite', kind: 'primary', value: true },
+              ],
+            });
+            if (!overwrite) return;
+          }
+          try {
+            const result = await api.post('/api/gen/qe-input/write', { ...request(), overwrite });
+            toast(`Wrote ${result.written}`, 'ok');
+            this.openFolder(this.workdir);
+          } catch (error) {
+            toast(error.message, 'bad');
+          }
+        },
+      },
+      'Write',
+    );
+    this.preview.append(
+      h('div', { class: 'preview-head' }, h('h3', {}, 'pw.x input')),
+      body,
+      h('div', { class: 'preview-foot' }, status, fetchButton, writeButton),
+    );
   }
 
   renderBasis(info) {
-    const state = storage(`basis:${this.session.root}`) || { pseudo_dir: '.', out: 'BASIS_PS', preset: 'standard' };
+    const state = storage(`basis:${this.session.root}`) || {
+      pseudo_dir: '.',
+      out: 'BASIS_PS',
+      preset: 'standard',
+    };
     const command = h('code', { class: 'grow' });
     let current = null;
     const refresh = debounce(async () => {
@@ -518,24 +923,77 @@ export class SetupView {
       }
     }, 200);
     const input = (key, placeholder) => {
-      const node = h('input', { type: 'text', value: state[key] ?? '', placeholder, oninput: () => { state[key] = node.value.trim(); refresh(); } });
+      const node = h('input', {
+        type: 'text',
+        value: state[key] ?? '',
+        placeholder,
+        oninput: () => {
+          state[key] = node.value.trim();
+          refresh();
+        },
+      });
       return node;
     };
-    const field = (label, control, hint) => h('div', { class: 'field' }, h('div', {}, h('label', { class: 'name' }, label), hint ? h('div', { class: 'hint' }, hint) : null), h('div', {}, h('div', { class: 'control' }, control)));
-    const preset = h('div', { class: 'segmented' }, ['minimal', 'standard', 'extended'].map((p) => h('button', { 'aria-pressed': String(state.preset === p), onclick: (event) => {
-      state.preset = p;
-      for (const b of event.currentTarget.parentNode.children) b.setAttribute('aria-pressed', String(b === event.currentTarget));
-      refresh();
-    } }, p)));
-    const noOverwrite = h('input', { type: 'checkbox', checked: Boolean(state.no_overwrite), onchange: () => { state.no_overwrite = noOverwrite.checked; refresh(); } });
+    const field = (label, control, hint) =>
+      h(
+        'div',
+        { class: 'field' },
+        h(
+          'div',
+          {},
+          h('label', { class: 'name' }, label),
+          hint ? h('div', { class: 'hint' }, hint) : null,
+        ),
+        h('div', {}, h('div', { class: 'control' }, control)),
+      );
+    const preset = h(
+      'div',
+      { class: 'segmented' },
+      ['minimal', 'standard', 'extended'].map((p) =>
+        h(
+          'button',
+          {
+            'aria-pressed': String(state.preset === p),
+            onclick: (event) => {
+              state.preset = p;
+              for (const b of event.currentTarget.parentNode.children)
+                b.setAttribute('aria-pressed', String(b === event.currentTarget));
+              refresh();
+            },
+          },
+          p,
+        ),
+      ),
+    );
+    const noOverwrite = h('input', {
+      type: 'checkbox',
+      checked: Boolean(state.no_overwrite),
+      onchange: () => {
+        state.no_overwrite = noOverwrite.checked;
+        refresh();
+      },
+    });
     const upfs = (this.detection.upfs || []).join(', ');
     this.center.append(
-      h('div', { class: 'form-head' }, h('div', { class: 'grow' }, h('h2', {}, info.title), h('div', { class: 'muted' }, info.description))),
+      h(
+        'div',
+        { class: 'form-head' },
+        h(
+          'div',
+          { class: 'grow' },
+          h('h2', {}, info.title),
+          h('div', { class: 'muted' }, info.description),
+        ),
+      ),
       h(
         'div',
         { class: 'section' },
         h('h3', {}, 'Pseudopotentials'),
-        field('Pseudopotential folder', input('pseudo_dir', '.'), upfs ? `found here: ${upfs}` : 'relative to the working folder'),
+        field(
+          'Pseudopotential folder',
+          input('pseudo_dir', '.'),
+          upfs ? `found here: ${upfs}` : 'relative to the working folder',
+        ),
         field('or one UPF file', input('pseudo', ''), 'overrides the folder'),
         field('Shells', input('shells', 'from the preset'), 'e.g. 3S,3P,3D (single UPF only)'),
       ),
@@ -543,19 +1001,62 @@ export class SetupView {
         'div',
         { class: 'section' },
         h('h3', {}, 'Basis'),
-        field('Preset', preset, 'extended ⊃ standard ⊃ minimal; the optics and NLO runs use extended'),
+        field(
+          'Preset',
+          preset,
+          'extended ⊃ standard ⊃ minimal; the optics and NLO runs use extended',
+        ),
         field('Output folder', input('out', 'BASIS_PS')),
         field('Box radius (Bohr)', input('r_box', 'min(upf r_max, 10)')),
         field('Mesh points', input('n_points', '2000')),
         field('Keep existing tables', h('span', { class: 'switch' }, noOverwrite, h('span'))),
       ),
     );
-    const runButton = h('button', { class: 'btn primary', disabled: this.session.read_only || !this.app.runs, onclick: () => {
-      if (current) this.app.runCommand({ label: 'Pseudo-atom basis', argv: current.argv, cwd: current.cwd });
-    } }, 'Run');
+    const runButton = h(
+      'button',
+      {
+        class: 'btn primary',
+        disabled: this.session.read_only || !this.app.runs,
+        onclick: () => {
+          if (current)
+            this.app.runCommand({
+              label: 'Pseudo-atom basis',
+              argv: current.argv,
+              cwd: current.cwd,
+            });
+        },
+      },
+      'Run',
+    );
     this.preview.append(
       h('div', { class: 'preview-head' }, h('h3', {}, 'Command')),
-      h('div', { class: 'preview-body', style: { padding: '14px' } }, h('div', { class: 'steps' }, h('div', { class: 'cmd' }, command, h('button', { class: 'icon-btn', title: 'Copy', onclick: () => current && copyText(current.command) }, '⧉'))), h('p', { class: 'small muted' }, 'Run it in the working folder; main.py also generates missing tables on its first run.')),
+      h(
+        'div',
+        { class: 'preview-body', style: { padding: '14px' } },
+        h(
+          'div',
+          { class: 'steps' },
+          h(
+            'div',
+            { class: 'cmd' },
+            command,
+            h(
+              'button',
+              {
+                class: 'icon-btn',
+                title: 'Copy',
+                onclick: () => current && copyText(current.command),
+              },
+              '⧉',
+            ),
+          ),
+        ),
+        h(
+          'p',
+          { class: 'small muted' },
+          'Run it in the working folder; main.py also generates missing tables on its first run.',
+        ),
+      ),
       h('div', { class: 'preview-foot' }, h('span', { class: 'grow' }), runButton),
     );
     refresh();

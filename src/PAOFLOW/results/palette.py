@@ -110,6 +110,11 @@ def resolve(role: str, theme: str = 'light') -> str:
         A hex colour (the role itself when it is already a colour).
     """
     table = PALETTE[theme]
+    if '@' in role:  # 'series-3@0.8': the colour with an opacity
+        base, alpha = role.split('@', 1)
+        colour = resolve(base, theme).lstrip('#')
+        red, green, blue = (int(colour[i : i + 2], 16) for i in (0, 2, 4))
+        return 'rgba(%d, %d, %d, %s)' % (red, green, blue, alpha)
     if role.startswith('series-'):
         return table['series'][(int(role.split('-')[1]) - 1) % len(table['series'])]
     if role.startswith('ord-'):
@@ -139,7 +144,7 @@ def resolve_spec(spec: dict, theme: str = 'light') -> dict:
     def walk(node):
         if isinstance(node, dict):
             for key, value in node.items():
-                if key == 'color' and isinstance(value, str):
+                if key in ('color', 'fillcolor') and isinstance(value, str):
                     node[key] = resolve(value, theme)
                 elif key == 'colorscale' and isinstance(value, str) and value.startswith('role:'):
                     node[key] = table['scales'][value[5:]]

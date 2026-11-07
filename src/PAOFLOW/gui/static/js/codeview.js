@@ -33,46 +33,51 @@ function tokenize(line, lang, state) {
     state.triple = null;
   }
   const comment = lang === 'namelist' ? /^[!#]/ : /^#/;
+  // One rule per token kind: [kind, pattern, languages]; the first match wins.
+  const rules = [
+    [
+      'str',
+      /^(?:[rbfu]{0,2})("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/i,
+      ['python', 'shell', 'namelist'],
+    ],
+    ['num', /^\d+(?:\.\d*)?(?:[eEdD][+-]?\d+)?/, ['python', 'shell', 'namelist']],
+    ['word', /^[A-Za-z_][A-Za-z_0-9]*/, ['python', 'shell', 'namelist', 'plain']],
+    ['key', /^&\w+/, ['namelist']],
+  ];
   while (rest.length) {
-    let match;
     if (comment.test(rest) && lang !== 'plain') {
       push('com', rest);
       break;
     }
-    if (lang === 'python' && (match = /^("""|''')/.exec(rest))) {
-      const end = rest.indexOf(match[1], 3);
+    const triple = lang === 'python' ? /^("""|''')/.exec(rest) : null;
+    if (triple) {
+      const end = rest.indexOf(triple[1], 3);
       if (end < 0) {
         push('str', rest);
-        state.triple = match[1];
+        state.triple = triple[1];
         break;
       }
       push('str', rest.slice(0, end + 3));
       rest = rest.slice(end + 3);
       continue;
     }
-    if ((match = /^(?:[rbfu]{0,2})("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/i.exec(rest)) && lang !== 'plain') {
-      push('str', match[0]);
-      rest = rest.slice(match[0].length);
-      continue;
+    let matched = false;
+    for (const [kind, pattern, languages] of rules) {
+      const match = languages.includes(lang) ? pattern.exec(rest) : null;
+      if (!match) continue;
+      const text = match[0];
+      if (kind === 'word') {
+        if (lang === 'python' && PYTHON_KEYWORDS.has(text)) push('key', text);
+        else if (lang === 'python' && /^[A-Z][A-Z_0-9]{2,}$/.test(text)) push('def', text);
+        else push('', text);
+      } else {
+        push(kind, text);
+      }
+      rest = rest.slice(text.length);
+      matched = true;
+      break;
     }
-    if ((match = /^\d+(?:\.\d*)?(?:[eEdD][+-]?\d+)?/.exec(rest)) && lang !== 'plain') {
-      push('num', match[0]);
-      rest = rest.slice(match[0].length);
-      continue;
-    }
-    if ((match = /^[A-Za-z_][A-Za-z_0-9]*/.exec(rest))) {
-      const word = match[0];
-      if (lang === 'python' && PYTHON_KEYWORDS.has(word)) push('key', word);
-      else if (lang === 'python' && /^[A-Z][A-Z_0-9]{2,}$/.test(word)) push('def', word);
-      else push('', word);
-      rest = rest.slice(word.length);
-      continue;
-    }
-    if (lang === 'namelist' && (match = /^&\w+/.exec(rest))) {
-      push('key', match[0]);
-      rest = rest.slice(match[0].length);
-      continue;
-    }
+    if (matched) continue;
     push('', rest[0]);
     rest = rest.slice(1);
   }

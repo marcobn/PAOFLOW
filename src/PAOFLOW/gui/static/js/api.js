@@ -33,7 +33,7 @@ async function request(method, path, body) {
     data = { error: text };
   }
   if (!response.ok) {
-    throw new ApiError(response.status, (data && data.error) || response.statusText, data);
+    throw new ApiError(response.status, data?.error || response.statusText, data);
   }
   return data;
 }

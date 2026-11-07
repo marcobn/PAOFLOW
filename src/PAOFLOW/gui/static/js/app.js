@@ -30,7 +30,12 @@ class App {
     await this.loadOptionalViews();
     await this.setup.init();
     // `paoflow-studio plot DIR` opens the Results tab on DIR, whatever the browser remembered.
-    if (this.currentTab() === 'results' && this.results && this.session.start && this.session.start !== '.') {
+    if (
+      this.currentTab() === 'results' &&
+      this.results &&
+      this.session.start &&
+      this.session.start !== '.'
+    ) {
       await this.results.open(this.session.start);
     }
     this.show(this.currentTab(), false);
@@ -40,20 +45,26 @@ class App {
     try {
       const { RunsView } = await import('./runs.js');
       this.runs = new RunsView(document.getElementById('view-runs'), this);
-    } catch (error) {
+    } catch (_error) {
       this.placeholder('runs', 'Runs', 'The run manager is not available in this version.');
     }
     try {
       const { ResultsView } = await import('./results.js');
       this.results = new ResultsView(document.getElementById('view-results'), this);
-    } catch (error) {
-      this.placeholder('results', 'Results', 'The results viewer is not available in this version.');
+    } catch (_error) {
+      this.placeholder(
+        'results',
+        'Results',
+        'The results viewer is not available in this version.',
+      );
     }
   }
 
   placeholder(name, title, text) {
     const view = document.getElementById(`view-${name}`);
-    view.append(h('div', { class: 'empty', style: { margin: 'auto' } }, h('h2', {}, title), h('p', {}, text)));
+    view.append(
+      h('div', { class: 'empty', style: { margin: 'auto' } }, h('h2', {}, title), h('p', {}, text)),
+    );
   }
 
   currentTab() {
@@ -65,15 +76,17 @@ class App {
     for (const button of document.querySelectorAll('.tab')) {
       button.setAttribute('aria-selected', String(button.dataset.tab === name));
     }
-    for (const tab of TABS) document.getElementById(`view-${tab}`).classList.toggle('active', tab === name);
-    if (updateHash && location.hash.slice(1).split('/')[0] !== name) history.replaceState(null, '', `#${name}`);
+    for (const tab of TABS)
+      document.getElementById(`view-${tab}`).classList.toggle('active', tab === name);
+    if (updateHash && location.hash.slice(1).split('/')[0] !== name)
+      history.replaceState(null, '', `#${name}`);
     const view = name === 'runs' ? this.runs : name === 'results' ? this.results : null;
-    if (view && view.activate) view.activate();
+    if (view?.activate) view.activate();
   }
 
   initTheme() {
     const saved = storage('theme');
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
     const apply = (theme) => {
       document.documentElement.dataset.theme = theme;
       window.dispatchEvent(new CustomEvent('paoflow-theme', { detail: theme }));
@@ -89,11 +102,11 @@ class App {
   // ---------------------------------------------------------------- links between tabs
   setWorkdir(path) {
     this.workdir = path;
-    if (this.results && this.results.setDefaultFolder) this.results.setDefaultFolder(path);
+    if (this.results?.setDefaultFolder) this.results.setDefaultFolder(path);
   }
 
   notifyWritten(result) {
-    if (this.runs && this.runs.setPlan) this.runs.setPlan(result.folder, result.plan);
+    if (this.runs?.setPlan) this.runs.setPlan(result.folder, result.plan);
   }
 
   showRuns(folder, plan, workflow) {
@@ -120,7 +133,9 @@ async function start() {
   try {
     session = await api.get('/api/session');
   } catch (error) {
-    document.body.append(h('div', { class: 'empty' }, `Cannot reach the PAOFLOW Studio server: ${error.message}`));
+    document.body.append(
+      h('div', { class: 'empty' }, `Cannot reach the PAOFLOW Studio server: ${error.message}`),
+    );
     return;
   }
   const app = new App(session);

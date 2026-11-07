@@ -1,9 +1,15 @@
 // Runs tab: the run plan of the last generated workflow, local jobs and their logs.
 
 import { api } from './api.js';
-import { clear, copyText, formatTime, h, storage, toast } from './dom.js';
+import { clear, copyText, h, storage, toast } from './dom.js';
 
-const STATUS_CHIP = { running: 'accent', finished: 'ok', failed: 'bad', cancelled: 'warn', lost: 'warn' };
+const STATUS_CHIP = {
+  running: 'accent',
+  finished: 'ok',
+  failed: 'bad',
+  cancelled: 'warn',
+  lost: 'warn',
+};
 
 function joinPath(folder, relative) {
   if (!relative || relative === '.') return folder || '.';
@@ -63,31 +69,93 @@ export class RunsView {
     clear(this.planCard);
     this.planCard.append(h('h3', {}, 'Run plan'));
     if (!this.plan.length) {
-      this.planCard.append(h('div', { class: 'small muted' }, 'Write the files of a workflow in the Setup tab; its steps appear here.'));
+      this.planCard.append(
+        h(
+          'div',
+          { class: 'small muted' },
+          'Write the files of a workflow in the Setup tab; its steps appear here.',
+        ),
+      );
       return;
     }
-    this.planCard.append(h('div', { class: 'small muted', style: { marginBottom: '6px' } }, `${this.workflow || 'workflow'} in `, h('code', {}, this.folder)));
+    this.planCard.append(
+      h(
+        'div',
+        { class: 'small muted', style: { marginBottom: '6px' } },
+        `${this.workflow || 'workflow'} in `,
+        h('code', {}, this.folder),
+      ),
+    );
     const list = h('ol', { class: 'steps' });
     for (const step of this.plan) {
-      const ranks = h('input', { type: 'number', min: 1, max: this.maxRanks, value: Math.min(4, this.maxRanks), style: { width: '64px' }, title: 'MPI ranks' });
+      const ranks = h('input', {
+        type: 'number',
+        min: 1,
+        max: this.maxRanks,
+        value: Math.min(4, this.maxRanks),
+        style: { width: '64px' },
+        title: 'MPI ranks',
+      });
       const usesRanks = step.mpi || step.ranks_env;
       const runnable = !step.interactive && !step.manual && !this.session.read_only;
       list.append(
         h(
           'li',
           {},
-          h('div', { class: 'row' }, h('strong', { class: 'grow' }, step.label), usesRanks ? h('span', { class: 'chip accent' }, step.mpi ? 'MPI' : step.ranks_env) : null),
-          step.manual ? null : h('div', { class: 'cmd' }, h('code', {}, step.command), h('button', { class: 'icon-btn', title: 'Copy', onclick: () => copyText(step.command) }, '⧉')),
+          h(
+            'div',
+            { class: 'row' },
+            h('strong', { class: 'grow' }, step.label),
+            usesRanks
+              ? h('span', { class: 'chip accent' }, step.mpi ? 'MPI' : step.ranks_env)
+              : null,
+          ),
+          step.manual
+            ? null
+            : h(
+                'div',
+                { class: 'cmd' },
+                h('code', {}, step.command),
+                h(
+                  'button',
+                  { class: 'icon-btn', title: 'Copy', onclick: () => copyText(step.command) },
+                  '⧉',
+                ),
+              ),
           step.note && !step.interactive ? h('div', { class: 'small muted' }, step.note) : null,
           runnable
-            ? h('div', { class: 'row', style: { marginTop: '4px' } }, usesRanks ? [h('span', { class: 'small muted' }, 'ranks'), ranks] : null, h('span', { class: 'grow' }), h('button', { class: 'btn small primary', onclick: () => this.launch(step, usesRanks ? Number(ranks.value) : 1) }, 'Run'))
+            ? h(
+                'div',
+                { class: 'row', style: { marginTop: '4px' } },
+                usesRanks ? [h('span', { class: 'small muted' }, 'ranks'), ranks] : null,
+                h('span', { class: 'grow' }),
+                h(
+                  'button',
+                  {
+                    class: 'btn small primary',
+                    onclick: () => this.launch(step, usesRanks ? Number(ranks.value) : 1),
+                  },
+                  'Run',
+                ),
+              )
             : step.interactive
-              ? h('div', { class: 'small muted' }, 'needs a terminal or a display: run it there, or use the Results tab')
+              ? h(
+                  'div',
+                  { class: 'small muted' },
+                  'needs a terminal or a display: run it there, or use the Results tab',
+                )
               : null,
         ),
       );
     }
-    this.planCard.append(list, h('div', { class: 'small muted' }, `At most ${this.maxRanks} ranks per run (paoflow-studio --max-ranks). Runs continue if the GUI stops.`));
+    this.planCard.append(
+      list,
+      h(
+        'div',
+        { class: 'small muted' },
+        `At most ${this.maxRanks} ranks per run (paoflow-studio --max-ranks). Runs continue if the GUI stops.`,
+      ),
+    );
   }
 
   async launch(step, ranks = 1) {
@@ -127,9 +195,21 @@ export class RunsView {
       this.jobsCard.append(
         h(
           'button',
-          { class: `tree-item${job.id === this.selected ? ' selected' : ''}`, onclick: () => this.select(job.id) },
-          h('div', { class: 'row' }, h('span', { class: 'grow ellipsis' }, job.label), h('span', { class: `chip ${STATUS_CHIP[job.status] || ''}` }, job.status)),
-          h('div', { class: 'small faint ellipsis' }, `${job.cwd} · ${duration(job.elapsed)} · ${new Date(job.started * 1000).toLocaleTimeString()}`),
+          {
+            class: `tree-item${job.id === this.selected ? ' selected' : ''}`,
+            onclick: () => this.select(job.id),
+          },
+          h(
+            'div',
+            { class: 'row' },
+            h('span', { class: 'grow ellipsis' }, job.label),
+            h('span', { class: `chip ${STATUS_CHIP[job.status] || ''}` }, job.status),
+          ),
+          h(
+            'div',
+            { class: 'small faint ellipsis' },
+            `${job.cwd} · ${duration(job.elapsed)} · ${new Date(job.started * 1000).toLocaleTimeString()}`,
+          ),
         ),
       );
     }
@@ -140,7 +220,8 @@ export class RunsView {
     this.logHead = h('div', { class: 'result-head' });
     this.logBody = h('pre', { class: 'log' });
     this.logBody.addEventListener('scroll', () => {
-      const atEnd = this.logBody.scrollTop + this.logBody.clientHeight >= this.logBody.scrollHeight - 8;
+      const atEnd =
+        this.logBody.scrollTop + this.logBody.clientHeight >= this.logBody.scrollHeight - 8;
       this.follow = atEnd;
     });
     this.center.append(this.logHead, this.logBody);
@@ -164,7 +245,7 @@ export class RunsView {
     let chunk;
     try {
       chunk = await api.get('/api/jobs/log', { id: this.selected, offset: this.offset });
-    } catch (error) {
+    } catch (_error) {
       return;
     }
     this.offset = chunk.offset;
@@ -178,14 +259,44 @@ export class RunsView {
   renderLogHead(job) {
     clear(this.logHead);
     this.logHead.append(
-      h('div', { class: 'grow' }, h('h2', {}, job.label), h('div', { class: 'small muted mono ellipsis', title: job.command }, job.command)),
-      h('div', { class: 'row' },
-        h('span', { class: `chip ${STATUS_CHIP[job.status] || ''}` }, job.status + (job.returncode !== null && job.status !== 'running' ? ` (${job.returncode})` : '')),
+      h(
+        'div',
+        { class: 'grow' },
+        h('h2', {}, job.label),
+        h('div', { class: 'small muted mono ellipsis', title: job.command }, job.command),
+      ),
+      h(
+        'div',
+        { class: 'row' },
+        h(
+          'span',
+          { class: `chip ${STATUS_CHIP[job.status] || ''}` },
+          job.status +
+            (job.returncode !== null && job.status !== 'running' ? ` (${job.returncode})` : ''),
+        ),
         h('span', { class: 'small muted' }, duration(job.elapsed)),
-        job.status === 'running' ? h('button', { class: 'btn small danger', onclick: async () => {
-          try { await api.post('/api/jobs/cancel', { id: job.id }); toast('Cancel requested', 'warn'); } catch (error) { toast(error.message, 'bad'); }
-        } }, 'Cancel') : null,
-        h('button', { class: 'btn small', onclick: () => this.app.showResults(job.cwd) }, 'Results'),
+        job.status === 'running'
+          ? h(
+              'button',
+              {
+                class: 'btn small danger',
+                onclick: async () => {
+                  try {
+                    await api.post('/api/jobs/cancel', { id: job.id });
+                    toast('Cancel requested', 'warn');
+                  } catch (error) {
+                    toast(error.message, 'bad');
+                  }
+                },
+              },
+              'Cancel',
+            )
+          : null,
+        h(
+          'button',
+          { class: 'btn small', onclick: () => this.app.showResults(job.cwd) },
+          'Results',
+        ),
       ),
     );
   }

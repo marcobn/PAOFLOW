@@ -9,7 +9,13 @@ export function h(tag, props, ...children) {
     else if (key === 'style' && typeof value === 'object') Object.assign(node.style, value);
     else if (key.startsWith('on') && typeof value === 'function') {
       node.addEventListener(key.slice(2).toLowerCase(), value);
-    } else if (key === 'value' || key === 'checked' || key === 'selected' || key === 'disabled' || key === 'hidden') {
+    } else if (
+      key === 'value' ||
+      key === 'checked' ||
+      key === 'selected' ||
+      key === 'disabled' ||
+      key === 'hidden'
+    ) {
       node[key] = value;
     } else node.setAttribute(key, value === true ? '' : String(value));
   }

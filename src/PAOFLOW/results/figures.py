@@ -54,6 +54,11 @@ def _line_trace(series: Series, show_legend: bool) -> dict:
             'width': 2 if np.ndim(series.y) == 1 else 1.4,
             'dash': series.dash,
         }
+    if 'stack' in series.meta:
+        # Stacked areas (part of a whole): solid fills split by a thin line of the surface colour.
+        trace['stackgroup'] = series.meta['stack']
+        trace['fillcolor'] = '%s@0.8' % series.role
+        trace['line'] = {'color': 'surface', 'width': 1}
     if 'markers' in series.mode:
         marker: dict[str, Any] = {'size': 6, 'color': series.role}
         if 'color' in series.meta:

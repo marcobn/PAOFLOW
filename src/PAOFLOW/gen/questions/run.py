@@ -7,6 +7,7 @@ from .model import Answers, Context, Note, Question, Workflow, gated
 
 PROPERTIES = 'Properties'
 GRIDS = 'Grids and run settings'
+BAND_PATH = 'Band path'
 NONLINEAR = 'Non-linear optics'
 COUPLED = 'Coupled optical response'
 
@@ -25,6 +26,52 @@ def _property_choices(answers: Answers, context: Context) -> list[tuple[str, str
     from ..paoflow_driver import PROPERTY_MENU
 
     return list(PROPERTY_MENU)
+
+
+def _path_defaults(answers: Answers, context: Context) -> tuple[str, list]:
+    """Default band path of the answered save, ibrav and dimensionality (cached)."""
+    from ..band_paths import default_band_path
+
+    savedir = answers.get('savedir')
+    ibrav = int(answers.get('ibrav') or 0)
+    is_2d = bool(answers.get('is_2d'))
+    return context.cached(
+        'band-path:%s:%d:%s' % (savedir, ibrav, is_2d),
+        lambda: default_band_path(context.workdir, savedir, ibrav, is_2d),
+    )
+
+
+def point_row(line: str) -> tuple[str, float, float, float]:
+    """One high-symmetry point: ``'X 0 0.5 0.5'`` -> ``('X', 0.0, 0.5, 0.5)``.
+
+    Parameters
+    ----------
+    line : str
+        Label and three crystal coordinates.
+
+    Returns
+    -------
+    tuple of (str, float, float, float)
+
+    Raises
+    ------
+    ValueError
+        Without a label and three numbers.
+    """
+    parts = line.split()
+    if len(parts) != 4:
+        raise ValueError('a point needs a label and three crystal coordinates')
+    try:
+        return (parts[0], float(parts[1]), float(parts[2]), float(parts[3]))
+    except ValueError:
+        raise ValueError('coordinates of %s are not numbers' % parts[0]) from None
+
+
+def _validate_path(value: str, answers: Answers, context: Context) -> str | None:
+    from ..band_paths import check_band_path
+
+    points = answers.get('high_sym') or _path_defaults(answers, context)[1]
+    return check_band_path(value, points)
 
 
 def _internal(answers: Answers) -> bool:
@@ -257,6 +304,34 @@ RUN_ITEMS = (
         default=400,
         when=lambda a, c: 'bands' in _properties(a),
         section=GRIDS,
+        doc='PAOFLOW.PAOFLOW.PAOFLOW.bands:nk',
+    ),
+    Question(
+        'high_sym',
+        'High-symmetry points (label and crystal coordinates)',
+        kind='rows',
+        default=lambda a, c: _path_defaults(a, c)[1],
+        parse=point_row,
+        when=lambda a, c: 'bands' in _properties(a),
+        columns=('label', 'k1', 'k2', 'k3'),
+        label='High-symmetry points',
+        help='Crystal coordinates (units of the reciprocal vectors). The defaults are the points '
+        'PAOFLOW uses for this ibrav; edit, add or remove rows for a custom path.',
+        section=BAND_PATH,
+        level='advanced',
+        cli=False,
+    ),
+    Question(
+        'band_path',
+        'Band path (labels joined by "-", segments split by "|")',
+        default=lambda a, c: _path_defaults(a, c)[0],
+        when=lambda a, c: 'bands' in _properties(a),
+        validate=_validate_path,
+        label='Band path',
+        help='e.g. gG-X-W-K-gG-L|U-X; gG is Γ. The points are in the advanced table below.',
+        section=BAND_PATH,
+        widget='bandpath',
+        cli=False,
     ),
     Note(
         '\nEnergy grid for DOS / transport / Hall properties (eV, relative to E_F).\n'
@@ -411,6 +486,16 @@ def assemble_run_from_common(common: dict, answers: Answers) -> dict:
     cfg['smearing'] = None if smearing.lower() == 'none' else smearing
     cfg['spin_orbit'] = answers['spin_orbit']
     cfg['nk'] = answers['nk'] if 'bands' in props else 400
+    if 'bands' in props and ('band_path' in answers or 'high_sym' in answers):
+        # GUI-only custom path: the side the user left untouched keeps the default.
+        from ..band_paths import default_band_path
+
+        default_path, default_points = default_band_path(
+            common['workdir'], common['savedir'], int(common['ibrav']), bool(common['is_2d'])
+        )
+        points = answers.get('high_sym') or default_points
+        cfg['band_path'] = answers.get('band_path') or default_path
+        cfg['high_sym'] = {point[0]: tuple(point[1:]) for point in points}
     if _needs_energy_window(answers, None):
         cfg['emin'], cfg['emax'], cfg['ne'] = answers['emin'], answers['emax'], answers['ne']
     else:

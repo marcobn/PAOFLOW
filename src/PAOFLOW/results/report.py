@@ -47,13 +47,14 @@ const PALETTE = {palette};
 const FIGURES = {figures};
 function resolve(spec, theme) {{
   const t = PALETTE[theme];
-  const role = (v) => v.startsWith('series-') ? t.series[(+v.split('-')[1] - 1) % 8]
+  const role = (v) => v.includes('@') ? (() => {{ const [b, a] = v.split('@'); const h = role(b).slice(1); return 'rgba(' + [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).join(',') + ',' + a + ')'; }})()
+    : v.startsWith('series-') ? t.series[(+v.split('-')[1] - 1) % 8]
     : v.startsWith('ord-') ? t.ordinal[(+v.split('-')[1] - 1) % 5] : (typeof t[v] === 'string' ? t[v] : v);
   const walk = (n) => {{
     if (Array.isArray(n)) {{ n.forEach(walk); return; }}
     if (n && typeof n === 'object') for (const k of Object.keys(n)) {{
       const v = n[k];
-      if (k === 'color' && typeof v === 'string') n[k] = role(v);
+      if ((k === 'color' || k === 'fillcolor') && typeof v === 'string') n[k] = role(v);
       else if (k === 'colorscale' && typeof v === 'string' && v.startsWith('role:')) n[k] = t.scales[v.slice(5)];
       else walk(v);
     }}

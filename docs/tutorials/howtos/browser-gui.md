@@ -56,6 +56,18 @@ Other options:
    settings the CLI leaves at the builder defaults, such as the SSCHA minimiser, `tr2_ph` and the coupled-SHG
    components.
 
+   Fields that feed a PAOFLOW method have a *docs* link. It shows that parameter's description from the method's
+   docstring, or the comment `system.py` carries for electron–phonon settings.
+
+   ![The band-path preview](../../_static/images/gui-bandpath.png)
+
+   **Band path.** For a band structure, the *Band path* section shows the path PAOFLOW follows for the lattice
+   (`ibrav` from the save, or the in-plane path of a slab), drawn inside the first Brillouin zone. You can drag to
+   rotate it. To change the path, edit the path string (`gG-X-W-K-gG-L|U-X`) or the point table (*advanced*: a
+   label and crystal coordinates on each row). `main.py` then gets `BAND_PATH` and `HIGH_SYM` constants and calls
+   `bands(..., band_path=BAND_PATH, high_sym_points=HIGH_SYM)`. An unchanged path writes the same `main.py` as the
+   CLI.
+
    Some defaults come from the save, in the CLI as well:
    - `ibrav`, spin-orbit and 2D from the save;
    - metal, `nelec`, `nbnd` and the coupling source (`epw` for ultrasoft or PAW pseudopotentials) from the
@@ -100,12 +112,14 @@ The tensor components, spin channels or temperatures of one quantity are the ser
 - **Options** depend on the dataset:
   - the energy window of band plots;
   - the tensor component and the temperatures of transport;
-  - the grouping of the projected DOS (element and ℓ, site, shell, orbital);
+  - the grouping of the projected DOS (element and ℓ, site, shell, orbital), as lines or as stacked areas;
   - the quantity of tables that mix units (mobility, Seebeck coefficient, carrier density, ...);
   - the η column of the absorption;
   - the bands, smoothing and zone of a Fermi surface.
 
   Quantities with different units are never drawn on one axis.
+- **Maps** (ARPES intensity, spectral functions, Berry-curvature slices): click a point for the energy and
+  momentum distribution curves (EDC and MDC) through it.
 - **Fermi surfaces** are drawn in 3D in the browser, coloured by |v_F|, inside the Wigner–Seitz zone. This needs
   scikit-image. Berry-curvature grids are shown as plane slices.
 - **Compare runs.** Overlay the same kind of dataset from several folders, for example SOC against no SOC, or two

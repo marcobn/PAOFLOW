@@ -124,6 +124,12 @@ class Question:
         ``'basic'`` or ``'advanced'`` (collapsed in the GUI; the CLI asks both).
     columns : sequence of str, optional
         Column titles of a ``rows`` question in the GUI.
+    widget : str, optional
+        Special GUI rendering (``'bandpath'``: the point table with the Brillouin-zone preview).
+    doc : str, optional
+        Where the GUI takes the documentation of the field: ``'module.object:parameter'`` (the
+        parameter of a NumPy or ``Arguments:`` docstring) or ``'module.DICT:key'`` (a comment
+        dictionary such as those of :mod:`PAOFLOW.gen.elphon_system`).
     cli : bool, optional
         Asked by the CLI (default).  ``False`` marks a GUI-only refinement: an optional builder
         setting that the CLI leaves at the builder default; the GUI passes it on only when the
@@ -147,6 +153,8 @@ class Question:
     section: str = ''
     level: str = 'basic'
     columns: Sequence[str] = ()
+    widget: str = ''
+    doc: str = ''
     cli: bool = True
 
     def __post_init__(self) -> None:

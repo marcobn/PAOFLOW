@@ -424,12 +424,19 @@ def _format_high_sym(high_sym):
 
 def _wants_explicit_band_path(cfg):
     """True when the script must pass an explicit band_path/high_sym to bands()."""
-    return cfg['ibrav'] == 0 or bool(cfg.get('is_2d'))
+    return cfg['ibrav'] == 0 or bool(cfg.get('is_2d')) or bool(cfg.get('band_path'))
 
 
 def _band_path_constant_lines(cfg):
     """Source lines defining BAND_PATH / HIGH_SYM (empty list when not needed)."""
     ibrav = cfg['ibrav']
+    if cfg.get('band_path') and cfg.get('high_sym'):
+        return [
+            '# Band path (labels joined by "-", segments split by "|") and the crystal',
+            '# coordinates of its points (set in PAOFLOW Studio).',
+            'BAND_PATH = {!r}'.format(cfg['band_path']),
+            'HIGH_SYM = {}'.format(_format_high_sym(cfg['high_sym'])),
+        ]
     if ibrav == 0:
         return [
             '# ibrav=0: PAOFLOW needs an explicit band path. Fill these in:',

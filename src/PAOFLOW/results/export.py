@@ -176,7 +176,20 @@ def matplotlib_figure(dataset: Dataset, fmt: str = 'pdf', theme: str = 'light') 
         figure.colorbar(mesh, ax=axes, label=surface.get('z_label', ''))
         axes.set_xlabel(surface.get('x_label', ''))
         axes.set_ylabel(surface.get('y_label', ''))
+    stacked = [s for s in dataset.series if 'stack' in s.meta]
+    if stacked:
+        axes.stackplot(
+            stacked[0].x,
+            [np.asarray(s.y) for s in stacked],
+            labels=[s.name for s in stacked],
+            colors=[resolve(s.role, theme) for s in stacked],
+            alpha=0.8,
+            edgecolor=table['surface'],
+            linewidth=0.6,
+        )
     for series in dataset.series:
+        if 'stack' in series.meta:
+            continue
         color = (
             resolve(series.role, theme)
             if not series.role.startswith(('diverging', 'sequential'))

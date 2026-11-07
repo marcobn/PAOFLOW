@@ -36,6 +36,31 @@ pytest -q tests/integration -m "integration and not slow"
 
 Drop the `-q` flag if you'd like more detailed output.
 
+### PAOFLOW Studio (browser interface)
+
+The server, the form resolver, the results layer and the run manager have unit tests in
+`tests/unit/gui`, `tests/unit/gen` and `tests/unit/results`.
+
+`tests/integration/gui/test_browser.py` drives the three tabs in headless Chrome through Selenium.
+It is marked `integration` and `slow`, and it skips when Selenium or Chrome is missing:
+
+```bash
+pytest -q tests/integration/gui
+```
+
+`tests/unit/gui/test_static_js.py` and the pre-commit hook `js-check` (`.github/lint/check_js.py`) check the
+front-end modules. They parse each module with `node --check`, which is skipped without Node, and they refuse
+`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `eval` and `new Function`.
+
+The pre-commit hook `biome` lints and formats the same files (JavaScript and CSS) with Biome 2.6.6: the
+recommended rules, single quotes, line width 100 (`biome.json`). pre-commit installs Biome in its own Node
+environment. With a local binary, the same check is
+
+```bash
+biome ci            # check only, as CI does
+biome check --write # apply the formatter and the safe fixes
+```
+
 ## Integration Test Patterns
 
 We have three established patterns for integration tests. When adding a new family, pick the one that fits rather than inventing something new — consistency makes the test suite much easier to navigate.
