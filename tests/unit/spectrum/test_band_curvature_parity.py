@@ -13,7 +13,11 @@ import pytest
 from scipy.sparse import csr_matrix
 
 from PAOFLOW.hamiltonian.do_d2Hd2k import IJ_PAIRS
-from PAOFLOW.spectrum.do_band_curvature import band_curvature_k, band_curvature_k_ij
+from PAOFLOW.spectrum.do_band_curvature import (
+    _velocity_groups,
+    band_curvature_k,
+    band_curvature_k_ij,
+)
 from PAOFLOW.spectrum.do_eigh import get_degeneracies
 
 
@@ -52,6 +56,13 @@ def test_band_curvature_k_matches_per_component(folded, sparse, bnd):
             for ij, (i, j) in enumerate(IJ_PAIRS)
         ]
     )
-    got = band_curvature_k(E, dh, d2h, V, degen, bnd)
+    got = band_curvature_k(E, dh, d2h, V, degen, bnd, degen)
     assert got.shape == (6, bnd)
     np.testing.assert_allclose(got, expected, rtol=1e-8, atol=1e-8 * np.abs(expected).max())
+
+
+def test_velocity_groups_need_not_be_adjacent_or_share_energy_across_groups():
+    # a folded cluster ordered (a, b, b, a) along v, and a state of another energy at the same v
+    vel = np.array([0.3, -0.1, -0.1, 0.3, 0.3])
+    groups = _velocity_groups(vel, [np.arange(4)])
+    assert sorted(g.tolist() for g in groups) == [[0, 3], [1, 2]]
