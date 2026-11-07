@@ -909,6 +909,7 @@ def phonon_assisted_absorption_dense_q(
     comm=None,
     allow_missing_long_range: bool = False,
     coupling_source: str = 'epw',
+    phonon_at_q: Callable | None = None,
     save_dir: str | None = None,
     pseudo_dir: str | None = None,
     prefix: str | None = None,
@@ -1061,6 +1062,10 @@ def phonon_assisted_absorption_dense_q(
         ``'epw'`` reads EPW's ``.epb`` files from ``coupling_dir``; ``'dfpt'`` computes the
         coarse vertex from the ``ph.x`` outputs in ``coupling_dir`` and the nscf
         wavefunctions of ``save_dir`` (:func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`).
+    phonon_at_q : callable, optional
+        ``q_cryst -> (freq_thz, z)`` of the dense-q phonons (e.g. the SSCHA matrices of
+        :meth:`~PAOFLOW.elphon.workflows.system.ElphonSystem.phonon_interpolator`); ``None``
+        builds it from the coupling source (the ``ph.x`` matrices).
     save_dir, pseudo_dir, prefix, basis, unfold, basis_shells, unfold_tol, cache_dir, cache_tag
         ``coupling_source='dfpt'`` and cache options of
         :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`.
@@ -1138,7 +1143,7 @@ def phonon_assisted_absorption_dense_q(
         raise ValueError('screening_eps_dft needs screening_eps (the target dielectric constant).')
 
     vertex = prepare_dense_vertex(
-        A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, None,
+        A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, phonon_at_q,
         source=coupling_source, masses_amu=masses_amu, tau_cryst=tau_cryst,
         orbital_positions=orbital_positions, comm=comm,
         allow_missing_long_range=allow_missing_long_range,

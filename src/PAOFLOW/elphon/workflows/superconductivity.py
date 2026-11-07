@@ -149,6 +149,9 @@ def eliashberg(
     arguments.pop('save_dir')
     arguments.pop('masses_amu')
     arguments.pop('orbital_positions')
+    phonon_at_q = arguments.pop(
+        'phonon_at_q', None
+    )  # SSCHA phonons (phonon_source='sscha') or None
     return eliashberg_dense_q(
         electrons.projections,
         electrons.HRs,
@@ -158,7 +161,7 @@ def eliashberg(
         None,
         None,
         system.coarse_grid,
-        None,
+        phonon_at_q,
         nq_dense=nq,
         fs_coupling=fs_coupling,
         fsthick_ev=fsthick_ev,

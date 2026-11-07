@@ -188,8 +188,22 @@ def occupation_lines(attr: dict) -> list[str]:
     ]
 
 
-def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines=None, nbnd=None):
-    """Assemble the ``&control/&system/&electrons`` namelist block."""
+def _namelists(
+    data_controller,
+    supercell,
+    prefix: str,
+    pp_dir: str,
+    ibrav: int = 0,
+    celldm_lines: list[str] | None = None,
+    nbnd: int | None = None,
+    conv_thr: float = 1.0e-8,
+    mixing_beta: float = 0.7,
+) -> str:
+    """Assemble the ``&control/&system/&electrons`` namelist block.
+
+    ``conv_thr`` and ``mixing_beta`` default to the values of the finite-displacement cells;
+    the SSCHA configurations of :mod:`PAOFLOW.phonon.sscha_bridge` pass tighter ones.
+    """
     _, attr = data_controller.data_dicts()
 
     nat = len(supercell)
@@ -223,8 +237,8 @@ def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines
         lines.append('    starting_magnetization(1) = 0.1')
     lines.append('/')
     lines.append('&electrons')
-    lines.append('    conv_thr = 1.0d-8')
-    lines.append('    mixing_beta = 0.7')
+    lines.append('    conv_thr = %s' % ('%.1e' % conv_thr).replace('e', 'd'))
+    lines.append('    mixing_beta = %g' % mixing_beta)
     lines.append('/')
     return '\n'.join(lines)
 

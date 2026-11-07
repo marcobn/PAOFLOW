@@ -15,7 +15,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 from types import ModuleType
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -248,6 +248,16 @@ class ElphonSystem:
         (the behaviour before 5 Nov 2026), which feeds the poorly projectable bands into the
         vertex and makes it depend on ``nbnd`` (Nb, 8^3 DFPT: lambda 1.045 with 20 bands,
         0.677 with 40, 1.189 for both with ``'good'``); kept for comparisons.
+    phonon_source : {'dfpt', 'sscha'}, optional
+        Phonons of the dense-q drivers: ``'dfpt'`` (default) interpolates the ``ph.x``
+        dynamical matrices of the coupling directory; ``'sscha'`` the anharmonic matrices of
+        ``sscha_dynamical_matrices`` (``PAOFLOW.sscha_force_constants``) on the same q-grid. The
+        coarse vertex is Cartesian and does not change; frequencies and polarisations do, so
+        alpha^2F, lambda and the transport functions follow the temperature of the SSCHA.
+    sscha_dynamical_matrices : str, optional
+        ``phonon_source='sscha'``: path prefix ``<dir>/<prefix>.dyn`` of the SSCHA matrices
+        (``<prefix>.dyn0 ... dynN``) on the coupling q-grid, e.g.
+        ``'sscha_T2800/force_constants_hessian/tan.dyn'``.
     """
 
     prefix: str
@@ -275,11 +285,19 @@ class ElphonSystem:
     fd_options: dict = field(default_factory=dict)
     vertex_dtype: str = 'complex128'
     vertex_bands: str = 'good'
+    phonon_source: str = 'dfpt'
+    sscha_dynamical_matrices: str | None = None
     extra: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.vertex_bands not in ('good', 'all'):
             raise ValueError("vertex_bands must be 'good' or 'all', got %r" % self.vertex_bands)
+        if self.phonon_source not in ('dfpt', 'sscha'):
+            raise ValueError("phonon_source must be 'dfpt' or 'sscha', got %r" % self.phonon_source)
+        if self.phonon_source == 'sscha' and not self.sscha_dynamical_matrices:
+            raise ValueError(
+                "phonon_source='sscha' needs sscha_dynamical_matrices (<dir>/<prefix>.dyn)"
+            )
         if self.coupling_source not in ('dfpt', 'epw', 'fd'):
             raise ValueError(
                 "coupling_source must be 'dfpt', 'epw' or 'fd', got %r" % self.coupling_source
@@ -632,7 +650,7 @@ class ElphonSystem:
             ``coupling_source``, ``save_dir``, ``long_range``,
             ``allow_missing_long_range``, ``masses_amu``, ``tau_cryst``, ``species``,
             ``orbital_positions``, ``cell_dtype`` and, optionally, ``sym_rots``, ``cache_dir``,
-            ``cache_tag`` and (``'fd'``) ``fd_options``.
+            ``cache_tag``, (``'fd'``) ``fd_options`` and (``phonon_source='sscha'``) ``phonon_at_q``.
         """
         nscf = electrons.nscf
         kwargs = dict(
@@ -651,6 +669,8 @@ class ElphonSystem:
         if cache and self.cache_path:
             kwargs['cache_dir'] = self.cache_path
             kwargs['cache_tag'] = self.vertex_cache_tag(electrons.data_controller)
+        if self.phonon_source == 'sscha':
+            kwargs['phonon_at_q'] = self.phonon_interpolator(electrons)
         if self.coupling_source == 'fd':
             kwargs['fd_options'] = dict(
                 basispath=self.basis_path,
@@ -659,6 +679,46 @@ class ElphonSystem:
                 **self.fd_options,
             )
         return kwargs
+
+    def phonon_interpolator(self, electrons: Electrons) -> Callable | None:
+        """Dense-q phonon interpolator of the anharmonic (SSCHA) matrices, or ``None`` for DFPT.
+
+        Parameters
+        ----------
+        electrons : Electrons
+            Of :meth:`electrons` (lattice, atomic positions).
+
+        Returns
+        -------
+        callable or None
+            ``phonon_at_q(q_cryst) -> (freq_thz, z)`` built from ``sscha_dynamical_matrices`` on
+            :attr:`qgrid` (atom-pair Wigner-Seitz images, as the DFPT route), or ``None`` with
+            ``phonon_source='dfpt'`` (the drivers then use the ``ph.x`` matrices).
+
+        Raises
+        ------
+        ValueError
+            If the SSCHA matrices are missing or do not cover :attr:`qgrid`.
+        """
+        if self.phonon_source != 'sscha':
+            return None
+        from ..do_pao_eph_dense_q import phonon_interp_from_dyn
+        from ...phonon.sscha_bridge import dynamical_matrix_files
+
+        prefix = self.path(self.sscha_dynamical_matrices)
+        paths = dynamical_matrix_files(prefix)
+        if not paths:
+            raise ValueError('no SSCHA dynamical matrices %s1 ...' % prefix)
+        nscf = electrons.nscf
+        atom_positions = nscf['tau_cryst'] if nscf.get('orbital_positions') is not None else None
+        return phonon_interp_from_dyn(
+            paths,
+            self.qgrid,
+            nscf['bg'],
+            nscf['at'],
+            atom_positions,
+            long_range=self.long_range_model(),
+        )
 
     def positional_arguments(self, electrons: Electrons) -> tuple:
         """``(A, HRs, kpts_cryst, bg, at, alat, omega, coupling_dir, qgrid, coarse_grid)``.

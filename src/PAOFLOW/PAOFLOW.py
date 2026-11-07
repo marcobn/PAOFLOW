@@ -5719,7 +5719,9 @@ class PAOFLOW:
             supercell_matrix: Diagonal ZG supercell (scalar or three integers);
                 default: the phonon supercell of the controller.
             force_constants_file (str, optional): ``q2r.x`` force constants of the
-                unit cell; otherwise ``arry['phonopy']`` must carry force constants.
+                unit cell, or ``'sscha'`` for the anharmonic force constants of
+                :meth:`sscha_force_constants` at the SSCHA temperature; otherwise
+                ``arry['phonopy']`` must carry force constants.
             force_constants (ndarray, optional): Explicit supercell force constants
                 ``(natom_sc, natom_sc, 3, 3)`` in Ry/bohr^2 (phonopy layout), e.g. the
                 thermal force constants of a displaced cell
@@ -5760,6 +5762,12 @@ class PAOFLOW:
         if hubbard_card is None and hubbard_file is not None:
             hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
         try:
+            if force_constants_file == 'sscha':
+                force_constants_file = attr.get('sscha_force_constants_file')
+                if not force_constants_file:
+                    raise ValueError(
+                        "force_constants_file='sscha' needs sscha_force_constants() first"
+                    )
             if force_constants is not None:
                 if force_constants_supercell is None:
                     force_constants_supercell = supercell_matrix or attr.get(
@@ -5830,6 +5838,474 @@ class PAOFLOW:
             self.report_exception('special_displacement')
             if attr.get('abort_on_exception', False):
                 raise e
+
+    # ------------------------------------------------------------------ SSCHA (anharmonic phonons)
+    def _sscha_state(self) -> dict:
+        """Progress of the SSCHA run (``<sscha_dir>/state.json``, written by the SSCHA methods)."""
+        import json
+        import os
+
+        _, attr = self.data_controller.data_dicts()
+        path = os.path.join(attr['sscha']['sscha_dir'], 'state.json')
+        return json.load(open(path)) if os.path.isfile(path) else {}
+
+    def _sscha_write_state(self, **values) -> None:
+        """Update the progress file of the SSCHA run (rank 0)."""
+        import json
+        import os
+
+        if self.rank != 0:
+            return
+        _, attr = self.data_controller.data_dicts()
+        state = self._sscha_state()
+        state.update(values)
+        with open(os.path.join(attr['sscha']['sscha_dir'], 'state.json'), 'w') as handle:
+            json.dump(state, handle, indent=1)
+
+    def _sscha_matrices(self, population: int):
+        """CellConstructor matrices of a population (``pop0`` = the starting matrices)."""
+        import os
+
+        from .phonon.sscha_bridge import require_sscha
+
+        cc_phonons, _ = require_sscha()
+        _, attr = self.data_controller.data_dicts()
+        settings = attr['sscha']
+        return cc_phonons.Phonons(
+            os.path.join(settings['sscha_dir'], 'pop%d' % population, 'dyn'), settings['nqirr']
+        )
+
+    def sscha_setup(
+        self,
+        temperature: float,
+        supercell_matrix,
+        harmonic_dynamical_matrices: str,
+        sscha_dir: str = 'sscha',
+        kgrid=None,
+        population_sizes=(100, 100, 200, 200, 300, 300, 400, 400),
+        hessian_size: int = 800,
+        min_step_dyn: float = 0.05,
+        kong_liu_ratio: float = 0.5,
+        meaningful_factor: float = 1.0e-3,
+        pp_dir: str | None = None,
+        prefix: str | None = None,
+        conv_thr: float = 1.0e-10,
+        mixing_beta: float = 0.3,
+        positive_definite: bool = True,
+    ) -> None:
+        """Prepare a stochastic self-consistent harmonic approximation (SSCHA) at one temperature.
+
+        Parameters
+        ----------
+        temperature : float
+            Ionic temperature (K).
+        supercell_matrix : int or sequence of int
+            Diagonal supercell of the configurations (scalar = isotropic); its q-points must be on
+            the grid of ``harmonic_dynamical_matrices`` and include the instabilities to treat.
+        harmonic_dynamical_matrices : str
+            Path prefix ``<dir>/<prefix>.dyn`` of a ``ph.x`` q-grid run (``<prefix>.dyn0`` lists
+            the grid): the starting point and the harmonic support of the interpolation.
+        sscha_dir : str, optional
+            Directory of the run (populations, matrices, ``state.json``); an existing run with the
+            same temperature and supercell is continued.
+        kgrid : sequence of int, optional
+            k-grid of the supercell force runs (default: the parent grid divided by the supercell).
+        population_sizes : sequence of int, optional
+            Configurations per population (the last value repeats); at most ``len`` populations.
+        hessian_size : int, optional
+            Configurations of the final population of the free-energy Hessian.
+        min_step_dyn, kong_liu_ratio, meaningful_factor : float, optional
+            Minimisation step, smallest Kong-Liu effective-sample ratio, gradient threshold.
+        pp_dir : str, optional
+            ``pseudo_dir`` of the force runs (default: the save directory).
+        prefix : str, optional
+            Base pw.x prefix of the configurations (default: from the save directory).
+        conv_thr, mixing_beta : float, optional
+            Self-consistency of the force runs.
+        positive_definite : bool, optional
+            Make the imaginary harmonic frequencies positive in the starting matrices (needed for a
+            harmonically unstable lattice).
+
+        Returns
+        -------
+        None
+            Stores the settings in ``attr['sscha']``; writes ``<sscha_dir>/start`` (harmonic
+            matrices of the supercell q) and ``<sscha_dir>/pop0`` (starting matrices).
+
+        Notes
+        -----
+        The force runs use the occupations of the parent save (Fermi-Dirac at k_B T for hot
+        electrons) through PAOFLOW's supercell writer. Workflow: :meth:`sscha_population`, pw.x on
+        its inputs, :meth:`sscha_minimize`, repeated to convergence; then :meth:`sscha_hessian` and
+        :meth:`sscha_force_constants`.
+        """
+        import os
+
+        import numpy as np
+
+        from .phonon.io import _supercell_kgrid
+        from .phonon.sscha_bridge import starting_matrices
+
+        arry, attr = self.data_controller.data_dicts()
+        try:
+            supercell = tuple(int(n) for n in np.broadcast_to(np.asarray(supercell_matrix), (3,)))
+            sscha_dir = os.path.abspath(sscha_dir)
+            if kgrid is None:
+                kgrid = tuple(
+                    int(n) for n in _supercell_kgrid(self.data_controller, np.diag(supercell))
+                )
+            if prefix is None:
+                prefix = os.path.basename(os.path.normpath(attr['savedir'])).replace('.save', '')
+            attr['sscha'] = dict(
+                temperature=float(temperature), supercell=supercell,
+                harmonic_prefix=os.path.abspath(harmonic_dynamical_matrices), sscha_dir=sscha_dir,
+                kgrid=tuple(int(n) for n in kgrid), population_sizes=[int(n) for n in population_sizes],
+                hessian_size=int(hessian_size), min_step_dyn=float(min_step_dyn),
+                kong_liu_ratio=float(kong_liu_ratio), meaningful_factor=float(meaningful_factor),
+                pp_dir=os.path.abspath(pp_dir or attr.get('fpath', '.')), prefix=prefix + '_sscha',
+                conv_thr=float(conv_thr), mixing_beta=float(mixing_beta),
+            )  # fmt: skip
+            state = self._sscha_state() if os.path.isdir(sscha_dir) else {}
+            same = (
+                state.get('temperature') == float(temperature)
+                and tuple(state.get('supercell', ())) == supercell
+            )
+            if self.rank == 0:
+                os.makedirs(sscha_dir, exist_ok=True)
+                if not (same and os.path.isfile(os.path.join(sscha_dir, 'pop0', 'dyn1'))):
+                    matrices, harmonic_cm1, start_cm1 = starting_matrices(
+                        harmonic_dynamical_matrices, supercell, os.path.join(sscha_dir, 'start'),
+                        positive_definite=positive_definite,
+                    )  # fmt: skip
+                    os.makedirs(os.path.join(sscha_dir, 'pop0'), exist_ok=True)
+                    matrices.save_qe(os.path.join(sscha_dir, 'pop0', 'dyn'))
+                    state = dict(
+                        temperature=float(temperature), supercell=list(supercell),
+                        nqirr=len([f for f in os.listdir(os.path.join(sscha_dir, 'start'))
+                                   if f.startswith('dyn')]),
+                        generated=0, minimized=0, converged=False, hessian_population=None,
+                        harmonic_cm1=[float(w) for w in harmonic_cm1[:9]],
+                        start_cm1=[float(w) for w in start_cm1[:9]],
+                    )  # fmt: skip
+                    with open(os.path.join(sscha_dir, 'state.json'), 'w') as handle:
+                        import json
+
+                        json.dump(state, handle, indent=1)
+                    print('SSCHA %g K, supercell %s: lowest harmonic %s cm-1 -> start %s cm-1' % (
+                        temperature, 'x'.join(map(str, supercell)), np.round(harmonic_cm1[:6], 1),
+                        np.round(start_cm1[3:9], 1)))  # fmt: skip
+                else:
+                    print('SSCHA %g K: continuing %s (population %d generated, %d minimized)' % (
+                        temperature, sscha_dir, state['generated'], state['minimized']))  # fmt: skip
+            self.comm.Barrier()
+            attr['sscha']['nqirr'] = int(self._sscha_state()['nqirr'])
+        except Exception as e:
+            self.report_exception('sscha_setup')
+            if attr.get('abort_on_exception', False):
+                raise e
+        self.report_module_time('SSCHA setup')
+
+    def sscha_population(self) -> dict | None:
+        """Configurations of the next SSCHA population and their pw.x inputs.
+
+        Returns
+        -------
+        dict or None
+            ``population`` (index), ``inputs`` (the ``cfg_XXXX.in`` files to run with pw.x, outputs
+            ``cfg_XXXX.out`` next to them) and ``hessian`` (True for the final population of the
+            free-energy Hessian). A population that still waits for its forces is returned again,
+            never regenerated; ``None`` after an error.
+
+        Raises
+        ------
+        RuntimeError
+            If the run has not converged within ``len(population_sizes)`` populations.
+
+        Notes
+        -----
+        After convergence the next population (``hessian_size`` configurations) is drawn from the
+        converged matrices for :meth:`sscha_hessian`.
+        """
+        import glob
+        import os
+
+        from .phonon.sscha_bridge import generate_population
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            settings, state = attr['sscha'], self._sscha_state()
+            if (
+                state['generated'] > state['minimized']
+            ):  # pending: never regenerate (outputs may exist)
+                population = state['generated']
+                inputs = sorted(
+                    glob.glob(os.path.join(settings['sscha_dir'], 'pop%d' % population, 'cfg_*.in'))
+                )
+                hessian = state.get('hessian_population') == population
+                if self.rank == 0:
+                    print('SSCHA: population %d (%d configurations) waits for its forces, then %s' % (
+                        population, len(inputs), 'sscha_hessian' if hessian else 'sscha_minimize'))  # fmt: skip
+                return dict(population=population, inputs=inputs, hessian=hessian)
+            hessian = bool(state['converged'])
+            population = state['minimized'] + 1
+            sizes = settings['population_sizes']
+            if not hessian and population > len(sizes):
+                raise RuntimeError('SSCHA not converged after %d populations' % len(sizes))
+            size = (
+                settings['hessian_size'] if hessian else sizes[min(population - 1, len(sizes) - 1)]
+            )
+            population_dir = os.path.join(settings['sscha_dir'], 'pop%d' % population)
+            inputs = None
+            if self.rank == 0:
+                inputs = generate_population(
+                    self.data_controller, self._sscha_matrices(population - 1), settings['temperature'],
+                    size, population_dir, '%s_p%d' % (settings['prefix'], population), settings['pp_dir'],
+                    settings['kgrid'], settings['conv_thr'], settings['mixing_beta'],
+                )  # fmt: skip
+                print('SSCHA population %d: %d configurations in %s%s' % (
+                    population, len(inputs), population_dir, ' (free-energy Hessian)' if hessian else ''))  # fmt: skip
+            inputs = self.comm.bcast(inputs, root=0)
+            self._sscha_write_state(
+                generated=population, hessian_population=population if hessian else None
+            )
+            result = dict(population=population, inputs=inputs, hessian=hessian)
+        except Exception as e:
+            self.report_exception('sscha_population')
+            if attr.get('abort_on_exception', False):
+                raise e
+        self.report_module_time('SSCHA population')
+        return result
+
+    def sscha_minimize(self, forces: str = 'qe') -> dict | None:
+        """Read the forces of the last SSCHA population and minimise the free energy.
+
+        Parameters
+        ----------
+        forces : {'qe'}, optional
+            Source of the forces: the pw.x outputs ``cfg_XXXX.out`` of the population.
+
+        Returns
+        -------
+        dict or None
+            ``population``, ``converged``, ``free_energy_ry``, ``free_energy_error_ry`` and
+            ``lowest_cm1`` (lowest auxiliary frequencies); writes ``pop<p>/dyn*`` and
+            ``pop<p>/summary.json``. ``None`` if there is nothing to minimise.
+
+        Raises
+        ------
+        ValueError
+            For an unknown ``forces``.
+        RuntimeError
+            If fewer than 95 % of the configurations finished.
+        """
+        import json
+        import os
+
+        import numpy as np
+
+        from .phonon.sscha_bridge import load_population, minimise
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            if forces != 'qe':
+                raise ValueError("forces must be 'qe' (pw.x outputs), got %r" % forces)
+            settings, state = attr['sscha'], self._sscha_state()
+            population = state['generated']
+            if population == 0 or population == state['minimized']:
+                if self.rank == 0:
+                    print('SSCHA: nothing to minimise (call sscha_population first)')
+                return None
+            if state.get('hessian_population') == population:
+                if self.rank == 0:
+                    print(
+                        'SSCHA: population %d is the Hessian population: call sscha_hessian'
+                        % population
+                    )
+                return None
+            population_dir = os.path.join(settings['sscha_dir'], 'pop%d' % population)
+            if self.rank == 0:
+                ensemble = load_population(
+                    self._sscha_matrices(population - 1), settings['temperature'], population_dir
+                )
+                out = minimise(
+                    ensemble,
+                    settings['min_step_dyn'],
+                    settings['kong_liu_ratio'],
+                    settings['meaningful_factor'],
+                )
+                out['matrices'].save_qe(os.path.join(population_dir, 'dyn'))
+                result = dict(
+                    population=population, converged=out['converged'], free_energy_ry=out['free_energy_ry'],
+                    free_energy_error_ry=out['free_energy_error_ry'],
+                    lowest_cm1=[float(w) for w in out['frequencies_cm1'][3:9]],
+                )  # fmt: skip
+                with open(os.path.join(population_dir, 'summary.json'), 'w') as handle:
+                    json.dump(result, handle, indent=1)
+                print('SSCHA population %d: converged %s, F = %.8f +- %.8f Ry, lowest auxiliary %s cm-1' % (
+                    population, out['converged'], out['free_energy_ry'], out['free_energy_error_ry'],
+                    np.round(result['lowest_cm1'][:3], 1)))  # fmt: skip
+            result = self.comm.bcast(result, root=0)
+            self._sscha_write_state(minimized=population, converged=bool(result['converged']))
+            attr['sscha']['converged'] = bool(result['converged'])
+        except Exception as e:
+            self.report_exception('sscha_minimize')
+            if attr.get('abort_on_exception', False):
+                raise e
+        self.report_module_time('SSCHA minimisation')
+        return result
+
+    def sscha_hessian(self, include_v4: bool = False) -> dict | None:
+        """Free-energy Hessian of the converged SSCHA: the physical phonons and the stability verdict.
+
+        Parameters
+        ----------
+        include_v4 : bool, optional
+            Include the fourth-order term (the bubble term alone is the usual choice).
+
+        Returns
+        -------
+        dict or None
+            ``stable`` (no mode below -0.5 meV on the supercell grid) and ``lowest_cm1`` per q
+            (``(q, frequency)`` pairs); writes ``<sscha_dir>/hessian/dyn*`` and sets
+            ``attr['sscha']['stable']``. ``None`` before the Hessian population is computed.
+        """
+        import json
+        import os
+
+        from .phonon.sscha_bridge import (
+            UNSTABLE_CM1,
+            free_energy_hessian,
+            load_population,
+            lowest_frequencies,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            settings, state = attr['sscha'], self._sscha_state()
+            population = state.get('hessian_population')
+            if not state.get('converged') or not population:
+                if self.rank == 0:
+                    print(
+                        'SSCHA: the Hessian needs a converged run and its population (sscha_population)'
+                    )
+                return None
+            if self.rank == 0:
+                matrices = self._sscha_matrices(population - 1)
+                ensemble = load_population(matrices, settings['temperature'],
+                                           os.path.join(settings['sscha_dir'], 'pop%d' % population))  # fmt: skip
+                hessian = free_energy_hessian(ensemble, include_v4=include_v4)
+                os.makedirs(os.path.join(settings['sscha_dir'], 'hessian'), exist_ok=True)
+                hessian.save_qe(os.path.join(settings['sscha_dir'], 'hessian', 'dyn'))
+                lowest = lowest_frequencies(hessian)
+                stable = all(w > UNSTABLE_CM1 for _, w in lowest)
+                result = dict(
+                    stable=stable, lowest_cm1=[(list(map(float, q)), w) for q, w in lowest]
+                )
+                with open(
+                    os.path.join(settings['sscha_dir'], 'hessian', 'summary.json'), 'w'
+                ) as handle:
+                    json.dump(result, handle, indent=1)
+                print('SSCHA %g K free-energy Hessian: lowest %.1f cm-1 -> %s' % (
+                    settings['temperature'], min(w for _, w in lowest), 'stable' if stable else 'UNSTABLE'))  # fmt: skip
+            result = self.comm.bcast(result, root=0)
+            self._sscha_write_state(hessian_done=True, stable=bool(result['stable']))
+            attr['sscha']['stable'] = bool(result['stable'])
+        except Exception as e:
+            self.report_exception('sscha_hessian')
+            if attr.get('abort_on_exception', False):
+                raise e
+        self.report_module_time('SSCHA free-energy Hessian')
+        return result
+
+    def sscha_force_constants(self, matrices: str = 'auxiliary', fine_grid=None) -> dict | None:
+        """Anharmonic force constants on the harmonic q-grid, for the phonon and electron-phonon steps.
+
+        Parameters
+        ----------
+        matrices : {'auxiliary', 'hessian'}, optional
+            ``'auxiliary'``: the converged SSCHA matrices (the Gaussian of the thermal ensemble: input
+            of :meth:`special_displacement`); ``'hessian'``: the free-energy Hessian (the physical
+            phonons: dispersions, electron-phonon coupling).
+        fine_grid : sequence of int, optional
+            Target q-grid (default: the grid of the harmonic ``ph.x`` run).
+
+        Returns
+        -------
+        dict or None
+            ``dynamical_matrices`` (path prefix ``<sscha_dir>/force_constants_<kind>/<prefix>.dyn``,
+            the ``sscha_dynamical_matrices`` of ``ElphonSystem``), ``force_constants_file`` (QE
+            ``flfrc``), ``lowest_cm1`` (lowest mode over the grid) and ``unstable_q`` (count below
+            -0.5 meV). Sets ``attr['sscha_force_constants_file']`` (auxiliary) and
+            ``attr['sscha_dynamical_matrices']``.
+
+        Notes
+        -----
+        The anharmonic correction of the supercell grid is added to the harmonic matrices of the
+        fine grid (:func:`~PAOFLOW.phonon.sscha_bridge.interpolate_correction`), so the result is
+        exact on the supercell q and keeps the harmonic dispersion elsewhere.
+        """
+        import os
+
+        from .phonon.sscha_bridge import (
+            UNSTABLE_CM1,
+            dynamical_matrix_files,
+            interpolate_correction,
+            lowest_frequencies,
+            require_sscha,
+            write_force_constants,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            if matrices not in ('auxiliary', 'hessian'):
+                raise ValueError("matrices must be 'auxiliary' or 'hessian', got %r" % matrices)
+            settings, state = attr['sscha'], self._sscha_state()
+            if not state.get('converged') or (
+                matrices == 'hessian' and not state.get('hessian_done')
+            ):
+                raise RuntimeError('sscha_force_constants(%r) needs a converged run%s' % (
+                    matrices, ' and sscha_hessian' if matrices == 'hessian' else ''))  # fmt: skip
+            harmonic_prefix = settings['harmonic_prefix']
+            grid_line = open(harmonic_prefix + '0').readline().split()
+            fine_grid = tuple(int(n) for n in (fine_grid or grid_line[:3]))
+            name = os.path.basename(harmonic_prefix)
+            out_dir = os.path.join(settings['sscha_dir'], 'force_constants_%s' % matrices)
+            prefix_out = os.path.join(out_dir, name)
+            fc_path = os.path.join(settings['sscha_dir'], '%s_sscha_%s.fc' % (name[:-4], matrices))
+            if self.rank == 0:
+                cc_phonons, _ = require_sscha()
+                source = os.path.join(settings['sscha_dir'], 'hessian', 'dyn') if matrices == 'hessian' else \
+                    os.path.join(settings['sscha_dir'], 'pop%d' % state['minimized'], 'dyn')  # fmt: skip
+                sscha_matrices = cc_phonons.Phonons(source, settings['nqirr'])
+                harmonic_coarse = cc_phonons.Phonons(
+                    os.path.join(settings['sscha_dir'], 'start', 'dyn'), settings['nqirr']
+                )
+                harmonic_fine = cc_phonons.Phonons(
+                    harmonic_prefix, len(dynamical_matrix_files(harmonic_prefix))
+                )
+                fine = interpolate_correction(
+                    sscha_matrices, harmonic_coarse, harmonic_fine, settings['supercell'], fine_grid
+                )
+                write_force_constants(fine, prefix_out, fine_grid, fc_path)
+                lowest = [w for _, w in lowest_frequencies(fine)]
+                result = dict(dynamical_matrices=prefix_out, force_constants_file=fc_path,
+                              lowest_cm1=float(min(lowest)), unstable_q=int(sum(w < UNSTABLE_CM1 for w in lowest)))  # fmt: skip
+                print('SSCHA %s force constants on %s: lowest %.1f cm-1, %d unstable q -> %s' % (
+                    matrices, 'x'.join(map(str, fine_grid)), result['lowest_cm1'], result['unstable_q'], fc_path))  # fmt: skip
+            result = self.comm.bcast(result, root=0)
+            attr.setdefault('sscha_dynamical_matrices', {})[matrices] = result['dynamical_matrices']
+            if matrices == 'auxiliary':
+                attr['sscha_force_constants_file'] = result['force_constants_file']
+        except Exception as e:
+            self.report_exception('sscha_force_constants')
+            if attr.get('abort_on_exception', False):
+                raise e
+        self.report_module_time('SSCHA force constants')
+        return result
 
     def electron_phonon(
         self,
