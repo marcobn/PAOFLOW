@@ -68,7 +68,9 @@ pip install -e ".[sscha]"     # python-sscha >= 1.6, cellconstructor >= 1.6, ase
 ```
 
 Both packages build Fortran extensions with meson: a Fortran compiler and BLAS/LAPACK visible to `pkg-config` are
-needed. `require_sscha()` raises an `ImportError` naming the extra when they are missing.
+needed. PAOFLOW does not ship binaries of them: installing python-sscha and CellConstructor in the environment is
+up to the user (upstream instructions: <https://github.com/SSCHAcode/python-sscha>). `require_sscha()` raises an
+`ImportError` naming the extra when they are missing. The notes below are what worked on our machines.
 
 - **Apple silicon (conda env `work`).** `/usr/local/bin` may hold x86 `pkg-config` and `cmake` that cannot run and
   break meson. Install the `pkgconf` wheel, write `blas.pc`, `lapack.pc` and `openblas.pc` pointing at the env's
