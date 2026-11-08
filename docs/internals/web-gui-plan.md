@@ -747,3 +747,98 @@ The total is about 20 h. Each phase ships on its own:
   existing number changes), or discovery from the filename patterns only.
 - **D7.** Fix the writer issues 9.2.3 (the Hall smearing suffix, or only the `plot.py` pattern) and 9.2.5 (the BXSF
   overwrite) now, as separate commits, or leave them.
+
+**QE runs, guide and brand (8 November 2026, user request).**
+
+- **From the QE input to a run.** Writing `<compound>.scf.in` with the QE-input tool now returns a run plan
+  (`gen/outputs.qe_input_plan`): a `pw.x -in <compound>.scf.in` step (MPI, output to `<compound>.scf.out`), then
+  an *action* step that opens the Setup tab, Property run, on that folder, so the new save feeds the next
+  workflow. The Setup tab shows the plan and sends it to the Runs tab.
+  - The run manager accepts the QE programs (`jobs.QE_PROGRAMS`: `pw.x`, `ph.x`, `projwfc.x`, `pp.x`, `q2r.x`,
+    `matdyn.x`, `dos.x`, `bands.x`, `epw.x`, `hp.x`, `dynmat.x`). The arguments are limited to the input flags
+    and the parallelisation flags, and the program must be on the PATH of `paoflow-studio`; otherwise the
+    launch fails with that message, and the Setup tab warns before the run.
+  - A step can name a `stdout` file: the program output goes there with no header, and the job log shows it.
+    ANSI escape codes are stripped from the logs.
+- **The guide.** `static/js/help.js` holds a 14-section guide: getting started, folders, the working folder,
+  workflows, forms, writing, the QE input, the basis, runs, results (two sections), remote use, the
+  command line, and troubleshooting. A **Help** button or the `?` key opens it; it is searchable, `Esc` closes
+  it, and it opens on the section of the current tab. It opens once by itself on the first visit.
+- **Brand.** The name in the header and the favicon use the green brand colour (`--brand` `#00853e`, `#00b833`
+  in the dark theme). The base font is 15 px (was 14), with the other sizes and the Plotly fonts (13 px) scaled
+  to match. The docs screenshots are quantised to 256 colours by octree, which keeps the green.
+- **Switches.** A switch must be a `<label>` around its hidden checkbox, or sit inside one: the switches of
+  the QE-input tool (spin-orbit, `assume_isolated`), the plot-script option and the basis tool were bare `<span>`s
+  next to a separate name label, so clicks never reached the checkbox and they kept their defaults
+  (`assume_isolated` always on). Fixed; a browser test clicks each of them and checks the generator receives the
+  values.
+- **Tests.** Browser tests for the first-visit guide and for the chain QE input → `pw.x` (a stand-in program on
+  the PATH) → Setup; unit tests for the QE plan, the QE argument whitelist and the `stdout` file.
+
+**Existing inputs and stale servers (8 November 2026, user report: no way to run `pw.x`).** The only route to
+`pw.x` was the dialog after *Write*. The user's server had started before the plan endpoint existed, so *Write*
+returned no plan, and the dialog fell back to the property form's plan or to "Complete the form first".
+
+- `POST /api/gen/qe-input/plan` (`generator_api.qe_input_run_plan`) returns the plan of any `pw.x` input in the
+  root (a file with a `&control` namelist; 404 for no file, 400 for no input, 403 outside the root).
+- The QE-input tool lists the `pw.x` inputs of the working folder at its top, each with *Run pw.x…*; the list is
+  refreshed after *Write*. The Runs tab has *Run a pw.x input…* (a file picker inside the root).
+- `showPlan` no longer falls back to the property form's plan for a tool; it asks for a restart instead.
+- `GuiApp.started` and `server.code_changed_since`: the session reports `restart_needed` when a module of
+  `gui/`, `gen/`, `results/` or `writers/` is newer than the server. The page shows a banner (checked at load
+  and when the tab becomes visible). Static files are read from disk, so only the Python needs the restart.
+- Found on the way: a resolve that was pending or in flight when the user switched from a workflow to a tool
+  posted the tool's name (404, an error toast) and could render into the tool's preview. `selectWorkflow` now
+  drops it (`requestId`, `form = null` for tools).
+- Tests: the plan endpoint and the restart flag (unit), and a browser test of an existing input run from the
+  tool and loaded from the Runs tab.
+
+**Choice of the Quantum ESPRESSO build (8 November 2026, user request: "the pw path points to the 7.4.1, but
+there are other QE versions").**
+
+- `gui/qe_installations.py`: `discover_installations(extra, path, search)` lists the builds (one per real
+  `pw.x`, newest first), and `default_installation` picks the default (the PATH one, else the newest).
+  - Where it looks: the PATH; the siblings of the PATH builds; `--qe-bin`; and, with `search`, `~/Programs`,
+    `~/Local/Programs`, `~/software`, `~/opt`, `~/apps`, `/opt`, `/usr/local` (`bin`, `*/bin`, `*/*/bin`), the
+    conda bases and environments, `$CONDA_PREFIX`, and Homebrew.
+  - The installation folder is `bin/..` for a build tree (`bin/pw.x` links to `PW/src/pw.x`), and the package
+    prefix for a package.
+  - The version comes from `include/qe_version.h`, then `conda-meta/qe-*.json`, then the folder name. MPI comes
+    from the `DFLAGS` of `make.inc` or the `QE_ENABLE_MPI` of `CMakeCache.txt`. Nothing is executed.
+  - On the Mac Studio it finds the seven builds of `~/Local/Programs/qe-*` in 0.1 s.
+- `GuiApp.qe_installations()` (cached, `rescan`) and `GuiApp.qe_installation(bin)`: the server accepts only a
+  `bin` of its list (400 otherwise), so the browser chooses and never names an executable.
+  - `build_command(..., qe_bin)`: the QE program comes from that `bin` ("ph.x is not in ..." when missing).
+    The `bin` goes first on the PATH of the run, whatever its program. A serial build refuses more than 1 rank.
+    QE steps use an `mpirun` shipped in the `bin` (conda) before the PATH one.
+  - `GET /api/qe` returns the list and the default (`?rescan=1` searches again); the session's
+    `features.pw` means "a build was found".
+- CLI: `--qe-bin DIR` (repeatable, checked at start-up); the start-up message prints the default and the
+  number of other builds.
+- Front end: `static/js/qe.js` (`qePicker`, `chosenQe`): a menu in the Runs plan card and in the QE-input tool,
+  remembered per root, the pickers in sync; `RunsView.launch` sends `qe_bin`.
+- Tests: `test_qe_installations.py` (stand-in trees: in-tree links, siblings, serial, conda metadata and
+  `mpirun`, an extra folder, duplicates); the run-manager tests (the chosen build runs, PATH order, unknown
+  folder, serial with 2 ranks, missing program; the no-QE test uses `qe_search=False` so that it never starts
+  a real QE); a browser test (choose 7.5 in the tool, the Runs menu follows, the run uses 7.5, the choice
+  survives a reload).
+- Found on the way: the sibling search used the parent of `PW/` (the linked `pw.x`) instead of the
+  installation folder; the common places hid it on the Mac.
+
+
+**Brillouin-zone preview (8 November 2026, user report: "the preview of the BZ did not work").** Checked on a
+copy of the user's `Si2.save` (`ibrav` 2, from the GUI's own `pw.x` run): the zone and path draw. Three
+defects were found:
+
+- **Figures drawn in a hidden tab.** When the page opens on the Runs tab, the Setup form draws the zone while
+  hidden. Plotly then sizes it at its default 700 × 300 px (or nothing for a 3D scene), and once shown it is
+  shifted and cropped, or blank. `renderFigure` now follows its container with a `ResizeObserver` and calls
+  `Plotly.Plots.resize` when the size changes (`purge` disconnects it). This holds for every figure, the
+  Results tab included. A browser test opens `#runs`, switches to Setup, and checks that the figure fills its
+  box; it fails without the observer.
+- **Γ hidden under L.** The fixed camera (eye 1.05, 1.05, 0.7) looks along about [111] for fcc. `camera_eye`
+  now picks, among 120 directions (elevations 15–75°, azimuths in steps of 15°), the one with the largest
+  smallest projected distance between the labelled points. For the fcc path this doubles the smallest gap
+  (`test_camera_keeps_the_points_apart`).
+- **The message without a save** now says what to do: "the zone needs the cell of a QE save
+  (<prefix>.save) in the working folder: run pw.x first, or choose the save above".

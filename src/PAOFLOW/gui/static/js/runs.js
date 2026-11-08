@@ -1,7 +1,9 @@
 // Runs tab: the run plan of the last generated workflow, local jobs and their logs.
 
 import { api } from './api.js';
-import { clear, copyText, h, storage, toast } from './dom.js';
+import { pickFolder } from './browser.js';
+import { clear, copyText, h, joinPath, storage, toast } from './dom.js';
+import { chosenQe, qePicker } from './qe.js';
 
 const STATUS_CHIP = {
   running: 'accent',
@@ -11,10 +13,13 @@ const STATUS_CHIP = {
   lost: 'warn',
 };
 
-function joinPath(folder, relative) {
-  if (!relative || relative === '.') return folder || '.';
-  if (!folder || folder === '.') return relative;
-  return `${folder}/${relative}`;
+function actionLabel(action) {
+  const [tab, workflow] = action.split(':');
+  if (tab === 'setup')
+    return workflow
+      ? `Open Setup (${workflow === 'run' ? 'Property run' : workflow})`
+      : 'Open Setup';
+  return 'Open';
 }
 
 function duration(seconds) {
@@ -65,15 +70,51 @@ export class RunsView {
     this.renderPlan();
   }
 
+  // The plan of a pw.x input chosen in the root (written earlier, by hand or by paoflow-gen-qe).
+  async pickQeInput() {
+    const setup = this.app.setup;
+    const chosen = await pickFolder(this.folder || setup?.workdir || '.', {
+      title: 'pw.x input to run',
+      allowFiles: true,
+      places: false,
+    });
+    if (!chosen) return;
+    try {
+      const result = await api.post('/api/gen/qe-input/plan', { path: chosen });
+      this.setPlan(result.folder, result.plan, 'qe_input');
+    } catch (error) {
+      toast(error.message, 'bad', 7000);
+    }
+  }
+
   renderPlan() {
     clear(this.planCard);
-    this.planCard.append(h('h3', {}, 'Run plan'));
+    this.planCard.append(
+      h(
+        'div',
+        { class: 'row' },
+        h('h3', { class: 'grow' }, 'Run plan'),
+        this.session.read_only
+          ? null
+          : h(
+              'button',
+              {
+                class: 'btn small',
+                title: 'Choose a pw.x input file in the root and load its run',
+                onclick: () => this.pickQeInput(),
+              },
+              'Run a pw.x input…',
+            ),
+      ),
+    );
+    if (!this.session.read_only) this.planCard.append(qePicker(this.session));
     if (!this.plan.length) {
       this.planCard.append(
         h(
           'div',
           { class: 'small muted' },
-          'Write the files of a workflow in the Setup tab; its steps appear here.',
+          'Write the files of a workflow in the Setup tab; its steps appear here. For a pw.x ' +
+            'input already on disk, use the button above.',
         ),
       );
       return;
@@ -138,13 +179,27 @@ export class RunsView {
                   'Run',
                 ),
               )
-            : step.interactive
+            : step.action
               ? h(
                   'div',
-                  { class: 'small muted' },
-                  'needs a terminal or a display: run it there, or use the Results tab',
+                  { class: 'row', style: { marginTop: '4px' } },
+                  h('span', { class: 'grow' }),
+                  h(
+                    'button',
+                    {
+                      class: 'btn small primary',
+                      onclick: () => this.app.doAction(step.action, this.folder),
+                    },
+                    actionLabel(step.action),
+                  ),
                 )
-              : null,
+              : step.interactive
+                ? h(
+                    'div',
+                    { class: 'small muted' },
+                    'needs a terminal or a display: run it there, or use the Results tab',
+                  )
+                : null,
         ),
       );
     }
@@ -161,7 +216,9 @@ export class RunsView {
   async launch(step, ranks = 1) {
     // Plan steps are relative to the folder the files were written to; the server wants root paths.
     const cwd = step.rootRelative ? step.cwd : joinPath(this.folder, step.cwd);
-    const payload = { step: { ...step, cwd }, ranks };
+    // The chosen QE build runs the QE programs and goes first on the PATH of every run.
+    const qeBin = await chosenQe(this.session).catch(() => null);
+    const payload = { step: { ...step, cwd }, ranks, qe_bin: qeBin };
     try {
       const job = await api.post('/api/jobs/launch', payload);
       toast(`Started: ${job.label}`, 'ok');

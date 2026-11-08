@@ -27,6 +27,9 @@
   --diff-del: #fdecec;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
   --radius: 8px;
+  --brand: #00853e;
+  --brand-soft: #d4eedd;
+  --font-size: 15px;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
@@ -58,6 +61,8 @@
   --diff-add: #143023;
   --diff-del: #3a1c1c;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --brand: #00b833;
+  --brand-soft: #062006;
   color-scheme: dark;
 }
 
@@ -78,7 +83,7 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
-  font: 14px / 1.45 var(--sans);
+  font: var(--font-size) / 1.45 var(--sans);
   display: flex;
   flex-direction: column;
 }
@@ -94,7 +99,7 @@ code,
 pre,
 .mono {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 13.5px;
 }
 a {
   color: var(--accent);
@@ -122,9 +127,14 @@ a {
   color: var(--faint);
   font-weight: 400;
 }
+.brand-name {
+  color: var(--brand);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
 .brand-studio {
-  color: var(--accent);
-  font-weight: 500;
+  color: var(--brand);
+  font-weight: 400;
 }
 .tabs {
   display: flex;
@@ -153,7 +163,7 @@ a {
 }
 .session {
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13.5px;
   display: flex;
   gap: 10px;
   align-items: center;
@@ -218,7 +228,7 @@ main {
 .card h3,
 .section h3 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: 14px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--muted);
@@ -230,7 +240,7 @@ main {
   color: var(--faint);
 }
 .small {
-  font-size: 12.5px;
+  font-size: 13.5px;
 }
 .row {
   display: flex;
@@ -261,7 +271,7 @@ main {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 2px 10px;
-  font-size: 12.5px;
+  font-size: 13.5px;
 }
 .kv dt {
   color: var(--muted);
@@ -299,7 +309,7 @@ main {
 }
 .btn.small {
   padding: 2px 8px;
-  font-size: 12.5px;
+  font-size: 13.5px;
 }
 .btn.link {
   border: 0;
@@ -322,7 +332,7 @@ main {
 
 .chip {
   display: inline-block;
-  font-size: 11px;
+  font-size: 12px;
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--surface-2);
@@ -356,7 +366,7 @@ main {
   padding: 8px 10px;
   background: var(--accent-soft);
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 13.5px;
   white-space: pre-wrap;
 }
 .callout.warn {
@@ -364,6 +374,29 @@ main {
 }
 .callout.bad {
   background: var(--bad-soft);
+}
+.restart-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 16px 0;
+}
+.qe-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 8px;
+}
+.qe-select {
+  min-width: 0;
+}
+.input-row {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.input-row:last-child {
+  border-bottom: none;
 }
 
 /* ------------------------------------------------------------------------- workflow list */
@@ -395,11 +428,11 @@ main {
 }
 .workflow-item .desc {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   margin-top: 2px;
 }
 .workflow-group {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--faint);
   text-transform: uppercase;
   letter-spacing: 0.6px;
@@ -415,7 +448,7 @@ main {
 }
 .form-head h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 19.5px;
 }
 .section {
   background: var(--surface);
@@ -443,12 +476,12 @@ main {
 }
 .field .hint {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   margin-top: 2px;
 }
 .field .error {
   color: var(--bad);
-  font-size: 12px;
+  font-size: 13px;
   grid-column: 2;
 }
 .field.wide .error {
@@ -462,7 +495,7 @@ main {
 }
 .field .unit {
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13.5px;
   white-space: nowrap;
 }
 .badge-advanced {
@@ -548,7 +581,7 @@ input.is-default {
   flex-wrap: wrap;
   gap: 2px;
   align-items: center;
-  font-size: 13px;
+  font-size: 14px;
   margin-bottom: 8px;
 }
 .crumbs button {
@@ -594,7 +627,7 @@ input.is-default {
   padding: 7px 9px;
   cursor: pointer;
   background: var(--surface);
-  font-size: 13px;
+  font-size: 14px;
 }
 .choice-card:hover {
   border-color: var(--faint);
@@ -615,7 +648,7 @@ table.rows th {
   text-align: left;
   font-weight: 500;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   padding: 2px 4px;
 }
 table.rows td {
@@ -632,7 +665,7 @@ table.rows td {
 }
 .preview-head h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--muted);
@@ -651,7 +684,7 @@ table.rows td {
   background: var(--surface);
   border-radius: 5px;
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   display: flex;
   gap: 6px;
@@ -905,7 +938,7 @@ dialog::backdrop {
 }
 .result-head h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 18.5px;
 }
 .plot {
   min-height: 460px;
@@ -938,7 +971,7 @@ dialog::backdrop {
   padding: 6px 2px 3px;
   cursor: pointer;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
   text-align: left;
@@ -982,7 +1015,7 @@ dialog::backdrop {
 }
 table.data-table {
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-variant-numeric: tabular-nums;
 }
 table.data-table th,
@@ -994,7 +1027,7 @@ table.data-table td {
 details.table-view summary {
   cursor: pointer;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13.5px;
   padding: 4px 0;
 }
 details.table-view > div {
@@ -1062,7 +1095,7 @@ pre.log {
   border-radius: var(--radius);
   padding: 10px 12px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -1091,7 +1124,7 @@ pre.log {
 }
 details.doc {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: 13px;
 }
 details.doc summary {
   cursor: pointer;
@@ -1120,4 +1153,97 @@ details.doc[open] summary {
 }
 .places button.chip {
   cursor: pointer;
+}
+
+/* ------------------------------------------------------------------------- help panel */
+.help-panel {
+  position: fixed;
+  top: 48px;
+  right: 0;
+  bottom: 0;
+  width: min(880px, 96vw);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+}
+.help-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--brand);
+}
+.help-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 230px 1fr;
+}
+.help-side {
+  border-right: 1px solid var(--border);
+  padding: 12px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.help-side input[type="search"] {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 5px 8px;
+  width: 100%;
+}
+.help-contents {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.help-link {
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+.help-link:hover {
+  background: var(--surface-2);
+}
+.help-link.selected {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+.help-page {
+  padding: 16px 22px 28px;
+  overflow: auto;
+  line-height: 1.55;
+}
+.help-page h2 {
+  margin: 0 0 10px;
+  font-size: 19.5px;
+  color: var(--brand);
+}
+.help-page li + li {
+  margin-top: 5px;
+}
+.help-panel .help-page code {
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.help-code {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 13.5px;
 }

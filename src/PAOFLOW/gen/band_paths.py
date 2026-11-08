@@ -119,6 +119,50 @@ def check_band_path(band_path: str, points: list[Point]) -> str | None:
     return None
 
 
+def camera_eye(points: np.ndarray, distance: float = 1.6) -> dict:
+    """Viewing direction of the zone that keeps the labelled points apart.
+
+    A fixed camera hides a point behind another on some lattice (fcc seen along about [111] puts
+    Γ under L). Among elevations of 15-75 degrees and azimuths in steps of 15 degrees, the direction
+    with the largest smallest distance between the points projected on the screen plane is chosen.
+
+    Parameters
+    ----------
+    points : ndarray, shape (n, 3)
+        Cartesian coordinates of the labelled points.
+    distance : float, optional
+        Distance of the eye in Plotly scene units.
+
+    Returns
+    -------
+    dict
+        Plotly ``scene.camera.eye`` (``x``, ``y``, ``z``).
+    """
+    points = np.asarray(points, dtype=float)
+    best_score, best = -1.0, np.array([1.05, 1.05, 0.7]) / np.linalg.norm([1.05, 1.05, 0.7])
+    if len(points) > 1:
+        pairs = np.triu_indices(len(points), 1)
+        for elevation in np.radians([15, 30, 45, 60, 75]):
+            for azimuth in np.radians(np.arange(0, 360, 15)):
+                direction = np.array(
+                    [
+                        np.cos(elevation) * np.cos(azimuth),
+                        np.cos(elevation) * np.sin(azimuth),
+                        np.sin(elevation),
+                    ]
+                )
+                projected = points - np.outer(points @ direction, direction)
+                gaps = np.linalg.norm(projected[pairs[0]] - projected[pairs[1]], axis=1)
+                if gaps.min() > best_score + 1e-9:
+                    best_score, best = float(gaps.min()), direction
+    eye = distance * best
+    return {
+        'x': round(float(eye[0]), 3),
+        'y': round(float(eye[1]), 3),
+        'z': round(float(eye[2]), 3),
+    }
+
+
 def path_figure(workdir: str, savedir: str | None, band_path: str, points: list[Point]) -> dict:
     """Plotly specification of the first Brillouin zone with the path (crystal points to Cartesian).
 
@@ -143,7 +187,10 @@ def path_figure(workdir: str, savedir: str | None, band_path: str, points: list[
 
     cell = _cell_in_alat(workdir, savedir)
     if cell is None:
-        return {'error': 'the zone needs the cell of the QE save'}
+        return {
+            'error': 'the zone needs the cell of a QE save (<prefix>.save) in the working folder: '
+            'run pw.x first, or choose the save above'
+        }
     problem = check_band_path(band_path, points)
     if problem:
         return {'error': problem}
@@ -220,7 +267,7 @@ def path_figure(workdir: str, savedir: str | None, band_path: str, points: list[
                 'yaxis': dict(axis),
                 'zaxis': dict(axis),
                 'aspectmode': 'data',
-                'camera': {'eye': {'x': 1.05, 'y': 1.05, 'z': 0.7}},
+                'camera': {'eye': camera_eye(np.array([coordinates[label] for label in used]))},
             },
             'margin': {'l': 0, 'r': 0, 't': 0, 'b': 0},
             'showlegend': False,

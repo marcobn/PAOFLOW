@@ -2,6 +2,7 @@
 
 import { api } from './api.js';
 import { h, storage, toast } from './dom.js';
+import { HelpPanel, TAB_HELP } from './help.js';
 import { SetupView } from './setup.js';
 
 const TABS = ['setup', 'runs', 'results'];
@@ -21,7 +22,18 @@ class App {
     root.textContent = this.session.root;
     root.title = `GUI root: ${this.session.root}`;
     document.getElementById('readonly').hidden = !this.session.read_only;
+    this.checkServerCode(this.session);
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        this.checkServerCode(await api.get('/api/session'));
+      } catch (_error) {
+        // the server stopped: the next request reports it
+      }
+    });
     this.initTheme();
+    this.help = new HelpPanel();
+    document.getElementById('help').addEventListener('click', () => this.help.toggle());
     for (const button of document.querySelectorAll('.tab')) {
       button.addEventListener('click', () => this.show(button.dataset.tab));
     }
@@ -39,6 +51,35 @@ class App {
       await this.results.open(this.session.start);
     }
     this.show(this.currentTab(), false);
+    if (!storage('guide-seen')) {
+      // First visit: open the guide on its first page.
+      storage('guide-seen', true);
+      this.help.open('start');
+    }
+  }
+
+  // A source checkout serves the front end from disk, but the server keeps the Python it started
+  // with: after an update of PAOFLOW the page may call endpoints the old server lacks.
+  checkServerCode(session) {
+    if (!session.restart_needed || document.getElementById('restart-banner')) return;
+    const started = new Date(session.started * 1000).toLocaleTimeString();
+    const banner = h(
+      'div',
+      { id: 'restart-banner', class: 'callout warn restart-banner', role: 'alert' },
+      h(
+        'span',
+        { class: 'grow' },
+        `PAOFLOW was updated after this server started (${started}). Stop paoflow-studio ` +
+          '(Ctrl-C in its terminal) and start it again; until then new features may not work.',
+      ),
+      h('button', { class: 'icon-btn', title: 'Hide', onclick: () => banner.remove() }, '×'),
+    );
+    document.querySelector('main').before(banner);
+  }
+
+  // The guide on the section of the current tab.
+  helpForTab() {
+    this.help.open(TAB_HELP[this.currentTab()]);
   }
 
   async loadOptionalViews() {
@@ -113,6 +154,15 @@ class App {
     if (!this.runs) return toast('The run manager is not available', 'warn');
     this.runs.setPlan(folder, plan, workflow);
     this.show('runs');
+  }
+
+  // A plan step done in the GUI: 'setup:<workflow>' opens that workflow on the folder.
+  async doAction(action, folder) {
+    const [tab, workflow] = action.split(':');
+    if (tab !== 'setup') return;
+    this.show('setup');
+    await this.setup.openFolder(folder || this.workdir);
+    if (workflow) this.setup.selectWorkflow(workflow);
   }
 
   runCommand(step) {

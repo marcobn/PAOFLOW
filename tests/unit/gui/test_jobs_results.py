@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import time
 
@@ -136,3 +137,115 @@ def test_results_experiment_overlay(client, gui_root):
     status, figure, _ = client.post('/api/results/figure', payload)
     assert status == 200 and figure['figure']['data'][-1]['mode'] == 'markers'
     assert figure['metrics']['points'] == 3
+
+
+def _fake_qe(tmp_path, monkeypatch, name='pw.x'):
+    bin_dir = tmp_path / 'qe_bin'
+    bin_dir.mkdir(exist_ok=True)
+    program = bin_dir / name
+    program.write_text('#!/bin/sh\necho "Program PWSCF (stand-in) $@"\necho "JOB DONE."\n')
+    program.chmod(0o755)
+    monkeypatch.setenv('PATH', '%s:%s' % (bin_dir, os.environ['PATH']))
+    return program
+
+
+def test_qe_program_writes_its_output_file(client, gui_root, tmp_path, monkeypatch):
+    _fake_qe(tmp_path, monkeypatch)
+    (gui_root / 'Si' / 'Si2.scf.in').write_text('&control\n/\n')
+    step = {
+        'label': 'scf',
+        'argv': ['pw.x', '-in', 'Si2.scf.in', '-nk', '2'],
+        'cwd': 'Si',
+        'stdout': 'Si2.scf.out',
+    }
+    status, job, _ = client.post('/api/jobs/launch', {'step': step})
+    assert status == 200, job
+    log = _wait(client, job['id'])
+    assert log['status'] == 'finished' and 'JOB DONE.' in log['text']
+    output = (gui_root / 'Si' / 'Si2.scf.out').read_text()
+    assert output.startswith('Program PWSCF (stand-in) -in Si2.scf.in -nk 2')
+    assert job['log'] == 'Si/Si2.scf.out'
+
+
+@pytest.mark.parametrize(
+    'argv, stdout, message',
+    [
+        (['pw.x', '-in', 'missing.in'], None, 'not found'),
+        (['pw.x', '-in', 'Si2.scf.in', '-outdir', '/tmp'], None, 'unsupported QE option'),
+        (['pw.x', '-nk', 'x', '-in', 'Si2.scf.in'], None, 'integer'),
+        (['pw.x', '-nk', '2'], None, 'input file'),
+        (['pw.x', '-in', 'Si2.scf.in'], '../escape.out', 'output file'),
+    ],
+)
+def test_qe_arguments_are_checked(client, gui_root, tmp_path, monkeypatch, argv, stdout, message):
+    _fake_qe(tmp_path, monkeypatch)
+    (gui_root / 'Si' / 'Si2.scf.in').write_text('&control\n/\n')
+    step = {'argv': argv, 'cwd': 'Si', 'stdout': stdout}
+    status, body, _ = client.post('/api/jobs/launch', {'step': step})
+    assert status == 400 and message in body['error']
+
+
+def test_missing_qe_program_is_explained(make_client, gui_root, monkeypatch):
+    monkeypatch.setenv('PATH', '/usr/bin:/bin')
+    client = make_client(qe_search=False)  # never a real QE of the machine
+    (gui_root / 'Si' / 'Si2.scf.in').write_text('&control\n/\n')
+    status, body, _ = client.post(
+        '/api/jobs/launch', {'step': {'argv': ['ph.x', '-in', 'Si2.scf.in'], 'cwd': 'Si'}}
+    )
+    assert status == 400 and 'no Quantum ESPRESSO installation found' in body['error']
+    assert '--qe-bin' in body['error']
+
+
+def _qe_build(folder, version, mpi=True, programs=('pw.x',)):
+    """A stand-in QE build whose programs print their version and arguments."""
+    (folder / 'bin').mkdir(parents=True)
+    (folder / 'include').mkdir()
+    (folder / 'include' / 'qe_version.h').write_text("version_number = '%s'\n" % version)
+    (folder / 'make.inc').write_text('DFLAGS = -D__FFTW%s\n' % (' -D__MPI' if mpi else ''))
+    for name in programs:
+        program = folder / 'bin' / name
+        program.write_text(
+            '#!/bin/sh\necho "Program %s v.%s $@"\necho "JOB DONE."\n' % (name, version)
+        )
+        program.chmod(0o755)
+    return folder / 'bin'
+
+
+def test_runs_use_the_chosen_qe_build(make_client, gui_root, tmp_path, monkeypatch):
+    builds = tmp_path / 'Programs'
+    default = _qe_build(builds / 'qe-7.4.1', '7.4.1')
+    newer = _qe_build(builds / 'qe-7.5', '7.5')
+    serial = _qe_build(builds / 'qe-6.8', '6.8', mpi=False)
+    monkeypatch.setenv('PATH', '%s:/usr/bin:/bin' % default)
+    client = make_client(qe_search=False, max_ranks=4)
+    status, body, _ = client.get('/api/qe')
+    assert status == 200 and body['default'] == str(default)
+    assert [q['version'] for q in body['installations']] == ['7.5', '7.4.1', '6.8']
+    assert client.get('/api/session')[1]['features']['pw'] is True
+    (gui_root / 'Si' / 'Si2.scf.in').write_text('&control\n/\n')
+    step = {'argv': ['pw.x', '-in', 'Si2.scf.in'], 'cwd': 'Si', 'stdout': 'Si2.scf.out'}
+    for qe_bin, version in ((None, '7.4.1'), (str(newer), '7.5')):
+        status, job, _ = client.post('/api/jobs/launch', {'step': step, 'qe_bin': qe_bin})
+        assert status == 200, job
+        assert _wait(client, job['id'])['status'] == 'finished'
+        assert ('v.%s -in Si2.scf.in' % version) in (gui_root / 'Si' / 'Si2.scf.out').read_text()
+    # The chosen build goes first on the PATH of any run (scripts and drivers that call QE).
+    (gui_root / 'Si' / 'main.py').write_text(
+        "import os\nprint('PATH0', os.environ['PATH'].split(os.pathsep)[0])\n"
+    )
+    status, job, _ = client.post(
+        '/api/jobs/launch',
+        {'step': {'argv': ['python', 'main.py'], 'cwd': 'Si'}, 'qe_bin': str(newer)},
+    )
+    assert status == 200 and 'PATH0 %s' % newer in _wait(client, job['id'])['text']
+    errors = [
+        ({'step': step, 'qe_bin': str(tmp_path)}, 'not one of the Quantum ESPRESSO installations'),
+        ({'step': dict(step, mpi=True), 'ranks': 2, 'qe_bin': str(serial)}, 'serial build'),
+        (
+            {'step': dict(step, argv=['ph.x', '-in', 'Si2.scf.in']), 'qe_bin': str(newer)},
+            'ph.x is not in',
+        ),
+    ]
+    for payload, message in errors:
+        status, body, _ = client.post('/api/jobs/launch', payload)
+        assert status == 400 and message in body['error'], body

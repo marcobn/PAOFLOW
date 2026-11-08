@@ -154,6 +154,14 @@ def test_qe_input_preview_and_write(client, gui_root, monkeypatch):
     assert status == 200 and body['filename'] == 'Si2.scf.in' and body['status'] == 'new'
     status, body, _ = client.post('/api/gen/qe-input/write', payload)
     assert status == 200 and (gui_root / 'Si' / 'Si2.scf.in').read_text() == '&control\n/\n'
+    run, setup = body['plan']
+    assert (
+        run['argv'] == ['pw.x', '-in', 'Si2.scf.in']
+        and run['stdout'] == 'Si2.scf.out'
+        and run['mpi']
+    )
+    assert run['command'] == 'pw.x -in Si2.scf.in > Si2.scf.out'
+    assert setup['action'] == 'setup:run' and setup['manual'] and body['folder'] == 'Si'
 
 
 def test_band_path_preview_endpoint(client):
@@ -172,3 +180,28 @@ def test_band_path_preview_endpoint(client):
         {'workdir': 'Si', 'savedir': 'silicon.save', 'band_path': 'gG-X', 'points': [['gG', 'a']]},
     )
     assert 'error' in body
+
+
+def test_run_plan_of_an_input_on_disk(client, gui_root):
+    """An input written earlier (or by paoflow-gen-qe) gets the pw.x plan of a freshly written one."""
+    (gui_root / 'Si' / 'gaas.scf.in').write_text("&control\n  calculation = 'scf'\n/\n")
+    status, body, _ = client.post('/api/gen/qe-input/plan', {'path': 'Si/gaas.scf.in'})
+    assert status == 200 and body['folder'] == 'Si' and body['file'] == 'Si/gaas.scf.in'
+    run, setup = body['plan']
+    assert run['argv'] == ['pw.x', '-in', 'gaas.scf.in'] and run['stdout'] == 'gaas.scf.out'
+    assert setup['action'] == 'setup:run'
+    status, body, _ = client.post('/api/gen/qe-input/plan', {'path': 'Si/silicon.save'})
+    assert status == 404
+    (gui_root / 'Si' / 'notes.in').write_text('not a namelist\n')
+    status, body, _ = client.post('/api/gen/qe-input/plan', {'path': 'Si/notes.in'})
+    assert status == 400 and 'not a pw.x input' in body['error']
+    status, body, _ = client.post('/api/gen/qe-input/plan', {'path': '../outside.in'})
+    assert status == 403
+
+
+def test_session_asks_for_a_restart_after_a_code_change(client):
+    status, body, _ = client.get('/api/session')
+    assert status == 200 and body['restart_needed'] is False
+    client.app.started = 0.0  # every module is newer than the start of this server
+    status, body, _ = client.get('/api/session')
+    assert body['restart_needed'] is True

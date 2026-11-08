@@ -179,6 +179,12 @@ class RunStep:
         Not a single command (an instruction for the user).
     note : str, optional
         Remark shown with the step.
+    stdout : str, optional
+        File (in ``cwd``) that receives the standard output: the result of programs that print
+        it, such as ``pw.x > scf.out``.
+    action : str, optional
+        A step done in the GUI rather than by a command: ``'setup:<workflow>'`` opens that
+        workflow of the Setup tab on the folder.
     """
 
     label: str
@@ -189,6 +195,8 @@ class RunStep:
     interactive: bool = False
     manual: bool = False
     note: str = ''
+    stdout: str | None = None
+    action: str | None = None
 
     def command(self, ranks: int | None = None) -> str:
         """Shell text of the step (with ``mpirun -np N`` when ``ranks`` is given).
@@ -209,9 +217,66 @@ class RunStep:
             text = 'mpirun -np %d %s' % (ranks, text)
         if self.ranks_env and ranks:
             text = '%s=%d %s' % (self.ranks_env, ranks, text)
+        if self.stdout:
+            text = '%s > %s' % (text, shlex.quote(self.stdout))
         if self.cwd not in ('', '.'):
             text = '(cd %s && %s)' % (shlex.quote(self.cwd), text)
         return text
+
+    def to_json(self) -> dict:
+        """JSON-ready description (the browser's run plan).
+
+        Returns
+        -------
+        dict
+        """
+        return {
+            'label': self.label,
+            'argv': list(self.argv),
+            'command': self.command() if self.argv else '',
+            'cwd': self.cwd,
+            'mpi': self.mpi,
+            'ranks_env': self.ranks_env,
+            'interactive': self.interactive,
+            'manual': self.manual,
+            'note': self.note,
+            'stdout': self.stdout,
+            'action': self.action,
+        }
+
+
+def qe_input_plan(filename: str) -> list[RunStep]:
+    """What follows a QE input written from a database entry (``paoflow-gen-qe``).
+
+    Parameters
+    ----------
+    filename : str
+        The ``pw.x`` input (``<compound>.scf.in``).
+
+    Returns
+    -------
+    list of RunStep
+        The ``pw.x`` self-consistent run (output ``<compound>.scf.out``), then the PAOFLOW drivers
+        in the Setup tab.
+    """
+    stem = filename[:-3] if filename.endswith('.in') else filename
+    return [
+        RunStep(
+            'Self-consistent run (pw.x)',
+            ('pw.x', '-in', filename),
+            mpi=True,
+            stdout=stem + '.out',
+            note='pw.x must be on the PATH of paoflow-studio; the run writes <prefix>.save here',
+        ),
+        RunStep(
+            'PAOFLOW drivers for the new save',
+            (),
+            manual=True,
+            action='setup:run',
+            note='Setup tab, Property run (or ACBN0, phonons, SSCHA) on this folder, once the run '
+            'has finished',
+        ),
+    ]
 
 
 def run_plan(name: str, cfg: dict, files: list[GeneratedFile] | None = None) -> list[RunStep]:

@@ -32,6 +32,36 @@ if TYPE_CHECKING:
     from .server import GuiApp
 
 ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+#: Quantum ESPRESSO programs the GUI may start (from the installation chosen in the Runs tab, see
+#: :mod:`PAOFLOW.gui.qe_installations`; by default the one on the PATH of the server).
+QE_PROGRAMS = (
+    'pw.x',
+    'ph.x',
+    'projwfc.x',
+    'pp.x',
+    'q2r.x',
+    'matdyn.x',
+    'dos.x',
+    'bands.x',
+    'epw.x',
+    'hp.x',
+    'dynmat.x',
+)
+QE_INPUT_FLAGS = ('-in', '-inp', '-input', '-i')
+QE_PARALLEL_FLAGS = (
+    '-nk',
+    '-npool',
+    '-npools',
+    '-ni',
+    '-nimage',
+    '-nd',
+    '-ndiag',
+    '-nt',
+    '-ntg',
+    '-nb',
+    '-nbgrp',
+)
+OUTPUT_NAME = re.compile(r'^[\w.-]+$')
 SAFE_TOKEN = re.compile(r'^[\w.,:=+@%/-]+$')
 SHELL_SCRIPT = re.compile(r'^[\w./-]+\.sh$')
 THREAD_VARIABLES = (
@@ -95,17 +125,24 @@ def _python_executable() -> str:
     return sys.executable or shutil.which('python3') or 'python3'
 
 
-def build_command(app: 'GuiApp', step: dict, ranks: int) -> tuple[list[str], Path, dict[str, str]]:
+def build_command(
+    app: 'GuiApp', step: dict, ranks: int, qe_bin: str | None = None
+) -> tuple[list[str], Path, dict[str, str]]:
     """The argument list, folder and environment of a plan step (validated).
 
     Parameters
     ----------
     app : GuiApp
-        The application (root, rank cap).
+        The application (root, rank cap, Quantum ESPRESSO installations).
     step : dict
         ``argv``, ``cwd`` (relative to the root), ``mpi`` and ``ranks_env``.
     ranks : int
         Requested MPI ranks.
+    qe_bin : str, optional
+        ``bin`` folder of the Quantum ESPRESSO build to use (one of
+        :meth:`GuiApp.qe_installations`). A QE program runs from it, and it goes first on the PATH
+        of the run, so shell scripts and drivers that call QE use it too. QE programs use the
+        default build when it is not given.
 
     Returns
     -------
@@ -130,6 +167,7 @@ def build_command(app: 'GuiApp', step: dict, ranks: int) -> tuple[list[str], Pat
         if not SAFE_TOKEN.match(token):
             raise HttpError(400, 'unsupported argument %r' % token)
     program = argv[0]
+    qe = app.qe_installation(qe_bin) if qe_bin or program in QE_PROGRAMS else None
     if program == 'python':
         if len(argv) < 2 or not argv[1].endswith('.py'):
             raise HttpError(400, 'python runs a driver file')
@@ -146,9 +184,13 @@ def build_command(app: 'GuiApp', step: dict, ranks: int) -> tuple[list[str], Pat
         command = ['bash', argv[1]]
     elif program == 'paoflow-genbasis-ps':
         command = [_python_executable(), '-u', '-m', 'PAOFLOW.basis_gen.cli', *argv[1:]]
+    elif program in QE_PROGRAMS:
+        command = [_qe_executable(qe, program), *_qe_arguments(app, cwd, argv[1:])]
     else:
         raise HttpError(
-            400, 'the GUI runs python drivers, generated shell scripts and paoflow-genbasis-ps only'
+            400,
+            'the GUI runs python drivers, generated shell scripts, paoflow-genbasis-ps and the QE '
+            'programs (%s) only' % ', '.join(QE_PROGRAMS),
         )
     cap = app.max_ranks or _core_budget()
     try:
@@ -161,8 +203,15 @@ def build_command(app: 'GuiApp', step: dict, ranks: int) -> tuple[list[str], Pat
     for name in THREAD_VARIABLES:
         env[name] = '1'
     env['PYTHONUNBUFFERED'] = '1'
+    if qe is not None:
+        env['PATH'] = str(qe.bin) + os.pathsep + env.get('PATH', '')
+    if program in QE_PROGRAMS and qe.mpi is False and ranks > 1:
+        raise HttpError(
+            400, 'QE %s in %s is a serial build (no MPI): run it with 1 rank' % (qe.version, qe.bin)
+        )
     if step.get('mpi') and ranks > 1:
-        launcher = shutil.which('mpirun') or shutil.which('mpiexec')
+        own = qe.mpirun if qe is not None and program in QE_PROGRAMS else None
+        launcher = str(own) if own else shutil.which('mpirun') or shutil.which('mpiexec')
         if launcher is None:
             raise HttpError(400, 'mpirun is not on the PATH: run with 1 rank')
         command = [launcher, '-np', str(ranks), *command]
@@ -173,6 +222,47 @@ def build_command(app: 'GuiApp', step: dict, ranks: int) -> tuple[list[str], Pat
     if shutil.which('nice'):
         command = ['nice', '-n', '10', *command]
     return command, cwd, env
+
+
+def _qe_executable(qe, program: str) -> str:
+    """Absolute path of a QE program in the chosen installation."""
+    executable = qe.bin / program
+    if not (executable.is_file() and os.access(executable, os.X_OK)):
+        raise HttpError(
+            400,
+            '%s is not in %s (QE %s): choose another Quantum ESPRESSO installation in the Runs tab'
+            % (program, qe.bin, qe.version or 'version ?'),
+        )
+    return str(executable)
+
+
+def _qe_arguments(app: 'GuiApp', cwd: Path, arguments: list[str]) -> list[str]:
+    """Validated arguments of a QE program: one input file inside the folder and parallel flags."""
+    checked: list[str] = []
+    seen_input = False
+    index = 0
+    while index < len(arguments):
+        flag = arguments[index]
+        value = arguments[index + 1] if index + 1 < len(arguments) else None
+        if value is None:
+            raise HttpError(400, '%s needs a value' % flag)
+        if flag in QE_INPUT_FLAGS:
+            path = app.resolve(str(cwd / value))
+            if not path.is_file():
+                raise HttpError(400, '%s not found (write the input first)' % value)
+            seen_input = True
+        elif flag in QE_PARALLEL_FLAGS:
+            if not value.isdigit():
+                raise HttpError(400, '%s takes an integer' % flag)
+        else:
+            raise HttpError(
+                400, 'unsupported QE option %r (input file and parallel flags only)' % flag
+            )
+        checked += [flag, value]
+        index += 2
+    if not seen_input:
+        raise HttpError(400, 'a QE run needs its input file (-in <file>)')
+    return checked
 
 
 def _core_budget() -> int:
@@ -239,7 +329,7 @@ class JobManager:
         temporary.replace(self._records())
 
     # ------------------------------------------------------------------------ actions
-    def launch(self, step: dict, ranks: int = 1) -> Job:
+    def launch(self, step: dict, ranks: int = 1, qe_bin: str | None = None) -> Job:
         """Start a plan step.
 
         Parameters
@@ -248,6 +338,8 @@ class JobManager:
             Plan step (``label``, ``argv``, ``cwd``, ``mpi``, ``ranks_env``).
         ranks : int, optional
             MPI ranks.
+        qe_bin : str, optional
+            ``bin`` folder of the Quantum ESPRESSO build (see :func:`build_command`).
 
         Returns
         -------
@@ -256,13 +348,22 @@ class JobManager:
         self.app.require_writable()
         if step.get('interactive') or step.get('manual'):
             raise HttpError(400, 'this step needs a terminal or a manual action')
-        command, cwd, env = build_command(self.app, step, ranks)
+        command, cwd, env = build_command(self.app, step, ranks, qe_bin)
         identifier = time.strftime('%Y%m%d-%H%M%S-') + secrets.token_hex(2)
         self.folder.mkdir(parents=True, exist_ok=True)
-        log_path = self.folder / ('%s.log' % identifier)
+        output = step.get('stdout')
+        if output:
+            # The program's standard output is its result file (pw.x > scf.out): write it there,
+            # without a header, and follow it as the log.
+            if not OUTPUT_NAME.match(str(output)):
+                raise HttpError(400, 'invalid output file name %r' % output)
+            log_path = self.app.resolve(str(cwd / str(output)))
+        else:
+            log_path = self.folder / ('%s.log' % identifier)
         with open(log_path, 'wb') as log:
-            log.write(('$ %s\n# in %s\n\n' % (' '.join(command), cwd)).encode())
-            log.flush()
+            if not output:
+                log.write(('$ %s\n# in %s\n\n' % (' '.join(command), cwd)).encode())
+                log.flush()
             process = subprocess.Popen(
                 command,
                 cwd=str(cwd),
@@ -416,8 +517,23 @@ def register(app: 'GuiApp') -> None:
     @app.route('POST', '/api/jobs/launch')
     def launch(request: Request) -> Response:
         payload = request.json()
-        job = manager.launch(payload.get('step') or {}, payload.get('ranks', 1))
+        job = manager.launch(
+            payload.get('step') or {}, payload.get('ranks', 1), payload.get('qe_bin') or None
+        )
         return json_response(job.to_json())
+
+    @app.route('GET', '/api/qe')
+    def qe_installations(request: Request) -> Response:
+        from .qe_installations import default_installation
+
+        installations = app.qe_installations(rescan=bool(request.query.get('rescan')))
+        default = default_installation(installations)
+        return json_response(
+            {
+                'installations': [installation.to_json() for installation in installations],
+                'default': str(default.bin) if default is not None else None,
+            }
+        )
 
     @app.route('POST', '/api/jobs/cancel')
     def cancel(request: Request) -> Response:

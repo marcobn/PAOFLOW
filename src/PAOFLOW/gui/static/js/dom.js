@@ -100,6 +100,13 @@ export function dialog({ title, body, actions = [{ label: 'Close', value: null }
   });
 }
 
+// `relative` inside the root-relative `folder` ('.' is the root).
+export function joinPath(folder, relative) {
+  if (!relative || relative === '.') return folder || '.';
+  if (!folder || folder === '.') return relative;
+  return `${folder}/${relative}`;
+}
+
 export function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   const units = ['kB', 'MB', 'GB', 'TB'];

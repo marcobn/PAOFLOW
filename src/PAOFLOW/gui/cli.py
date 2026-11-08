@@ -5,6 +5,7 @@ Usage::
     paoflow-studio                         # serve the current folder, open the browser
     paoflow-studio --root ~/runs --port 8765 --no-browser
     paoflow-studio --root ~/runs --allow-read ~/pseudos   # read (never write) another folder
+    paoflow-studio --qe-bin ~/codes/qe-7.5/bin           # a QE build the search does not find
     paoflow-studio plot Si/output          # open the Results tab on a folder
     paoflow-studio report Si/output -o Si_report.html   # static HTML report, no server
 
@@ -21,6 +22,7 @@ import argparse
 import os
 import sys
 import webbrowser
+from pathlib import Path
 
 
 def _serve(args: argparse.Namespace, start: str | None, tab: str) -> int:
@@ -42,6 +44,12 @@ def _serve(args: argparse.Namespace, start: str | None, tab: str) -> int:
         if not os.path.isdir(os.path.expanduser(folder)):
             sys.stderr.write('paoflow-studio: --allow-read %s is not a folder\n' % folder)
             return 1
+    from .qe_installations import _bin_of
+
+    for folder in args.qe_bin or []:
+        if _bin_of(Path(os.path.expanduser(folder))) is None:
+            sys.stderr.write('paoflow-studio: --qe-bin %s has no pw.x (nor bin/pw.x)\n' % folder)
+            return 1
     app = GuiApp(
         root,
         token=args.token,
@@ -49,6 +57,7 @@ def _serve(args: argparse.Namespace, start: str | None, tab: str) -> int:
         max_ranks=args.max_ranks,
         start=start,
         read_roots=args.allow_read or (),
+        qe_bins=args.qe_bin or (),
     )
     server = None
     last_error = None
@@ -65,6 +74,7 @@ def _serve(args: argparse.Namespace, start: str | None, tab: str) -> int:
     print('PAOFLOW Studio serving %s%s' % (root, ' (read-only)' if args.read_only else ''))
     for folder in app.sandbox.read_roots:
         print('  read-only: %s' % folder)
+    print('  QE:     %s' % _qe_summary(app))
     print('  open:   %s' % url)
     print(
         '  remote: ssh -N -L %d:127.0.0.1:%d <this host>, then open the URL above'
@@ -84,6 +94,19 @@ def _serve(args: argparse.Namespace, start: str | None, tab: str) -> int:
         if jobs is not None:
             jobs.detach()
     return 0
+
+
+def _qe_summary(app) -> str:
+    from .qe_installations import default_installation
+
+    installations = app.qe_installations()
+    default = default_installation(installations)
+    if default is None:
+        return 'none found (put pw.x on the PATH, or --qe-bin DIR)'
+    text = '%s (default)' % default.label()
+    if len(installations) > 1:
+        text += '; %d more to choose from in the Runs tab' % (len(installations) - 1)
+    return text
 
 
 def _report(args: argparse.Namespace) -> int:
@@ -124,6 +147,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='DIR',
         help='also let the browser read DIR (pseudopotentials, results elsewhere); never written; '
         "repeatable. PAOFLOW's own PSEUDOS and BASIS folders are always readable",
+    )
+    parser.add_argument(
+        '--qe-bin',
+        action='append',
+        metavar='DIR',
+        help='a Quantum ESPRESSO build (its folder or bin/) to offer in the Runs tab; repeatable. '
+        'Builds on the PATH, next to it, in ~/Programs, ~/Local/Programs, /opt, /usr/local and '
+        'the conda environments are found by themselves',
     )
     parser.add_argument('--max-ranks', type=int, default=None, help='cap of the MPI ranks of a run')
     parser.add_argument('--token', default=None, help=argparse.SUPPRESS)

@@ -15,6 +15,7 @@ import mimetypes
 import os
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -195,6 +196,12 @@ class GuiApp:
         Extra folders the browser may read but never write (``--allow-read``).
     default_read_roots : bool, optional
         Add PAOFLOW's own ``PSEUDOS`` and ``BASIS`` folders when they exist (default).
+    qe_bins : sequence of str or Path, optional
+        Quantum ESPRESSO folders (an installation or its ``bin/``) added to the ones found on the
+        PATH, next to it and in the common places (``--qe-bin``).
+    qe_search : bool, optional
+        Look for Quantum ESPRESSO in the common places (default); the PATH, its siblings and
+        ``qe_bins`` are always searched.
     """
 
     def __init__(
@@ -206,6 +213,8 @@ class GuiApp:
         start: str | None = None,
         read_roots: Sequence[str | Path] = (),
         default_read_roots: bool = True,
+        qe_bins: Sequence[str | Path] = (),
+        qe_search: bool = True,
     ) -> None:
         folders = list(read_roots) + (paoflow_data_folders() if default_read_roots else [])
         self.sandbox = security.Sandbox(root, read_roots=folders)
@@ -214,7 +223,11 @@ class GuiApp:
         self.max_ranks = max_ranks
         self.start = start or '.'
         self.port = 0
+        self.started = time.time()
         self.lock = threading.Lock()
+        self.qe_bins = tuple(qe_bins)
+        self.qe_search = qe_search
+        self._qe_installations: list | None = None
         self._routes: dict[tuple[str, str], Route] = {}
         self._prefix_routes: list[tuple[str, str, Route]] = []
         self.services: dict[str, Any] = {}
@@ -249,6 +262,64 @@ class GuiApp:
             return function
 
         return register
+
+    # --------------------------------------------------------------------- Quantum ESPRESSO
+    def qe_installations(self, rescan: bool = False) -> list:
+        """The Quantum ESPRESSO builds runs may use (found once, newest first).
+
+        Parameters
+        ----------
+        rescan : bool, optional
+            Search again (a build installed after the start of the server).
+
+        Returns
+        -------
+        list of QeInstallation
+        """
+        from .qe_installations import discover_installations
+
+        with self.lock:
+            if self._qe_installations is None or rescan:
+                self._qe_installations = discover_installations(self.qe_bins, search=self.qe_search)
+            return list(self._qe_installations)
+
+    def qe_installation(self, bin_folder: str | None = None):
+        """The build of a run: the chosen ``bin`` folder (one of the list), else the default.
+
+        Parameters
+        ----------
+        bin_folder : str, optional
+            ``bin`` folder chosen in the GUI.
+
+        Returns
+        -------
+        QeInstallation
+
+        Raises
+        ------
+        HttpError
+            400 when nothing was found or the folder is not one of the list.
+        """
+        from .qe_installations import default_installation
+
+        installations = self.qe_installations()
+        if bin_folder:
+            for installation in installations:
+                if str(installation.bin) == str(bin_folder):
+                    return installation
+            raise HttpError(
+                400,
+                '%s is not one of the Quantum ESPRESSO installations found by paoflow-studio '
+                '(start it with --qe-bin to add one)' % bin_folder,
+            )
+        installation = default_installation(installations)
+        if installation is None:
+            raise HttpError(
+                400,
+                'no Quantum ESPRESSO installation found: put pw.x on the PATH of the shell that '
+                'starts paoflow-studio, or start it with --qe-bin DIR',
+            )
+        return installation
 
     def require_writable(self) -> None:
         """Refuse the request in a read-only session.
@@ -381,6 +452,36 @@ def paoflow_data_folders() -> list[Path]:
         package / 'BASIS',
     ]
     return [folder for folder in candidates if folder.is_dir()]
+
+
+#: Subpackages whose Python code the server runs; an edit of one needs a restart of the server.
+SERVER_PACKAGES = ('gui', 'gen', 'results', 'writers')
+
+
+def code_changed_since(started: float) -> bool:
+    """Whether the Python code the server runs changed on disk after ``started``.
+
+    An editable install (a source checkout) picks up edits of the static front end at once, but
+    the server keeps the Python it imported at start-up; the GUI then asks for a restart.
+
+    Parameters
+    ----------
+    started : float
+        Start time of the server (``time.time()``).
+
+    Returns
+    -------
+    bool
+    """
+    package = Path(__file__).resolve().parents[1]
+    for name in SERVER_PACKAGES:
+        for path in (package / name).rglob('*.py'):
+            try:
+                if path.stat().st_mtime > started:
+                    return True
+            except OSError:
+                continue
+    return False
 
 
 def plotly_bundle() -> Path | None:

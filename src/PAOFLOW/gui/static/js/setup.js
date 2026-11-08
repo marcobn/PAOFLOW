@@ -3,9 +3,20 @@
 import { api } from './api.js';
 import { pickFolder, relativeTo } from './browser.js';
 import { codeView, diffView } from './codeview.js';
-import { clear, copyText, debounce, dialog, h, storage, toast } from './dom.js';
+import {
+  clear,
+  copyText,
+  debounce,
+  dialog,
+  formatBytes,
+  h,
+  joinPath,
+  storage,
+  toast,
+} from './dom.js';
 import { FormView } from './form.js';
 import { renderFigure } from './plots.js';
+import { qePicker } from './qe.js';
 
 const STATUS_LABEL = { new: 'new', changed: 'changed', identical: 'unchanged' };
 
@@ -220,8 +231,10 @@ export class SetupView {
     clear(this.preview);
     this.resolved = null;
     this.selectedFile = null;
+    this.requestId += 1; // a resolve still in flight belongs to the previous form: drop it
     const info = this.workflows.find((w) => w.name === name);
     if (info.kind === 'tool') {
+      this.form = null; // tools have no form: a pending resolve then does nothing
       this.sectionCard.hidden = true;
       if (name === 'qe_input') this.renderQeInput(info);
       else this.renderBasis(info);
@@ -354,7 +367,7 @@ export class SetupView {
         box.append(
           field(
             'Always write the plot script',
-            h('span', { class: 'switch' }, plot, h('span')),
+            h('label', { class: 'switch' }, plot, h('span')),
             'paoflow-gen --plot',
           ),
         );
@@ -370,7 +383,7 @@ export class SetupView {
     try {
       resolved = await api.post('/api/gen/resolve', this.payload());
     } catch (error) {
-      toast(error.message, 'bad');
+      if (id === this.requestId) toast(error.message, 'bad');
       return;
     }
     if (id !== this.requestId) return;
@@ -667,10 +680,18 @@ export class SetupView {
     });
   }
 
-  showPlan(plan, folder) {
+  showPlan(plan, folder, workflow) {
+    if (!plan && workflow) {
+      return toast(
+        'The server sent no run plan: it is older than this page. Restart paoflow-studio.',
+        'warn',
+        8000,
+      );
+    }
     plan = plan || this.resolved?.plan;
     if (!plan) return toast('Complete the form first', 'warn');
     folder = folder || this.resolved.target;
+    workflow = workflow || this.workflow;
     const list = h('ol', { class: 'steps' });
     for (const step of plan) {
       list.append(
@@ -697,6 +718,7 @@ export class SetupView {
                   '⧉',
                 ),
               ),
+          step.action ? h('div', { class: 'small muted' }, 'done in the Setup tab') : null,
           step.note ? h('div', { class: 'small muted' }, step.note) : null,
         ),
       );
@@ -705,7 +727,7 @@ export class SetupView {
     if (this.app.runs && !this.session.read_only)
       actions.unshift({ label: 'Open in Runs', kind: 'primary', value: 'runs' });
     dialog({ title: `Next steps in ${folder}`, body: list, actions }).then((choice) => {
-      if (choice === 'runs') this.app.showRuns(folder, plan, this.workflow);
+      if (choice === 'runs') this.app.showRuns(folder, plan, workflow);
     });
   }
 
@@ -773,7 +795,7 @@ export class SetupView {
           save();
         },
       });
-      return h('span', { class: 'switch' }, node, h('span'));
+      return h('label', { class: 'switch' }, node, h('span'));
     };
     const field = (label, control, hint) =>
       h(
@@ -801,6 +823,48 @@ export class SetupView {
         save();
       },
     });
+    const inputs = h('div', { class: 'section' });
+    const listInputs = async () => {
+      let listing;
+      try {
+        listing = await api.get('/api/fs/list', { path: this.workdir });
+      } catch (_error) {
+        return;
+      }
+      const files = listing.entries.filter((entry) => (entry.tags || []).includes('pw-input'));
+      const rows = files.map((entry) =>
+        h(
+          'div',
+          { class: 'row input-row' },
+          h('code', { class: 'grow ellipsis' }, entry.name),
+          h('span', { class: 'faint small' }, formatBytes(entry.size)),
+          h(
+            'button',
+            {
+              class: 'btn small primary',
+              title: `pw.x -in ${entry.name}, in the Runs tab`,
+              onclick: () => this.runQeInput(joinPath(listing.path, entry.name)),
+            },
+            'Run pw.x…',
+          ),
+        ),
+      );
+      // Native append: no arrays, no nulls.
+      clear(inputs).append(
+        h('h3', {}, 'pw.x inputs in this folder'),
+        qePicker(this.session),
+        ...(rows.length
+          ? rows
+          : [
+              h(
+                'div',
+                { class: 'small muted' },
+                'None yet: fetch an entry below and write it; it then appears here with its run.',
+              ),
+            ]),
+      );
+    };
+    listInputs();
     this.center.append(
       h(
         'div',
@@ -812,6 +876,7 @@ export class SetupView {
           h('div', { class: 'muted' }, info.description),
         ),
       ),
+      inputs,
       h(
         'div',
         { class: 'section' },
@@ -852,7 +917,11 @@ export class SetupView {
         field('Smearing degauss (Ry)', input('degauss', '0.05')),
         field('Bands nbnd', input('nbnd', 'from the extended PAO basis')),
         field('Symmetry tolerance', input('symprec', '1e-4')),
-        field("assume_isolated = '2D'", check('assume_isolated_2d')),
+        field(
+          "assume_isolated = '2D'",
+          check('assume_isolated_2d'),
+          'written for 2D entries (C2DB slabs) only, never for 3D ones',
+        ),
       ),
     );
     const body = h(
@@ -917,7 +986,9 @@ export class SetupView {
           try {
             const result = await api.post('/api/gen/qe-input/write', { ...request(), overwrite });
             toast(`Wrote ${result.written}`, 'ok');
-            this.openFolder(this.workdir);
+            this.app.notifyWritten(result);
+            listInputs();
+            this.showPlan(result.plan, result.folder, 'qe_input');
           } catch (error) {
             toast(error.message, 'bad');
           }
@@ -925,11 +996,32 @@ export class SetupView {
       },
       'Write',
     );
+    if (!this.session.features.pw) {
+      const note = h(
+        'div',
+        { class: 'callout warn', style: { marginBottom: '12px' } },
+        'paoflow-studio found no Quantum ESPRESSO (pw.x on the PATH, next to it, in ~/Programs, ' +
+          '~/Local/Programs, /opt, /usr/local or a conda environment), so the Runs tab cannot ' +
+          'start the scf run. Load QE in the shell or add its folder with --qe-bin DIR, and start ' +
+          'paoflow-studio again; or run pw.x yourself.',
+      );
+      this.center.insertBefore(note, this.center.children[1] || null);
+    }
     this.preview.append(
       h('div', { class: 'preview-head' }, h('h3', {}, 'pw.x input')),
       body,
       h('div', { class: 'preview-foot' }, status, fetchButton, writeButton),
     );
+  }
+
+  // The run plan of a pw.x input on disk (path relative to the root), shown like a written one.
+  async runQeInput(path) {
+    try {
+      const result = await api.post('/api/gen/qe-input/plan', { path });
+      this.showPlan(result.plan, result.folder, 'qe_input');
+    } catch (error) {
+      toast(error.message, 'bad', 7000);
+    }
   }
 
   renderBasis(info) {
@@ -1055,7 +1147,7 @@ export class SetupView {
         field('Output folder', input('out', 'BASIS_PS')),
         field('Box radius (Bohr)', input('r_box', 'min(upf r_max, 10)')),
         field('Mesh points', input('n_points', '2000')),
-        field('Keep existing tables', h('span', { class: 'switch' }, noOverwrite, h('span'))),
+        field('Keep existing tables', h('label', { class: 'switch' }, noOverwrite, h('span'))),
       ),
     );
     const runButton = h(

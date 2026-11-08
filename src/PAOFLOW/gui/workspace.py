@@ -7,7 +7,15 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .server import HttpError, Request, Response, cpu_budget, environment_features, json_response
+from .server import (
+    HttpError,
+    Request,
+    Response,
+    code_changed_since,
+    cpu_budget,
+    environment_features,
+    json_response,
+)
 
 if TYPE_CHECKING:
     from .server import GuiApp
@@ -266,7 +274,9 @@ def register(app: 'GuiApp') -> None:
                 'read_only': app.read_only,
                 'version': version,
                 'max_ranks': app.max_ranks or cpu_budget(),
-                'features': environment_features(),
+                'features': {**environment_features(), 'pw': bool(app.qe_installations())},
+                'started': app.started,
+                'restart_needed': code_changed_since(app.started),
             }
         )
 

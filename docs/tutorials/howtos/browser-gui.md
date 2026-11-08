@@ -92,18 +92,49 @@ Other options:
    - *Python* shows a script that writes the same files without the GUI.
    - *Next steps* lists the commands of the workflow in order.
 
+**From a database entry to a QE run.** The *QE input from a database* tool writes `<compound>.scf.in`, then
+shows its plan: the `pw.x` self-consistent run, and the PAOFLOW drivers. *Open in Runs* → *Run* starts `pw.x`
+with the chosen number of MPI ranks and writes `<compound>.scf.out` next to the input. When it has finished,
+*Open Setup (Property run)* continues on the new `<prefix>.save`. `pw.x` must be on the PATH of the shell that
+started `paoflow-studio`; the tool warns when it is not.
+
+An input already on disk (written earlier, by hand or by `paoflow-gen-qe`) runs the same way: the tool lists the
+`pw.x` inputs of the working folder at its top, each with *Run pw.x…*, and the Runs tab loads the plan of any
+input file through *Run a pw.x input…*.
+
+**Choosing the Quantum ESPRESSO build.** The *Quantum ESPRESSO* menu, in the QE-input tool and in the Runs tab,
+lists every build found on the machine, with its version:
+
+- the `pw.x` on the PATH of the shell that started `paoflow-studio` (the default, marked *PATH*);
+- the installations next to it (`qe-7.5` beside `qe-7.4.1`);
+- `~/Programs`, `~/Local/Programs`, `~/software`, `~/opt`, `~/apps`, `/opt`, `/usr/local`, Homebrew and the
+  conda environments;
+- the folders given with `paoflow-studio --qe-bin DIR` (repeatable; the installation or its `bin/`).
+
+The version comes from the build (`include/qe_version.h`), the conda metadata or the folder name; *serial* marks
+a build without MPI, which runs on one rank. The choice is remembered for the root, and *↻* searches again. The
+chosen `bin/` runs the QE programs and goes first on the PATH of every run, so `run_qe.sh` and the drivers that
+call QE use the same build. The server runs only the builds of its list: no path typed in the browser is executed.
+
+A yellow banner, *PAOFLOW was updated after this server started*, means the Python code changed on disk after
+`paoflow-studio` started (a source checkout after a pull or an edit). The page is already the new one but the
+server is not: stop it with Ctrl-C and start it again.
+
 ## Runs
 
-The Runs tab shows the run plan of the last written workflow. *Run* starts a step:
+The Runs tab shows the run plan of the last written workflow, or of a `pw.x` input chosen with *Run a pw.x
+input…*. *Run* starts a step:
 
 - `python` drivers run under `mpirun -np N` when the step supports MPI.
+- QE programs (`pw.x`, `ph.x`, `projwfc.x`, ...) run under `mpirun -np N` with their input file and the parallel
+  flags of the plan; their output goes to the file the plan names (`scf.out`).
 - `run_qe.sh` gets its rank count through `NP`.
 
 Every run is niced, with one thread per rank. Runs continue when the GUI stops; a restarted GUI shows them again.
 The log updates live, *Cancel* stops the process group, and *Results* opens the outputs.
 
-Only the steps of a generated plan can run: Python drivers and shell scripts inside the root, and
-`paoflow-genbasis-ps`. There is no free command line. Steps that need a terminal or a display (the `plot*.py`
+Only the steps of a generated plan can run: Python drivers and shell scripts inside the root,
+`paoflow-genbasis-ps`, and the QE programs with an input file inside the root. There is no free command line. Steps that need a terminal or a display (the `plot*.py`
 scripts) are listed but not run; the Results tab replaces them.
 
 ## Results
@@ -171,3 +202,9 @@ paoflow-studio report Si/output -o Si_report.html
 At the end of every run, PAOFLOW writes `paoflow_outputs.json` in the output folder. It records the PAOFLOW
 version, the DFT Fermi energy (output energies are relative to it), the spin and basis facts, and the files the run
 wrote, each with its kind. The Results tab shows it as *Run information*.
+
+## The guide inside the Studio
+
+*Help* in the header (or the `?` key) opens the guide of PAOFLOW Studio, with a search box: getting started,
+folders and permissions, every Setup step and tool, Runs, Results, remote use, the command line, and
+troubleshooting. It opens by itself on the first visit.

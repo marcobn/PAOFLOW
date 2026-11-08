@@ -7,7 +7,15 @@ import os
 import pytest
 
 from PAOFLOW.gen import paoflow_driver as pd
-from PAOFLOW.gen.band_paths import check_band_path, default_band_path, path_figure, path_labels
+import numpy as np
+
+from PAOFLOW.gen.band_paths import (
+    camera_eye,
+    check_band_path,
+    default_band_path,
+    path_figure,
+    path_labels,
+)
 from PAOFLOW.gen.questions import WORKFLOWS
 from PAOFLOW.gen.questions.model import Context
 from PAOFLOW.gen.questions.resolve import resolve_form
@@ -41,6 +49,27 @@ def test_preview_geometry():
     labels = result['figure']['data'][2]['text']
     assert labels[0] == 'Γ' and 'X' in labels
     assert 'error' in path_figure(SI, 'silicon.save', 'gG-Q', points)
+
+
+def test_camera_keeps_the_points_apart():
+    """fcc seen along about [111] (the old fixed camera) put Γ under L; the chosen view does not."""
+    path, points = default_band_path(SI, 'silicon.save', 2, False)
+    figure = path_figure(SI, 'silicon.save', path, points)['figure']
+    trace = figure['data'][2]
+    xyz = np.array([trace['x'], trace['y'], trace['z']]).T
+
+    def smallest_gap(eye):
+        direction = np.array([eye['x'], eye['y'], eye['z']])
+        direction /= np.linalg.norm(direction)
+        projected = xyz - np.outer(xyz @ direction, direction)
+        i, j = np.triu_indices(len(xyz), 1)
+        return np.linalg.norm(projected[i] - projected[j], axis=1).min()
+
+    chosen = figure['layout']['scene']['camera']['eye']
+    span = np.ptp(xyz, axis=0).max()
+    assert smallest_gap(chosen) > 0.15 * span
+    assert smallest_gap(chosen) > 1.5 * smallest_gap({'x': 1.05, 'y': 1.05, 'z': 0.7})
+    assert camera_eye(xyz[:1]) == camera_eye(np.zeros((0, 3)))  # one point: the default view
 
 
 def test_custom_path_reaches_main_py():

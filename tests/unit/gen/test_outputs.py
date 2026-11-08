@@ -99,3 +99,13 @@ def test_system_folder_files_match_what_is_written(tmp_path):
     for generated in files:
         assert (tmp_path / 'sys' / generated.path).read_text() == generated.content()
     assert (tmp_path / 'sys' / 'cache').is_dir() and (tmp_path / 'sys' / 'figures').is_dir()
+
+
+def test_qe_input_plan_and_step_json():
+    from PAOFLOW.gen.outputs import RunStep, qe_input_plan
+
+    run, setup = qe_input_plan('TaC.scf.in')
+    assert run.command(4) == 'mpirun -np 4 pw.x -in TaC.scf.in > TaC.scf.out'
+    assert setup.to_json()['action'] == 'setup:run' and setup.to_json()['command'] == ''
+    step = RunStep('basis', ('paoflow-genbasis-ps', '--out', 'B'), cwd='qe')
+    assert step.to_json()['command'] == '(cd qe && paoflow-genbasis-ps --out B)'

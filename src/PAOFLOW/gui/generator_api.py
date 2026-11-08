@@ -227,20 +227,7 @@ def resolve_payload(app: 'GuiApp', payload: dict, with_text: bool = True) -> dic
         result['errors']['_build'] = 'the script builder failed: %s: %s' % (type(exc).__name__, exc)
         return result
     result['files'] = describe_files(app, folder, files, with_text=with_text)
-    result['plan'] = [
-        {
-            'label': step.label,
-            'argv': list(step.argv),
-            'command': step.command(),
-            'cwd': step.cwd,
-            'mpi': step.mpi,
-            'ranks_env': step.ranks_env,
-            'interactive': step.interactive,
-            'manual': step.manual,
-            'note': step.note,
-        }
-        for step in run_plan(workflow.name, form.config, files)
-    ]
+    result['plan'] = [step.to_json() for step in run_plan(workflow.name, form.config, files)]
     result['python'] = python_equivalent(workflow.name, form.config, options)
     result['_files'] = files
     result['_folder'] = folder
@@ -418,7 +405,8 @@ def qe_input_write(app: 'GuiApp', payload: dict) -> dict:
     Returns
     -------
     dict
-        ``written`` (relative path).
+        ``written`` (relative path), ``folder`` and ``plan`` (the ``pw.x`` run, then the PAOFLOW
+        drivers in the Setup tab).
     """
     app.require_writable()
     preview = qe_input_preview(app, payload)
@@ -427,7 +415,44 @@ def qe_input_write(app: 'GuiApp', payload: dict) -> dict:
     if preview['status'] == 'changed' and not payload.get('overwrite'):
         raise HttpError(409, 'the file exists', {'conflicts': [preview['filename']]})
     destination.write_text(preview['text'], encoding='utf-8')
-    return {'written': app.sandbox.relative(destination)}
+    from ..gen.outputs import qe_input_plan
+
+    return {
+        'written': app.sandbox.relative(destination),
+        'folder': app.sandbox.relative(workdir),
+        'plan': [step.to_json() for step in qe_input_plan(preview['filename'])],
+    }
+
+
+def qe_input_run_plan(app: 'GuiApp', payload: dict) -> dict:
+    """Run plan of a ``pw.x`` input already on disk (written earlier, by hand or by the CLI).
+
+    Parameters
+    ----------
+    app : GuiApp
+        The application.
+    payload : dict
+        ``path``: the input file, relative to the root (runs happen inside the root only).
+
+    Returns
+    -------
+    dict
+        ``file`` and ``folder`` (relative to the root) and ``plan`` (the ``pw.x`` run, then the
+        PAOFLOW drivers in the Setup tab).
+    """
+    from ..gen.outputs import qe_input_plan
+    from .workspace import _is_pw_input
+
+    path = app.resolve(str(payload.get('path') or ''))
+    if not path.is_file():
+        raise HttpError(404, '%s is not a file' % app.sandbox.relative(path))
+    if not _is_pw_input(path):
+        raise HttpError(400, '%s is not a pw.x input (no &control namelist)' % path.name)
+    return {
+        'file': app.sandbox.relative(path),
+        'folder': app.sandbox.relative(path.parent),
+        'plan': [step.to_json() for step in qe_input_plan(path.name)],
+    }
 
 
 def basis_command(app: 'GuiApp', payload: dict) -> dict:
@@ -516,6 +541,10 @@ def register(app: 'GuiApp') -> None:
     @app.route('POST', '/api/gen/qe-input/write')
     def qe_write(request: Request) -> Response:
         return json_response(qe_input_write(app, request.json()))
+
+    @app.route('POST', '/api/gen/qe-input/plan')
+    def qe_plan(request: Request) -> Response:
+        return json_response(qe_input_run_plan(app, request.json()))
 
     @app.route('POST', '/api/gen/bandpath')
     def band_path(request: Request) -> Response:

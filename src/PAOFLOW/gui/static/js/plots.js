@@ -66,7 +66,7 @@ export function resolveRoles(spec, mode = theme()) {
   Object.assign(layout, {
     paper_bgcolor: table.surface,
     plot_bgcolor: table.surface,
-    font: { family: getComputedStyle(document.body).fontFamily, color: table.text, size: 12 },
+    font: { family: getComputedStyle(document.body).fontFamily, color: table.text, size: 13 },
     hoverlabel: { bgcolor: table.surface, bordercolor: table.axis, font: { color: table.text } },
   });
   if (layout.title) layout.title.font = { ...(layout.title.font || {}), color: table.text };
@@ -92,6 +92,26 @@ export function roleColor(value) {
   return resolveRoles({ data: [{ line: { color: value } }], layout: {} }).data[0].line.color;
 }
 
+// Plotly takes the size of the container when it draws. A container hidden at that moment (the
+// Setup tab drawn while the Runs tab shows, a collapsed section) gives a figure of the default
+// 700 x 300 px or of no size at all, shifted or blank once shown. Follow the container instead.
+const followed = new WeakMap();
+
+function followSize(node, Plotly) {
+  if (followed.has(node) || typeof ResizeObserver === 'undefined') return;
+  let last = `${node.clientWidth}x${node.clientHeight}`;
+  const observer = new ResizeObserver(() => {
+    const size = `${node.clientWidth}x${node.clientHeight}`;
+    if (!node.clientWidth || !node.clientHeight || size === last || !node.dataset.rendered) return;
+    last = size;
+    requestAnimationFrame(() => {
+      if (node.dataset.rendered) Plotly.Plots.resize(node);
+    });
+  });
+  observer.observe(node);
+  followed.set(node, observer);
+}
+
 export async function renderFigure(node, spec, filename = 'paoflow', { keepTitle = false } = {}) {
   const Plotly = await loadPlotly();
   await loadPalette();
@@ -109,11 +129,14 @@ export async function renderFigure(node, spec, filename = 'paoflow', { keepTitle
   };
   await Plotly.react(node, resolved.data, resolved.layout, config);
   node.dataset.rendered = 'true';
+  followSize(node, Plotly);
 }
 
 export function purge(node) {
   if (window.Plotly && node.dataset.rendered) window.Plotly.purge(node);
   delete node.dataset.rendered;
+  followed.get(node)?.disconnect();
+  followed.delete(node);
 }
 
 // Table view twin of a line figure: x and y of every trace (bands: the first 500 points).
