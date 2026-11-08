@@ -14,7 +14,7 @@ import {
   storage,
   toast,
 } from './dom.js';
-import { purge, renderFigure, roleColor, tableView } from './plots.js';
+import { loadPalette, purge, renderFigure, roleColor, tableView } from './plots.js';
 
 const LIVE_INTERVAL = 5000;
 
@@ -55,6 +55,8 @@ export class ResultsView {
     this.datasets = [];
     this.current = null;
     this.optionsById = {};
+    this.overlays = {}; // open dataset id -> [{id, slot}]: properties drawn on its x axis
+    this.overlaySeries = {}; // open dataset id -> series names of the overlay (components)
     this.compare = [];
     this.experiment = null;
     this.live = false;
@@ -287,14 +289,34 @@ export class ResultsView {
         h('div', { class: 'empty' }, h('span', { class: 'spinner' }), ' loading…'),
       );
     else this.center.style.opacity = '0.6';
+    const overlay = this.overlays[id] || [];
     try {
-      result = await api.post('/api/results/figure', {
-        path: this.folder,
-        id,
-        options,
-        experiment: this.experiment && this.experiment.id === id ? this.experiment : null,
-      });
+      result = overlay.length
+        ? await api.post('/api/results/overlay', {
+            path: this.folder,
+            id,
+            options,
+            items: overlay.map((item) => ({
+              id: item.id,
+              slot: item.slot,
+              options: this.optionsById[item.id] || {},
+            })),
+            series: this.overlaySeries[id] || null,
+          })
+        : await api.post('/api/results/figure', {
+            path: this.folder,
+            id,
+            options,
+            experiment: this.experiment && this.experiment.id === id ? this.experiment : null,
+          });
     } catch (error) {
+      if (overlay.length) {
+        // The overlay cannot be drawn (a dataset changed or went away): show the dataset alone.
+        toast(error.message, 'bad', 7000);
+        delete this.overlays[id];
+        this.center.style.opacity = '';
+        return this.showDataset(id, resetView);
+      }
       this.center.style.opacity = '';
       clear(this.center).append(
         h('div', { style: { padding: '16px' } }, h('div', { class: 'callout bad' }, error.message)),
@@ -497,8 +519,10 @@ export class ResultsView {
     window.Plotly.relayout(this.plot, { shapes });
   }
 
+  // Theme change: the figure and the colour swatches of the cards take the new theme's colours.
   redraw() {
     if (this.plot && this.result?.figure) renderFigure(this.plot, this.result.figure);
+    if (this.result?.ref) this.renderRight(this.result);
   }
 
   setOption(name, value) {
@@ -515,6 +539,8 @@ export class ResultsView {
       for (const [name, option] of options) card.append(this.optionControl(name, option));
       this.right.append(card);
     }
+    const overlayCard = this.overlayCard(result);
+    if (overlayCard) this.right.append(overlayCard);
     const ref = result.ref;
     const exportCard = h('div', { class: 'card' }, h('h3', {}, 'Export'));
     const exports = h('div', { class: 'row wrap' });
@@ -563,13 +589,138 @@ export class ResultsView {
       h(
         'div',
         { class: 'small muted', style: { marginTop: '6px' } },
-        'The camera icon of the figure saves what is on screen.',
+        result.overlay
+          ? `The buttons export ${result.ref.title} alone; the camera icon of the figure saves the overlay.`
+          : 'The camera icon of the figure saves what is on screen.',
       ),
     );
     this.right.append(exportCard);
     this.right.append(this.compareCard(result));
-    if (result.figure && result.family !== 'volume' && result.family !== 'map')
+    if (result.figure && !result.overlay && result.family !== 'volume' && result.family !== 'map')
       this.right.append(this.experimentCard(result));
+  }
+
+  // Other properties of the folder on the x axis of the open one (Re and Im ε, n and k, ...): one
+  // figure, a panel per unit (never a second y axis), the colour per property, the line style per
+  // series (component).
+  overlayCard(result) {
+    const base = this.datasets.find((d) => d.id === result.ref.id);
+    if (!base?.overlayable) return null;
+    const candidates = this.datasets.filter(
+      (d) => d.id !== base.id && d.overlayable && d.x === base.x,
+    );
+    if (!candidates.length) return null;
+    const chosen = this.overlays[base.id] || [];
+    const card = h(
+      'div',
+      { class: 'card' },
+      h('h3', {}, 'Overlay properties'),
+      h(
+        'div',
+        { class: 'small muted', style: { marginBottom: '6px' } },
+        `Other datasets against ${base.x}. One unit shares a panel; another unit gets its own panel below.`,
+      ),
+    );
+    // The colour of a slot in the current theme, once the palette is loaded.
+    const swatch = (slot) => {
+      const dot = h('span', { class: 'dot-swatch' });
+      loadPalette().then(() => {
+        dot.style.background = roleColor(`series-${slot}`);
+      });
+      return dot;
+    };
+    const list = h(
+      'div',
+      { class: 'option-list overlay-list' },
+      h('label', { class: 'row small muted' }, swatch(1), h('span', {}, `${base.title} (open)`)),
+    );
+    for (const candidate of candidates) {
+      const entry = chosen.find((item) => item.id === candidate.id);
+      const box = h('input', { type: 'checkbox', checked: Boolean(entry) });
+      box.addEventListener('change', () => this.toggleOverlay(base.id, candidate.id, box));
+      const where = candidate.folder && candidate.folder !== '.' ? ` · ${candidate.folder}` : '';
+      list.append(
+        h(
+          'label',
+          { class: 'row small' },
+          box,
+          entry ? swatch(entry.slot) : null,
+          h(
+            'span',
+            { class: 'grow ellipsis', title: candidate.files.join(', ') },
+            candidate.title + where,
+          ),
+        ),
+      );
+    }
+    card.append(list);
+    if (result.overlay && result.overlay.series.length > 1) {
+      const shown = new Set(result.overlay.shown);
+      const names = result.overlay.series;
+      const boxes = names.map((name) => h('input', { type: 'checkbox', checked: shown.has(name) }));
+      for (const box of boxes) {
+        box.addEventListener('change', () => {
+          const values = names.filter((_name, i) => boxes[i].checked);
+          if (!values.length) {
+            box.checked = true;
+            toast('Keep at least one series', 'warn');
+            return;
+          }
+          this.overlaySeries[base.id] = values;
+          this.refreshFigure();
+        });
+      }
+      card.append(
+        h(
+          'div',
+          { class: 'option' },
+          h('div', { class: 'small muted' }, 'Series (line style)'),
+          h(
+            'div',
+            { class: 'option-list' },
+            boxes.map((box, i) => h('label', { class: 'row small' }, box, names[i])),
+          ),
+        ),
+      );
+    }
+    if (chosen.length) {
+      card.append(
+        h(
+          'button',
+          {
+            class: 'btn small',
+            style: { marginTop: '6px' },
+            onclick: () => {
+              delete this.overlays[base.id];
+              this.refreshFigure();
+            },
+          },
+          'Clear the overlay',
+        ),
+      );
+    }
+    return card;
+  }
+
+  // A colour slot stays with its property while others come and go (colour follows the entity).
+  toggleOverlay(baseId, id, box) {
+    const list = this.overlays[baseId] || [];
+    if (box.checked) {
+      if (list.length >= 3) {
+        box.checked = false;
+        toast('At most 3 properties on top of the open one', 'warn');
+        return;
+      }
+      const used = new Set(list.map((item) => item.slot));
+      let slot = 2;
+      while (used.has(slot)) slot += 1;
+      list.push({ id, slot });
+    } else {
+      const index = list.findIndex((item) => item.id === id);
+      if (index >= 0) list.splice(index, 1);
+    }
+    this.overlays[baseId] = list;
+    this.refreshFigure();
   }
 
   optionControl(name, option) {

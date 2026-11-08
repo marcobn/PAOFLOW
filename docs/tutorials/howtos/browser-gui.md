@@ -169,6 +169,11 @@ The tensor components, spin channels or temperatures of one quantity are the ser
   momentum distribution curves (EDC and MDC) through it.
 - **Fermi surfaces** are drawn in 3D in the browser, coloured by |v_F|, inside the Wigner–Seitz zone. This needs
   scikit-image. Berry-curvature grids are shown as plane slices.
+- **Overlay properties.** With a curve open, tick other datasets of the folder that share its x axis: Re ε with
+  Im ε, n with k, DOS with PDOS, σ/τ with S. Properties of one unit share a panel; another unit gets its own panel
+  below on the same x axis, never a second y axis. The colour marks the property, and the line style marks the
+  series. *Series* picks the tensor components (`xx` by default); a property without the chosen series shows its
+  first one. Up to three properties go on top of the open one.
 - **Compare runs.** Overlay the same kind of dataset from several folders, for example SOC against no SOC, or two
   basis presets.
 - **Experiment overlay.** Add measured points from a column or CSV file. The GUI reports the RMS, bias and relative

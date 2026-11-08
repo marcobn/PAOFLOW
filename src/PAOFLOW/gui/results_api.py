@@ -47,6 +47,17 @@ def _dataset(app: 'GuiApp', payload: dict):
     return folder, ref, dataset
 
 
+def _overlay_facts(ref) -> dict:
+    """``x`` (the x-axis title of the kind) and ``overlayable`` of a dataset, for the overlay card."""
+    from ..results.catalogue import KINDS
+    from ..results.figures import OVERLAY_FAMILIES
+    from ..results.model import axis_title
+
+    kind = next((k for k in KINDS if k.name == ref.kind), None)
+    x = axis_title(*kind.x) if kind is not None and kind.x and kind.x[0] else None
+    return {'x': x, 'overlayable': bool(x) and ref.family in OVERLAY_FAMILIES}
+
+
 def _experiment(app: 'GuiApp', dataset, spec: dict | None) -> dict | None:
     """Overlay an experimental curve and compare the first computed series with it."""
     from ..results.columns import read_columns
@@ -127,7 +138,11 @@ def figure_payload(app: 'GuiApp', payload: dict) -> dict:
     folder, ref, dataset = _dataset(app, payload)
     dataset._experiment = payload.get('experiment')  # type: ignore[attr-defined]
     metrics = _experiment(app, dataset, None)
-    spec = figure_spec(dataset)
+    return _describe(app, folder, ref, dataset, figure_spec(dataset), metrics)
+
+
+def _describe(app: 'GuiApp', folder: str, ref, dataset, spec: dict | None, metrics=None) -> dict:
+    """The reply of a figure: the figure with the options, results and notes of the dataset."""
     return {
         'ref': ref.to_json(),
         'title': dataset.title,
@@ -142,6 +157,65 @@ def figure_payload(app: 'GuiApp', payload: dict) -> dict:
         'metrics': metrics,
         'folder': app.sandbox.relative(folder),
     }
+
+
+def overlay_payload(app: 'GuiApp', payload: dict) -> dict:
+    """The open dataset with other properties of the folder on its x axis (one figure).
+
+    Parameters
+    ----------
+    app : GuiApp
+        The application.
+    payload : dict
+        ``path`` (folder), ``id`` and ``options`` of the open dataset, ``items`` (``id``,
+        ``options``, ``slot``: the colour slot) of the added properties, and ``series`` (the
+        series names to draw, e.g. ``['xx']``).
+
+    Returns
+    -------
+    dict
+        :func:`figure_payload` of the open dataset with the overlay figure and ``overlay``
+        (``series``: the names to choose from, ``shown``).
+    """
+    from ..results.figures import OVERLAY_FAMILIES, overlay_figure
+
+    items = payload.get('items') or []
+    if not items:
+        raise HttpError(400, 'add a property to overlay')
+    if len(items) > 3:
+        raise HttpError(400, 'at most 3 properties on top of the open one')
+    base_item = {k: payload.get(k) for k in ('path', 'id', 'options')}
+    folder, ref, base = _dataset(app, base_item)
+    loaded = [base]
+    loaded += [_dataset(app, {'path': payload.get('path'), **item})[2] for item in items]
+    for dataset in loaded:
+        if (
+            dataset.ref.family not in OVERLAY_FAMILIES
+            or not dataset.series
+            or dataset.surface is not None
+            or dataset.mesh is not None
+        ):
+            raise HttpError(400, '%s is not a set of curves: it cannot be overlaid' % dataset.title)
+        if dataset.x_label != loaded[0].x_label:
+            raise HttpError(
+                400,
+                '%s is plotted against %s, %s against %s: overlays need one x axis'
+                % (
+                    dataset.title,
+                    dataset.x_label or '?',
+                    loaded[0].title,
+                    loaded[0].x_label or '?',
+                ),
+            )
+    slots = [1] + [int(item.get('slot') or index + 2) for index, item in enumerate(items)]
+    figure, names, shown = overlay_figure(loaded, payload.get('series') or None, slots)
+    result = _describe(app, folder, ref, base, figure)
+    result['title'] = figure['layout']['title']['text']
+    result['overlay'] = {'series': names, 'shown': shown}
+    result['notes'] = [note for dataset in loaded for note in dataset.notes]
+    if any(d.ticks != loaded[0].ticks for d in loaded):
+        result['notes'].append('Different k paths: the ticks of %s are shown.' % loaded[0].title)
+    return result
 
 
 def compare_payload(app: 'GuiApp', payload: dict) -> dict:
@@ -229,13 +303,17 @@ def register(app: 'GuiApp') -> None:
                 'folder': app.sandbox.relative(folder),
                 'absolute': folder,
                 'categories': list(CATEGORY_ORDER),
-                'datasets': [ref.to_json() for ref in references],
+                'datasets': [dict(ref.to_json(), **_overlay_facts(ref)) for ref in references],
             }
         )
 
     @app.route('POST', '/api/results/figure')
     def figure(request: Request) -> Response:
         return json_response(figure_payload(app, request.json()))
+
+    @app.route('POST', '/api/results/overlay')
+    def overlay(request: Request) -> Response:
+        return json_response(overlay_payload(app, request.json()))
 
     @app.route('POST', '/api/results/compare')
     def compare(request: Request) -> Response:

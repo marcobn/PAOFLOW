@@ -286,3 +286,25 @@ def test_qe_facts_for_the_options_field(make_client):
     body = make_client(qe_search=False).get('/api/qe')[1]
     groups = {group['name']: group['flags'] for group in body['parallel_groups']}
     assert groups['pools'] == ['-nk', '-npool', '-npools'] and 'pw.x' in body['programs']
+
+
+def test_overlay_endpoint(client, gui_root):
+    shutil.copytree(EXAMPLE / 'Reference', gui_root / 'Si' / 'output')
+    status, scan, _ = client.post('/api/results/scan', {'path': 'Si'})
+    by = {d['title']: d for d in scan['datasets']}
+    assert by['Density of states']['x'] == 'Energy (eV)' and by['Density of states']['overlayable']
+    payload = {
+        'path': 'Si',
+        'id': by['Density of states']['id'],
+        'items': [{'id': by['Projected density of states']['id'], 'slot': 3}],
+    }
+    status, body, _ = client.post('/api/results/overlay', payload)
+    assert status == 200 and body['title'].startswith('DOS') and body['overlay']['shown']
+    assert body['figure']['data'][-1]['line']['color'] == 'series-3'
+    assert body['ref']['id'] == payload['id'] and body['options'] is not None
+    payload['items'] = [{'id': by['Band structure']['id']}]
+    status, body, _ = client.post('/api/results/overlay', payload)
+    assert status == 400 and 'one x axis' in body['error']
+    payload['items'] = [{'id': d['id']} for d in scan['datasets'] if d['kind'] == 'boltzmann']
+    status, body, _ = client.post('/api/results/overlay', payload)
+    assert status == 400 and 'at most 3' in body['error']

@@ -886,3 +886,28 @@ additional runtime options (-nk X etc)").**
 - Long commands wrap in the plan instead of scrolling.
 - Tests: the layout rules (10 cases, including valid ones that run), the `/api/qe` facts, and a browser
   test (`-nk 3` on 2 ranks disables *Run*; `-nk 2` reaches `pw.x` and is remembered).
+
+**Overlay of properties (8 November 2026, user request: "overlay different properties in the same plot, like Re
+and Im parts").**
+
+- `results/figures.overlay_figure(datasets, series, slots)` draws one panel per y unit (the unit read from the
+  axis title by `axis_unit`). The panels are stacked and share the x axis, which is anchored to the bottom
+  panel; there is never a second y axis on one panel (the chart rules). Colour is the property, in the
+  categorical role of its slot; line style is the series (`OVERLAY_DASHES`).
+- The default series is the first name every property shares (`xx` for the optics). A property with none of
+  the chosen series still appears, with its first series: without this, DOS with PDOS drew the DOS alone.
+- `POST /api/results/overlay` loads the open dataset and up to 3 more and refuses:
+  - families that do not draw as curves (`OVERLAY_FAMILIES`);
+  - another x axis ("… is plotted against …: overlays need one x axis").
+
+  It answers like `/api/results/figure` (shared `_describe`), plus `overlay` (`series`, `shown`). The scan
+  gives every dataset its `x` axis title (from the catalogue kind) and `overlayable`, so the card lists only
+  datasets with the same x axis.
+- Front end: an *Overlay properties* card under the options. A colour slot stays with its property while
+  others come and go (colour follows the entity). The swatches are coloured with `roleColor` once the palette
+  has loaded: before that, `roleColor` threw, which blanked the right pane. Also: a *Series* picker, *Clear
+  the overlay*, and the experiment overlay hidden while overlaying. The exports note that the buttons export
+  the open dataset alone.
+- Tests: `test_overlay_figure_panels_per_unit` (one panel for one unit, stacked panels for two, colour by
+  slot, dashes by series, DOS with PDOS); `test_overlay_endpoint` (scan facts, colours, x-axis and count
+  refusals); browser `test_overlay_properties` (S with σ/τ: two panels, then *Clear the overlay*).

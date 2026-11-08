@@ -148,6 +148,7 @@ const SECTIONS = [
     title: 'Results: compare, experiment, export',
     body: [
       [
+        '**Overlay properties**: with a curve open, tick other datasets of the folder that share its x axis (Re ε with Im ε, n with k, DOS with PDOS, σ/τ with S). Properties of one unit share a panel; another unit gets its own panel below, on the same x axis (never a second y axis). The colour is the property (it keeps its colour while others come and go), the line style the series: *Series* picks the tensor components, `xx` by default. Up to three on top of the open one; *Clear the overlay* goes back.',
         '**Compare runs**: open a dataset, *+ this dataset*, open the same kind of dataset in another folder, *+ this dataset* again, then *Overlay* (up to eight; each run keeps its colour).',
         '**Experiment overlay**: *File…* picks a measured curve (columns or CSV), choose its x and y columns and a scale, *Overlay*. The GUI reports the RMS, the bias and the relative RMS against the computed curve.',
         '**Export**: CSV of the plotted data, *Python* (a script that rebuilds the figure, with the `GPAO` call where one exists), PDF / PNG / SVG through matplotlib. The camera icon of the figure saves the current view.',

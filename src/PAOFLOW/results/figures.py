@@ -10,11 +10,12 @@ high-symmetry ticks, a reference line at the Fermi level of energy axes, and no 
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import numpy as np
 
-from .model import Dataset, Series
+from .model import CATEGORICAL, Dataset, Series
 
 DIGITS = 6
 
@@ -208,6 +209,141 @@ def lines_figure(dataset: Dataset) -> dict:
     elif len(dataset.series) > 1 and all(s.mode == 'lines' for s in dataset.series):
         layout['hovermode'] = 'x unified'
     return {'data': data, 'layout': layout}
+
+
+#: Line styles of the series (components) of an overlay; the colour is the property.
+OVERLAY_DASHES = ('solid', 'dash', 'dot', 'dashdot')
+#: Families that draw as lines on one x axis, the only ones an overlay can combine.
+OVERLAY_FAMILIES = ('curve', 'columns', 'pdos', 'temperature_columns', 'transport', 'hall', 'bands')
+
+
+def axis_unit(label: str) -> str:
+    """The unit of an axis title (``'Absorption coefficient (1/m)'`` -> ``'1/m'``; none: ``''``).
+
+    Parameters
+    ----------
+    label : str
+        Axis title as written by :func:`~PAOFLOW.results.model.axis_title`.
+
+    Returns
+    -------
+    str
+    """
+    match = re.search(r'\(([^()]*)\)\s*$', label or '')
+    return match.group(1).strip() if match else ''
+
+
+def axis_name(label: str) -> str:
+    """An axis title without its unit (``'Absorption coefficient (1/m)'`` -> its name)."""
+    return re.sub(r'\s*\([^()]*\)\s*$', '', label or '').strip()
+
+
+def overlay_figure(
+    datasets: list[Dataset], series: list[str] | None = None, slots: list[int] | None = None
+) -> tuple[dict, list[str], list[str]]:
+    """Several properties on their common x axis: one panel per y unit, stacked, sharing x.
+
+    Quantities of one unit (Re and Im of ε, n and k) share a panel; another unit gets its own
+    panel under it, never a second y axis on the same panel. The colour is the property, in the
+    fixed categorical order of its slot (it stays when other properties come and go), and the
+    line style is the series (the tensor component).
+
+    Parameters
+    ----------
+    datasets : list of Dataset
+        The properties, the first one being the open dataset; same x axis.
+    series : list of str, optional
+        Series names to draw (default: the first name all the datasets share, e.g. ``xx``). A
+        dataset with none of them draws its first series, so every property appears.
+    slots : list of int, optional
+        Colour slot of each dataset (1-based; default 1, 2, ...).
+
+    Returns
+    -------
+    figure : dict
+        Plotly specification with colour roles.
+    names : list of str
+        Every series name of the datasets (the choices of ``series``).
+    shown : list of str
+        The series names drawn.
+    """
+    slots = list(slots or range(1, len(datasets) + 1))
+    names: list[str] = []
+    for dataset in datasets:
+        for item in dataset.series:
+            if item.name not in names:
+                names.append(item.name)
+    # The series every property has (the tensor components of the optics); by default the first.
+    common = [n for n in names if all(any(s.name == n for s in d.series) for d in datasets)]
+    wanted = [name for name in (series or common[:1]) if name in names]
+    units: list[str] = []
+    for dataset in datasets:
+        if axis_unit(dataset.y_label) not in units:
+            units.append(axis_unit(dataset.y_label))
+    labels = [axis_name(d.y_label) or d.title for d in datasets]
+    if len(set(labels)) < len(labels):
+        labels = [d.title for d in datasets]
+    data = []
+    drawn: set[str] = set()
+    for dataset, label, slot in zip(datasets, labels, slots):
+        panel = units.index(axis_unit(dataset.y_label))
+        # A property without the chosen series still appears, with its first series.
+        chosen = [item for item in dataset.series if item.name in wanted] or dataset.series[:1]
+        for item in chosen:
+            drawn.add(item.name)
+            plain = len(dataset.series) == 1 or (len(wanted) == 1 and item.name in wanted)
+            name = label if plain else '%s · %s' % (label, item.name)
+            trace = _line_trace(
+                Series(
+                    name,
+                    item.x,
+                    item.y,
+                    role=CATEGORICAL[(slot - 1) % len(CATEGORICAL)],
+                    dash=OVERLAY_DASHES[names.index(item.name) % len(OVERLAY_DASHES)],
+                    mode=item.mode,
+                    meta={k: v for k, v in item.meta.items() if k != 'stack'},
+                ),
+                True,
+            )
+            trace['yaxis'] = 'y' if panel == 0 else 'y%d' % (panel + 1)
+            data.append(trace)
+    shown = [name for name in names if name in drawn]
+    first = datasets[0]
+    count = len(units)
+    gap = 0.07 if count > 1 else 0.0
+    height = (1.0 - gap * (count - 1)) / count
+    layout = _layout(first, _tick_axis(first, first.x_label), {}, True)
+    layout['title']['text'] = ', '.join(labels)
+    layout['shapes'] = [s for s in layout['shapes'] if s.get('yref') == 'paper']
+    for panel, unit in enumerate(units):
+        members = [
+            label for dataset, label in zip(datasets, labels) if axis_unit(dataset.y_label) == unit
+        ]
+        title = ', '.join(members) + (' (%s)' % unit if unit else '')
+        top = 1.0 - panel * (height + gap)
+        axis = _axis(title, domain=[round(max(0.0, top - height), 6), round(top, 6)], anchor='x')
+        layout['yaxis' if panel == 0 else 'yaxis%d' % (panel + 1)] = axis
+        if any(d.zero == 'y' for d in datasets if axis_unit(d.y_label) == unit):
+            layout['shapes'].append(
+                {
+                    'type': 'line',
+                    'xref': 'paper',
+                    'x0': 0,
+                    'x1': 1,
+                    'yref': 'y' if panel == 0 else 'y%d' % (panel + 1),
+                    'y0': 0,
+                    'y1': 0,
+                    'line': {'color': 'neutral', 'width': 1, 'dash': 'dot'},
+                }
+            )
+    layout['xaxis']['anchor'] = 'y' if count == 1 else 'y%d' % count
+    if first.ticks and first.series:
+        layout['xaxis']['range'] = [
+            float(np.nanmin(first.series[0].x)),
+            float(np.nanmax(first.series[0].x)),
+        ]
+    layout['hovermode'] = 'closest' if first.ticks else 'x unified'
+    return {'data': data, 'layout': layout}, names, shown
 
 
 def map_figure(dataset: Dataset) -> dict:

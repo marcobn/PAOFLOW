@@ -251,3 +251,38 @@ def test_stacked_pdos():
     assert spec['data'][-1]['name'] == 'total' and 'stackgroup' not in spec['data'][-1]
     pytest.importorskip('matplotlib')
     assert matplotlib_figure(dataset, 'png')[:4] == b'\x89PNG'
+
+
+def test_overlay_figure_panels_per_unit():
+    """Same unit: one panel; another unit: a panel under it on the shared x axis (no second y axis);
+    colour per property (its slot), line style per series."""
+    from PAOFLOW.results.figures import axis_name, axis_unit, overlay_figure
+
+    assert axis_unit('Absorption coefficient (1/m)') == '1/m' and axis_unit('Re ε') == ''
+    assert axis_name('Absorption coefficient (1/m)') == 'Absorption coefficient'
+    kinds, _ = _by_kind(SI)
+    dos = load(kinds['dos'][0], str(SI))
+    pdos = load(kinds['pdos'][0], str(SI))
+    figure, names, shown = overlay_figure([dos, pdos])
+    assert [k for k in figure['layout'] if k.startswith('yaxis')] == ['yaxis']
+    assert {t['yaxis'] for t in figure['data']} == {'y'}
+    # DOS and PDOS share no series name: each property still appears, with its first series.
+    assert [t['line']['color'] for t in figure['data']] == ['series-1', 'series-2']
+    assert shown == [dos.series[0].name, pdos.series[0].name]
+    assert figure['data'][1]['name'].endswith(pdos.series[0].name)
+
+    boltzmann = {load(r, str(SI)).y_label: load(r, str(SI)) for r in kinds['boltzmann']}
+    seebeck = next(d for label, d in boltzmann.items() if label.startswith('Seebeck'))
+    sigma = next(d for label, d in boltzmann.items() if label.startswith('Electrical'))
+    figure, names, shown = overlay_figure([seebeck, sigma], slots=[1, 4])
+    layout = figure['layout']
+    assert layout['yaxis']['domain'][0] > layout['yaxis2']['domain'][1]  # stacked, first on top
+    assert layout['xaxis']['anchor'] == 'y2' and 'yaxis3' not in layout
+    assert {t['yaxis'] for t in figure['data']} == {'y', 'y2'}
+    assert figure['data'][-1]['line']['color'] == 'series-4'  # the slot, not the position
+    if len(names) > 1:
+        figure, _, shown = overlay_figure([seebeck, sigma], series=names[:2])
+        assert shown == names[:2] and {t['line']['dash'] for t in figure['data']} == {
+            'solid',
+            'dash',
+        }

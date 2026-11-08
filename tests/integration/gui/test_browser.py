@@ -672,3 +672,39 @@ def test_fermi_surface_band_selection(browser, studio):
     _wait(lambda: browser.execute_script(boxes_script) == [False, True, True, True], timeout=60)
     _wait(lambda: browser.execute_script(sheets) == 3, timeout=60)
     assert _errors(browser) == []
+
+
+def test_overlay_properties(browser, studio):
+    """Overlay another property: another unit gets its own panel on the shared x axis; Clear
+    returns to the dataset alone."""
+    server, _work = studio
+    _open(browser, server, 'results')
+    browser.execute_script("window.paoflowApp.results.open('Si')")
+    item = _wait(
+        lambda: [
+            n
+            for n in browser.find_elements(By.CSS_SELECTOR, '.tree-item')
+            if n.text.strip().startswith('Seebeck coefficient')
+        ]
+    )[0]
+    item.click()
+    card_script = (
+        "return [...document.querySelectorAll('#view-results .card')]"
+        ".find(c => c.querySelector('h3')?.textContent === 'Overlay properties') || null"
+    )
+    card = _wait(lambda: browser.execute_script(card_script))
+    next(
+        label
+        for label in card.find_elements(By.TAG_NAME, 'label')
+        if label.text.startswith('Electrical conductivity')
+    ).find_element(By.TAG_NAME, 'input').click()
+    figure = 'return window.paoflowApp.results.result.figure'
+    _wait(lambda: 'yaxis2' in browser.execute_script(figure)['layout'])
+    data = browser.execute_script(figure)['data']
+    assert [t['yaxis'] for t in data] == ['y', 'y2']
+    assert [t['line']['color'] for t in data] == ['series-1', 'series-2']  # roles, before theming
+    title = browser.find_element(By.CSS_SELECTOR, '#view-results .result-head h2').text
+    assert title == 'Seebeck coefficient S, Electrical conductivity σ/τ'
+    browser.find_element(By.XPATH, "//button[text()='Clear the overlay']").click()
+    _wait(lambda: 'yaxis2' not in browser.execute_script(figure)['layout'])
+    assert _errors(browser) == []

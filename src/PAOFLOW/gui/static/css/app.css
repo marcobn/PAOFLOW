@@ -1033,6 +1033,10 @@ dialog::backdrop {
   flex-direction: column;
   gap: 2px;
 }
+.option-list.overlay-list {
+  max-height: 280px;
+  margin-bottom: 8px;
+}
 table.data-table {
   border-collapse: collapse;
   font-size: 13.5px;
