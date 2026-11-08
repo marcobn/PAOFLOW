@@ -44,7 +44,8 @@ def band_curvature_k_ij(
         Eigenvectors matching ``E`` (columns).
     degen : list of np.ndarray
         Degenerate band groups at this k-point, from
-        :func:`~PAOFLOW.spectrum.do_eigh.get_degeneracies` with ``bnd``.
+        :func:`~PAOFLOW.spectrum.do_eigh.get_degeneracies` with ``bnd``.  The velocity
+        groups that take the subspace ``eigh`` are searched within them.
     bnd : int
         Number of bands whose curvature is returned.
 
@@ -63,11 +64,10 @@ def band_curvature_k_ij(
     """
     from numpy.linalg import eigh
 
-    from ..spectrum.do_eigh import get_degeneracies
     from ..utils.perturb_split import perturb_split
 
     v_aux, tksp, dvec = perturb_split(dH_i, d2H_ij, v_k, degen, return_v_k=True)
-    vel_degen = get_degeneracies(v_aux.diagonal().reshape((1, len(v_aux.diagonal()), 1)), bnd)[0][0]
+    vel_degen = _velocity_groups(v_aux.diagonal().real, degen)
 
     curvature = np.array(tksp.diagonal()[:bnd].real, dtype=float)
 
@@ -86,18 +86,11 @@ def band_curvature_k_ij(
     # this is where d2Ed2k becomes the actual curvature tensor
     curvature += np.sum((((pksp_i * pksp_j.T + pksp_j * pksp_i.T) / E_temp).real), axis=1)[:bnd]
 
-    # second order perturbation for degeneracies of E and dEdk
-    for group in vel_degen:
-        ll = group[0]
-        ul = group[-1] + 1
-
-        degen_d2Ed2k = (
-            tksp[ll:ul, ll:ul]
-            + pksp_i[ll:ul, ll:ul] @ (pksp_j[ll:ul, ll:ul] / E_temp[ll:ul, ll:ul])
-            + (pksp_i[ll:ul, ll:ul] @ (pksp_j[ll:ul, ll:ul] / E_temp[ll:ul, ll:ul])).conj().T
-        )
-
-        curvature[ll:ul], _ = eigh(degen_d2Ed2k)
+    # second order perturbation for degeneracies of E and dEdk: the push sums over every band m,
+    # the inf entries of E_temp drop the group itself and bands within 1 meV
+    for g in vel_degen:
+        push = pksp_i[g, :] @ (pksp_j[:, g] / E_temp[g[0], :][:, None])
+        curvature[g], _ = eigh(tksp[np.ix_(g, g)] + push + push.conj().T)
     return curvature
 
 
@@ -127,8 +120,7 @@ def band_curvature_k(
     """All six components :math:`d^2E_n/dk_i dk_j` of the band curvature at one k-point.
 
     The same result as :func:`band_curvature_k_ij` for every ``(i, j)`` of
-    ``IJ_PAIRS``, up to rounding, with the work shared between the components,
-    except where the dense kernel groups equal velocities of different energies.
+    ``IJ_PAIRS``, up to rounding, with the work shared between the components.
 
     Parameters
     ----------
@@ -216,11 +208,10 @@ def band_curvature_k(
         c += np.sum((2.0 * np.conj(p_i) * p_j).real / E_temp, axis=0)
 
         # second order perturbation for degeneracies of E and dE/dk_i
-        # (groups need not be contiguous, hence index arrays)
+        # (groups need not be contiguous, hence index arrays); the push sums over every row m
         for g in vel_degen:
-            gg = np.ix_(g, g)
-            m = p_i[gg] @ (p_j[gg] / E_temp[gg].T)
-            block = np.conj(vt[:, g].T) @ t[:, g] + m + np.conj(m.T)
+            push = np.conj(p_i[:, g]).T @ (p_j[:, g] / E_temp[:, g[0]][:, None])
+            block = np.conj(vt[:, g].T) @ t[:, g] + push + np.conj(push.T)
             c[g], _ = eigh(block)
         curvature[ij] = c
     return curvature
@@ -272,14 +263,25 @@ def do_band_curvature(data_controller):
     Pairs with :math:`|E_n - E_m| < 10^{-3}` eV are excluded to avoid
     numerical divergences.
 
-    Third, for the subspaces in which the rotated velocity along ``i`` is
-    still degenerate, the diagonal elements obtained above are overwritten
-    by the eigenvalues of the subspace block :math:`M + P + P^{\\dagger}`,
-    where :math:`M` is the block of :math:`d^2H/dk_i dk_j` and
-    :math:`P = \\partial_{k_i} H \\, [\\partial_{k_j} H / (E_n - E_m)]`
-    restricted to the same block.  This resolves the subspaces in which the
-    perturbative sum above is ill-defined because the bands are degenerate
-    in both energy and band velocity.
+    Third, within each degenerate energy group, the states whose rotated
+    velocity along ``i`` is still equal (within :math:`10^{-5}`, adjacent in
+    index or not) form a group :math:`g`.  Their diagonal elements are
+    overwritten by the eigenvalues of
+
+    .. math::
+
+        M_{ab} = \\langle a | \\partial^2_{k_i k_j} H | b \\rangle
+            + P_{ab} + P^{*}_{ba},
+        \\qquad
+        P_{ab} = \\sum_{|E_m - E_g| > 10^{-3}}
+            \\frac{\\langle a | \\partial_{k_i} H | m \\rangle
+                   \\langle m | \\partial_{k_j} H | b \\rangle}{E_g - E_m},
+        \\qquad a, b \\in g,
+
+    with :math:`m` running over every band.  The first-order term does not
+    fix the basis in such a group, so its curvatures are the eigenvalues of
+    the second-order matrix.  For a Kramers pair :math:`M` is proportional to
+    the identity and the result equals the non-degenerate formula.
 
     The loop is ``(i, j)`` outer and k inner, so only one
     :math:`d^2H/dk_i dk_j` is held at a time; the per-k work is
