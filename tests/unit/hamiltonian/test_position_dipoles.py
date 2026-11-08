@@ -352,3 +352,37 @@ def test_position_dipoles_on_grid_scalar_and_relativistic(si_data_controller):
                 np.sort(np.repeat(np.linalg.eigvalsh(dipole[k, alpha]), 2)),
                 atol=1e-9,
             )
+
+
+def test_ill_conditioning_warning_once_on_the_first_rank(monkeypatch):
+    """The conditioning warning is a property of the basis: one message per run, from rank 0."""
+    import sys
+    import types
+    import warnings
+
+    import PAOFLOW.hamiltonian.position_dipoles as pdip
+
+    overlap = np.diag([1.0e-6, 1.0, 2.0]).astype(complex)[None]
+    gradient = np.zeros((1, 3, 3, 3), dtype=complex)
+
+    def messages():
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            for _ in range(3):
+                overlap_sqrt_and_derivative(overlap, gradient)
+        return [w for w in caught if 'ill-conditioned' in str(w.message)]
+
+    monkeypatch.setattr(pdip, '_ILL_CONDITIONED_WARNED', False)
+    monkeypatch.delitem(sys.modules, 'mpi4py.MPI', raising=False)
+    assert len(messages()) == 1  # no MPI: once, not once per call
+
+    world = types.SimpleNamespace(Get_rank=lambda: 3)
+    fake = types.SimpleNamespace(
+        Is_initialized=lambda: True, Is_finalized=lambda: False, COMM_WORLD=world
+    )
+    monkeypatch.setitem(sys.modules, 'mpi4py.MPI', fake)
+    monkeypatch.setattr(pdip, '_ILL_CONDITIONED_WARNED', False)
+    assert messages() == []  # rank 3 stays silent
+    world.Get_rank = lambda: 0
+    shown = messages()
+    assert len(shown) == 1 and 'Shown once, by the first MPI rank' in str(shown[0].message)

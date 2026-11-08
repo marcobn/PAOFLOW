@@ -44,7 +44,7 @@ def fermi_mesh(
     paths : list of str
         One multi-band ``FermiSurf_<s>.bxsf`` or several single-band SKEAF sheets.
     bands : list of int, optional
-        Band labels to draw (default: every band crossing the level).
+        Band labels to draw (default: every band crossing the level; an empty list draws none).
     interp : int, optional
         Fourier upsampling factor of the grids (smoother sheets).
     shift : float, optional
@@ -95,7 +95,7 @@ def fermi_mesh(
         crossing = [label for label, grid in grids.items() if grid.min() <= shift <= grid.max()]
         if crossing:
             fermi, level, available, header_ignored = 0.0, shift, crossing, True
-    chosen = [b for b in (bands or available) if b in available]
+    chosen = [b for b in (available if bands is None else bands) if b in available]
     planes = None
     edges: list[list[float]] = []
     if zone == 'ws':
@@ -265,7 +265,7 @@ def load_volume(ref: DatasetRef, root: str, options: dict, dataset: Dataset) -> 
     try:
         mesh = fermi_mesh(
             paths,
-            bands=bands if isinstance(bands, list) and bands else None,
+            bands=bands if isinstance(bands, list) else None,
             interp=interp,
             shift=shift,
             zone=zone,
@@ -291,8 +291,10 @@ def load_volume(ref: DatasetRef, root: str, options: dict, dataset: Dataset) -> 
     }
     dataset.options['zone'] = {'label': 'Zone', 'choices': ['ws', 'cell'], 'value': zone}
     dataset.options['shift'] = {'label': 'Level − E_F', 'value': shift, 'number': True}
-    if not mesh['sheets']:
-        dataset.notes.append('No band crosses the chosen level.')
+    if not mesh['available']:
+        dataset.notes.append('No band crosses the chosen level (move Level − E_F into a band).')
+    elif not mesh['sheets']:
+        dataset.notes.append('No band selected.')
     if mesh.get('header_ignored'):
         dataset.notes.append(
             'The BXSF header gives an absolute Fermi energy but the grid is already relative to '

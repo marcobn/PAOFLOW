@@ -638,3 +638,37 @@ def test_qe_options_are_edited_checked_and_passed(browser, studio, tmp_path, mon
         == '-nk 2'
     )
     assert _errors(browser) == []
+
+
+def test_fermi_surface_band_selection(browser, studio):
+    """Unticking a band of the Fermi surface keeps it unticked and drops its sheet."""
+    pytest.importorskip('skimage')
+    server, work = studio
+    pt = work.parent / 'Pt'
+    pt.mkdir()
+    shutil.copy(EXAMPLE.parent / 'example08' / 'Reference' / 'FermiSurf_0.bxsf', pt)
+    _open(browser, server, 'results')
+    browser.execute_script("window.paoflowApp.results.open('Pt')")
+    item = _wait(
+        lambda: [
+            n
+            for n in browser.find_elements(By.CSS_SELECTOR, '.tree-item')
+            if n.text.strip().startswith('Fermi surface')
+        ]
+    )[0]
+    item.click()
+    boxes_script = (
+        "const card = [...document.querySelectorAll('#view-results .option')]"
+        ".find(o => o.textContent.startsWith('Bands'));"
+        "return card ? [...card.querySelectorAll('input')].map(b => b.checked) : null;"
+    )
+    _wait(lambda: browser.execute_script(boxes_script) == [True, True, True, True], timeout=60)
+    sheets = "return window.paoflowApp.results.result.figure.data.filter(t => t.type === 'mesh3d').length"
+    assert browser.execute_script(sheets) == 4
+    browser.execute_script(
+        "[...document.querySelectorAll('#view-results .option')]"
+        ".find(o => o.textContent.startsWith('Bands')).querySelector('input').click()"
+    )
+    _wait(lambda: browser.execute_script(boxes_script) == [False, True, True, True], timeout=60)
+    _wait(lambda: browser.execute_script(sheets) == 3, timeout=60)
+    assert _errors(browser) == []

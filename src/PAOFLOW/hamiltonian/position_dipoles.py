@@ -54,6 +54,7 @@ vectorised over the orbitals of a site pair in :mod:`PAOFLOW.hamiltonian.two_cen
 from __future__ import annotations
 
 import os
+import sys
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -482,9 +483,17 @@ def on_site_dipoles(tables: PositionTables) -> NDArray[np.float64]:
     return dipole
 
 
-#: The ill-conditioning warning of :func:`overlap_sqrt_and_derivative` is shown once per process
-#: (it is a property of the basis, not of the k chunk).
+#: The ill-conditioning warning of :func:`overlap_sqrt_and_derivative` is shown once, by the first
+#: MPI rank (it is a property of the basis, not of the k chunk or of the rank).
 _ILL_CONDITIONED_WARNED = False
+
+
+def _first_rank() -> bool:
+    """True on MPI rank 0 and without MPI (``mpi4py`` is read only when already loaded)."""
+    mpi = sys.modules.get('mpi4py.MPI')
+    if mpi is None or not mpi.Is_initialized() or mpi.Is_finalized():
+        return True
+    return mpi.COMM_WORLD.Get_rank() == 0
 
 
 def overlap_sqrt_and_derivative(
@@ -527,7 +536,8 @@ def overlap_sqrt_and_derivative(
             f'{eigenvalues.min():.3e}): linearly dependent orbitals'
         )
     global _ILL_CONDITIONED_WARNED
-    if eigenvalues.min() < 1.0e-4 * eigenvalues.max() and not _ILL_CONDITIONED_WARNED:
+    ill_conditioned = eigenvalues.min() < 1.0e-4 * eigenvalues.max()
+    if ill_conditioned and not _ILL_CONDITIONED_WARNED and _first_rank():
         _ILL_CONDITIONED_WARNED = True
         warnings.warn(
             'the PAO overlap S(k) is ill-conditioned (eigenvalues %.1e .. %.1e): some combinations '
@@ -537,7 +547,8 @@ def overlap_sqrt_and_derivative(
             'dipoles amplify the quadrature noise of those combinations; the optical response is '
             'usually unaffected (Si, extended basis: eps2 changes by 1.5 %% when the most diffuse '
             'shell is dropped). To check, compare with configuration="standard" or without the '
-            'outermost shells. Shown once per process.' % (eigenvalues.min(), eigenvalues.max()),
+            'outermost shells. Shown once, by the first MPI rank.'
+            % (eigenvalues.min(), eigenvalues.max()),
             RuntimeWarning,
             stacklevel=2,
         )

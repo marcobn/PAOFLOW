@@ -187,6 +187,24 @@ def test_fermi_surface_mesh():
     assert slice_.surface['diverging'] and figure_spec(slice_)['data'][0]['type'] == 'heatmap'
 
 
+def test_fermi_surface_band_selection_is_kept():
+    """The ticked bands are the drawn ones, an empty selection included (it drew every band, so
+    the unticked boxes came back)."""
+    pytest.importorskip('skimage')
+    kinds, _ = _by_kind(PT)
+    ref = kinds['fermi_surface'][0]
+    every = load(ref, str(PT), {})
+    assert every.options['bands']['value'] == [57, 58, 59, 60]
+    some = load(ref, str(PT), {'bands': [58, 60]})
+    assert some.options['bands']['value'] == [58, 60] and len(some.mesh['sheets']) == 2
+    none = load(ref, str(PT), {'bands': []})
+    assert none.mesh['sheets'] == [] and none.options['bands']['value'] == []
+    assert none.options['bands']['choices'] == [57, 58, 59, 60]
+    assert 'No band selected.' in none.notes
+    gap = load(ref, str(PT), {'shift': 40.0})
+    assert gap.options['bands']['choices'] == [] and any('No band crosses' in n for n in gap.notes)
+
+
 def test_report_is_self_contained(tmp_path):
     pytest.importorskip('plotly')
     from PAOFLOW.results.report import write_report

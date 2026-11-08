@@ -617,8 +617,10 @@ export class ResultsView {
       control = input;
     } else if (option.multiple) {
       const selected = new Set(option.value.map(String));
-      const boxes = option.choices.map((choice) => {
-        const box = h('input', { type: 'checkbox', checked: selected.has(String(choice)) });
+      const boxes = option.choices.map((choice) =>
+        h('input', { type: 'checkbox', checked: selected.has(String(choice)) }),
+      );
+      for (const box of boxes) {
         box.addEventListener('change', () => {
           const values = option.choices.filter((_c, i) => boxes[i].checked);
           if (option.max && values.length > option.max) {
@@ -628,9 +630,12 @@ export class ResultsView {
           }
           this.setOption(name, values);
         });
-        return h('label', { class: 'row small' }, box, String(choice));
-      });
-      control = h('div', { class: 'option-list' }, boxes);
+      }
+      control = h(
+        'div',
+        { class: 'option-list' },
+        boxes.map((box, i) => h('label', { class: 'row small' }, box, String(option.choices[i]))),
+      );
     } else if (option.choices?.length && typeof option.choices[0] === 'boolean') {
       const box = h('input', {
         type: 'checkbox',
