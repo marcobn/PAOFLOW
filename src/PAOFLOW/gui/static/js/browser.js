@@ -1,4 +1,7 @@
 // Folder picker over the sandboxed file listing of the server.
+//
+// Paths are relative to the GUI root, or absolute inside a read-only folder (--allow-read and
+// PAOFLOW's own PSEUDOS and BASIS). The picker shows those folders as places.
 
 import { api } from './api.js';
 import { clear, dialog, formatBytes, h, toast } from './dom.js';
@@ -23,13 +26,37 @@ export function tagChips(tags) {
   );
 }
 
-// Resolves with the chosen folder (relative to the root) or null.
+function join(folder, name) {
+  if (folder === '.') return name;
+  return folder.endsWith('/') ? `${folder}${name}` : `${folder}/${name}`;
+}
+
+// `path` (relative to the root, or absolute) as seen from the root-relative folder `from`:
+// root-relative paths become relative to `from`, absolute paths stay absolute.
+export function relativeTo(from, path) {
+  if (path.startsWith('/')) return path;
+  const base = from === '.' ? [] : from.split('/');
+  const target = path === '.' ? [] : path.split('/');
+  let common = 0;
+  while (common < base.length && common < target.length && base[common] === target[common]) {
+    common += 1;
+  }
+  const up = base.slice(common).map(() => '..');
+  const relative = [...up, ...target.slice(common)].join('/');
+  return relative || '.';
+}
+
+// Resolves with the chosen folder (or file) or null. `places: false` keeps the picker inside the
+// writable root (the working folder of the generators).
 export async function pickFolder(
   start,
-  { title = 'Choose the working folder', allowFiles = false } = {},
+  { title = 'Choose the working folder', allowFiles = false, places = true } = {},
 ) {
   let current = start || '.';
   let selectedFile = null;
+  const session = window.paoflowApp ? window.paoflowApp.session : { read_roots: [] };
+  const readRoots = places ? session.read_roots || [] : [];
+  const placesBar = h('div', { class: 'places' });
   const crumbs = h('div', { class: 'crumbs' });
   const list = h('div', { class: 'browser-list' });
   const status = h('div', { class: 'small muted', style: { marginTop: '6px' } });
@@ -44,15 +71,40 @@ export async function pickFolder(
     }
     current = listing.path;
     selectedFile = null;
+    clear(placesBar);
+    if (readRoots.length) {
+      placesBar.append(h('span', { class: 'small muted' }, 'Places'));
+      for (const [label, target] of [
+        ['root', '.'],
+        ...readRoots.map((folder) => [folder, folder]),
+      ]) {
+        const active = listing.place.path === target;
+        placesBar.append(
+          h(
+            'button',
+            {
+              class: `chip${active ? ' accent' : ''}`,
+              title: target === '.' ? session.root : `${target} (read-only)`,
+              onclick: () => load(target),
+            },
+            label === 'root' ? 'root' : label.split('/').slice(-2).join('/'),
+            target === '.' ? null : ' 🔒',
+          ),
+        );
+      }
+    }
     clear(crumbs);
-    const parts = current === '.' ? [] : current.split('/');
-    crumbs.append(h('button', { onclick: () => load('.') }, 'root'));
+    const place = listing.place;
+    const inner =
+      current === place.path ? '' : current.slice(place.path === '.' ? 0 : place.path.length + 1);
+    const parts = inner ? inner.split('/') : [];
+    crumbs.append(h('button', { onclick: () => load(place.path) }, place.label));
     parts.forEach((part, index) => {
-      crumbs.append(
-        ' / ',
-        h('button', { onclick: () => load(parts.slice(0, index + 1).join('/')) }, part),
-      );
+      const target = join(place.path, parts.slice(0, index + 1).join('/'));
+      crumbs.append(' / ', h('button', { onclick: () => load(target) }, part));
     });
+    if (!place.writable)
+      crumbs.append(h('span', { class: 'chip warn', style: { marginLeft: '8px' } }, 'read-only'));
     clear(list);
     if (listing.parent !== null) {
       list.append(
@@ -65,7 +117,7 @@ export async function pickFolder(
       );
     }
     for (const entry of listing.entries) {
-      const path = current === '.' ? entry.name : `${current}/${entry.name}`;
+      const path = join(current, entry.name);
       const isDir = entry.kind === 'dir';
       const row = h(
         'div',
@@ -94,7 +146,7 @@ export async function pickFolder(
   await load(current);
   return dialog({
     title,
-    body: h('div', {}, crumbs, list, status),
+    body: h('div', {}, placesBar, crumbs, list, status),
     actions: [
       { label: 'Cancel', value: null },
       {

@@ -184,3 +184,35 @@ def test_runs_tab_runs_a_driver(browser, studio):
         timeout=60,
     )
     assert _errors(browser) == []
+
+
+def test_picker_reaches_read_only_folders(browser, studio):
+    from PAOFLOW.gui.server import paoflow_data_folders
+
+    folders = [f for f in paoflow_data_folders() if f.name == 'PSEUDOS']
+    if not folders:
+        pytest.skip('no PSEUDOS folder next to this PAOFLOW')
+    server, work = studio
+    _open(browser, server, 'setup')
+    browser.find_element(By.CSS_SELECTOR, '.workflow-item[data-name="qe_input"]').click()
+    _wait(lambda: browser.find_elements(By.XPATH, "//button[text()='Browse…']"))
+    browser.find_elements(By.XPATH, "//button[text()='Browse…']")[0].click()
+    places = _wait(
+        lambda: [
+            b
+            for b in browser.find_elements(By.CSS_SELECTOR, '.places button')
+            if 'PSEUDOS' in b.text
+        ]
+    )
+    places[0].click()
+    _wait(lambda: 'read-only' in browser.find_element(By.CSS_SELECTOR, '.crumbs').text)
+    browser.find_element(By.XPATH, "//button[text()='Use this folder']").click()
+    field = _wait(
+        lambda: [
+            i
+            for i in browser.find_elements(By.CSS_SELECTOR, '#view-setup input[type="text"]')
+            if i.get_attribute('value') == str(folders[0])
+        ]
+    )
+    assert field
+    assert _errors(browser) == []

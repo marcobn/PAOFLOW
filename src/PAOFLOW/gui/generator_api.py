@@ -39,6 +39,9 @@ TOOLS = (
     },
 )
 MAX_DIFF_LINES = 400
+#: Answers naming files or folders the server reads (the QE save, the pw.x template): they must be
+#: inside the root or a read-only folder.
+READ_ANSWERS = ('savedir', 'pw_template')
 
 
 def _workflow(name: str):
@@ -56,6 +59,11 @@ def _context(app: 'GuiApp', payload: dict):
     if not workdir.is_dir():
         raise HttpError(404, 'the working folder %s does not exist' % payload.get('workdir'))
     options = payload.get('options') or {}
+    answers = payload.get('answers') or {}
+    for key in READ_ANSWERS:
+        value = answers.get(key)
+        if isinstance(value, str) and value.strip():
+            app.resolve_readable(str(workdir / value.strip()))
     overrides = {}
     if payload.get('workflow') == 'elphon':
         overrides['out'] = str(app.resolve(options.get('folder') or payload.get('workdir')))
@@ -317,7 +325,7 @@ def _qe_input_arguments(app: 'GuiApp', payload: dict) -> dict:
     if not identifier:
         raise HttpError(400, 'give an AFLOW or C2DB identifier')
     workdir = app.resolve(payload.get('workdir'))
-    pseudo_dir = app.resolve(str(workdir / (payload.get('pseudo_dir') or '.')))
+    pseudo_dir = app.resolve_readable(str(workdir / (payload.get('pseudo_dir') or '.')))
     if not pseudo_dir.is_dir():
         raise HttpError(400, 'the pseudopotential folder does not exist')
     kpoints = payload.get('kpoints')
@@ -443,11 +451,11 @@ def basis_command(app: 'GuiApp', payload: dict) -> dict:
     workdir = app.resolve(payload.get('workdir'))
     argv = ['paoflow-genbasis-ps']
     if payload.get('pseudo'):
-        app.resolve(str(workdir / payload['pseudo']))
+        app.resolve_readable(str(workdir / payload['pseudo']))
         argv += ['--pseudo', payload['pseudo']]
     else:
         pseudo_dir = payload.get('pseudo_dir') or '.'
-        app.resolve(str(workdir / pseudo_dir))
+        app.resolve_readable(str(workdir / pseudo_dir))
         argv += ['--pseudo-dir', pseudo_dir]
     out = payload.get('out') or 'BASIS_PS'
     app.resolve(str(workdir / out))
@@ -516,6 +524,8 @@ def register(app: 'GuiApp') -> None:
 
         payload = request.json()
         workdir = app.resolve(payload.get('workdir'))
+        if payload.get('savedir'):
+            app.resolve_readable(str(workdir / str(payload['savedir'])))
         points = []
         try:
             for row in payload.get('points') or []:

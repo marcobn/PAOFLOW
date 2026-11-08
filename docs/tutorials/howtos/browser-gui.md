@@ -20,8 +20,21 @@ paoflow-studio --root ~/runs plot Si/output    # open the Results tab on one fol
 paoflow-gen --gui                     # the same questions as paoflow-gen, in the browser
 ```
 
-The server prints a URL that ends with `?token=...`; open it once and the browser keeps the session. Everything
-the GUI reads or writes stays under `--root`.
+The server prints a URL that ends with `?token=...`; open it once and the browser keeps the session. The GUI
+writes and runs only under `--root`.
+
+It may also *read* other folders, but never write them:
+
+- PAOFLOW's own `PSEUDOS/` and `BASIS/`, always;
+- every folder given with `--allow-read`, for example pseudopotentials or results kept elsewhere:
+
+```bash
+paoflow-studio --root ~/runs --allow-read ~/pseudos --allow-read /data/TaC_results
+```
+
+The folder picker lists them under *Places*, marked read-only. The QE-input and basis tools take a
+pseudopotential folder from there (*Browse…*), and the Results tab can open results in them. The list is fixed
+when the server starts; nothing in the browser can widen it.
 
 **On a remote machine** (cluster login node, workstation), start the server without a browser and tunnel the port
 from your laptop:
@@ -36,6 +49,7 @@ header is not the GUI's own are refused. These checks keep other users of a shar
 
 Other options:
 
+- `--allow-read DIR`: also read `DIR`, never write it (repeatable).
 - `--read-only`: browse and plot only, with no writes and no runs.
 - `--max-ranks N`: cap the MPI ranks of a run (the default is the core budget of the machine).
 - `--port`: the first port to try (the default is 8765).

@@ -1,7 +1,7 @@
 // Setup tab: working folder, paoflow-gen workflows as forms, live preview, writing the files.
 
 import { api } from './api.js';
-import { pickFolder } from './browser.js';
+import { pickFolder, relativeTo } from './browser.js';
 import { codeView, diffView } from './codeview.js';
 import { clear, copyText, debounce, dialog, h, storage, toast } from './dom.js';
 import { FormView } from './form.js';
@@ -89,7 +89,7 @@ export class SetupView {
           {
             class: 'btn small',
             onclick: async () => {
-              const chosen = await pickFolder(this.workdir);
+              const chosen = await pickFolder(this.workdir, { places: false });
               if (chosen !== null) this.openFolder(chosen);
             },
           },
@@ -317,6 +317,7 @@ export class SetupView {
                 onclick: async () => {
                   const chosen = await pickFolder(this.workdir, {
                     title: 'System folder (created if missing below a chosen folder)',
+                    places: false,
                   });
                   if (chosen !== null) {
                     folder.value = chosen;
@@ -709,6 +710,26 @@ export class SetupView {
   }
 
   // ----------------------------------------------------------------------- tools
+  // A text input with a Browse… button; the pick is written relative to the working folder, or
+  // as an absolute path inside a read-only folder (--allow-read, PAOFLOW's PSEUDOS and BASIS).
+  withBrowse(node, onPick, options) {
+    const button = h(
+      'button',
+      {
+        class: 'btn small',
+        type: 'button',
+        onclick: async () => {
+          const chosen = await pickFolder(this.workdir, options);
+          if (chosen === null) return;
+          node.value = relativeTo(this.workdir, chosen);
+          onPick(node.value);
+        },
+      },
+      'Browse…',
+    );
+    return [node, button];
+  }
+
   renderQeInput(info) {
     const state = storage(`qe-input:${this.session.root}`) || {
       source: 'auto',
@@ -803,8 +824,15 @@ export class SetupView {
         field('Database', select('source', ['auto', 'aflow', 'c2db'])),
         field(
           'Pseudopotential folder',
-          input('pseudo_dir', '.'),
-          'relative to the working folder: <element>.upf, PeriodicTableJSON.json, reference.json',
+          this.withBrowse(
+            input('pseudo_dir', '.'),
+            (value) => {
+              state.pseudo_dir = value;
+              save();
+            },
+            { title: 'Pseudopotential folder' },
+          ),
+          'relative to the working folder, or a read-only folder: <element>.upf, PeriodicTableJSON.json, reference.json',
         ),
         field('Output file', input('filename', '<compound>.scf.in')),
       ),
@@ -991,10 +1019,28 @@ export class SetupView {
         h('h3', {}, 'Pseudopotentials'),
         field(
           'Pseudopotential folder',
-          input('pseudo_dir', '.'),
+          this.withBrowse(
+            input('pseudo_dir', '.'),
+            (value) => {
+              state.pseudo_dir = value;
+              refresh();
+            },
+            { title: 'Pseudopotential folder' },
+          ),
           upfs ? `found here: ${upfs}` : 'relative to the working folder',
         ),
-        field('or one UPF file', input('pseudo', ''), 'overrides the folder'),
+        field(
+          'or one UPF file',
+          this.withBrowse(
+            input('pseudo', ''),
+            (value) => {
+              state.pseudo = value;
+              refresh();
+            },
+            { title: 'One UPF file', allowFiles: true },
+          ),
+          'overrides the folder',
+        ),
         field('Shells', input('shells', 'from the preset'), 'e.g. 3S,3P,3D (single UPF only)'),
       ),
       h(

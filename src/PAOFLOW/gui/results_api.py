@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 def _folder(app: 'GuiApp', payload: dict) -> str:
-    folder = app.resolve(payload.get('path'))
+    folder = app.resolve_readable(payload.get('path'))
     if not folder.is_dir():
         raise HttpError(404, '%s is not a folder' % payload.get('path'))
     return str(folder)
@@ -55,7 +55,7 @@ def _experiment(app: 'GuiApp', dataset, spec: dict | None) -> dict | None:
     request = getattr(dataset, '_experiment', None)
     if not request:
         return None
-    path = app.resolve(request.get('file'))
+    path = app.resolve_readable(request.get('file'))
     if not path.is_file():
         raise HttpError(404, 'experiment file not found')
     data, header = read_columns(str(path))

@@ -18,7 +18,7 @@ import threading
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, Sequence
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import security
@@ -191,6 +191,10 @@ class GuiApp:
         Cap of the MPI ranks of a run (default: the core budget of the machine).
     start : str, optional
         Folder (relative to the root) the GUI opens in.
+    read_roots : sequence of str or Path, optional
+        Extra folders the browser may read but never write (``--allow-read``).
+    default_read_roots : bool, optional
+        Add PAOFLOW's own ``PSEUDOS`` and ``BASIS`` folders when they exist (default).
     """
 
     def __init__(
@@ -200,8 +204,11 @@ class GuiApp:
         read_only: bool = False,
         max_ranks: int | None = None,
         start: str | None = None,
+        read_roots: Sequence[str | Path] = (),
+        default_read_roots: bool = True,
     ) -> None:
-        self.sandbox = security.Sandbox(root)
+        folders = list(read_roots) + (paoflow_data_folders() if default_read_roots else [])
+        self.sandbox = security.Sandbox(root, read_roots=folders)
         self.token = token or security.new_token()
         self.read_only = read_only
         self.max_ranks = max_ranks
@@ -276,6 +283,28 @@ class GuiApp:
         except PermissionError as exc:
             raise HttpError(403, str(exc)) from None
 
+    def resolve_readable(self, path: str | None) -> Path:
+        """A browser path resolved inside the root or a read-only folder (for reading only).
+
+        Parameters
+        ----------
+        path : str or None
+            Relative (to the root) or absolute path.
+
+        Returns
+        -------
+        Path
+
+        Raises
+        ------
+        HttpError
+            403 when the path is outside the root and every read-only folder.
+        """
+        try:
+            return self.sandbox.resolve_readable(path)
+        except PermissionError as exc:
+            raise HttpError(403, str(exc)) from None
+
     def dispatch(self, request: Request) -> Response:
         """Run the route of a request (static files, API, or 404).
 
@@ -334,6 +363,24 @@ class GuiApp:
             content_type=content_type,
             headers={'Cache-Control': 'no-cache'},
         )
+
+
+def paoflow_data_folders() -> list[Path]:
+    """PAOFLOW's own ``PSEUDOS`` and ``BASIS`` folders (source checkouts and editable installs).
+
+    Returns
+    -------
+    list of Path
+        The folders that exist.
+    """
+    package = Path(__file__).resolve().parents[1]
+    candidates = [
+        package.parents[1] / 'PSEUDOS',
+        package.parents[1] / 'BASIS',
+        package / 'PSEUDOS',
+        package / 'BASIS',
+    ]
+    return [folder for folder in candidates if folder.is_dir()]
 
 
 def plotly_bundle() -> Path | None:

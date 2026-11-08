@@ -68,22 +68,24 @@ def entry_tags(path: Path) -> list[str]:
 
 
 def list_directory(app: 'GuiApp', relative: str | None) -> dict:
-    """Entries of a folder inside the root (hidden and cache folders skipped).
+    """Entries of a folder inside the root or a read-only folder (hidden and cache folders skipped).
 
     Parameters
     ----------
     app : GuiApp
         The application (sandbox).
     relative : str or None
-        Folder relative to the root.
+        Folder relative to the root, or an absolute path inside a read-only folder.
 
     Returns
     -------
     dict
-        ``path`` (relative), ``absolute``, ``parent`` (``None`` at the root) and ``entries``
-        (name, kind, size, modification time, tags).
+        ``path`` (relative to the root; absolute in a read-only folder), ``absolute``, ``parent``
+        (``None`` at the top of the root or of the read-only folder), ``place`` (``path``, ``label``
+        and ``writable`` of that top folder) and ``entries`` (name, kind, size, modification time,
+        tags).
     """
-    folder = app.resolve(relative)
+    folder = app.resolve_readable(relative)
     if not folder.is_dir():
         raise HttpError(404, '%s is not a folder' % relative)
     entries = []
@@ -98,11 +100,7 @@ def list_directory(app: 'GuiApp', relative: str | None) -> dict:
             stat = child.stat()
         except OSError:
             continue
-        try:
-            inside = child.resolve().is_relative_to(app.sandbox.root)
-        except OSError:
-            inside = False
-        if not inside:
+        if not app.sandbox.readable(child):
             continue
         entries.append(
             {
@@ -113,9 +111,20 @@ def list_directory(app: 'GuiApp', relative: str | None) -> dict:
                 'tags': entry_tags(child),
             }
         )
+    place = app.sandbox.place(folder)
     path = app.sandbox.relative(folder)
-    parent = None if folder == app.sandbox.root else app.sandbox.relative(folder.parent)
-    return {'path': path, 'absolute': str(folder), 'parent': parent, 'entries': entries}
+    parent = None if folder == place else app.sandbox.relative(folder.parent)
+    return {
+        'path': path,
+        'absolute': str(folder),
+        'parent': parent,
+        'place': {
+            'path': app.sandbox.relative(place),
+            'label': 'root' if place == app.sandbox.root else str(place),
+            'writable': place == app.sandbox.root,
+        },
+        'entries': entries,
+    }
 
 
 def detect(app: 'GuiApp', relative: str | None) -> dict:
@@ -204,7 +213,7 @@ def detect(app: 'GuiApp', relative: str | None) -> dict:
 
 
 def read_text(app: 'GuiApp', relative: str) -> dict:
-    """Content of a text file inside the root (for previews).
+    """Content of a text file inside the root or a read-only folder (for previews).
 
     Parameters
     ----------
@@ -218,7 +227,7 @@ def read_text(app: 'GuiApp', relative: str) -> dict:
     dict
         ``path``, ``size``, ``text`` (``None`` for binary files), ``truncated``.
     """
-    path = app.resolve(relative)
+    path = app.resolve_readable(relative)
     if not path.is_file():
         raise HttpError(404, '%s is not a file' % relative)
     size = path.stat().st_size
@@ -252,6 +261,7 @@ def register(app: 'GuiApp') -> None:
         return json_response(
             {
                 'root': str(app.sandbox.root),
+                'read_roots': [str(folder) for folder in app.sandbox.read_roots],
                 'start': app.start,
                 'read_only': app.read_only,
                 'version': version,

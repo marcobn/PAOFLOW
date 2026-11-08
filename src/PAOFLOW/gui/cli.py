@@ -4,6 +4,7 @@ Usage::
 
     paoflow-studio                         # serve the current folder, open the browser
     paoflow-studio --root ~/runs --port 8765 --no-browser
+    paoflow-studio --root ~/runs --allow-read ~/pseudos   # read (never write) another folder
     paoflow-studio plot Si/output          # open the Results tab on a folder
     paoflow-studio report Si/output -o Si_report.html   # static HTML report, no server
 
@@ -37,12 +38,17 @@ def _serve(args: argparse.Namespace, start: str | None, tab: str) -> int:
             sys.stderr.write('paoflow-studio: %s is outside the root %s\n' % (start_path, root))
             return 1
         start = os.path.relpath(start_path, root)
+    for folder in args.allow_read or []:
+        if not os.path.isdir(os.path.expanduser(folder)):
+            sys.stderr.write('paoflow-studio: --allow-read %s is not a folder\n' % folder)
+            return 1
     app = GuiApp(
         root,
         token=args.token,
         read_only=args.read_only,
         max_ranks=args.max_ranks,
         start=start,
+        read_roots=args.allow_read or (),
     )
     server = None
     last_error = None
@@ -57,6 +63,8 @@ def _serve(args: argparse.Namespace, start: str | None, tab: str) -> int:
         return 1
     url = server.url + '#' + tab
     print('PAOFLOW Studio serving %s%s' % (root, ' (read-only)' if args.read_only else ''))
+    for folder in app.sandbox.read_roots:
+        print('  read-only: %s' % folder)
     print('  open:   %s' % url)
     print(
         '  remote: ssh -N -L %d:127.0.0.1:%d <this host>, then open the URL above'
@@ -109,6 +117,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--no-browser', action='store_true', help='do not open a browser')
     parser.add_argument(
         '--read-only', action='store_true', help='browse and plot only: no writes, no runs'
+    )
+    parser.add_argument(
+        '--allow-read',
+        action='append',
+        metavar='DIR',
+        help='also let the browser read DIR (pseudopotentials, results elsewhere); never written; '
+        "repeatable. PAOFLOW's own PSEUDOS and BASIS folders are always readable",
     )
     parser.add_argument('--max-ranks', type=int, default=None, help='cap of the MPI ranks of a run')
     parser.add_argument('--token', default=None, help=argparse.SUPPRESS)

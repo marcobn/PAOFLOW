@@ -1110,3 +1110,14 @@ details.doc[open] summary {
 .field.invalid select {
   border-color: var(--bad);
 }
+
+.places {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.places button.chip {
+  cursor: pointer;
+}

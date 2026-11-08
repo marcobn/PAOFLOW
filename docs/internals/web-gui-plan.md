@@ -108,6 +108,18 @@ Results; light and dark themes; the 3D Fermi surface. No console errors.
 
 Nothing from the open list remains.
 
+**Read-only folders (8 November 2026, user request).** `Sandbox(root, read_roots=...)` splits the path rule in
+two:
+
+- `resolve`, for writes, the working folder and runs: inside `--root` only;
+- `resolve_readable`, for listings, previews, the QE-input and basis pseudopotentials, results, experiment files,
+  and the path answers the server reads (`savedir`, `pw_template`): inside the root or a read-only folder.
+
+The read-only folders are the `--allow-read DIR` options plus PAOFLOW's own `PSEUDOS/` and `BASIS/`. They are
+fixed at start-up, so no request can add one, and symbolic links that leave them are refused. Listings report
+their `place` (`writable` false), and the folder picker shows them as places. Tests: `test_read_roots.py`, plus a
+browser test that picks `PSEUDOS` in the QE-input tool.
+
 ## 1. Goals and non-goals
 
 Goals:

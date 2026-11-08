@@ -17,6 +17,7 @@ from __future__ import annotations
 import hmac
 import secrets
 from pathlib import Path
+from typing import Sequence
 
 COOKIE_NAME = 'paoflow_studio_token'
 TOKEN_HEADER = 'X-PAOFLOW-Token'
@@ -151,19 +152,45 @@ def origin_allowed(origin_header: str | None, port: int) -> bool:
 
 
 class Sandbox:
-    """Resolve browser paths under the server root and refuse anything outside it.
+    """Resolve browser paths: writes under the server root, reads also under read-only folders.
 
     Parameters
     ----------
     root : str or Path
-        The root folder (``paoflow-studio --root``).
+        The root folder (``paoflow-studio --root``): read and written.
+    read_roots : sequence of str or Path, optional
+        Extra folders that are read only (``paoflow-studio --allow-read``, PAOFLOW's own
+        ``PSEUDOS`` and ``BASIS``).  They are fixed when the server starts; no request can add one.
     """
 
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path, read_roots: Sequence[str | Path] = ()) -> None:
         self.root = Path(root).expanduser().resolve()
+        roots: list[Path] = []
+        for folder in read_roots:
+            path = Path(folder).expanduser().resolve()
+            if (
+                path.is_dir()
+                and path != self.root
+                and not path.is_relative_to(self.root)
+                and path not in roots
+            ):
+                roots.append(path)
+        self.read_roots = roots
+
+    @staticmethod
+    def _candidate(root: Path, path: str | Path | None) -> tuple[str, Path]:
+        text = '' if path is None else str(path).strip()
+        candidate = Path(text).expanduser() if text else root
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        return text, candidate.resolve()
+
+    @staticmethod
+    def _inside(path: Path, folder: Path) -> bool:
+        return path == folder or path.is_relative_to(folder)
 
     def resolve(self, path: str | Path | None) -> Path:
-        """Absolute path of ``path`` (relative to the root, or absolute inside it).
+        """Absolute path of ``path`` inside the root (relative to it, or absolute): where writes go.
 
         Parameters
         ----------
@@ -179,26 +206,97 @@ class Sandbox:
         PermissionError
             If the path (after resolving symbolic links and ``..``) leaves the root.
         """
-        text = '' if path is None else str(path).strip()
-        candidate = Path(text).expanduser() if text else self.root
-        if not candidate.is_absolute():
-            candidate = self.root / candidate
-        resolved = candidate.resolve()
-        if resolved != self.root and not resolved.is_relative_to(self.root):
-            raise PermissionError('%s is outside the GUI root %s' % (text, self.root))
+        text, resolved = self._candidate(self.root, path)
+        if not self._inside(resolved, self.root):
+            readable = any(self._inside(resolved, folder) for folder in self.read_roots)
+            raise PermissionError(
+                '%s is %s'
+                % (
+                    text,
+                    'read-only (an --allow-read folder)'
+                    if readable
+                    else 'outside the GUI root %s' % self.root,
+                )
+            )
         return resolved
 
-    def relative(self, path: str | Path) -> str:
-        """Path relative to the root (``'.'`` for the root itself).
+    def resolve_readable(self, path: str | Path | None) -> Path:
+        """Absolute path of ``path`` inside the root or a read-only folder (reads only).
+
+        Parameters
+        ----------
+        path : str or Path or None
+            Path from the browser: relative to the root, or absolute.
+
+        Returns
+        -------
+        Path
+
+        Raises
+        ------
+        PermissionError
+            If the path is outside the root and every read-only folder.
+        """
+        text, resolved = self._candidate(self.root, path)
+        if self._inside(resolved, self.root) or any(
+            self._inside(resolved, folder) for folder in self.read_roots
+        ):
+            return resolved
+        raise PermissionError(
+            '%s is outside the GUI root %s and the read-only folders; start paoflow-studio with '
+            '--allow-read <folder> to read it' % (text, self.root)
+        )
+
+    def readable(self, path: str | Path) -> bool:
+        """Whether a path may be read (inside the root or a read-only folder).
 
         Parameters
         ----------
         path : str or Path
-            An absolute path inside the root.
+            Absolute path, or relative to the root.
+
+        Returns
+        -------
+        bool
+        """
+        try:
+            self.resolve_readable(path)
+        except (PermissionError, OSError, ValueError):
+            return False
+        return True
+
+    def place(self, path: str | Path) -> Path:
+        """The root or read-only folder that contains ``path``.
+
+        Parameters
+        ----------
+        path : str or Path
+            A resolved readable path.
+
+        Returns
+        -------
+        Path
+        """
+        resolved = Path(path).resolve()
+        for folder in [self.root, *self.read_roots]:
+            if self._inside(resolved, folder):
+                return folder
+        raise PermissionError('%s is not readable' % path)
+
+    def relative(self, path: str | Path) -> str:
+        """Path relative to the root (``'.'`` for the root itself); absolute outside the root.
+
+        Parameters
+        ----------
+        path : str or Path
+            An absolute path inside the root or a read-only folder.
 
         Returns
         -------
         str
         """
-        relative = Path(path).resolve().relative_to(self.root)
+        resolved = Path(path).resolve()
+        if not self._inside(resolved, self.root):
+            return str(resolved)
+        relative = resolved.relative_to(self.root)
         return str(relative) if str(relative) != '.' else '.'
