@@ -73,8 +73,19 @@ def _errors(driver):
     return [e['message'] for e in driver.get_log('browser') if e['level'] == 'SEVERE']
 
 
+def _navigate(driver, url):
+    """Load a page with a clean browser log.
+
+    The browser is shared by the tests: the page of the previous test keeps its timers (job
+    polling, folder refresh) until the navigation, and their requests to a server that has
+    stopped are logged as errors. Those belong to no test.
+    """
+    driver.get_log('browser')
+    driver.get(url)
+
+
 def _open(driver, server, tab):
-    driver.get(server.url + '#' + tab)
+    _navigate(driver, server.url + '#' + tab)
     _wait(
         lambda: driver.execute_script(
             'return window.paoflowApp && window.paoflowApp.setup && window.paoflowApp.setup.workflows.length > 0'
@@ -222,7 +233,7 @@ def test_picker_reaches_read_only_folders(browser, studio):
 
 def test_guide_opens_on_first_visit(browser, studio):
     server, _work = studio
-    browser.get(server.url + '#setup')
+    _navigate(browser, server.url + '#setup')
     panel = _wait(
         lambda: [
             p for p in browser.find_elements(By.CSS_SELECTOR, '.help-panel') if p.is_displayed()
@@ -484,7 +495,7 @@ def test_zone_preview_drawn_in_a_hidden_tab_fills_its_box(browser, studio):
         'paoflow-studio:workflow:%s:Si' % root,
         'paoflow-studio:answers:%s:Si:run' % root,
     )
-    browser.get(server.url + '#runs')
+    _navigate(browser, server.url + '#runs')
     _wait(
         lambda: browser.execute_script(
             'return Boolean(window.paoflowApp && window.paoflowApp.setup)'
@@ -549,7 +560,7 @@ def test_stale_save_answer_offers_the_found_save(browser, studio):
         'paoflow-studio:workflow:%s:Si' % root,
         'paoflow-studio:answers:%s:Si:run' % root,
     )
-    browser.get(server.url + '#setup')
+    _navigate(browser, server.url + '#setup')
     _wait(
         lambda: browser.execute_script(
             'return Boolean(window.paoflowApp && window.paoflowApp.setup)'
@@ -575,5 +586,55 @@ def test_stale_save_answer_offers_the_found_save(browser, studio):
         lambda: not browser.find_element(
             By.CSS_SELECTOR, '.field[data-key="savedir"] .field-warning'
         ).is_displayed()
+    )
+    assert _errors(browser) == []
+
+
+def test_qe_options_are_edited_checked_and_passed(browser, studio, tmp_path, monkeypatch):
+    """pw.x runtime options in the Runs tab: checked against the ranks, shown in the command,
+    passed to pw.x and remembered."""
+    import os
+
+    if not (shutil.which('mpirun') or shutil.which('mpiexec')):
+        pytest.skip('no mpirun')
+    server, work = studio
+    bin_dir = tmp_path / 'qe_bin'
+    bin_dir.mkdir()
+    program = bin_dir / 'pw.x'
+    program.write_text('#!/bin/sh\necho "Program PWSCF (stand-in) $@"\necho "JOB DONE."\n')
+    program.chmod(0o755)
+    monkeypatch.setenv('PATH', '%s:%s' % (bin_dir, os.environ['PATH']))
+    (work / 'gaas.scf.in').write_text("&control\n  calculation = 'scf'\n/\n")
+    _open(browser, server, 'setup')
+    browser.execute_script("window.paoflowApp.setup.runQeInput('Si/gaas.scf.in')")
+    _wait(lambda: browser.find_elements(By.XPATH, "//button[text()='Open in Runs']"))[0].click()
+    options = _wait(lambda: browser.find_elements(By.CSS_SELECTOR, '#view-runs .qe-options input'))[
+        0
+    ]
+    ranks = browser.find_element(By.CSS_SELECTOR, '#view-runs input[type="number"]')
+    ranks.clear()
+    ranks.send_keys('2')
+    options.send_keys('-nk 3')
+    error = browser.find_element(By.CSS_SELECTOR, '#view-runs .option-error')
+    _wait(lambda: '-nk 3 is more than the 2 ranks' in error.text)
+    run = next(
+        b for b in browser.find_elements(By.XPATH, "//button[text()='Run']") if b.is_displayed()
+    )
+    assert not run.is_enabled()
+    options.clear()
+    options.send_keys('-nk 2')
+    _wait(lambda: not error.is_displayed() and run.is_enabled())
+    code = browser.find_element(By.CSS_SELECTOR, '#view-runs .steps li .cmd code')
+    assert code.text == 'pw.x -in gaas.scf.in -nk 2 > gaas.scf.out'
+    run.click()
+    _wait(
+        lambda: 'finished' in browser.find_element(By.CSS_SELECTOR, '#view-runs .result-head').text,
+        timeout=60,
+    )
+    assert 'Program PWSCF (stand-in) -in gaas.scf.in -nk 2' in (work / 'gaas.scf.out').read_text()
+    browser.execute_script('window.paoflowApp.runs.renderPlan()')  # remembered per program
+    assert (
+        browser.find_element(By.CSS_SELECTOR, '#view-runs .qe-options input').get_attribute('value')
+        == '-nk 2'
     )
     assert _errors(browser) == []

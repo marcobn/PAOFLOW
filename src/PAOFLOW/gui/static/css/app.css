@@ -388,6 +388,16 @@ main {
   gap: 2px;
   margin: 2px 0 8px;
 }
+.qe-options {
+  margin-top: 4px;
+}
+.qe-options input.invalid {
+  border-color: var(--bad);
+}
+.option-error {
+  color: var(--bad);
+  font-size: 13px;
+}
 .qe-select {
   min-width: 0;
 }
@@ -808,8 +818,9 @@ table.rows td {
 }
 .steps .cmd code {
   flex: 1;
-  overflow-x: auto;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* ------------------------------------------------------------------------- file browser */

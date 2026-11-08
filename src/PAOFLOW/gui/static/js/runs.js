@@ -3,7 +3,7 @@
 import { api } from './api.js';
 import { pickFolder } from './browser.js';
 import { clear, copyText, h, joinPath, storage, toast } from './dom.js';
-import { chosenQe, qePicker } from './qe.js';
+import { chosenQe, loadQe, qePicker } from './qe.js';
 
 const STATUS_CHIP = {
   running: 'accent',
@@ -20,6 +20,66 @@ function actionLabel(action) {
       ? `Open Setup (${workflow === 'run' ? 'Property run' : workflow})`
       : 'Open Setup';
   return 'Open';
+}
+
+// The command of a step with extra QE options after its arguments (before `> output`).
+function commandWith(step, extra) {
+  if (!extra.length) return step.command;
+  const base = step.argv.join(' ');
+  return step.command.includes(base)
+    ? step.command.replace(base, `${base} ${extra.join(' ')}`)
+    : step.command;
+}
+
+// Parallel options of a QE program ("-nk 4 -nd 1") checked as the server checks them: known
+// flags with positive integers, one flag per group, images x pools dividing the ranks, task and
+// band groups dividing the ranks of a pool. Returns {tokens} or {error}.
+export function parseQeOptions(text, groups, ranks) {
+  const tokens = text.trim() ? text.trim().split(/\s+/) : [];
+  if (!groups) return { tokens };
+  const flagOf = {};
+  const values = {};
+  for (let index = 0; index < tokens.length; index += 2) {
+    const flag = tokens[index];
+    const value = tokens[index + 1];
+    const group = groups.find((item) => item.flags.includes(flag));
+    if (!group) {
+      return {
+        error: `${flag} is not a parallel option (${groups.map((g) => g.flags[0]).join(', ')})`,
+      };
+    }
+    if (value === undefined || !/^[1-9]\d*$/.test(value)) {
+      return { error: `${flag} takes a positive integer` };
+    }
+    if (flagOf[group.name]) {
+      return { error: `${flagOf[group.name]} and ${flag} both set the ${group.name}` };
+    }
+    flagOf[group.name] = flag;
+    values[group.name] = Number(value);
+  }
+  for (const [name, value] of Object.entries(values)) {
+    if (value > ranks) {
+      return { error: `${flagOf[name]} ${value} is more than the ${ranks} ranks of the run` };
+    }
+  }
+  const split = (values.images || 1) * (values.pools || 1);
+  if (ranks % split) {
+    return { error: `images x pools (${split}) must divide the ${ranks} ranks` };
+  }
+  const perPool = ranks / split;
+  for (const name of ['task groups', 'band groups']) {
+    if (values[name] && perPool % values[name]) {
+      return {
+        error: `${flagOf[name]} ${values[name]} must divide the ${perPool} ranks of each pool`,
+      };
+    }
+  }
+  if ((values.diag || 1) > perPool) {
+    return {
+      error: `${flagOf.diag} ${values.diag} is more than the ${perPool} ranks of each pool`,
+    };
+  }
+  return { tokens };
 }
 
 function duration(seconds) {
@@ -42,7 +102,14 @@ export class RunsView {
     this.offset = 0;
     this.follow = true;
     this.maxRanks = this.session.max_ranks || 1;
+    this.qeInfo = null;
     this.build();
+    loadQe()
+      .then((info) => {
+        this.qeInfo = info;
+        this.renderPlan();
+      })
+      .catch(() => {});
   }
 
   build() {
@@ -128,6 +195,8 @@ export class RunsView {
       ),
     );
     const list = h('ol', { class: 'steps' });
+    const groups = this.qeInfo?.parallel_groups || null;
+    const programs = this.qeInfo?.programs || [];
     for (const step of this.plan) {
       const ranks = h('input', {
         type: 'number',
@@ -139,6 +208,61 @@ export class RunsView {
       });
       const usesRanks = step.mpi || step.ranks_env;
       const runnable = !step.interactive && !step.manual && !this.session.read_only;
+      const program = step.argv?.[0];
+      const isQe = runnable && (programs.includes(program) || /\.x$/.test(program || ''));
+      const code = h('code', {}, step.command);
+      let parsed = { tokens: [] };
+      const runButton = h(
+        'button',
+        {
+          class: 'btn small primary',
+          onclick: () =>
+            this.launch(
+              { ...step, argv: [...step.argv, ...(parsed.tokens || [])] },
+              usesRanks ? Number(ranks.value) : 1,
+            ),
+        },
+        'Run',
+      );
+      let optionsRow = null;
+      if (isQe) {
+        // Runtime options of the QE program (pw.x -nk 4 ...), remembered per program.
+        const key = `qe-options:${this.session.root}:${program}`;
+        const options = h('input', {
+          type: 'text',
+          class: 'grow mono',
+          value: storage(key) || '',
+          placeholder: '-nk 4 -nd 1',
+          spellcheck: 'false',
+          autocomplete: 'off',
+          'aria-label': `${program} options`,
+        });
+        const problem = h('div', { class: 'option-error', hidden: true });
+        const refresh = () => {
+          parsed = parseQeOptions(options.value, groups, usesRanks ? Number(ranks.value) : 1);
+          problem.hidden = !parsed.error;
+          problem.textContent = parsed.error || '';
+          options.classList.toggle('invalid', Boolean(parsed.error));
+          code.textContent = commandWith(step, parsed.tokens || []);
+          runButton.disabled = Boolean(parsed.error);
+        };
+        options.addEventListener('input', () => {
+          storage(key, options.value.trim());
+          refresh();
+        });
+        ranks.addEventListener('input', refresh);
+        const hint = groups
+          ? groups.map((group) => `${group.flags[0]} ${group.what}`).join(' · ')
+          : '-nk pools · -ni images · -nd linear algebra · -nt task groups · -nb band groups';
+        optionsRow = h(
+          'div',
+          { class: 'qe-options' },
+          h('div', { class: 'row' }, h('span', { class: 'small muted' }, 'options'), options),
+          problem,
+          h('div', { class: 'small faint' }, hint),
+        );
+        refresh();
+      }
       list.append(
         h(
           'li',
@@ -156,13 +280,14 @@ export class RunsView {
             : h(
                 'div',
                 { class: 'cmd' },
-                h('code', {}, step.command),
+                code,
                 h(
                   'button',
-                  { class: 'icon-btn', title: 'Copy', onclick: () => copyText(step.command) },
+                  { class: 'icon-btn', title: 'Copy', onclick: () => copyText(code.textContent) },
                   '⧉',
                 ),
               ),
+          optionsRow,
           step.note && !step.interactive ? h('div', { class: 'small muted' }, step.note) : null,
           runnable
             ? h(
@@ -170,14 +295,7 @@ export class RunsView {
                 { class: 'row', style: { marginTop: '4px' } },
                 usesRanks ? [h('span', { class: 'small muted' }, 'ranks'), ranks] : null,
                 h('span', { class: 'grow' }),
-                h(
-                  'button',
-                  {
-                    class: 'btn small primary',
-                    onclick: () => this.launch(step, usesRanks ? Number(ranks.value) : 1),
-                  },
-                  'Run',
-                ),
+                runButton,
               )
             : step.action
               ? h(

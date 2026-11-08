@@ -48,19 +48,16 @@ QE_PROGRAMS = (
     'dynmat.x',
 )
 QE_INPUT_FLAGS = ('-in', '-inp', '-input', '-i')
-QE_PARALLEL_FLAGS = (
-    '-nk',
-    '-npool',
-    '-npools',
-    '-ni',
-    '-nimage',
-    '-nd',
-    '-ndiag',
-    '-nt',
-    '-ntg',
-    '-nb',
-    '-nbgrp',
+#: The parallelisation options of the QE programs a run may add (``pw.x -nk 4``): name, flags
+#: (aliases) and what they set.
+QE_PARALLEL_GROUPS = (
+    ('pools', ('-nk', '-npool', '-npools'), 'k-point pools'),
+    ('images', ('-ni', '-nimage'), 'images'),
+    ('diag', ('-nd', '-ndiag'), 'ranks of the parallel linear algebra'),
+    ('task groups', ('-nt', '-ntg'), 'FFT task groups'),
+    ('band groups', ('-nb', '-nbgrp'), 'band groups'),
 )
+QE_PARALLEL_FLAGS = tuple(flag for _name, flags, _what in QE_PARALLEL_GROUPS for flag in flags)
 OUTPUT_NAME = re.compile(r'^[\w.-]+$')
 SAFE_TOKEN = re.compile(r'^[\w.,:=+@%/-]+$')
 SHELL_SCRIPT = re.compile(r'^[\w./-]+\.sh$')
@@ -185,7 +182,7 @@ def build_command(
     elif program == 'paoflow-genbasis-ps':
         command = [_python_executable(), '-u', '-m', 'PAOFLOW.basis_gen.cli', *argv[1:]]
     elif program in QE_PROGRAMS:
-        command = [_qe_executable(qe, program), *_qe_arguments(app, cwd, argv[1:])]
+        command = [_qe_executable(qe, program), *_qe_arguments(app, cwd, argv[1:], ranks)]
     else:
         raise HttpError(
             400,
@@ -236,9 +233,10 @@ def _qe_executable(qe, program: str) -> str:
     return str(executable)
 
 
-def _qe_arguments(app: 'GuiApp', cwd: Path, arguments: list[str]) -> list[str]:
+def _qe_arguments(app: 'GuiApp', cwd: Path, arguments: list[str], ranks: object = 1) -> list[str]:
     """Validated arguments of a QE program: one input file inside the folder and parallel flags."""
     checked: list[str] = []
+    layout: dict[str, tuple[str, int]] = {}
     seen_input = False
     index = 0
     while index < len(arguments):
@@ -252,8 +250,12 @@ def _qe_arguments(app: 'GuiApp', cwd: Path, arguments: list[str]) -> list[str]:
                 raise HttpError(400, '%s not found (write the input first)' % value)
             seen_input = True
         elif flag in QE_PARALLEL_FLAGS:
-            if not value.isdigit():
-                raise HttpError(400, '%s takes an integer' % flag)
+            if not value.isdigit() or int(value) < 1:
+                raise HttpError(400, '%s takes a positive integer' % flag)
+            group = next(name for name, flags, _what in QE_PARALLEL_GROUPS if flag in flags)
+            if group in layout:
+                raise HttpError(400, '%s and %s both set the %s' % (layout[group][0], flag, group))
+            layout[group] = (flag, int(value))
         else:
             raise HttpError(
                 400, 'unsupported QE option %r (input file and parallel flags only)' % flag
@@ -262,7 +264,67 @@ def _qe_arguments(app: 'GuiApp', cwd: Path, arguments: list[str]) -> list[str]:
         index += 2
     if not seen_input:
         raise HttpError(400, 'a QE run needs its input file (-in <file>)')
+    check_parallel_layout({group: value for group, (_flag, value) in layout.items()}, ranks, layout)
     return checked
+
+
+def check_parallel_layout(values: dict[str, int], ranks: object, flags: dict | None = None) -> None:
+    """Refuse a QE parallel layout that QE would stop on at start-up.
+
+    Parameters
+    ----------
+    values : dict
+        Group name of :data:`QE_PARALLEL_GROUPS` -> value (``{'pools': 4}``).
+    ranks : int
+        MPI ranks of the run.
+    flags : dict, optional
+        Group name -> (flag as typed, value), for the messages.
+
+    Raises
+    ------
+    HttpError
+        400 when a value exceeds the ranks, or images x pools does not divide them, or the task
+        or band groups do not divide the ranks of a pool.
+    """
+    try:
+        ranks = int(ranks)
+    except (TypeError, ValueError):
+        return  # build_command reports the rank count
+    if ranks < 1:
+        return
+    name = {group: (flags or {}).get(group, (group, 0))[0] for group in values}
+    for group, value in values.items():
+        if value > ranks:
+            raise HttpError(
+                400, '%s %d is more than the %d ranks of the run' % (name[group], value, ranks)
+            )
+    split = values.get('images', 1) * values.get('pools', 1)
+    if ranks % split:
+        raise HttpError(
+            400,
+            '%d ranks cannot be split into %s: images x pools (%d) must divide the ranks'
+            % (
+                ranks,
+                ' x '.join(
+                    '%s %d' % (name[g], values[g]) for g in ('images', 'pools') if g in values
+                ),
+                split,
+            ),
+        )
+    per_pool = ranks // split
+    for group in ('task groups', 'band groups'):
+        if group in values and per_pool % values[group]:
+            raise HttpError(
+                400,
+                '%s %d must divide the %d ranks of each pool'
+                % (name[group], values[group], per_pool),
+            )
+    if values.get('diag', 1) > per_pool:
+        raise HttpError(
+            400,
+            '%s %d is more than the %d ranks of each pool'
+            % (name['diag'], values['diag'], per_pool),
+        )
 
 
 def _core_budget() -> int:
@@ -532,6 +594,11 @@ def register(app: 'GuiApp') -> None:
             {
                 'installations': [installation.to_json() for installation in installations],
                 'default': str(default.bin) if default is not None else None,
+                'programs': list(QE_PROGRAMS),
+                'parallel_groups': [
+                    {'name': name, 'flags': list(flags), 'what': what}
+                    for name, flags, what in QE_PARALLEL_GROUPS
+                ],
             }
         )
 

@@ -126,8 +126,10 @@ The Runs tab shows the run plan of the last written workflow, or of a `pw.x` inp
 input…*. *Run* starts a step:
 
 - `python` drivers run under `mpirun -np N` when the step supports MPI.
-- QE programs (`pw.x`, `ph.x`, `projwfc.x`, ...) run under `mpirun -np N` with their input file and the parallel
-  flags of the plan; their output goes to the file the plan names (`scf.out`).
+- QE programs (`pw.x`, `ph.x`, `projwfc.x`, ...) run under `mpirun -np N` with their input file; their output goes
+  to the file the plan names (`scf.out`). The *options* field of the step adds the parallelisation flags
+  (`-nk 4 -nd 1`: `-nk`/`-npool`, `-ni`, `-nd`, `-nt`, `-nb`), checked against the ranks (images × pools must
+  divide them, task and band groups the ranks of a pool) and remembered per program.
 - `run_qe.sh` gets its rank count through `NP`.
 
 Every run is niced, with one thread per rank. Runs continue when the GUI stops; a restarted GUI shows them again.

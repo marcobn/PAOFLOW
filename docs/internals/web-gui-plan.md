@@ -866,3 +866,23 @@ Retyping the value triggered a resolve, which is why it seemed to "apply" it.
   `test_defaults_follow_the_folder` (the save appears while the form is open: the Save directory, UPF,
   `ibrav`, points and preview follow, with no answer stored) and `test_stale_save_answer_offers_the_found_save`.
 
+
+**Runtime options of the QE steps (8 November 2026, user request: "allow editing the pw.x run cell for
+additional runtime options (-nk X etc)").**
+
+- Each QE step of the Runs plan has an *options* field (remembered per program and root). The command above
+  it follows the input, and so does *Copy*. `parseQeOptions` (runs.js) applies the server's rules and
+  disables *Run* while they fail.
+- Server: `jobs.QE_PARALLEL_GROUPS` (pools `-nk/-npool/-npools`, images `-ni/-nimage`, diag `-nd/-ndiag`,
+  task groups `-nt/-ntg`, band groups `-nb/-nbgrp`). `_qe_arguments` takes the ranks, and
+  `check_parallel_layout` refuses what QE would stop on at start-up:
+  - a value above the ranks;
+  - images × pools not dividing the ranks;
+  - task or band groups not dividing the ranks of a pool;
+  - `-nd` above the ranks of a pool;
+  - two flags of one group.
+
+  `/api/qe` serves the groups and the program list to the page.
+- Long commands wrap in the plan instead of scrolling.
+- Tests: the layout rules (10 cases, including valid ones that run), the `/api/qe` facts, and a browser
+  test (`-nk 3` on 2 ranks disables *Run*; `-nk 2` reaches `pw.x` and is remembered).

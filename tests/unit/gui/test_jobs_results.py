@@ -158,7 +158,7 @@ def test_qe_program_writes_its_output_file(client, gui_root, tmp_path, monkeypat
         'cwd': 'Si',
         'stdout': 'Si2.scf.out',
     }
-    status, job, _ = client.post('/api/jobs/launch', {'step': step})
+    status, job, _ = client.post('/api/jobs/launch', {'step': step, 'ranks': 2})
     assert status == 200, job
     log = _wait(client, job['id'])
     assert log['status'] == 'finished' and 'JOB DONE.' in log['text']
@@ -249,3 +249,40 @@ def test_runs_use_the_chosen_qe_build(make_client, gui_root, tmp_path, monkeypat
     for payload, message in errors:
         status, body, _ = client.post('/api/jobs/launch', payload)
         assert status == 400 and message in body['error'], body
+
+
+@pytest.mark.parametrize(
+    'options, ranks, message',
+    [
+        (['-nk', '3'], 4, 'images x pools (3) must divide'),
+        (['-nk', '2', '-ni', '3'], 6, None),
+        (['-nk', '2', '-ni', '2'], 6, 'images x pools (4) must divide'),
+        (['-nk', '8'], 4, '-nk 8 is more than the 4 ranks'),
+        (['-nk', '2', '-npool', '2'], 4, '-nk and -npool both set the pools'),
+        (['-nk', '0'], 4, 'positive integer'),
+        (['-nk', '2', '-nt', '3'], 4, '-nt 3 must divide the 2 ranks of each pool'),
+        (['-nk', '2', '-nd', '4'], 4, '-nd 4 is more than the 2 ranks of each pool'),
+        (['-nk', '2', '-nd', '1', '-nb', '2'], 4, None),
+        (['-ndiag', '4', '-ntg', '2', '-nbgrp', '2'], 4, None),
+    ],
+)
+def test_qe_parallel_options_are_checked_against_the_ranks(
+    make_client, gui_root, tmp_path, monkeypatch, options, ranks, message
+):
+    _fake_qe(tmp_path, monkeypatch)
+    client = make_client(qe_search=False, max_ranks=8)
+    (gui_root / 'Si' / 'Si2.scf.in').write_text('&control\n/\n')
+    step = {'argv': ['pw.x', '-in', 'Si2.scf.in', *options], 'cwd': 'Si', 'stdout': 'Si2.scf.out'}
+    status, body, _ = client.post('/api/jobs/launch', {'step': step, 'ranks': ranks})
+    if message is None:
+        assert status == 200, body
+        assert _wait(client, body['id'])['status'] == 'finished'
+        assert ' '.join(options) in (gui_root / 'Si' / 'Si2.scf.out').read_text()
+    else:
+        assert status == 400 and message in body['error'], body
+
+
+def test_qe_facts_for_the_options_field(make_client):
+    body = make_client(qe_search=False).get('/api/qe')[1]
+    groups = {group['name']: group['flags'] for group in body['parallel_groups']}
+    assert groups['pools'] == ['-nk', '-npool', '-npools'] and 'pw.x' in body['programs']
