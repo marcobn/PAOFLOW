@@ -479,6 +479,15 @@ main {
   font-size: 13px;
   margin-top: 2px;
 }
+.field .field-warning {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: var(--warn);
+}
 .field .error {
   color: var(--bad);
   font-size: 13px;

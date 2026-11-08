@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 
 import pytest
 
@@ -102,3 +103,18 @@ def test_point_rows_errors(rows, message):
         WORKFLOWS['run'], {'properties': ['bands'], 'high_sym': rows}, Context(workdir=SI)
     )
     assert message in form.errors['high_sym']
+
+
+def test_save_problems_name_the_cause(tmp_path):
+    from PAOFLOW.gen.band_paths import save_problem, saves_in
+
+    workdir = str(tmp_path)
+    assert 'run pw.x here first' in save_problem(workdir, 'pwscf.save')
+    (tmp_path / 'Si.save').mkdir()  # pw.x still running: no data-file-schema.xml yet
+    assert saves_in(workdir) == [] and 'has not finished' in save_problem(workdir, 'Si.save')
+    shutil.copy(os.path.join(SI, 'silicon.save', 'data-file-schema.xml'), tmp_path / 'Si.save')
+    assert saves_in(workdir) == ['Si.save'] and save_problem(workdir, 'Si.save') is None
+    stale = save_problem(workdir, 'gaas.save')
+    assert 'gaas.save does not exist' in stale and 'found here: Si.save' in stale
+    result = path_figure(workdir, 'gaas.save', 'gG-X', [('gG', 0, 0, 0), ('X', 0, 0.5, 0.5)])
+    assert result['saves'] == ['Si.save'] and 'gaas.save does not exist' in result['error']

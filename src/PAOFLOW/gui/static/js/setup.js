@@ -82,6 +82,38 @@ export class SetupView {
     this.selectWorkflow(remembered || suggested?.workflow || 'run');
   }
 
+  // Files change outside the form (a pw.x run writes the save, a UPF is copied in): look at the
+  // folder again and resolve, so the defaults (Save directory, UPFs, ibrav, band path) follow. Only
+  // the edited fields keep their values.
+  async refreshFolder(force = false) {
+    if (!this.detection || this.refreshing) return;
+    this.refreshing = true;
+    try {
+      const detection = await api.get('/api/workspace/detect', { path: this.workdir });
+      const changed = JSON.stringify(detection) !== JSON.stringify(this.detection);
+      if (changed) {
+        this.detection = detection;
+        this.renderFolder();
+        this.renderWorkflows();
+      }
+      if ((changed || force) && this.form) await this.resolve();
+    } catch (_error) {
+      // a folder that went away is reported by the next action
+    } finally {
+      this.refreshing = false;
+    }
+  }
+
+  // The Setup tab is shown: refresh now, then every few seconds while it stays in view.
+  activate() {
+    this.refreshFolder(true);
+    clearInterval(this.folderTimer);
+    this.folderTimer = setInterval(() => {
+      const shown = document.getElementById('view-setup').classList.contains('active');
+      if (shown && document.visibilityState === 'visible') this.refreshFolder();
+    }, 4000);
+  }
+
   renderFolder() {
     const d = this.detection;
     clear(this.folderCard);
@@ -285,6 +317,10 @@ export class SetupView {
         if (immediate) this.resolve();
         else this.scheduleResolve();
       },
+      browse: async (item) => {
+        const chosen = await pickFolder(this.workdir, { title: item.label });
+        return chosen === null ? null : relativeTo(this.workdir, chosen);
+      },
     });
     this.form.reset(saved.answers || {});
     this.renderPreviewShell();
@@ -421,7 +457,24 @@ export class SetupView {
         .then((result) => {
           if (field.previewKey !== key) return;
           if (result.error) {
-            field.caption.textContent = `Preview: ${result.error}`;
+            const current = value('savedir');
+            const saves = (result.saves || []).filter((name) => name !== current);
+            const savedir = this.form.fields.get('savedir');
+            clear(field.caption).append(
+              `Preview: ${result.error}`,
+              ...saves.map((name) =>
+                h(
+                  'button',
+                  {
+                    class: 'btn small',
+                    type: 'button',
+                    style: { marginLeft: '6px' },
+                    onclick: () => savedir?.pick(name),
+                  },
+                  `Use ${name}`,
+                ),
+              ),
+            );
             field.preview.hidden = true;
             return;
           }

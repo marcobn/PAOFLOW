@@ -115,4 +115,7 @@ def plot(rows):
 
 
 if __name__ == '__main__':
-    main()
+    # An error on one MPI rank stops every rank instead of hanging the job.
+    from PAOFLOW.utils.mpi_guard import run_main
+
+    run_main(main)

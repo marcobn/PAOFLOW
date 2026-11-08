@@ -52,6 +52,7 @@ SSCHA_ITEMS = (
         default=lambda a, c: detected_savedir(c) or 'pwscf.save',
         override='savedir',
         section=SYSTEM,
+        widget='folder',
     ),
     Question('prefix', 'Prefix', default=_default_prefix, override='prefix', section=SYSTEM),
     Question(

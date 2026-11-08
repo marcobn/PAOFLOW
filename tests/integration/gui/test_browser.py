@@ -502,3 +502,78 @@ def test_zone_preview_drawn_in_a_hidden_tab_fills_its_box(browser, studio):
         )
     )
     assert _errors(browser) == []
+
+
+def _field_value(driver, key):
+    return driver.execute_script(
+        'const n = document.querySelector(`.field[data-key="${arguments[0]}"] input[type=text]`);'
+        'return n ? n.value : null;',
+        key,
+    )
+
+
+def test_defaults_follow_the_folder(browser, studio):
+    """The save appears while the form is open (pw.x finished): the defaults follow, no retyping."""
+    server, work = studio
+    fresh = work.parent / 'Fresh'
+    fresh.mkdir()
+    shutil.copy(work / 'scf.in', fresh / 'scf.in')
+    _open(browser, server, 'setup')
+    browser.execute_script("window.paoflowApp.setup.openFolder('Fresh')")
+    _wait(lambda: browser.execute_script("return window.paoflowApp.setup.workdir === 'Fresh'"))
+    browser.find_element(By.CSS_SELECTOR, '.workflow-item[data-name="run"]').click()
+    _wait(lambda: browser.find_elements(By.CSS_SELECTOR, '.choice-card'))[0].click()
+    _wait(lambda: _field_value(browser, 'savedir') == 'pwscf.save')
+    shutil.copytree(work / 'silicon.save', fresh / 'silicon.save')
+    shutil.copy(work / 'Si.pbe-tm-new-gipaw-v2.1.UPF', fresh / 'silicon.save')
+    _wait(lambda: _field_value(browser, 'savedir') == 'silicon.save', timeout=15)
+    assert _field_value(browser, 'upfs') == 'silicon.save/Si.pbe-tm-new-gipaw-v2.1.UPF'
+    assert _field_value(browser, 'ibrav') == '2'
+    _wait(lambda: browser.find_elements(By.CSS_SELECTOR, '.bz-preview .main-svg'))
+    assert len(browser.find_elements(By.CSS_SELECTOR, '.field[data-key="high_sym"] tr')) > 2
+    assert browser.execute_script('return window.paoflowApp.setup.form.answers') == {
+        'properties': ['bands']
+    }
+    assert _errors(browser) == []
+
+
+def test_stale_save_answer_offers_the_found_save(browser, studio):
+    """A remembered Save directory that holds no save: a warning and a button for the found one."""
+    server, _work = studio
+    _open(browser, server, 'setup')
+    root = browser.execute_script('return window.paoflowApp.session.root')
+    browser.execute_script(
+        'localStorage.setItem(arguments[0], JSON.stringify("run"));'
+        'localStorage.setItem(arguments[1], JSON.stringify({answers: '
+        '{properties: ["bands"], savedir: "gaas.save"}}));',
+        'paoflow-studio:workflow:%s:Si' % root,
+        'paoflow-studio:answers:%s:Si:run' % root,
+    )
+    browser.get(server.url + '#setup')
+    _wait(
+        lambda: browser.execute_script(
+            'return Boolean(window.paoflowApp && window.paoflowApp.setup)'
+        )
+    )
+    browser.execute_script('window.paoflowApp.help.close()')
+    warning = _wait(
+        lambda: [
+            w
+            for w in browser.find_elements(
+                By.CSS_SELECTOR, '.field[data-key="savedir"] .field-warning'
+            )
+            if 'gaas.save does not exist' in w.text
+        ]
+    )[0]
+    assert browser.find_elements(
+        By.CSS_SELECTOR, '.field[data-key="savedir"] button'
+    )  # Browse… is there
+    warning.find_element(By.XPATH, ".//button[text()='Use silicon.save']").click()
+    _wait(lambda: _field_value(browser, 'savedir') == 'silicon.save')
+    _wait(lambda: browser.find_elements(By.CSS_SELECTOR, '.bz-preview .main-svg'))
+    _wait(
+        lambda: not browser.find_element(
+            By.CSS_SELECTOR, '.field[data-key="savedir"] .field-warning'
+        ).is_displayed()
+    )
+    assert _errors(browser) == []

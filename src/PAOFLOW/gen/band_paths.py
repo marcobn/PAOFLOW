@@ -77,6 +77,64 @@ def _cell_in_alat(workdir: str, savedir: str | None) -> tuple[float, np.ndarray]
     return alat, np.asarray(summary['cell_bohr'], dtype=float) / alat
 
 
+def saves_in(workdir: str) -> list[str]:
+    """The finished QE saves of a folder (``<prefix>.save`` with ``data-file-schema.xml``).
+
+    Parameters
+    ----------
+    workdir : str
+        Folder.
+
+    Returns
+    -------
+    list of str
+        Folder names, sorted.
+    """
+    try:
+        names = sorted(os.listdir(workdir))
+    except OSError:
+        return []
+    return [
+        name
+        for name in names
+        if name.endswith('.save')
+        and os.path.isfile(os.path.join(workdir, name, 'data-file-schema.xml'))
+    ]
+
+
+def save_problem(workdir: str, savedir: str | None) -> str | None:
+    """Why ``savedir`` gives no cell, in words the GUI can show, or ``None`` when it is readable.
+
+    Parameters
+    ----------
+    workdir : str
+        Working folder.
+    savedir : str or None
+        The *Save directory* answer (relative to ``workdir``, or absolute).
+
+    Returns
+    -------
+    str or None
+    """
+    found = saves_in(workdir)
+    here = ' (found here: %s)' % ', '.join(found) if found else ''
+    if not savedir:
+        return 'no Save directory given%s' % here
+    path = os.path.join(workdir, savedir)
+    if not os.path.isdir(path):
+        if not found:
+            return (
+                'no QE save (<prefix>.save) in the working folder: run pw.x here first, or change '
+                'the working folder to the one that holds the save'
+            )
+        return 'the Save directory %s does not exist in the working folder%s' % (savedir, here)
+    if not os.path.isfile(os.path.join(path, 'data-file-schema.xml')):
+        return '%s has no data-file-schema.xml: the pw.x run has not finished%s' % (savedir, here)
+    if _cell_in_alat(workdir, savedir) is None:
+        return 'the cell of %s could not be read%s' % (savedir, here)
+    return None
+
+
 def path_labels(band_path: str) -> list[str]:
     """Labels of a path string (``'G-X|M-R'`` -> ``['G', 'X', 'M', 'R']``).
 
@@ -181,15 +239,17 @@ def path_figure(workdir: str, savedir: str | None, band_path: str, points: list[
     -------
     dict
         ``figure`` (Plotly specification with colour roles) and ``length`` (path length in units of
-        ``2π/alat``), or ``error``.
+        ``2π/alat``), or ``error`` (and ``saves``, the saves of the working folder, when the save
+        gives no cell).
     """
     from .fermi_plotter import brillouin_zone, bz_edges
 
     cell = _cell_in_alat(workdir, savedir)
     if cell is None:
+        problem = save_problem(workdir, savedir) or 'the cell of the save could not be read'
         return {
-            'error': 'the zone needs the cell of a QE save (<prefix>.save) in the working folder: '
-            'run pw.x first, or choose the save above'
+            'error': 'the zone needs the cell of the QE save: ' + problem,
+            'saves': saves_in(workdir),
         }
     problem = check_band_path(band_path, points)
     if problem:

@@ -23,6 +23,10 @@ class App {
     root.title = `GUI root: ${this.session.root}`;
     document.getElementById('readonly').hidden = !this.session.read_only;
     this.checkServerCode(this.session);
+    // Back to the window (after a pw.x run in a terminal, say): the folder may have changed.
+    window.addEventListener('focus', () => {
+      if (this.currentTab() === 'setup') this.setup?.refreshFolder();
+    });
     document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState !== 'visible') return;
       try {
@@ -121,7 +125,7 @@ class App {
       document.getElementById(`view-${tab}`).classList.toggle('active', tab === name);
     if (updateHash && location.hash.slice(1).split('/')[0] !== name)
       history.replaceState(null, '', `#${name}`);
-    const view = name === 'runs' ? this.runs : name === 'results' ? this.results : null;
+    const view = { setup: this.setup, runs: this.runs, results: this.results }[name];
     if (view?.activate) view.activate();
   }
 

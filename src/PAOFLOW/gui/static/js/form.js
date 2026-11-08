@@ -18,6 +18,7 @@ class Field {
     this.level = item.level;
     this.choices = null;
     this.error = h('div', { class: 'error', hidden: true });
+    this.warning = h('div', { class: 'field-warning', hidden: true });
     this.control = h('div', { class: 'control' });
     this.resetButton = h(
       'button',
@@ -57,6 +58,7 @@ class Field {
       h('div', {}, label, hints),
       h('div', {}, this.control),
       this.error,
+      this.warning,
     );
     this.build(item);
   }
@@ -65,10 +67,16 @@ class Field {
     return Object.hasOwn(this.form.answers, this.key);
   }
 
-  set(value) {
+  set(value, immediate = false) {
     this.form.answers[this.key] = value;
     this.root.classList.add('edited');
-    this.form.changed();
+    this.form.changed(immediate);
+  }
+
+  // A value picked from a button (a found save, the folder picker): shown and resolved at once.
+  pick(value) {
+    if (this.input) this.input.value = value;
+    this.set(value, true);
   }
 
   reset() {
@@ -111,9 +119,25 @@ class Field {
         autocomplete: 'off',
         oninput: () => this.set(this.input.value),
       });
+      const browse =
+        item.widget === 'folder' && this.form.browse
+          ? h(
+              'button',
+              {
+                class: 'btn small',
+                type: 'button',
+                onclick: async () => {
+                  const chosen = await this.form.browse(item);
+                  if (chosen !== null && chosen !== undefined) this.pick(chosen);
+                },
+              },
+              'Browse…',
+            )
+          : null;
       append(this.control, [
         this.input,
         item.unit ? h('span', { class: 'unit' }, item.unit) : null,
+        browse,
         this.resetButton,
       ]);
     }
@@ -209,6 +233,25 @@ class Field {
     this.set(rows);
   }
 
+  // A non-blocking warning of the server (a Save directory that holds no save) with one button per
+  // suggestion (the saves found in the working folder).
+  renderWarning(item) {
+    clear(this.warning);
+    this.warning.hidden = !item.warning;
+    if (!item.warning) return;
+    const suggestions = (item.suggestions || []).filter((s) => s !== item.value);
+    this.warning.append(
+      item.warning,
+      ...suggestions.map((suggestion) =>
+        h(
+          'button',
+          { class: 'btn small', type: 'button', onclick: () => this.pick(suggestion) },
+          `Use ${suggestion}`,
+        ),
+      ),
+    );
+  }
+
   update(item) {
     this.root.hidden =
       !item.visible ||
@@ -219,6 +262,7 @@ class Field {
     this.root.classList.toggle('invalid', Boolean(item.error));
     this.error.hidden = !item.error;
     this.error.textContent = item.error || '';
+    this.renderWarning(item);
     const value = item.value;
     if (this.kind === 'bool') {
       if (!this.edited) this.input.checked = Boolean(value);
@@ -238,7 +282,11 @@ class Field {
         card.classList.toggle('checked', box.checked);
       }
     } else if (this.kind === 'rows') {
-      if (!this.table.children.length && Array.isArray(value)) {
+      // An untouched table follows its default (the points of a save that appeared meanwhile).
+      const shown = JSON.stringify(value || []);
+      const stale = !this.edited && shown !== this.rowsShown;
+      if (Array.isArray(value) && (stale || !this.table.children.length)) {
+        clear(this.table);
         this.table.append(
           h(
             'tr',
@@ -249,6 +297,7 @@ class Field {
         );
         for (const row of value) this.addRow(row);
         if (!value.length) this.addRow(['', '']);
+        this.rowsShown = shown;
       }
     } else if (document.activeElement !== this.input) {
       if (!this.edited) this.input.value = value ?? '';
@@ -259,9 +308,10 @@ class Field {
 }
 
 export class FormView {
-  constructor(container, { onChange }) {
+  constructor(container, { onChange, browse = null }) {
     this.container = container;
     this.onChange = onChange;
+    this.browse = browse; // (item) => Promise<path or null>, for fields with widget 'folder'
     this.answers = {};
     this.showAdvanced = false;
     this.fields = new Map();

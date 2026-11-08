@@ -482,6 +482,11 @@ def on_site_dipoles(tables: PositionTables) -> NDArray[np.float64]:
     return dipole
 
 
+#: The ill-conditioning warning of :func:`overlap_sqrt_and_derivative` is shown once per process
+#: (it is a property of the basis, not of the k chunk).
+_ILL_CONDITIONED_WARNED = False
+
+
 def overlap_sqrt_and_derivative(
     overlap_k: NDArray[np.complex128],
     overlap_gradient_k: NDArray[np.complex128],
@@ -521,12 +526,18 @@ def overlap_sqrt_and_derivative(
             f'the PAO overlap S(k) is not positive definite (smallest eigenvalue '
             f'{eigenvalues.min():.3e}): linearly dependent orbitals'
         )
-    if eigenvalues.min() < 1.0e-4 * eigenvalues.max():
+    global _ILL_CONDITIONED_WARNED
+    if eigenvalues.min() < 1.0e-4 * eigenvalues.max() and not _ILL_CONDITIONED_WARNED:
+        _ILL_CONDITIONED_WARNED = True
         warnings.warn(
-            'the PAO overlap S(k) is ill-conditioned (eigenvalues %.1e .. %.1e): the Löwdin '
-            'position dipoles amplify the nearly dependent combinations; use a basis without '
-            'redundant shells (for ultrasoft / PAW the UPF orbitals plus augmentation shells)'
-            % (eigenvalues.min(), eigenvalues.max()),
+            'the PAO overlap S(k) is ill-conditioned (eigenvalues %.1e .. %.1e): some combinations '
+            'of the basis orbitals are nearly linearly dependent, whatever the pseudopotential '
+            '(typically diffuse shells, such as the 4S/4P/5S/5P of the extended preset, '
+            'overlapping the orbitals of the neighbours in a dense crystal). The Löwdin position '
+            'dipoles amplify the quadrature noise of those combinations; the optical response is '
+            'usually unaffected (Si, extended basis: eps2 changes by 1.5 %% when the most diffuse '
+            'shell is dropped). To check, compare with configuration="standard" or without the '
+            'outermost shells. Shown once per process.' % (eigenvalues.min(), eigenvalues.max()),
             RuntimeWarning,
             stacklevel=2,
         )

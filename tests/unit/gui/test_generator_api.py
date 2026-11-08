@@ -205,3 +205,18 @@ def test_session_asks_for_a_restart_after_a_code_change(client):
     client.app.started = 0.0  # every module is newer than the start of this server
     status, body, _ = client.get('/api/session')
     assert body['restart_needed'] is True
+
+
+def test_save_directory_without_a_save_is_flagged(client):
+    """A Save directory that holds no save is warned about (not an error) with the found saves."""
+    payload = {'workflow': 'run', 'workdir': 'Si', 'answers': {'properties': ['bands']}}
+    items = {
+        i['key']: i for i in client.post('/api/gen/resolve', payload)[1]['items'] if 'key' in i
+    }
+    assert items['savedir']['value'] == 'silicon.save' and 'warning' not in items['savedir']
+    assert items['savedir']['widget'] == 'folder'
+    payload['answers']['savedir'] = 'gaas.save'
+    status, body, _ = client.post('/api/gen/resolve', payload)
+    items = {i['key']: i for i in body['items'] if 'key' in i}
+    assert status == 200 and 'gaas.save does not exist' in items['savedir']['warning']
+    assert items['savedir']['suggestions'] == ['silicon.save']

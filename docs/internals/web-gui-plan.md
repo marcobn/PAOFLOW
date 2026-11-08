@@ -842,3 +842,27 @@ defects were found:
   (`test_camera_keeps_the_points_apart`).
 - **The message without a save** now says what to do: "the zone needs the cell of a QE save
   (<prefix>.save) in the working folder: run pw.x first, or choose the save above".
+
+**Defaults that follow the folder (8 November 2026, user reports: "how do I choose the save above", "the
+suggested values are not applied, one has to rewrite them (the .save, the pseudos)").** In the user's
+sequence, Property run was open before `pw.x` wrote `Si2.save`. The form kept `pwscf.save`, `pseudo.UPF`,
+`ibrav` 0 and an empty band path, because it re-resolved only after an edit; the folder card stayed stale too.
+Retyping the value triggered a resolve, which is why it seemed to "apply" it.
+
+- `SetupView.refreshFolder` detects the working folder again (14 ms, stable output) and re-resolves when the
+  detection changed. It runs when the Setup tab is shown (`activate`, now called by `App.show` for every
+  tab), when the window gets the focus, and every 4 s while Setup is visible. Edited answers keep their
+  values; untouched ones follow the new defaults.
+- The `rows` fields (the table of high-symmetry points) now follow their default until edited; before, the
+  table kept its first contents.
+- `band_paths.save_problem` / `saves_in`: the zone preview and the resolve name the cause. The causes are:
+  no save in the folder, a Save directory that does not exist (with the saves found), or a save without
+  `data-file-schema.xml` (run not finished). The preview offers *Use <save>* buttons. The *Save directory*
+  item gets a non-blocking `warning` and `suggestions` (`generator_api._warn_about_the_save`), shown under
+  the field with the same buttons.
+- `widget='folder'` on the `savedir` questions (`common.py`, `sscha.py`): a *Browse…* button
+  (`FormView(browse=...)`, a picker that also reaches the read-only places).
+- Tests: `test_save_problems_name_the_cause`; `test_save_directory_without_a_save_is_flagged`; browser tests
+  `test_defaults_follow_the_folder` (the save appears while the form is open: the Save directory, UPF,
+  `ibrav`, points and preview follow, with no answer stored) and `test_stale_save_answer_offers_the_found_save`.
+

@@ -71,13 +71,14 @@ const SECTIONS = [
     body: [
       [
         'Questions appear only when they apply: the non-linear block when *Non-linear optics* is selected, the Raman settings after choosing a Raman flavour, and so on.',
-        'A value in grey is the **default**. Typing replaces it; ↺ puts the default back. Defaults follow earlier answers (dense grids from the coarse ones, the smearing floor from the adaptive prefactor).',
+        'A value in grey is the **default**, and it is used as it is: there is nothing to retype. Typing replaces it and pins your value; ↺ puts the default back. Defaults follow earlier answers (dense grids from the coarse ones, the smearing floor from the adaptive prefactor) and the files of the working folder: when a `pw.x` run writes its save, the *Save directory*, the UPF files, `ibrav` and the band path follow within a few seconds (and whenever the Setup tab or the window comes back).',
+        '*Save directory* has *Browse…*. A Save directory that holds no save (an answer remembered from another system, a run that has not finished) is flagged under the field, with a *Use <prefix>.save* button for each save of the working folder.',
         'Invalid values are marked under the field (a q-grid that does not divide the k-grid, a number that is not a number). The *Files* panel lists what is missing.',
         '*docs · <method>* under a field shows the documentation of the PAOFLOW parameter it feeds.',
         'The *advanced* switch shows settings the command line leaves at their defaults (SSCHA minimiser, ph.x threshold, coupled-SHG components, band-plot window, high-symmetry points). They are written only when changed.',
         '*Reset* forgets the answers of the form; the browser otherwise keeps them per folder and workflow.',
       ],
-      '**Band path.** With *Band structure* selected, the *Band path* section shows the path PAOFLOW follows for the lattice, drawn in the first Brillouin zone (drag to rotate). Edit the path (`gG-X-W-K-gG-L|U-X`: `-` joins points, `|` starts a new segment, `gG` is Γ) or, under *advanced*, the table of labels and crystal coordinates. A changed path is written as `BAND_PATH` and `HIGH_SYM` in `main.py`.',
+      '**Band path.** With *Band structure* selected, the *Band path* section shows the path PAOFLOW follows for the lattice, drawn in the first Brillouin zone (drag to rotate; the view is chosen so that no point hides another). Without a usable save the preview says why and offers the saves of the folder. Edit the path (`gG-X-W-K-gG-L|U-X`: `-` joins points, `|` starts a new segment, `gG` is Γ) or, under *advanced*, the table of labels and crystal coordinates. A changed path is written as `BAND_PATH` and `HIGH_SYM` in `main.py`.',
     ],
   },
   {

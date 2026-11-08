@@ -125,6 +125,7 @@ COMMON_ITEMS = (
         label='Save directory',
         help='The <prefix>.save folder of the scf/nscf run, relative to the working directory.',
         section=SYSTEM,
+        widget='folder',
     ),
     Question(
         'prefix',

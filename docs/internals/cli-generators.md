@@ -43,6 +43,13 @@ The tests in `tests/unit/gen/` keep the two routes identical:
 `ibrav`, spin-orbit and 2D; for the electron–phonon workflow, metal, `nelec`, `nbnd` and the coupling source.
 See [the browser interface](../tutorials/howtos/browser-gui.md).
 
+**Errors under MPI.** Every driver (`main.py`, `main.acbn0.py`, `main.phonon.py`, `main.raman.py`,
+`main.sscha.py` and the electron–phonon drivers that run under `mpirun`) ends with
+`run_main(main)` from `PAOFLOW.utils.mpi_guard`. An exception on one rank otherwise ends that rank only, and the
+others wait for ever in the next collective operation, keeping their cores busy. `run_main` prints the
+traceback of the failing rank and calls `MPI_Abort`, so the job stops with a non-zero status; on one rank, or
+without MPI, it just calls `main()`. The plot scripts run as one process and do not need it.
+
 **Supported workflows** (chosen at the first prompt):
 
 **Workflow A — ACBN0/eACBN0:** Self-consistent Hubbard U calculations, with or without intersite V terms. See [ACBN0 Module](acbn0.md) for details on the underlying implementation.

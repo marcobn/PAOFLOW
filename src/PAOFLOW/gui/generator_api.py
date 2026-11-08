@@ -52,6 +52,19 @@ def _workflow(name: str):
     return WORKFLOWS[name]
 
 
+def _warn_about_the_save(result: dict, workdir: str) -> None:
+    """A *Save directory* without a readable save gets a warning (not an error: the driver can be
+    written before ``pw.x`` runs) and the saves of the working folder to pick from."""
+    from ..gen.band_paths import save_problem, saves_in
+
+    for item in result.get('items', []):
+        if item.get('key') == 'savedir' and item.get('visible'):
+            problem = save_problem(workdir, item.get('value'))
+            if problem:
+                item['warning'] = problem
+                item['suggestions'] = saves_in(workdir)
+
+
 def _context(app: 'GuiApp', payload: dict):
     from ..gen.questions.model import Context
 
@@ -212,6 +225,7 @@ def resolve_payload(app: 'GuiApp', payload: dict, with_text: bool = True) -> dic
     folder = _target_folder(app, payload, context)
     result['target'] = app.sandbox.relative(folder) if folder.exists() else str(folder)
     result['workflow'] = workflow.name
+    _warn_about_the_save(result, context.workdir)
     if not form.complete:
         return result
     try:

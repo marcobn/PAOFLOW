@@ -109,3 +109,46 @@ def test_qe_input_plan_and_step_json():
     assert setup.to_json()['action'] == 'setup:run' and setup.to_json()['command'] == ''
     step = RunStep('basis', ('paoflow-genbasis-ps', '--out', 'B'), cwd='qe')
     assert step.to_json()['command'] == '(cd qe && paoflow-genbasis-ps --out B)'
+
+
+def test_drivers_abort_every_rank_on_an_error():
+    """The drivers end with run_main (an error on one MPI rank stops the job, see
+    PAOFLOW.utils.mpi_guard); the plot scripts, single-process, do not need it."""
+    from PAOFLOW.gen.questions import WORKFLOWS
+    from PAOFLOW.gen.questions.model import Context
+    from PAOFLOW.gen.questions.resolve import resolve_form
+
+    si = os.path.join(
+        os.path.dirname(__file__), '..', '..', '..', 'examples', 'qe_examples', 'example01'
+    )
+    answers = {
+        'run': {'properties': ['bands']},
+        'acbn0': {'hubbard': [['Si-3p', '0.5']]},
+        'phonon': {'raman_method': 'resonance'},
+        'sscha': {},
+    }
+    drivers = set()
+    for name, given in answers.items():
+        form = resolve_form(WORKFLOWS[name], given, Context(workdir=os.path.abspath(si)))
+        assert form.complete, (name, form.errors)
+        for generated in workflow_outputs(name, form.config, plot=True):
+            text = generated.content()
+            compile(text, generated.path, 'exec')
+            guarded = 'run_main(main)' in text
+            assert guarded == (
+                not os.path.basename(generated.path).startswith('plot')
+            ), generated.path
+            if guarded:
+                drivers.add(generated.path)
+                assert 'from PAOFLOW.utils.mpi_guard import run_main' in text
+    assert drivers == {
+        'main.py',
+        'main.acbn0.py',
+        'main.phonon.py',
+        'main.raman.py',
+        'main.sscha.py',
+    }
+    for rel in ('arpes/arpes.py', 'optics/absorption.py', 'transport/mobility.py', 'thermal/zg.py',
+                'superconductivity/eliashberg.py', 'coupling/long_range_check.py'):  # fmt: skip
+        with open(os.path.join(es.TEMPLATE_DIR, rel)) as handle:
+            assert handle.read().rstrip().endswith('run_main(main)'), rel
