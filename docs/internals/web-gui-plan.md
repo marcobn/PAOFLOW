@@ -934,3 +934,34 @@ every other run.
 - Tests: the hidden form section and the driver variables (`test_acbn0_launch_settings_come_from_the_runs_tab`),
   the run manager (`test_driver_that_runs_qe_gets_the_launch_settings`), and the browser
   (`test_acbn0_runs_with_the_runs_tab_settings`).
+
+**One launch contract for every QE run (9 November 2026, user request: "fix all the run inconsistencies").**
+
+- Inventory beyond ACBN0:
+  - phonons and Raman: `mpi_qe`, and `qe_pw` with flags;
+  - SSCHA: the local launcher's `mpi_qe` and `qe_pw` (the Slurm settings are separate);
+  - the electron–phonon scripts: `run_qe.sh`, `run_zg.sh` and `run_fd.sh` had `NP` but a hard-coded `mpirun`
+    and no options.
+
+  The Runs tab also showed `python main.py` for steps that run as `mpirun -np N python main.py`.
+- `PAOFLOW.utils.qe_launch` defines the contract: `mpi_prefix`, `qe_bin`, `qe_options`, `python_bin` and
+  `qe_command(program, default)`, with the variables `PAOFLOW_MPI_QE`, `PAOFLOW_QE_BIN`, `PAOFLOW_QE_OPTIONS`,
+  `PAOFLOW_MPI_HARTREE`, `PAOFLOW_MPI_PY` and `PAOFLOW_PYTHON_BIN`.
+  - The ACBN0 Hartree step follows `PAOFLOW_MPI_QE` unless set apart, so the server sets three variables
+    (plus the Python bin).
+  - The phonon and Raman builders, the SSCHA template (local launcher only) and the ACBN0 builder use the
+    helpers. `run_qe.sh`, `run_zg.sh` and `run_fd.sh` read the same variables in shell (`MPI=…`, `BIN=…`,
+    `OPT=…`); the examples' `run_qe.sh` were regenerated with the same steps.
+- Questions: phonon `mpi_qe`/`qe_pw` and SSCHA `mpi_qe` take `gui=False`. SSCHA `qe_pw` takes
+  `gui=lambda a, c: _slurm(a)` (`gui` accepts a predicate now: `Question.in_gui`/`Note.in_gui`).
+- Plans: `qe_launch` is set on the phonon and Raman `run` phases, the SSCHA `harmonic` and `run` phases with
+  the local launcher, `run_qe.sh` and `run_zg.sh`.
+- Runs tab: `commandWith` shows the command that runs:
+  - `mpirun -np N` of an MPI step;
+  - `NP=N` of a `ranks_env` step;
+  - the launch variables of a `qe_launch` step.
+
+  All of them go inside the `(cd … && …)` wrapper, so the text runs as is. The command updates with the
+  ranks of every step.
+- Tests: `tests/unit/utils/test_qe_launch.py`; `test_every_qe_run_takes_the_runs_tab_settings` (phonon,
+  Raman, SSCHA local and Slurm); the electron–phonon plan flags; the thermal script; the browser commands.

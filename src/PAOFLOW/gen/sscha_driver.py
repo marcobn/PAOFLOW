@@ -50,6 +50,7 @@ import subprocess
 import sys
 
 from PAOFLOW import PAOFLOW
+from PAOFLOW.utils.qe_launch import mpi_prefix, qe_command
 
 # ----------------------------------------------------------------------- #
 # Configuration  (edit freely)                                            #
@@ -85,6 +86,8 @@ LAUNCHER = __LAUNCHER__   # 'local', 'slurm' or 'manual'
 MPI_QE = __MPI_QE__   # MPI launcher of pw.x / ph.x ('srun' inside Slurm jobs)
 QE_PW = __QE_PW__   # pw.x command (may include flags, e.g. 'pw.x -nk 4')
 QE_PH = __QE_PH__   # ph.x command
+if LAUNCHER == 'local':  # runs here: the PAOFLOW_* variables (paoflow-studio Runs tab) take precedence
+    MPI_QE, QE_PW, QE_PH = mpi_prefix(MPI_QE), qe_command('pw.x', QE_PW), qe_command('ph.x', QE_PH)
 SLURM_DIRECTIVES = __SLURM_DIRECTIVES__   # one pw.x configuration (array task)
 SLURM_STEP_DIRECTIVES = __SLURM_STEP_DIRECTIVES__   # the step job (python)
 SLURM_CONCURRENT = __SLURM_CONCURRENT__   # array tasks running at the same time

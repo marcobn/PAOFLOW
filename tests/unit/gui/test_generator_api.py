@@ -86,6 +86,8 @@ def test_elphon_system_folder_and_plan(client, gui_root):
     assert (
         commands[0] == '(cd qe && bash run_qe.sh)' and 'python arpes/arpes.py --no-plot' in commands
     )
+    qe_step = body['plan'][0]
+    assert qe_step['qe_launch'] and qe_step['ranks_env'] == 'NP'  # ranks, QE build, pw.x options
     status, written, _ = client.post(
         '/api/gen/write',
         {

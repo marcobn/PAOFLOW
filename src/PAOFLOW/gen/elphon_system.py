@@ -298,14 +298,19 @@ def render_run_qe(cfg: dict[str, Any]) -> str:
     lines = [
         '#!/bin/bash',
         '# QE steps of the electron-phonon workflows (run from this directory): NP=8 bash run_qe.sh',
+        '# The PAOFLOW_* variables (set by the paoflow-studio Runs tab) take precedence: the MPI',
+        '# prefix, the Quantum ESPRESSO bin folder and the pw.x / ph.x options (PAOFLOW.utils.qe_launch).',
         'set -e',
         'NP=${NP:-8}',
-        'PW=${PW:-pw.x}; PH=${PH:-ph.x}',
+        'MPI=${PAOFLOW_MPI_QE-mpirun -np $NP}',
+        'BIN=${PAOFLOW_QE_BIN:+$PAOFLOW_QE_BIN/}',
+        'PW=${PW:-${BIN}pw.x}; PH=${PH:-${BIN}ph.x}',
+        'OPT=${PAOFLOW_QE_OPTIONS:-}',
         'log() { echo "$(date +%T) $*"; }',
         '',
         'cd phonon',
-        'log scf;  mpirun -np $NP $PW -in scf.in > scf.out',
-        'log ph.x; mpirun -np $NP $PH -in ph.in > ph.out        # irreducible q, fildvscf -> _ph0/',
+        'log scf;  $MPI $PW $OPT -in scf.in > scf.out',
+        'log ph.x; $MPI $PH $OPT -in ph.in > ph.out        # irreducible q, fildvscf -> _ph0/',
     ]
     if epw:
         lines.append(
@@ -317,13 +322,13 @@ def render_run_qe(cfg: dict[str, Any]) -> str:
         'mkdir -p %s.save' % prefix,
         'cp ../phonon/%s.save/charge-density.dat ../phonon/%s.save/data-file-schema.xml %s.save/'
         % (prefix, prefix, prefix),
-        'log nscf; mpirun -np $NP $PW -in nscf.in > nscf.out',
+        'log nscf; $MPI $PW $OPT -in nscf.in > nscf.out',
     ]
     if epw:
         lines += [
             'log ukk;  python3 write_ukk.py                         # %s.ukk for wannierize = .false.'
             % prefix,
-            'log epw;  mpirun -np $NP ${EPW:-epw.x} -nk $NP -in epw.in > epw.out   # writes %s.epb*'
+            'log epw;  $MPI ${EPW:-${BIN}epw.x} -nk $NP -in epw.in > epw.out   # writes %s.epb*'
             % prefix,
         ]
     if cfg.get('optics_nscf'):
@@ -332,7 +337,7 @@ def render_run_qe(cfg: dict[str, Any]) -> str:
             'mkdir -p %s.save' % prefix,
             'cp ../phonon/%s.save/charge-density.dat ../phonon/%s.save/data-file-schema.xml '
             '%s.save/' % (prefix, prefix, prefix),
-            'log optics nscf; mpirun -np $NP $PW -nk $NP -in nscf.in > nscf.out',
+            'log optics nscf; $MPI $PW -nk $NP -in nscf.in > nscf.out   # one k point per pool',
         ]
     lines += ['cd ..', 'log done']
     return '\n'.join(lines) + '\n'

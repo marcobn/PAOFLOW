@@ -134,10 +134,11 @@ class Question:
         Asked by the CLI (default).  ``False`` marks a GUI-only refinement: an optional builder
         setting that the CLI leaves at the builder default; the GUI passes it on only when the
         user changes it, so a GUI run with defaults writes the same files as the CLI.
-    gui : bool, optional
+    gui : bool or callable, optional
         Shown by the GUI form (default).  ``False`` marks a setting that the GUI takes elsewhere,
         such as the launch commands that the Runs tab of ``paoflow-studio`` passes to the driver
-        at run time: the form hides it and the files get its default.
+        at run time: the form hides it and the files get its default.  ``gui(answers, context)``
+        decides per answers (the SSCHA ``pw.x`` command: shown for Slurm jobs only).
     """
 
     key: str
@@ -160,11 +161,27 @@ class Question:
     widget: str = ''
     doc: str = ''
     cli: bool = True
-    gui: bool = True
+    gui: bool | Predicate = True
 
     def __post_init__(self) -> None:
         if self.kind not in QUESTION_KINDS:
             raise ValueError('unknown question kind %r (%s)' % (self.kind, self.key))
+
+    def in_gui(self, answers: Answers, context: Context) -> bool:
+        """Whether the GUI form shows the question (see ``gui``).
+
+        Parameters
+        ----------
+        answers : dict
+            Answers so far.
+        context : Context
+            The session context.
+
+        Returns
+        -------
+        bool
+        """
+        return bool(self.gui(answers, context)) if callable(self.gui) else bool(self.gui)
 
     def applies(self, answers: Answers, context: Context) -> bool:
         """Whether the question is asked for these answers.
@@ -237,7 +254,23 @@ class Note:
     text: str | Callable[[Answers, Context], str]
     when: Predicate | None = None
     section: str = ''
-    gui: bool = True
+    gui: bool | Predicate = True
+
+    def in_gui(self, answers: Answers, context: Context) -> bool:
+        """Whether the GUI form shows the note (see ``gui``).
+
+        Parameters
+        ----------
+        answers : dict
+            Answers so far.
+        context : Context
+            The session context.
+
+        Returns
+        -------
+        bool
+        """
+        return bool(self.gui(answers, context)) if callable(self.gui) else bool(self.gui)
 
     def applies(self, answers: Answers, context: Context) -> bool:
         """Whether the note is shown for these answers.

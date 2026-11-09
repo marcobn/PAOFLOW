@@ -158,7 +158,11 @@ def test_zg_cells_and_run_script(tmp_path):
         and 'seed0/pb_zg_ref.in' in text
         and 'seed1/pb_zg_T300K.in' in text
     )
-    assert 'JOB DONE' in text and 'mpirun -np $NP $PW -nk $NK' in text
+    assert 'JOB DONE' in text and '$MPI $PW $OPT -in' in text
+    assert (
+        'MPI=${PAOFLOW_MPI_QE-mpirun -np $NP}' in text
+        and 'OPT=${PAOFLOW_QE_OPTIONS:--nk $NK}' in text
+    )
     assert th.zg_cells(str(tmp_path / 'nothing')) == []
 
 

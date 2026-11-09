@@ -625,7 +625,7 @@ def test_qe_options_are_edited_checked_and_passed(browser, studio, tmp_path, mon
     options.send_keys('-nk 2')
     _wait(lambda: not error.is_displayed() and run.is_enabled())
     code = browser.find_element(By.CSS_SELECTOR, '#view-runs .steps li .cmd code')
-    assert code.text == 'pw.x -in gaas.scf.in -nk 2 > gaas.scf.out'
+    assert code.text == 'mpirun -np 2 pw.x -in gaas.scf.in -nk 2 > gaas.scf.out'  # as it runs
     run.click()
     _wait(
         lambda: 'finished' in browser.find_element(By.CSS_SELECTOR, '#view-runs .result-head').text,
@@ -744,8 +744,9 @@ def test_acbn0_runs_with_the_runs_tab_settings(browser, studio, tmp_path, monkey
     options.send_keys('-nk 2')
     code = browser.find_element(By.CSS_SELECTOR, '#view-runs .steps li .cmd code')
     _wait(lambda: 'PAOFLOW_QE_OPTIONS=' in code.text)
-    assert code.text.startswith("PAOFLOW_MPI_QE='mpirun -np 2' PAOFLOW_MPI_HARTREE='mpirun -np 2'")
+    assert code.text.startswith("PAOFLOW_MPI_QE='mpirun -np 2' PAOFLOW_QE_BIN=")
     assert code.text.endswith("PAOFLOW_QE_OPTIONS='-nk 2' python main.acbn0.py")
+    assert 'HARTREE' not in code.text  # the Hartree step follows PAOFLOW_MPI_QE
     next(
         b for b in browser.find_elements(By.XPATH, "//button[text()='Run']") if b.is_displayed()
     ).click()

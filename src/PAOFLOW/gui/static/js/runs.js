@@ -26,25 +26,28 @@ function shellWord(value) {
   return /^[\w./:+=-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-// The command of a step with extra QE options after its arguments (before `> output`). A driver
-// that runs pw.x itself (ACBN0) gets them, with the ranks and the QE build, as the PAOFLOW_*
-// variables the server sets, so the copied command repeats the run in a terminal.
+// The command a step runs, as the server builds it: `mpirun -np N` of an MPI step, its QE
+// options, and for a driver that runs Quantum ESPRESSO itself (ACBN0, phonons, run_qe.sh) the
+// rank variable and the PAOFLOW_* launch variables (PAOFLOW.utils.qe_launch). The variables go
+// right before the program, inside the `(cd folder && ...)` of the step, so the text runs as is.
 function commandWith(step, extra, launch = null) {
-  if (step.qe_launch && launch) {
-    const mpi = launch.ranks > 1 ? `mpirun -np ${launch.ranks}` : '';
-    const variables = [
-      ['PAOFLOW_MPI_QE', mpi],
-      ['PAOFLOW_MPI_HARTREE', mpi],
-      ...(launch.qeBin ? [['PAOFLOW_QE_BIN', launch.qeBin]] : []),
-      ...(extra.length ? [['PAOFLOW_QE_OPTIONS', extra.join(' ')]] : []),
-    ];
-    return `${variables.map(([name, value]) => `${name}=${shellWord(value)}`).join(' ')} ${step.command}`;
-  }
-  if (!extra.length) return step.command;
   const base = step.argv.join(' ');
-  return step.command.includes(base)
-    ? step.command.replace(base, `${base} ${extra.join(' ')}`)
-    : step.command;
+  if (!launch || !step.command.includes(base)) {
+    return extra.length ? step.command.replace(base, `${base} ${extra.join(' ')}`) : step.command;
+  }
+  let program = step.qe_launch || !extra.length ? base : `${base} ${extra.join(' ')}`;
+  if (step.mpi && launch.ranks > 1) program = `mpirun -np ${launch.ranks} ${program}`;
+  const variables = [];
+  if (step.ranks_env) variables.push([step.ranks_env, String(launch.ranks)]);
+  if (step.qe_launch) {
+    variables.push(['PAOFLOW_MPI_QE', launch.ranks > 1 ? `mpirun -np ${launch.ranks}` : '']);
+    if (launch.qeBin) variables.push(['PAOFLOW_QE_BIN', launch.qeBin]);
+    if (extra.length) variables.push(['PAOFLOW_QE_OPTIONS', extra.join(' ')]);
+  }
+  if (variables.length) {
+    program = `${variables.map(([name, value]) => `${name}=${shellWord(value)}`).join(' ')} ${program}`;
+  }
+  return step.command.replace(base, program);
 }
 
 // Parallel options of a QE program ("-nk 4 -nd 1") checked as the server checks them: known
@@ -251,6 +254,13 @@ export class RunsView {
         'Run',
       );
       let optionsRow = null;
+      // The command follows the ranks (and the options): it is the one the server runs.
+      let refresh = () => {
+        code.textContent = commandWith(step, [], {
+          ranks: usesRanks ? Number(ranks.value) : 1,
+          qeBin: this.qeBin,
+        });
+      };
       if (isQe) {
         // Runtime options of the QE program (pw.x -nk 4 ...), remembered per program.
         const key = `qe-options:${this.session.root}:${program}`;
@@ -264,7 +274,7 @@ export class RunsView {
           'aria-label': `${program} options`,
         });
         const problem = h('div', { class: 'option-error', hidden: true });
-        const refresh = () => {
+        refresh = () => {
           parsed = parseQeOptions(options.value, groups, usesRanks ? Number(ranks.value) : 1);
           problem.hidden = !parsed.error;
           problem.textContent = parsed.error || '';
@@ -279,7 +289,6 @@ export class RunsView {
           storage(key, options.value.trim());
           refresh();
         });
-        ranks.addEventListener('input', refresh);
         const hint = groups
           ? groups.map((group) => `${group.flags[0]} ${group.what}`).join(' · ')
           : '-nk pools · -ni images · -nd linear algebra · -nt task groups · -nb band groups';
@@ -290,6 +299,9 @@ export class RunsView {
           problem,
           h('div', { class: 'small faint' }, hint),
         );
+      }
+      if (runnable) {
+        ranks.addEventListener('input', () => refresh());
         refresh();
       }
       list.append(

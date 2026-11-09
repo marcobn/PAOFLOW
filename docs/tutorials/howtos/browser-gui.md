@@ -131,10 +131,19 @@ input…*. *Run* starts a step:
   (`-nk 4 -nd 1`: `-nk`/`-npool`, `-ni`, `-nd`, `-nt`, `-nb`), checked against the ranks (images × pools must
   divide them, task and band groups the ranks of a pool) and remembered per program.
 - `run_qe.sh` gets its rank count through `NP`.
-- The ACBN0 driver starts `pw.x` and the Hartree step itself. Its step has the ranks, the Quantum ESPRESSO build and
-  the `pw.x` options of those runs. They reach the script as `PAOFLOW_MPI_QE`, `PAOFLOW_MPI_HARTREE`,
-  `PAOFLOW_QE_BIN` and `PAOFLOW_QE_OPTIONS`, which the command of the step shows, so the ACBN0 form has no launch
-  commands of its own.
+- Some steps start Quantum ESPRESSO themselves:
+  - ACBN0;
+  - the `run` phases of phonons and Raman;
+  - SSCHA with the local launcher;
+  - `run_qe.sh` and `run_zg.sh` of an electron–phonon system.
+
+  Their step has the ranks, the Quantum ESPRESSO build and the `pw.x` options of those runs. They reach the
+  script as `PAOFLOW_MPI_QE`, `PAOFLOW_QE_BIN` and `PAOFLOW_QE_OPTIONS` (`PAOFLOW.utils.qe_launch`; the ACBN0
+  Hartree step follows `PAOFLOW_MPI_QE`). The Setup forms therefore have no launch commands of their own: only
+  `paoflow-gen` in a terminal asks for them, as the defaults of the scripts. The Slurm settings of SSCHA stay in
+  its form.
+- Every command shows what runs: `mpirun -np N` of an MPI step, `NP=N`, and the variables, placed inside the
+  `(cd folder && …)` of the step, so it can be copied to a terminal.
 
 Every run is niced, with one thread per rank. Runs continue when the GUI stops; a restarted GUI shows them again.
 The log updates live, *Cancel* stops the process group, and *Results* opens the outputs.

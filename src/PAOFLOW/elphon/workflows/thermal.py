@@ -894,22 +894,28 @@ def write_zg_run_script(zg_dir: str, filename: str = 'run_zg.sh') -> str:
     Returns
     -------
     str
-        The script path.  ``NP`` ranks, ``NK`` pools and ``PW`` are environment variables.
+        The script path.  ``NP`` ranks, ``NK`` pools and ``PW`` are environment variables, and the
+        launch variables of :mod:`PAOFLOW.utils.qe_launch` take precedence.
     """
     cells = zg_cells(zg_dir)
     inputs = [os.path.relpath(c['input'], zg_dir) for c in cells]
     lines = [
         '#!/bin/bash',
         '# pw.x scf of the ZG supercells (run from this directory): NP=8 bash %s' % filename,
+        '# The PAOFLOW_* variables (set by the paoflow-studio Runs tab) take precedence: the MPI',
+        '# prefix, the Quantum ESPRESSO bin folder and the pw.x options (PAOFLOW.utils.qe_launch).',
         'set -e',
         'NP=${NP:-8}; NK=${NK:-1}',
-        'PW=${PW:-pw.x}',
+        'MPI=${PAOFLOW_MPI_QE-mpirun -np $NP}',
+        'BIN=${PAOFLOW_QE_BIN:+$PAOFLOW_QE_BIN/}',
+        'PW=${PW:-${BIN}pw.x}',
+        'OPT=${PAOFLOW_QE_OPTIONS:--nk $NK}',
         'log() { echo "$(date +%T) $*"; }',
         'for input in %s; do' % ' '.join(inputs),
         '  dir=$(dirname $input); name=$(basename ${input%.in})',
         '  if grep -q "JOB DONE" $dir/$name.out 2>/dev/null; then log "$input done"; continue; fi',
         '  log "$input"',
-        '  (cd $dir && mpirun -np $NP $PW -nk $NK -in $name.in > $name.out)',
+        '  (cd $dir && $MPI $PW $OPT -in $name.in > $name.out)',
         'done',
         'log "all ZG cells done"',
     ]
@@ -1054,15 +1060,20 @@ def write_fd_run_script(fd_dir: str, filename: str = 'run_fd.sh') -> str:
     lines = [
         '#!/bin/bash',
         '# pw.x scf of the displaced cells (run from this directory): NP=8 bash %s' % filename,
+        '# The PAOFLOW_* variables (set by the paoflow-studio Runs tab) take precedence: the MPI',
+        '# prefix, the Quantum ESPRESSO bin folder and the pw.x options (PAOFLOW.utils.qe_launch).',
         'set -e',
         'NP=${NP:-8}; NK=${NK:-1}',
-        'PW=${PW:-pw.x}',
+        'MPI=${PAOFLOW_MPI_QE-mpirun -np $NP}',
+        'BIN=${PAOFLOW_QE_BIN:+$PAOFLOW_QE_BIN/}',
+        'PW=${PW:-${BIN}pw.x}',
+        'OPT=${PAOFLOW_QE_OPTIONS:--nk $NK}',
         'log() { echo "$(date +%T) $*"; }',
         'for input in %s; do' % ' '.join(inputs),
         '  name=${input%.in}',
         '  if grep -q "JOB DONE" $name.out 2>/dev/null; then log "$input done"; continue; fi',
         '  log "$input"',
-        '  mpirun -np $NP $PW -nk $NK -in $input > $name.out',
+        '  $MPI $PW $OPT -in $input > $name.out',
         'done',
         'log "all displaced cells done"',
     ]

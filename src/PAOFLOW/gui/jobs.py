@@ -245,9 +245,9 @@ def _qe_launch_environment(
     Returns
     -------
     dict
-        ``PAOFLOW_MPI_QE`` and ``PAOFLOW_MPI_HARTREE`` (``mpirun -np N``, empty on one rank),
-        ``PAOFLOW_QE_BIN``, ``PAOFLOW_QE_OPTIONS`` and ``PAOFLOW_PYTHON_BIN`` (the Python of the
-        server, which has PAOFLOW).
+        ``PAOFLOW_MPI_QE`` (``mpirun -np N``, empty on one rank), ``PAOFLOW_QE_BIN``,
+        ``PAOFLOW_QE_OPTIONS`` and ``PAOFLOW_PYTHON_BIN`` (the Python of the server, which has
+        PAOFLOW); see :mod:`PAOFLOW.utils.qe_launch`.
     """
     if qe.mpi is False and ranks > 1:
         raise HttpError(
@@ -259,8 +259,7 @@ def _qe_launch_environment(
         raise HttpError(400, 'mpirun is not on the PATH: run with 1 rank')
     mpi = '%s -np %d' % (launcher, ranks) if ranks > 1 else ''
     return {
-        'PAOFLOW_MPI_QE': mpi,
-        'PAOFLOW_MPI_HARTREE': mpi,
+        'PAOFLOW_MPI_QE': mpi,  # the ACBN0 Hartree step follows it (PAOFLOW.utils.qe_launch)
         'PAOFLOW_QE_BIN': str(qe.bin),
         'PAOFLOW_QE_OPTIONS': ' '.join(checked),
         'PAOFLOW_PYTHON_BIN': os.path.dirname(_python_executable()),

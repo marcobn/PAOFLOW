@@ -849,8 +849,14 @@ def build_acbn0_script(cfg):
     lines.append('from PAOFLOW import GPAO')
     if use_v:
         lines.append('from PAOFLOW.ACBN0 import ACBN0, eACBN0')
+        lines.append(
+            'from PAOFLOW.utils.qe_launch import mpi_prefix, python_bin, qe_bin, qe_options'
+        )
     else:
         lines.append('from PAOFLOW.ACBN0 import ACBN0')
+        lines.append(
+            'from PAOFLOW.utils.qe_launch import mpi_prefix, python_bin, qe_bin, qe_options'
+        )
     lines.append('')
     lines.append('# ----------------------------------------------------------------------- #')
     lines.append('# Configuration  (edit freely)                                            #')
@@ -868,16 +874,12 @@ def build_acbn0_script(cfg):
         '# PAOFLOW_* variables take precedence: paoflow-studio sets them from its Runs tab'
     )
     lines.append('# (ranks, Quantum ESPRESSO build, pw.x options such as -nk 4).')
-    lines.append("MPI_QE = os.environ.get('PAOFLOW_MPI_QE', {!r})".format(cfg['mpi_qe']))
-    lines.append("MPI_PY = os.environ.get('PAOFLOW_MPI_PY', {!r})".format(cfg['mpi_py']))
-    lines.append(
-        "MPI_HARTREE = os.environ.get('PAOFLOW_MPI_HARTREE', {!r})".format(cfg['mpi_hartree'])
-    )
-    lines.append("QE_PATH = os.environ.get('PAOFLOW_QE_BIN', {!r})".format(cfg['qe_path']))
-    lines.append(
-        "QE_OPTIONS = os.environ.get('PAOFLOW_QE_OPTIONS', '')   # pw.x options, e.g. -nk 4"
-    )
-    lines.append("PY_PATH = os.environ.get('PAOFLOW_PYTHON_BIN', {!r})".format(cfg['py_path']))
+    lines.append('MPI_QE = mpi_prefix({!r})'.format(cfg['mpi_qe']))
+    lines.append("MPI_PY = mpi_prefix({!r}, 'PAOFLOW_MPI_PY')".format(cfg['mpi_py']))
+    lines.append("MPI_HARTREE = mpi_prefix({!r}, 'PAOFLOW_MPI_HARTREE')".format(cfg['mpi_hartree']))
+    lines.append('QE_PATH = qe_bin({!r})'.format(cfg['qe_path']))
+    lines.append("QE_OPTIONS = qe_options('')   # pw.x options, e.g. -nk 4")
+    lines.append('PY_PATH = python_bin({!r})'.format(cfg['py_path']))
     lines.append('')
     lines.append(
         'PROJECTION = {!r}   # ortho-atomic projections fit the Hubbard U'.format(cfg['projection'])
@@ -1106,6 +1108,7 @@ def build_phonon_script(cfg):
     lines.append('import sys')
     lines.append('')
     lines.append('from PAOFLOW import PAOFLOW')
+    lines.append('from PAOFLOW.utils.qe_launch import mpi_prefix, qe_command')
     lines.append('')
     lines.append('# ----------------------------------------------------------------------- #')
     lines.append('# Configuration  (edit freely)                                            #')
@@ -1217,15 +1220,18 @@ def build_phonon_script(cfg):
     lines.append('Q_LABELS = None')
     lines.append('Q_NPOINTS = 101   # q-points per path segment')
     lines.append('')
-    lines.append('# pw.x launch settings for the supercell SCF runs (edit to your machine).')
-    lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
     lines.append(
-        "QE_PW = {!r}   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
+        '# pw.x launch settings for the supercell SCF runs (edit the defaults to your machine;'
+    )
+    lines.append('# the PAOFLOW_* variables, set by the paoflow-studio Runs tab, take precedence).')
+    lines.append('MPI_QE = mpi_prefix({!r})'.format(cfg['mpi_qe']))
+    lines.append(
+        "QE_PW = qe_command('pw.x', {!r})   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
             cfg.get('qe_pw', 'pw.x')
         )
     )
     lines.append(
-        'QE_PH = {!r}   # ph.x command for the Born DFPT run (may include flags)'.format(
+        "QE_PH = qe_command('ph.x', {!r})   # ph.x command for the Born DFPT run".format(
             _derive_ph_command(cfg.get('qe_pw', 'pw.x'))
         )
     )
@@ -2616,6 +2622,7 @@ def build_raman_script(cfg):
     lines.append('import sys')
     lines.append('')
     lines.append('from PAOFLOW import PAOFLOW')
+    lines.append('from PAOFLOW.utils.qe_launch import mpi_prefix, qe_command')
     lines.append('from PAOFLOW.basis_gen import generate_basis_for_pseudo')
     lines.append('from PAOFLOW.basis_gen.driver import _default_shells')
     lines.append('from PAOFLOW.inputs.read_upf import UPF as _UPFParser')
@@ -2698,10 +2705,15 @@ def build_raman_script(cfg):
     lines.append('# Force constants for the zone-centre eigenvectors.')
     lines.append("FORCE_SETS = os.path.join(HERE, OUTPUTDIR, PHONON_DIR, 'FORCE_SETS')")
     lines.append('')
-    lines.append('# pw.x launch settings for the displaced-cell SCF runs (edit to your machine).')
-    lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
     lines.append(
-        "QE_PW = {!r}   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
+        '# pw.x launch settings for the displaced-cell SCF runs (edit the defaults to your'
+    )
+    lines.append(
+        '# machine; the PAOFLOW_* variables, set by the paoflow-studio Runs tab, take precedence).'
+    )
+    lines.append('MPI_QE = mpi_prefix({!r})'.format(cfg['mpi_qe']))
+    lines.append(
+        "QE_PW = qe_command('pw.x', {!r})   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
             cfg.get('qe_pw', 'pw.x')
         )
     )

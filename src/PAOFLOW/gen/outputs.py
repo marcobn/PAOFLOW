@@ -186,10 +186,10 @@ class RunStep:
         A step done in the GUI rather than by a command: ``'setup:<workflow>'`` opens that
         workflow of the Setup tab on the folder.
     qe_launch : bool, optional
-        The driver runs Quantum ESPRESSO itself (``pw.x``, then its own MPI steps): the Runs tab
-        passes the ranks, the QE build and the ``pw.x`` options in ``PAOFLOW_MPI_QE``,
-        ``PAOFLOW_MPI_HARTREE``, ``PAOFLOW_QE_BIN``, ``PAOFLOW_QE_OPTIONS`` and
-        ``PAOFLOW_PYTHON_BIN``, which the driver reads before its own defaults.
+        The driver or script runs Quantum ESPRESSO itself (ACBN0, the phonon, Raman and local
+        SSCHA phases, ``run_qe.sh``, ``run_zg.sh``): the Runs tab passes the ranks, the QE build
+        and the ``pw.x`` options in the variables of :mod:`PAOFLOW.utils.qe_launch`, which it
+        reads before its own defaults.
     """
 
     label: str
@@ -322,23 +322,40 @@ def run_plan(name: str, cfg: dict, files: list[GeneratedFile] | None = None) -> 
             )
         )
     elif name == 'phonon':
+        # The run phases start pw.x (and ph.x) themselves: ranks, build and options of the step.
         for phase, label in (
             ('generate', 'displaced supercells'),
             ('run', 'pw.x on the supercells'),
             ('analyse', 'phonons, Born charges, QHA'),
         ):
-            steps.append(RunStep('Phonons: %s' % label, ('python', driver, phase)))
+            steps.append(
+                RunStep('Phonons: %s' % label, ('python', driver, phase), qe_launch=phase == 'run')
+            )
         if 'main.raman.py' in names:
             for phase in ('generate', 'run', 'analyse'):
-                steps.append(RunStep('Raman: %s' % phase, ('python', 'main.raman.py', phase)))
+                steps.append(
+                    RunStep(
+                        'Raman: %s' % phase,
+                        ('python', 'main.raman.py', phase),
+                        qe_launch=phase == 'run',
+                    )
+                )
     elif name == 'sscha':
+        # The local launcher runs ph.x / pw.x here (ranks, build and options of the step); Slurm
+        # jobs and manual runs take the settings of the script.
+        local = cfg.get('launcher', 'local') == 'local'
         steps.append(
             RunStep(
                 'Harmonic ph.x matrices (only if missing)',
                 ('python', driver, 'harmonic'),
+                qe_launch=local,
             )
         )
-        steps.append(RunStep('SSCHA populations and minimisation', ('python', driver, 'run')))
+        steps.append(
+            RunStep(
+                'SSCHA populations and minimisation', ('python', driver, 'run'), qe_launch=local
+            )
+        )
         steps.append(RunStep('Status of every temperature', ('python', driver, 'status')))
     for plot in names[1:]:
         if plot.startswith('plot'):
@@ -370,6 +387,7 @@ def _elphon_plan(cfg: dict) -> list[RunStep]:
             ('bash', 'run_qe.sh'),
             cwd='qe',
             ranks_env='NP',
+            qe_launch=True,
             note='copy the pseudopotentials into qe/ first',
         )
     )
@@ -492,7 +510,11 @@ def _elphon_plan(cfg: dict) -> list[RunStep]:
             steps.append(RunStep('ZG supercell inputs', ('python', 'thermal/zg.py', '--write')))
             steps.append(
                 RunStep(
-                    'ZG supercell scf runs', ('bash', 'run_zg.sh'), cwd='thermal/zg', ranks_env='NP'
+                    'ZG supercell scf runs',
+                    ('bash', 'run_zg.sh'),
+                    cwd='thermal/zg',
+                    ranks_env='NP',
+                    qe_launch=True,
                 )
             )
             steps.append(

@@ -156,7 +156,8 @@ def test_build_raman_script_constants():
     assert 'NBND = 21' in text
     assert 'NFFT = (24, 24, 24)' in text
     assert "PREFIX = 'Si2'" in text
-    assert "MPI_QE = 'mpirun -np 16'" in text
+    assert "MPI_QE = mpi_prefix('mpirun -np 16')" in text  # PAOFLOW_MPI_QE first
+    assert 'from PAOFLOW.utils.qe_launch import mpi_prefix, qe_command' in text
     assert 'LASER_NM = None' in text
 
 

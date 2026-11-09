@@ -202,14 +202,17 @@ PHONON_ITEMS = (
         ),
         lambda a, c: _qha(a),
     ),
-    Note('\npw.x launch settings for the displaced-supercell SCF runs:', section=LAUNCH),
-    Question('mpi_qe', 'MPI command for pw.x', default='mpirun -np 4', section=LAUNCH),
+    # Asked by the CLI only: paoflow-studio sets the ranks, the QE build and the pw.x options of
+    # the run phase in its Runs tab, and the drivers read them at run time (PAOFLOW.utils.qe_launch).
+    Note('\npw.x launch settings for the displaced-supercell SCF runs:', section=LAUNCH, gui=False),
+    Question('mpi_qe', 'MPI command for pw.x', default='mpirun -np 4', section=LAUNCH, gui=False),
     Question(
         'qe_pw',
         "pw.x executable/command (may include flags, e.g. 'pw.x', 'pw.x -npool 4', "
         "'/opt/qe/bin/pw.x')",
         default='pw.x',
         section=LAUNCH,
+        gui=False,
     ),
     Question(
         'plot',

@@ -50,15 +50,28 @@ others wait for ever in the next collective operation, keeping their cores busy.
 traceback of the failing rank and calls `MPI_Abort`, so the job stops with a non-zero status; on one rank, or
 without MPI, it just calls `main()`. The plot scripts run as one process and do not need it.
 
+**Launch settings.** Every generated script that starts Quantum ESPRESSO itself keeps its launch commands
+(the CLI answers) as defaults and reads the variables of `PAOFLOW.utils.qe_launch` first:
+- the scripts: `main.acbn0.py`, the `run` phases of `main.phonon.py` and `main.raman.py`, `main.sscha.py` with
+  the local launcher, and `qe/run_qe.sh`, `run_zg.sh` and `run_fd.sh` of the electron–phonon workflows;
+- the variables:
+  - `PAOFLOW_MPI_QE`: the MPI prefix, empty for a serial run;
+  - `PAOFLOW_QE_BIN`: the QE bin folder;
+  - `PAOFLOW_QE_OPTIONS`: options of `pw.x`/`ph.x` such as `-nk 4`;
+  - for ACBN0 also `PAOFLOW_MPI_HARTREE` (default: `PAOFLOW_MPI_QE`), `PAOFLOW_MPI_PY` and
+    `PAOFLOW_PYTHON_BIN`.
+
+The Runs tab of `paoflow-studio` sets them from the ranks, the QE build and the options of the step
+(`RunStep.qe_launch`). Its forms hide these questions: `Question(gui=False)` is asked by the CLI, and the GUI
+form keeps the default. The SSCHA `pw.x` command uses `gui=<predicate>` and is shown for the Slurm launcher
+only. In a terminal: `PAOFLOW_MPI_QE='mpirun -np 8' PAOFLOW_QE_OPTIONS='-nk 4' python main.phonon.py run`.
+
 **Supported workflows** (chosen at the first prompt):
 
 **Workflow A — ACBN0/eACBN0:** Self-consistent Hubbard U calculations, with or without intersite V terms. See [ACBN0 Module](acbn0.md) for details on the underlying implementation.
 The launch commands asked by the CLI (MPI commands of `pw.x`, python and the Hartree step, the QE and Python
-bin paths) are the defaults of `main.acbn0.py`. The variables `PAOFLOW_MPI_QE`, `PAOFLOW_MPI_PY`,
-`PAOFLOW_MPI_HARTREE`, `PAOFLOW_QE_BIN`, `PAOFLOW_QE_OPTIONS` (`pw.x` options such as `-nk 4`, passed to
-`ACBN0(qe_options=...)`) and `PAOFLOW_PYTHON_BIN` override them at run time. `paoflow-studio` sets them from
-its Runs tab, so its ACBN0 form hides these questions (`Question(gui=False)`: asked by the CLI, the GUI form
-keeps the default).
+bin paths) are the defaults of `main.acbn0.py`; the launch variables below override them, with
+`PAOFLOW_QE_OPTIONS` passed to `ACBN0(qe_options=...)`.
 
 **Workflow B — Property runs:** Pick from band structure, DOS, transport, Fermi surface, spin texture, spin Hall conductivity, orbital Hall conductivity, anomalous Hall effects, topology, optical properties, and more. The generated `plot.py` includes only the visualization routines for the properties you chose.
 

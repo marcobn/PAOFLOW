@@ -146,6 +146,9 @@ SSCHA_ITEMS = (
         "pw.x command (may include flags, e.g. 'pw.x -nk 4')",
         default='pw.x',
         section=LAUNCH,
+        # Inside Slurm jobs the command is the cluster's; a local run takes the build and the
+        # options of the paoflow-studio Runs tab instead (PAOFLOW.utils.qe_launch).
+        gui=lambda a, c: _slurm(a),
     ),
     *gated(
         (
@@ -202,6 +205,7 @@ SSCHA_ITEMS = (
         default='mpirun -np 4',
         when=lambda a, c: not _slurm(a),
         section=LAUNCH,
+        gui=False,  # the ranks of the paoflow-studio Runs tab
     ),
     *(
         Question(

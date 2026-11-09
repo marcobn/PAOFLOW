@@ -177,8 +177,8 @@ def test_acbn0_launch_settings_come_from_the_runs_tab(monkeypatch):
     )
     assert form.config['mpi_qe'] == 'mpirun -np 4'  # the default, whatever the payload says
     driver = workflow_outputs('acbn0', form.config)[0].content()
-    assert "MPI_QE = os.environ.get('PAOFLOW_MPI_QE', 'mpirun -np 4')" in driver
-    assert "QE_PATH = os.environ.get('PAOFLOW_QE_BIN', '')" in driver
+    assert "MPI_QE = mpi_prefix('mpirun -np 4')" in driver
+    assert "QE_PATH = qe_bin('')" in driver
     assert driver.count('qe_options=QE_OPTIONS') >= 1 and "qe_options=''" not in driver
     namespace = {}
     monkeypatch.setenv('PAOFLOW_MPI_QE', 'mpirun -np 8')
@@ -193,6 +193,48 @@ def test_acbn0_launch_settings_come_from_the_runs_tab(monkeypatch):
         namespace,
     )  # noqa: S102
     assert namespace['MPI_QE'] == 'mpirun -np 8' and namespace['QE_OPTIONS'] == '-nk 4'
+    assert namespace['MPI_HARTREE'] == 'mpirun -np 8'  # follows the ranks of pw.x
     assert namespace['MPI_PY'] == 'mpirun -np 1'  # not set: the script's value
     (step,) = run_plan('acbn0', form.config)[:1]
     assert step.qe_launch and step.to_json()['qe_launch'] and not step.mpi
+
+
+def test_every_qe_run_takes_the_runs_tab_settings():
+    """The run phases that start QE carry qe_launch, and their launch questions are CLI-only."""
+    from PAOFLOW.gen.outputs import RunStep, run_plan
+    from PAOFLOW.gen.questions import WORKFLOWS
+    from PAOFLOW.gen.questions.model import Context
+    from PAOFLOW.gen.questions.resolve import resolve_form
+
+    si = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__), '..', '..', '..', 'examples', 'qe_examples', 'example01'
+        )
+    )
+
+    def resolved(name, answers):
+        form = resolve_form(WORKFLOWS[name], answers, Context(workdir=si))
+        assert form.complete, form.errors
+        return form, {i['key']: i for i in form.items if 'key' in i}
+
+    form, items = resolved('phonon', {'raman_method': 'static'})
+    assert not items['mpi_qe']['visible'] and not items['qe_pw']['visible']
+    launch = {s.label: s.qe_launch for s in run_plan('phonon', form.config)}
+    assert launch['Phonons: pw.x on the supercells'] and launch['Raman: run']
+    assert not launch['Phonons: displaced supercells'] and not launch['Raman: analyse']
+    driver = workflow_outputs('phonon', form.config)[0].content()
+    assert "QE_PW = qe_command('pw.x', 'pw.x')" in driver and "QE_PH = qe_command('ph.x'" in driver
+
+    form, items = resolved('sscha', {})
+    assert form.config['launcher'] == 'local'
+    assert not items['mpi_qe']['visible'] and not items['qe_pw']['visible']
+    assert all(s.qe_launch for s in run_plan('sscha', form.config) if 'status' not in s.argv)
+    slurm, items = resolved('sscha', {'launcher': 'slurm', 'slurm_account': 'x'})
+    assert items['qe_pw']['visible']  # inside Slurm jobs: the cluster's command
+    assert not any(s.qe_launch for s in run_plan('sscha', slurm.config))
+    text = workflow_outputs('sscha', form.config)[0].content()
+    assert "if LAUNCHER == 'local':" in text and 'qe_command(' in text
+
+    assert RunStep('x', ('bash', 'run_qe.sh'), ranks_env='NP', qe_launch=True).to_json()[
+        'qe_launch'
+    ]
