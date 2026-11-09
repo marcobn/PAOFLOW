@@ -131,6 +131,10 @@ input…*. *Run* starts a step:
   (`-nk 4 -nd 1`: `-nk`/`-npool`, `-ni`, `-nd`, `-nt`, `-nb`), checked against the ranks (images × pools must
   divide them, task and band groups the ranks of a pool) and remembered per program.
 - `run_qe.sh` gets its rank count through `NP`.
+- The ACBN0 driver starts `pw.x` and the Hartree step itself. Its step has the ranks, the Quantum ESPRESSO build and
+  the `pw.x` options of those runs. They reach the script as `PAOFLOW_MPI_QE`, `PAOFLOW_MPI_HARTREE`,
+  `PAOFLOW_QE_BIN` and `PAOFLOW_QE_OPTIONS`, which the command of the step shows, so the ACBN0 form has no launch
+  commands of its own.
 
 Every run is niced, with one thread per rank. Runs continue when the GUI stops; a restarted GUI shows them again.
 The log updates live, *Cancel* stops the process group, and *Results* opens the outputs.

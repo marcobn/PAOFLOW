@@ -250,7 +250,7 @@ def resolve_form(workflow: Workflow, raw_answers: dict, context: Context) -> Res
     form = ResolvedForm()
     for item in workflow.items:
         if isinstance(item, Note):
-            shown = item.applies(form.answers, context)
+            shown = item.applies(form.answers, context) and item.gui
             form.items.append(
                 {
                     'type': 'note',
@@ -262,13 +262,14 @@ def resolve_form(workflow: Workflow, raw_answers: dict, context: Context) -> Res
             continue
         entry = describe_question(item, workflow.name)
         shown = item.applies(form.answers, context)
-        entry['visible'] = shown
+        entry['visible'] = shown and item.gui
         form.items.append(entry)
         if not shown:
             continue
         default = item.default_value(form.answers, context)
         choices = item.choice_values(form.answers, context)
-        raw = raw_answers.get(item.key, _MISSING)
+        # A CLI-only question (gui=False) keeps its default: the GUI sets it elsewhere.
+        raw = raw_answers.get(item.key, _MISSING) if item.gui else _MISSING
         error = None
         try:
             value = interpret(item, raw, default, choices)

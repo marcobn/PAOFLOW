@@ -152,3 +152,47 @@ def test_drivers_abort_every_rank_on_an_error():
                 'superconductivity/eliashberg.py', 'coupling/long_range_check.py'):  # fmt: skip
         with open(os.path.join(es.TEMPLATE_DIR, rel)) as handle:
             assert handle.read().rstrip().endswith('run_main(main)'), rel
+
+
+def test_acbn0_launch_settings_come_from_the_runs_tab(monkeypatch):
+    """The ACBN0 launch commands are CLI questions only: the GUI form hides them and the driver
+    reads the PAOFLOW_* variables that the Runs tab sets, before the CLI answers."""
+    from PAOFLOW.gen.outputs import run_plan
+    from PAOFLOW.gen.questions import WORKFLOWS
+    from PAOFLOW.gen.questions.model import Context
+    from PAOFLOW.gen.questions.resolve import resolve_form
+
+    si = os.path.join(
+        os.path.dirname(__file__), '..', '..', '..', 'examples', 'qe_examples', 'example01'
+    )
+    answers = {'hubbard': [['Si-3p', '0.5']], 'mpi_qe': 'srun -n 64'}  # a GUI cannot set it
+    form = resolve_form(WORKFLOWS['acbn0'], answers, Context(workdir=os.path.abspath(si)))
+    launch = ('mpi_qe', 'mpi_py', 'mpi_hartree', 'qe_path', 'py_path')
+    items = {i['key']: i for i in form.items if i.get('type') != 'note' and 'key' in i}
+    assert all(items[key]['visible'] is False for key in launch)
+    assert not any(
+        i['visible']
+        for i in form.items
+        if i.get('type') == 'note' and 'launch' in i['text'].lower()
+    )
+    assert form.config['mpi_qe'] == 'mpirun -np 4'  # the default, whatever the payload says
+    driver = workflow_outputs('acbn0', form.config)[0].content()
+    assert "MPI_QE = os.environ.get('PAOFLOW_MPI_QE', 'mpirun -np 4')" in driver
+    assert "QE_PATH = os.environ.get('PAOFLOW_QE_BIN', '')" in driver
+    assert driver.count('qe_options=QE_OPTIONS') >= 1 and "qe_options=''" not in driver
+    namespace = {}
+    monkeypatch.setenv('PAOFLOW_MPI_QE', 'mpirun -np 8')
+    monkeypatch.setenv('PAOFLOW_QE_OPTIONS', '-nk 4')
+    head = driver[: driver.index('PROJECTION =')]
+    exec(
+        compile(
+            head.replace('HERE = os.path.dirname(os.path.abspath(__file__))', 'HERE = "."'),
+            'head',
+            'exec',
+        ),
+        namespace,
+    )  # noqa: S102
+    assert namespace['MPI_QE'] == 'mpirun -np 8' and namespace['QE_OPTIONS'] == '-nk 4'
+    assert namespace['MPI_PY'] == 'mpirun -np 1'  # not set: the script's value
+    (step,) = run_plan('acbn0', form.config)[:1]
+    assert step.qe_launch and step.to_json()['qe_launch'] and not step.mpi

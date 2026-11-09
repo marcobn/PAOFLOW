@@ -164,7 +164,8 @@ def build_command(
         if not SAFE_TOKEN.match(token):
             raise HttpError(400, 'unsupported argument %r' % token)
     program = argv[0]
-    qe = app.qe_installation(qe_bin) if qe_bin or program in QE_PROGRAMS else None
+    launches_qe = bool(step.get('qe_launch'))  # the driver runs pw.x itself (ACBN0)
+    qe = app.qe_installation(qe_bin) if qe_bin or program in QE_PROGRAMS or launches_qe else None
     if program == 'python':
         if len(argv) < 2 or not argv[1].endswith('.py'):
             raise HttpError(400, 'python runs a driver file')
@@ -212,6 +213,8 @@ def build_command(
         if launcher is None:
             raise HttpError(400, 'mpirun is not on the PATH: run with 1 rank')
         command = [launcher, '-np', str(ranks), *command]
+    if launches_qe:
+        env.update(_qe_launch_environment(app, cwd, qe, step.get('qe_options') or [], ranks))
     if step.get('ranks_env'):
         if not re.match(r'^[A-Z_][A-Z0-9_]*$', step['ranks_env']):
             raise HttpError(400, 'invalid environment variable')
@@ -219,6 +222,49 @@ def build_command(
     if shutil.which('nice'):
         command = ['nice', '-n', '10', *command]
     return command, cwd, env
+
+
+def _qe_launch_environment(
+    app: 'GuiApp', cwd: Path, qe, options: list, ranks: int
+) -> dict[str, str]:
+    """The ``PAOFLOW_*`` variables of a driver that runs Quantum ESPRESSO itself.
+
+    Parameters
+    ----------
+    app : GuiApp
+        The application.
+    cwd : Path
+        Folder of the run.
+    qe : QeInstallation
+        The chosen build.
+    options : list of str
+        ``pw.x`` options (parallel flags), checked against ``ranks``.
+    ranks : int
+        Ranks of ``pw.x`` and of the driver's own MPI steps.
+
+    Returns
+    -------
+    dict
+        ``PAOFLOW_MPI_QE`` and ``PAOFLOW_MPI_HARTREE`` (``mpirun -np N``, empty on one rank),
+        ``PAOFLOW_QE_BIN``, ``PAOFLOW_QE_OPTIONS`` and ``PAOFLOW_PYTHON_BIN`` (the Python of the
+        server, which has PAOFLOW).
+    """
+    if qe.mpi is False and ranks > 1:
+        raise HttpError(
+            400, 'QE %s in %s is a serial build (no MPI): run it with 1 rank' % (qe.version, qe.bin)
+        )
+    checked = _qe_arguments(app, cwd, [str(o) for o in options], ranks, require_input=False)
+    launcher = str(qe.mpirun) if qe.mpirun else shutil.which('mpirun') or shutil.which('mpiexec')
+    if ranks > 1 and launcher is None:
+        raise HttpError(400, 'mpirun is not on the PATH: run with 1 rank')
+    mpi = '%s -np %d' % (launcher, ranks) if ranks > 1 else ''
+    return {
+        'PAOFLOW_MPI_QE': mpi,
+        'PAOFLOW_MPI_HARTREE': mpi,
+        'PAOFLOW_QE_BIN': str(qe.bin),
+        'PAOFLOW_QE_OPTIONS': ' '.join(checked),
+        'PAOFLOW_PYTHON_BIN': os.path.dirname(_python_executable()),
+    }
 
 
 def _qe_executable(qe, program: str) -> str:
@@ -233,8 +279,14 @@ def _qe_executable(qe, program: str) -> str:
     return str(executable)
 
 
-def _qe_arguments(app: 'GuiApp', cwd: Path, arguments: list[str], ranks: object = 1) -> list[str]:
-    """Validated arguments of a QE program: one input file inside the folder and parallel flags."""
+def _qe_arguments(
+    app: 'GuiApp', cwd: Path, arguments: list[str], ranks: object = 1, require_input: bool = True
+) -> list[str]:
+    """Validated arguments of a QE program: one input file inside the folder and parallel flags.
+
+    ``require_input=False`` checks the options a driver passes to the ``pw.x`` it runs itself
+    (``PAOFLOW_QE_OPTIONS``): parallel flags only, the driver gives the input files.
+    """
     checked: list[str] = []
     layout: dict[str, tuple[str, int]] = {}
     seen_input = False
@@ -244,6 +296,8 @@ def _qe_arguments(app: 'GuiApp', cwd: Path, arguments: list[str], ranks: object 
         value = arguments[index + 1] if index + 1 < len(arguments) else None
         if value is None:
             raise HttpError(400, '%s needs a value' % flag)
+        if flag in QE_INPUT_FLAGS and not require_input:
+            raise HttpError(400, 'the driver gives pw.x its input files: parallel options only')
         if flag in QE_INPUT_FLAGS:
             path = app.resolve(str(cwd / value))
             if not path.is_file():
@@ -262,7 +316,7 @@ def _qe_arguments(app: 'GuiApp', cwd: Path, arguments: list[str], ranks: object 
             )
         checked += [flag, value]
         index += 2
-    if not seen_input:
+    if require_input and not seen_input:
         raise HttpError(400, 'a QE run needs its input file (-in <file>)')
     check_parallel_layout({group: value for group, (_flag, value) in layout.items()}, ranks, layout)
     return checked
@@ -424,7 +478,12 @@ class JobManager:
             log_path = self.folder / ('%s.log' % identifier)
         with open(log_path, 'wb') as log:
             if not output:
-                log.write(('$ %s\n# in %s\n\n' % (' '.join(command), cwd)).encode())
+                launch = ''.join(
+                    '# %s=%s\n' % (name, value)
+                    for name, value in sorted(env.items())
+                    if name.startswith('PAOFLOW_')
+                )
+                log.write(('$ %s\n# in %s\n%s\n' % (' '.join(command), cwd, launch)).encode())
                 log.flush()
             process = subprocess.Popen(
                 command,

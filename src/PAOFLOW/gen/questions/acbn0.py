@@ -110,14 +110,24 @@ ACBN0_ITEMS = (
         unit='eV',
         section=HUBBARD,
     ),
-    Note('\nParallel launch commands (edit later in the script if unsure):', section=LAUNCH),
-    Question('mpi_qe', 'MPI command for pw.x', default='mpirun -np 4', section=LAUNCH),
-    Question('mpi_py', 'MPI command for python', default='mpirun -np 1', section=LAUNCH),
-    Question(
-        'mpi_hartree', 'MPI command for the Hartree step', default='mpirun -np 4', section=LAUNCH
+    # The launch commands are asked by the CLI only: paoflow-studio sets them in its Runs tab
+    # (ranks, Quantum ESPRESSO build, pw.x options) and the driver reads them at run time.
+    Note(
+        '\nParallel launch commands (edit later in the script if unsure):',
+        section=LAUNCH,
+        gui=False,
     ),
-    Question('qe_path', 'Quantum ESPRESSO bin path', default='', section=LAUNCH),
-    Question('py_path', 'Python bin path', default='', section=LAUNCH),
+    Question('mpi_qe', 'MPI command for pw.x', default='mpirun -np 4', section=LAUNCH, gui=False),
+    Question('mpi_py', 'MPI command for python', default='mpirun -np 1', section=LAUNCH, gui=False),
+    Question(
+        'mpi_hartree',
+        'MPI command for the Hartree step',
+        default='mpirun -np 4',
+        section=LAUNCH,
+        gui=False,
+    ),
+    Question('qe_path', 'Quantum ESPRESSO bin path', default='', section=LAUNCH, gui=False),
+    Question('py_path', 'Python bin path', default='', section=LAUNCH, gui=False),
     Question(
         'emin',
         'Lowest energy of the band plots (eV, relative to E_F)',

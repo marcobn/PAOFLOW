@@ -911,3 +911,26 @@ and Im parts").**
 - Tests: `test_overlay_figure_panels_per_unit` (one panel for one unit, stacked panels for two, colour by
   slot, dashes by series, DOS with PDOS); `test_overlay_endpoint` (scan facts, colours, x-axis and count
   refusals); browser `test_overlay_properties` (S with σ/τ: two panels, then *Clear the overlay*).
+
+**ACBN0 launch settings in the Runs tab (8 November 2026, user request: fold the ACBN0 run specifics into the
+general run tab).** The ACBN0 form asked for MPI commands and bin paths, which the Runs tab already sets for
+every other run.
+
+- `Question(gui=False)` / `Note(gui=False)` is the mirror of `cli=False`: asked by the CLI, hidden by the GUI
+  form, which keeps the default and ignores a payload value. The ACBN0 *Launch commands* section uses it, so
+  the CLI prompts and the parity harness are unchanged.
+- `main.acbn0.py`: `MPI_QE`, `MPI_PY`, `MPI_HARTREE`, `QE_PATH` and `PY_PATH` read `PAOFLOW_MPI_QE`,
+  `PAOFLOW_MPI_PY`, `PAOFLOW_MPI_HARTREE`, `PAOFLOW_QE_BIN` and `PAOFLOW_PYTHON_BIN` before the CLI answers.
+  The new `QE_OPTIONS` (`PAOFLOW_QE_OPTIONS`) reaches `ACBN0(qe_options=...)`, which the driver hard-coded to
+  `''` before.
+- `RunStep.qe_launch` marks a driver that runs QE itself. `jobs._qe_launch_environment` turns the step's
+  ranks, QE build and options into those variables: `mpirun -np N` (empty on one rank), the build's `bin`,
+  and the options checked like a `pw.x` step's (parallel flags only, layout against the ranks, serial builds
+  on 1 rank), plus the Studio's Python. The log header lists the `PAOFLOW_*` variables.
+- Runs tab: the ACBN0 step has the ranks, the options field (remembered as `pw.x`'s) and the shared QE
+  picker. Its command shows the variables in front of `python main.acbn0.py`, ready for a terminal.
+- The phonon (`main.phonon.py`, "pw.x launch") and Raman drivers have the same pattern and can follow the
+  same route.
+- Tests: the hidden form section and the driver variables (`test_acbn0_launch_settings_come_from_the_runs_tab`),
+  the run manager (`test_driver_that_runs_qe_gets_the_launch_settings`), and the browser
+  (`test_acbn0_runs_with_the_runs_tab_settings`).

@@ -308,3 +308,45 @@ def test_overlay_endpoint(client, gui_root):
     payload['items'] = [{'id': d['id']} for d in scan['datasets'] if d['kind'] == 'boltzmann']
     status, body, _ = client.post('/api/results/overlay', payload)
     assert status == 400 and 'at most 3' in body['error']
+
+
+def test_driver_that_runs_qe_gets_the_launch_settings(make_client, gui_root, tmp_path, monkeypatch):
+    """A qe_launch step (ACBN0) runs as one python process; pw.x's ranks, build and options reach
+    the driver as PAOFLOW_* variables, checked like those of a pw.x step."""
+    bin_dir = _qe_build(tmp_path / 'Programs' / 'qe-7.5', '7.5')
+    serial = _qe_build(tmp_path / 'Programs' / 'qe-6.8', '6.8', mpi=False)
+    monkeypatch.setenv('PATH', '%s:%s' % (bin_dir, os.environ['PATH']))
+    client = make_client(qe_search=False, max_ranks=4)
+    (gui_root / 'Si' / 'main.acbn0.py').write_text(
+        "import os\nfor k in sorted(os.environ):\n    if k.startswith('PAOFLOW_'):\n"
+        "        print(k, '=', os.environ[k])\n"
+    )
+    step = {
+        'argv': ['python', 'main.acbn0.py'],
+        'cwd': 'Si',
+        'qe_launch': True,
+        'qe_options': ['-nk', '2'],
+    }
+    status, job, _ = client.post(
+        '/api/jobs/launch', {'step': step, 'ranks': 4, 'qe_bin': str(bin_dir)}
+    )
+    assert status == 200, job
+    log = _wait(client, job['id'])['text']
+    assert (
+        log.count('PAOFLOW_MPI_QE = ') == 1
+        and '-np 4' in log.split('PAOFLOW_MPI_QE = ')[1].splitlines()[0]
+    )
+    assert 'PAOFLOW_QE_BIN = %s' % bin_dir in log and 'PAOFLOW_QE_OPTIONS = -nk 2' in log
+    assert '# PAOFLOW_QE_OPTIONS=-nk 2' in log  # the header of the log names the settings
+    one = dict(step, qe_options=[])
+    status, job, _ = client.post(
+        '/api/jobs/launch', {'step': one, 'ranks': 1, 'qe_bin': str(bin_dir)}
+    )
+    assert 'PAOFLOW_MPI_QE = \n' in _wait(client, job['id'])['text']  # one rank: no mpirun
+    for payload, message in (
+        ({'step': dict(step, qe_options=['-in', 'x.in']), 'ranks': 4}, 'parallel options only'),
+        ({'step': dict(step, qe_options=['-nk', '3']), 'ranks': 4}, 'must divide'),
+        ({'step': step, 'ranks': 2, 'qe_bin': str(serial)}, 'serial build'),
+    ):
+        status, body, _ = client.post('/api/jobs/launch', payload)
+        assert status == 400 and message in body['error'], body

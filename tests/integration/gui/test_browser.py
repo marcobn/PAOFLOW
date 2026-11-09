@@ -708,3 +708,48 @@ def test_overlay_properties(browser, studio):
     browser.find_element(By.XPATH, "//button[text()='Clear the overlay']").click()
     _wait(lambda: 'yaxis2' not in browser.execute_script(figure)['layout'])
     assert _errors(browser) == []
+
+
+def test_acbn0_runs_with_the_runs_tab_settings(browser, studio, tmp_path, monkeypatch):
+    """The ACBN0 step gets ranks, the QE build and pw.x options in the Runs tab; the driver
+    receives them as PAOFLOW_* variables and the command shows them."""
+    import os
+
+    server, work = studio
+    bin_dir = tmp_path / 'qe_bin'
+    bin_dir.mkdir()
+    (bin_dir / 'pw.x').write_text('#!/bin/sh\necho stand-in\n')
+    (bin_dir / 'pw.x').chmod(0o755)
+    monkeypatch.setenv('PATH', '%s:%s' % (bin_dir, os.environ['PATH']))
+    (work / 'main.acbn0.py').write_text(
+        "import os\nfor k in ('PAOFLOW_MPI_QE', 'PAOFLOW_QE_OPTIONS', 'PAOFLOW_QE_BIN'):\n"
+        "    print('%s=%s' % (k, os.environ.get(k)))\n"
+    )
+    _open(browser, server, 'runs')
+    step = {
+        'label': 'ACBN0 self-consistency',
+        'argv': ['python', 'main.acbn0.py'],
+        'command': 'python main.acbn0.py',
+        'cwd': '.',
+        'qe_launch': True,
+    }
+    browser.execute_script("window.paoflowApp.runs.setPlan('Si', [arguments[0]], 'acbn0')", step)
+    options = _wait(lambda: browser.find_elements(By.CSS_SELECTOR, '#view-runs .qe-options input'))[
+        0
+    ]
+    ranks = browser.find_element(By.CSS_SELECTOR, '#view-runs input[type="number"]')
+    ranks.clear()
+    ranks.send_keys('2')
+    options.clear()
+    options.send_keys('-nk 2')
+    code = browser.find_element(By.CSS_SELECTOR, '#view-runs .steps li .cmd code')
+    _wait(lambda: 'PAOFLOW_QE_OPTIONS=' in code.text)
+    assert code.text.startswith("PAOFLOW_MPI_QE='mpirun -np 2' PAOFLOW_MPI_HARTREE='mpirun -np 2'")
+    assert code.text.endswith("PAOFLOW_QE_OPTIONS='-nk 2' python main.acbn0.py")
+    next(
+        b for b in browser.find_elements(By.XPATH, "//button[text()='Run']") if b.is_displayed()
+    ).click()
+    log = browser.find_element(By.CSS_SELECTOR, '#view-runs pre.log')
+    _wait(lambda: 'PAOFLOW_QE_OPTIONS=-nk 2' in log.text, timeout=60)
+    assert '-np 2' in log.text and 'PAOFLOW_QE_BIN=%s' % bin_dir in log.text
+    assert _errors(browser) == []

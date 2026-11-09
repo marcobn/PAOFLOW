@@ -53,6 +53,12 @@ without MPI, it just calls `main()`. The plot scripts run as one process and do 
 **Supported workflows** (chosen at the first prompt):
 
 **Workflow A — ACBN0/eACBN0:** Self-consistent Hubbard U calculations, with or without intersite V terms. See [ACBN0 Module](acbn0.md) for details on the underlying implementation.
+The launch commands asked by the CLI (MPI commands of `pw.x`, python and the Hartree step, the QE and Python
+bin paths) are the defaults of `main.acbn0.py`. The variables `PAOFLOW_MPI_QE`, `PAOFLOW_MPI_PY`,
+`PAOFLOW_MPI_HARTREE`, `PAOFLOW_QE_BIN`, `PAOFLOW_QE_OPTIONS` (`pw.x` options such as `-nk 4`, passed to
+`ACBN0(qe_options=...)`) and `PAOFLOW_PYTHON_BIN` override them at run time. `paoflow-studio` sets them from
+its Runs tab, so its ACBN0 form hides these questions (`Question(gui=False)`: asked by the CLI, the GUI form
+keeps the default).
 
 **Workflow B — Property runs:** Pick from band structure, DOS, transport, Fermi surface, spin texture, spin Hall conductivity, orbital Hall conductivity, anomalous Hall effects, topology, optical properties, and more. The generated `plot.py` includes only the visualization routines for the properties you chose.
 

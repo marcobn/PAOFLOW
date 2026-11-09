@@ -185,6 +185,11 @@ class RunStep:
     action : str, optional
         A step done in the GUI rather than by a command: ``'setup:<workflow>'`` opens that
         workflow of the Setup tab on the folder.
+    qe_launch : bool, optional
+        The driver runs Quantum ESPRESSO itself (``pw.x``, then its own MPI steps): the Runs tab
+        passes the ranks, the QE build and the ``pw.x`` options in ``PAOFLOW_MPI_QE``,
+        ``PAOFLOW_MPI_HARTREE``, ``PAOFLOW_QE_BIN``, ``PAOFLOW_QE_OPTIONS`` and
+        ``PAOFLOW_PYTHON_BIN``, which the driver reads before its own defaults.
     """
 
     label: str
@@ -197,6 +202,7 @@ class RunStep:
     note: str = ''
     stdout: str | None = None
     action: str | None = None
+    qe_launch: bool = False
 
     def command(self, ranks: int | None = None) -> str:
         """Shell text of the step (with ``mpirun -np N`` when ``ranks`` is given).
@@ -242,6 +248,7 @@ class RunStep:
             'note': self.note,
             'stdout': self.stdout,
             'action': self.action,
+            'qe_launch': self.qe_launch,
         }
 
 
@@ -308,7 +315,10 @@ def run_plan(name: str, cfg: dict, files: list[GeneratedFile] | None = None) -> 
             RunStep(
                 'ACBN0 self-consistency (runs pw.x and projwfc.x itself)',
                 ('python', driver),
-                note='MPI commands of pw.x and python are set inside the script.',
+                qe_launch=True,
+                note='pw.x and the Hartree step run on the ranks, Quantum ESPRESSO build and pw.x '
+                'options of this step (in a terminal: the PAOFLOW_* variables of the command, or the '
+                'launch commands at the top of the script).',
             )
         )
     elif name == 'phonon':

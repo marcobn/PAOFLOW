@@ -22,8 +22,24 @@ function actionLabel(action) {
   return 'Open';
 }
 
-// The command of a step with extra QE options after its arguments (before `> output`).
-function commandWith(step, extra) {
+function shellWord(value) {
+  return /^[\w./:+=-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+// The command of a step with extra QE options after its arguments (before `> output`). A driver
+// that runs pw.x itself (ACBN0) gets them, with the ranks and the QE build, as the PAOFLOW_*
+// variables the server sets, so the copied command repeats the run in a terminal.
+function commandWith(step, extra, launch = null) {
+  if (step.qe_launch && launch) {
+    const mpi = launch.ranks > 1 ? `mpirun -np ${launch.ranks}` : '';
+    const variables = [
+      ['PAOFLOW_MPI_QE', mpi],
+      ['PAOFLOW_MPI_HARTREE', mpi],
+      ...(launch.qeBin ? [['PAOFLOW_QE_BIN', launch.qeBin]] : []),
+      ...(extra.length ? [['PAOFLOW_QE_OPTIONS', extra.join(' ')]] : []),
+    ];
+    return `${variables.map(([name, value]) => `${name}=${shellWord(value)}`).join(' ')} ${step.command}`;
+  }
   if (!extra.length) return step.command;
   const base = step.argv.join(' ');
   return step.command.includes(base)
@@ -105,11 +121,17 @@ export class RunsView {
     this.qeInfo = null;
     this.build();
     loadQe()
-      .then((info) => {
+      .then(async (info) => {
         this.qeInfo = info;
+        this.qeBin = await chosenQe(this.session);
         this.renderPlan();
       })
       .catch(() => {});
+    // The QE build chosen in a picker shows in the commands of the drivers that run pw.x.
+    document.addEventListener('qe-change', (event) => {
+      this.qeBin = event.detail;
+      if (this.plan.some((step) => step.qe_launch)) this.renderPlan();
+    });
   }
 
   build() {
@@ -206,10 +228,12 @@ export class RunsView {
         style: { width: '64px' },
         title: 'MPI ranks',
       });
-      const usesRanks = step.mpi || step.ranks_env;
+      const usesRanks = step.mpi || step.ranks_env || step.qe_launch;
       const runnable = !step.interactive && !step.manual && !this.session.read_only;
-      const program = step.argv?.[0];
-      const isQe = runnable && (programs.includes(program) || /\.x$/.test(program || ''));
+      // QE options: a QE program, or a driver that runs pw.x itself (its options are pw.x's).
+      const program = step.qe_launch ? 'pw.x' : step.argv?.[0];
+      const isQe =
+        runnable && (step.qe_launch || programs.includes(program) || /\.x$/.test(program || ''));
       const code = h('code', {}, step.command);
       let parsed = { tokens: [] };
       const runButton = h(
@@ -218,7 +242,9 @@ export class RunsView {
           class: 'btn small primary',
           onclick: () =>
             this.launch(
-              { ...step, argv: [...step.argv, ...(parsed.tokens || [])] },
+              step.qe_launch
+                ? { ...step, qe_options: parsed.tokens || [] }
+                : { ...step, argv: [...step.argv, ...(parsed.tokens || [])] },
               usesRanks ? Number(ranks.value) : 1,
             ),
         },
@@ -243,7 +269,10 @@ export class RunsView {
           problem.hidden = !parsed.error;
           problem.textContent = parsed.error || '';
           options.classList.toggle('invalid', Boolean(parsed.error));
-          code.textContent = commandWith(step, parsed.tokens || []);
+          code.textContent = commandWith(step, parsed.tokens || [], {
+            ranks: usesRanks ? Number(ranks.value) : 1,
+            qeBin: this.qeBin,
+          });
           runButton.disabled = Boolean(parsed.error);
         };
         options.addEventListener('input', () => {
@@ -272,7 +301,11 @@ export class RunsView {
             { class: 'row' },
             h('strong', { class: 'grow' }, step.label),
             usesRanks
-              ? h('span', { class: 'chip accent' }, step.mpi ? 'MPI' : step.ranks_env)
+              ? h(
+                  'span',
+                  { class: 'chip accent' },
+                  step.mpi ? 'MPI' : step.qe_launch ? 'pw.x MPI' : step.ranks_env,
+                )
               : null,
           ),
           step.manual

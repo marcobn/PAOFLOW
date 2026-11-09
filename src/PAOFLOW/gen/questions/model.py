@@ -134,6 +134,10 @@ class Question:
         Asked by the CLI (default).  ``False`` marks a GUI-only refinement: an optional builder
         setting that the CLI leaves at the builder default; the GUI passes it on only when the
         user changes it, so a GUI run with defaults writes the same files as the CLI.
+    gui : bool, optional
+        Shown by the GUI form (default).  ``False`` marks a setting that the GUI takes elsewhere,
+        such as the launch commands that the Runs tab of ``paoflow-studio`` passes to the driver
+        at run time: the form hides it and the files get its default.
     """
 
     key: str
@@ -156,6 +160,7 @@ class Question:
     widget: str = ''
     doc: str = ''
     cli: bool = True
+    gui: bool = True
 
     def __post_init__(self) -> None:
         if self.kind not in QUESTION_KINDS:
@@ -225,11 +230,14 @@ class Note:
         ``when(answers, context)``: shown only if true.
     section : str, optional
         GUI section title.
+    gui : bool, optional
+        Shown by the GUI form (default); ``False`` for notes of CLI-only questions.
     """
 
     text: str | Callable[[Answers, Context], str]
     when: Predicate | None = None
     section: str = ''
+    gui: bool = True
 
     def applies(self, answers: Answers, context: Context) -> bool:
         """Whether the note is shown for these answers.

@@ -861,12 +861,23 @@ def build_acbn0_script(cfg):
     lines.append('BASISPATH = os.path.join(HERE, {!r}) + os.sep'.format(cfg['basisdir']))
     lines.append('OUT = {!r}'.format(cfg['outputdir']))
     lines.append('')
-    lines.append('# Parallel launch commands and executable paths (edit to your machine).')
-    lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
-    lines.append('MPI_PY = {!r}'.format(cfg['mpi_py']))
-    lines.append('MPI_HARTREE = {!r}'.format(cfg['mpi_hartree']))
-    lines.append('QE_PATH = {!r}'.format(cfg['qe_path']))
-    lines.append('PY_PATH = {!r}'.format(cfg['py_path']))
+    lines.append(
+        '# Parallel launch commands and executable paths (edit the defaults to your machine).'
+    )
+    lines.append(
+        '# PAOFLOW_* variables take precedence: paoflow-studio sets them from its Runs tab'
+    )
+    lines.append('# (ranks, Quantum ESPRESSO build, pw.x options such as -nk 4).')
+    lines.append("MPI_QE = os.environ.get('PAOFLOW_MPI_QE', {!r})".format(cfg['mpi_qe']))
+    lines.append("MPI_PY = os.environ.get('PAOFLOW_MPI_PY', {!r})".format(cfg['mpi_py']))
+    lines.append(
+        "MPI_HARTREE = os.environ.get('PAOFLOW_MPI_HARTREE', {!r})".format(cfg['mpi_hartree'])
+    )
+    lines.append("QE_PATH = os.environ.get('PAOFLOW_QE_BIN', {!r})".format(cfg['qe_path']))
+    lines.append(
+        "QE_OPTIONS = os.environ.get('PAOFLOW_QE_OPTIONS', '')   # pw.x options, e.g. -nk 4"
+    )
+    lines.append("PY_PATH = os.environ.get('PAOFLOW_PYTHON_BIN', {!r})".format(cfg['py_path']))
     lines.append('')
     lines.append(
         'PROJECTION = {!r}   # ortho-atomic projections fit the Hubbard U'.format(cfg['projection'])
@@ -949,7 +960,7 @@ def build_acbn0_script(cfg):
     lines.append('        mpi_qe=MPI_QE,')
     lines.append('        mpi_python=MPI_PY,')
     lines.append('        mpi_hartree=MPI_HARTREE,')
-    lines.append("        qe_options='',")
+    lines.append('        qe_options=QE_OPTIONS,')
     lines.append('        qe_path=QE_PATH,')
     lines.append('        python_path=PY_PATH,')
     lines.append('        outputdir=OUT,')
@@ -983,7 +994,7 @@ def build_acbn0_script(cfg):
         lines.append('        mpi_qe=MPI_QE,')
         lines.append('        mpi_python=MPI_PY,')
         lines.append('        mpi_hartree=MPI_HARTREE,')
-        lines.append("        qe_options='',")
+        lines.append('        qe_options=QE_OPTIONS,')
         lines.append('        qe_path=QE_PATH,')
         lines.append('        python_path=PY_PATH,')
         lines.append('        outputdir=OUT,')
