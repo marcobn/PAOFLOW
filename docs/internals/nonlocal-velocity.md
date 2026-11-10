@@ -15,6 +15,8 @@ pf.gradient_and_momenta(nonlocal_velocity=True)
 ```
 
 Or equivalently, set `attr['nonlocal_velocity'] = True` before calling `gradient_and_momenta`.
+(Since October 2026 this is a diagnostic option; production runs use
+`gradient_and_momenta(position_dipoles=True)`, see the last section.)
 
 ## How It Was Built
 
@@ -52,3 +54,41 @@ The correction was implemented incrementally across several phases:
 
 - **Cu FCC:** ε₂ peak ≈ 32 eV near 1.7 eV with the correction — matches QE.
 - **Pt (fully-relativistic):** cubic isotropy ε_xx = ε_yy = ε_zz to machine precision; SHC and EELS match QE references.
+
+## October 2026: Löwdin transformation, orbital signs, and what the term is
+
+An orbital-basis comparison with the exact plane-wave commutator ⟨φ̃ᵢ|i[V_NL, r]|φ̃ⱼ⟩ between
+PAOFLOW's own Löwdin orbitals (Si, `EPW_opt_audit/compare/nl_orbital_check.py`,
+`nl_fixed_check.py`) found the assembled matrix exact between the *raw* atomic orbitals
+(1e-3) but missing two steps into the basis PAOFLOW works in:
+
+1. the Löwdin transformation S^{-1/2}(k) Δp S^{-1/2}(k) with the Bloch overlap of the orbitals
+   (`lowdin_transform`; not a small correction for a diffuse basis: the largest elements were
+   4–5× too small, cosine 0.37 → 0.999 with it);
+2. the orbital signs (−1)^l (−1)^{odd |m|} (`pao_orbital_signs`; the odd-|m| factor alone
+   flipped every s–p and p–d element).
+
+The real-space tables are now built by `two_center_blocks.two_center_pair_blocks` (vectorised over the channels, L and magnetic indices of a pair; 0.8 s instead of 14 s for Si; the element-wise builder is kept as `_build_nl_real_space_tables_elementwise` for its parity test). Both are now applied in `build_nonlocal_velocity_kspace` (and, with the scalar→(j, m_j)
+rotation of the overlap, in the jm path), fed from the overlap tables of
+`position_dipoles.py` by `PAOFLOW.nonlocal_velocity_correction` and by the electron–phonon
+wrapper. The operator agrees with the exact commutator to 2–3 % at every tested k.
+
+**What the term is, and when to use it.** PAOFLOW's velocity is the commutator
+v = i[H, r] with H the PAO Hamiltonian, which already contains the non-local pseudopotential.
+Its only approximation is the position operator: with r reduced to the orbital centres
+(`dHksp`), the missing part is i[H, d] with the position dipoles of the basis
+(`position-dipoles.md`), not i[V_NL, r]. Measured against the exact plane-wave ε₂ of Si
+(12³ grid, 21 bands, extended basis): plain 1.02–1.04, fixed non-local term 0.90–0.93,
+dipoles 0.99–1.01, dipoles + non-local term 0.87 (double counting); against EPW's direct term
+with the standard basis: 1.06, 0.97, 0.98, 0.88. The term as it was (1.09 / old pipeline
++7 % over the plain velocity) moved ε₂ the wrong way. Recommendation: do not add the term to the commutator
+velocity at all — `POSITION_DIPOLES = True` / `gradient_and_momenta(position_dipoles=True)`
+everywhere, `nonlocal_velocity` kept for diagnostics only. On Fe and Pt (`dipole_hall/`) the
+repaired term still shifts the AHC/SHC at E_F by +10 % / −7 % and doubles the Fe AHC peak at
+−1.35 eV, where the 1/Δε² weight of the Kubo formula amplifies the double counting at the
+d-band near-degeneracies, while the dipoles change them by −1 % / +3.5 %. The Cu and Pt
+`epsilon.x` comparisons above predate the fix and were obtained with the defective term; note
+also that `epsilon.x` itself uses the local momentum only (no i[V_NL, r]): on Si it reproduces
+the plane-wave local-only kernel to 2 % and lies 15–19 % above the exact spectrum
+(`EPW_opt_audit/pao_dielectric/epsilon_x`), so it cannot serve as the reference for the
+velocity operator.
