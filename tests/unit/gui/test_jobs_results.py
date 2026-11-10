@@ -350,3 +350,16 @@ def test_driver_that_runs_qe_gets_the_launch_settings(make_client, gui_root, tmp
     ):
         status, body, _ = client.post('/api/jobs/launch', payload)
         assert status == 400 and message in body['error'], body
+
+
+def test_export_with_axis_limits(client, gui_root):
+    shutil.copytree(EXAMPLE / 'Reference', gui_root / 'Si' / 'output')
+    scan = client.post('/api/results/scan', {'path': 'Si'})[1]
+    dos = next(d for d in scan['datasets'] if d['kind'] == 'dos')
+    body = {'path': 'Si', 'id': dos['id'], 'format': 'png', 'limits': {'x': [-4, 4], 'y': None}}
+    status, data, response = client.post('/api/results/export', body)
+    assert status == 200 and data[:4] == b'\x89PNG'
+    status, data, _ = client.post('/api/results/export', dict(body, limits={'x': [4, -4]}))
+    assert status == 422 and 'below' in data['error']
+    status, data, _ = client.post('/api/results/export', dict(body, format='python'))
+    assert status == 200 and "limits={'x': [-4.0, 4.0]}" in data['text']

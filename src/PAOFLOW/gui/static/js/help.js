@@ -61,6 +61,7 @@ const SECTIONS = [
         '**Harmonic phonons** (`main.phonon.py`, `plot.phonon.py`, optional `main.raman.py`): finite displacements with phonopy, Born charges, vibrational dielectric function, QHA, static and resonance Raman.',
         '**Electron–phonon system** (a folder): `system.py`, the QE inputs (`scf`, `ph.x`, `nscf`, `run_qe.sh`) and the drivers of the chosen workflows (superconductivity, optics, transport, ARPES, thermal, phonons, coupling).',
         '**Anharmonic phonons, SSCHA** (`main.sscha.py`): populations and minimisation at a list of temperatures, local, Slurm or manual launch.',
+        '**Quantum oscillations, pyskeaf** (`main.pyskeaf.py`): de Haas–van Alphen frequencies against the field direction from the `Fermi_surf_band_<n>.bxsf` files of a Property run with the Fermi surface (no QE save needed). The field rotates from (θ, φ) start to end — θ is its azimuth in the xy plane, φ its polar angle from +z — or takes one direction or a reciprocal vector (b1, b2, b3); the bands, the energies (one or a scan) and the interpolation are set in the form, the orbit tolerances under *advanced*. The Results tab plots the frequencies against the angle that varies.',
         '**QE input from a database** and **Pseudo-atom basis tables** are tools: they write a `pw.x` input or the basis tables used by the internal projections.',
       ],
     ],
@@ -87,6 +88,8 @@ const SECTIONS = [
     body: [
       [
         'The *Files* panel shows every file of the workflow; the dot is green for a new file, amber for one that differs from the copy on disk. *diff* shows the differences.',
+        'The *Output* box of every workflow has the driver file name (the system folder for electron–phonon) and *Write the plot scripts*: `plot.py`, `plot.acbn0.py`, `plot.phonon.py` (and `plot.raman.py`), the `plot_*.py` of the electron–phonon workflows, `plot.sscha.py` and `plot.pyskeaf.py` (these two save the figures of the Results tab as PDF files and run from the Runs tab). It starts from what paoflow-gen does by default (SSCHA: off).',
+        '*Edit* opens the selected file in an editor before it is written; *Done* closes it. An edited file is marked ✎ and *Write files* writes your text. The edit is kept (per folder and workflow) while the form changes; when the form would now generate a different file, the panel says so and *Take the new file* discards your edit.',
         '*Write files* asks before overwriting: unchecked files are left as they are, and a copy `<file>.bak-<date>` is kept by default.',
         '*Python* shows a script that writes the same files without the GUI.',
         '*Next steps* lists the commands of the workflow in order; *Open in Runs* takes them to the Runs tab.',
@@ -138,8 +141,9 @@ const SECTIONS = [
         'The tree groups the datasets by category; tensor components, spin channels and temperatures of one quantity are the series of one figure. *filter* searches titles and file names.',
         '*Options* depend on the dataset: energy window of band plots, tensor component and temperatures of transport (at most five at once), PDOS grouping (element and ℓ, site, shell, orbital) and display (lines or stacked areas), the quantity of tables that mix units, the η column of absorption spectra, the bands, smoothing and zone of a Fermi surface.',
         'Figures zoom by dragging, pan with the toolbar, and reset with a double click; hovering shows values. *Table view* lists the plotted numbers.',
+        '**Axes** sets the x and y limits by number (one row per y panel of an overlay): *Enter* applies, a blank end is automatic (the data decide it), *Automatic* clears them. A zoom with the mouse shows its range in the fields, ready to be adjusted. The limits are kept per dataset (also across a reload) and the PDF, PNG, SVG and Python exports use them.',
         '**Maps** (ARPES intensity, spectral functions, Berry-curvature slices): click a point for the energy and momentum distribution curves through it.',
-        '**Fermi surfaces** are drawn in 3D, coloured by the Fermi velocity, in the Wigner–Seitz zone (needs scikit-image).',
+        '**Fermi surfaces** are drawn in 3D, coloured by the Fermi velocity, in the Wigner–Seitz zone (needs scikit-image). `FermiSurf_<s>.bxsf` (all bands, eV) and the pyskeaf files `Fermi_surf_band_<n>.bxsf` (one band each, written in Rydberg with the reciprocal vectors without 2π, as SKEAF wants them) give the same picture: the latter are converted, and their bands are named from the file content (file 1 may hold band 2).',
         '*PAOFLOW runs of this folder* (`paoflow_outputs.json`) records the DFT Fermi energy, spin and basis facts and the files of every run.',
       ],
     ],

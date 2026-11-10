@@ -463,8 +463,12 @@ def system_folder_files(cfg: dict[str, Any]) -> list:
     files = [
         GeneratedFile(rel, text=text, executable=rel.endswith('.sh')) for rel, text in texts.items()
     ]
+    # The plot_*.py scripts of the workflows come with them unless cfg['plot'] is False.
+    plots = cfg.get('plot', True)
     files += [
-        GeneratedFile(rel, template=os.path.join(TEMPLATE_DIR, rel)) for rel in workflow_files(cfg)
+        GeneratedFile(rel, template=os.path.join(TEMPLATE_DIR, rel))
+        for rel in workflow_files(cfg)
+        if plots or not os.path.basename(rel).startswith('plot_')
     ]
     return files
 

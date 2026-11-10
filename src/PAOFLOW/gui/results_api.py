@@ -332,17 +332,17 @@ def register(app: 'GuiApp') -> None:
         )
         if fmt == 'csv':
             return json_response({'text': to_csv(dataset), 'filename': name + '.csv'})
+        limits = payload.get('limits')  # the Axes card of the Results tab
         if fmt == 'python':
-            return json_response(
-                {
-                    'text': python_snippet(dataset, folder, payload.get('options') or {}),
-                    'filename': name + '.py',
-                }
-            )
+            try:
+                text = python_snippet(dataset, folder, payload.get('options') or {}, limits)
+            except (TypeError, ValueError) as exc:
+                raise HttpError(400, 'axis limits: %s' % exc) from None
+            return json_response({'text': text, 'filename': name + '.py'})
         if fmt in ('pdf', 'png', 'svg'):
             try:
-                body = matplotlib_figure(dataset, fmt=fmt)
-            except (ValueError, ImportError) as exc:
+                body = matplotlib_figure(dataset, fmt=fmt, limits=limits)
+            except (TypeError, ValueError, ImportError) as exc:
                 raise HttpError(422, str(exc)) from None
             types: dict[str, Any] = {
                 'pdf': 'application/pdf',

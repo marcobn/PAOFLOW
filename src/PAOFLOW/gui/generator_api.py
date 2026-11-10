@@ -154,6 +154,57 @@ def describe_files(
     return described
 
 
+#: Largest edited file the GUI accepts (characters).
+MAX_EDIT_CHARS = 2_000_000
+
+
+def apply_edits(files: list, edits: Any) -> tuple[list, dict[str, str], list[str]]:
+    """Put the user's edits of the previewed files in place of the generated text.
+
+    Parameters
+    ----------
+    files : list of GeneratedFile
+        The files of the form.
+    edits : dict or None
+        ``path -> text`` from the browser.  Only the paths of ``files`` are used: nothing outside
+        the files of the form is ever written.
+
+    Returns
+    -------
+    files : list of GeneratedFile
+        The same files, the edited ones as plain text (their executable bit kept).
+    generated : dict
+        ``path -> generated text`` of the edited files, so the browser can tell when the form
+        has changed the file since it was edited.
+    unused : list of str
+        Edited paths that the form does not write (any more): ignored.
+
+    Raises
+    ------
+    HttpError
+        400 for malformed edits or a text too long.
+    """
+    from ..gen.outputs import GeneratedFile
+
+    if not edits:
+        return files, {}, []
+    if not isinstance(edits, dict):
+        raise HttpError(400, 'edits must map file paths to their text')
+    paths = {generated.path for generated in files}
+    unused = sorted(set(edits) - paths)
+    result, generated = [], {}
+    for item in files:
+        text = edits.get(item.path)
+        if text is None:
+            result.append(item)
+            continue
+        if not isinstance(text, str) or len(text) > MAX_EDIT_CHARS:
+            raise HttpError(400, 'the edit of %s is not a text or is too long' % item.path)
+        generated[item.path] = item.content()
+        result.append(GeneratedFile(item.path, text=text, executable=item.executable))
+    return result, generated, unused
+
+
 def python_equivalent(workflow: str, config: dict, options: dict) -> str:
     """A script that writes the same files without the GUI (reproducible generation).
 
@@ -204,7 +255,8 @@ def resolve_payload(app: 'GuiApp', payload: dict, with_text: bool = True) -> dic
     app : GuiApp
         The application.
     payload : dict
-        ``workflow``, ``workdir``, ``answers`` and ``options`` (``out``, ``plot_out``, ``plot``,
+        ``workflow``, ``workdir``, ``answers``, ``edits`` (``path -> text`` of the files edited in
+        the preview, written instead of the generated text) and ``options`` (``out``, ``plot_out``,
         ``folder`` of the electron-phonon system).
     with_text : bool, optional
         Include the file contents.
@@ -228,11 +280,14 @@ def resolve_payload(app: 'GuiApp', payload: dict, with_text: bool = True) -> dic
     _warn_about_the_save(result, context.workdir)
     if not form.complete:
         return result
+    plot = options.get('plot')
+    if isinstance(plot, bool):  # "Write the plot scripts" of the Output box (default: the CLI's)
+        form.config['plot'] = plot
     try:
         files = workflow_outputs(
             workflow.name,
             form.config,
-            plot=bool(options.get('plot')),
+            plot=False,  # cfg['plot'] decides
             out=options.get('out') or None,
             plot_out=options.get('plot_out') or None,
         )
@@ -240,7 +295,13 @@ def resolve_payload(app: 'GuiApp', payload: dict, with_text: bool = True) -> dic
         result['complete'] = False
         result['errors']['_build'] = 'the script builder failed: %s: %s' % (type(exc).__name__, exc)
         return result
+    files, generated, unused = apply_edits(files, payload.get('edits'))
+    result['unused_edits'] = unused
     result['files'] = describe_files(app, folder, files, with_text=with_text)
+    for entry in result['files']:
+        entry['edited'] = entry['path'] in generated
+        if with_text and entry['edited']:
+            entry['generated'] = generated[entry['path']]  # what the form makes now
     result['plan'] = [step.to_json() for step in run_plan(workflow.name, form.config, files)]
     result['python'] = python_equivalent(workflow.name, form.config, options)
     result['_files'] = files
@@ -257,7 +318,8 @@ def write_files(app: 'GuiApp', payload: dict) -> dict:
     app : GuiApp
         The application.
     payload : dict
-        As :func:`resolve_payload`, plus ``overwrite`` (paths the user confirmed), ``keep``
+        As :func:`resolve_payload` (with ``edits``: the user's text of some files), plus
+        ``overwrite`` (paths the user confirmed), ``keep``
         (changed paths left as they are) and ``backup`` (keep ``<file>.bak-<time>`` copies of
         overwritten files).
 
@@ -532,8 +594,16 @@ def register(app: 'GuiApp') -> None:
     def workflows(request: Request) -> Response:
         from ..gen.questions import WORKFLOWS
 
+        from ..gen.outputs import PLOT_DEFAULTS
+
         items = [
-            {'name': w.name, 'title': w.title, 'description': w.description, 'kind': 'workflow'}
+            {
+                'name': w.name,
+                'title': w.title,
+                'description': w.description,
+                'kind': 'workflow',
+                'plot_default': PLOT_DEFAULTS.get(w.name, False),
+            }
             for w in WORKFLOWS.values()
         ]
         items += [dict(tool, kind='tool') for tool in TOOLS]

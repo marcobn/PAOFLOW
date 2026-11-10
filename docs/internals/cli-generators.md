@@ -89,6 +89,38 @@ The property `nonlinear` (non-linear optics) adds a separate `run_nonlinear()` t
 - **Output:** `main.sscha.py` (default name; `-o` to change, `--force` to overwrite), every setting an editable constant (`TEMPERATURES`, `SUPERCELL`, `KGRID`, `ELECTRONIC_TEMPERATURE`, `POPULATION_SIZES`, `HESSIAN_SIZE`, `START_FROM`, `HARMONIC_DYN`, `HARMONIC_QGRID`, `FINE_GRID`, `LAUNCHER`, `MPI_QE`, `QE_PW`, `QE_PH`, `SLURM_*`, `ENV_SETUP`, `PYTHON`, ...).
 - **Running:** `python main.sscha.py harmonic` (only without harmonic matrices), `python main.sscha.py run` (all temperatures, or `--temperature T`), `python main.sscha.py status`. `local` runs pw.x to the exported force constants; `slurm` submits one job array per population and a step job (afterany) that minimises and submits the next one, to the end; `manual` writes the inputs and stops until `run` is called again. The state of each temperature is in `output/sscha_T<T>/state.json`, so every phase is resumable; `run` resubmits the missing configurations of an incomplete population. Non-interactive generation: `build_sscha_script(cfg)` (used by `agentic/sscha/templates/campaign_template.py`).
 
+**Workflow F — Quantum oscillations (pyskeaf)** (`main.pyskeaf.py`, `PAOFLOW.gen.pyskeaf_driver`, questions in
+`PAOFLOW.gen.questions.pyskeaf`): de Haas–van Alphen frequencies from the single-band
+`Fermi_surf_band_<n>.bxsf` files that `PAOFLOW.fermi_surface()` writes (workflow B with the Fermi surface).
+- **Prompts:**
+  - the folder of the BXSF files (default: `output`, or the first `*/output` that has them; a note lists the
+    bands found, or says that none exists yet);
+  - the bands (`all` or numbers) and the energy (one value or a scan, eV from E_F);
+  - the interpolation per reciprocal-cell side;
+  - the field direction:
+    - `rotation`: θ and φ at the start and the end, and the number of directions (default φ 0→90°, 37
+      directions);
+    - `non_principal`: one θ, φ;
+    - `b1`, `b2`, `b3`: a reciprocal vector;
+
+    θ is the azimuth in the xy plane and φ the polar angle from +z, the `azimuthal` and `polar` of
+    `PAOFLOW.pyskeaf`;
+  - the minimum frequency, the frequency and orbit tolerances, the wall orbits and the verbose files.
+- **Output:** `main.pyskeaf.py`. It initialises PAOFLOW with the output folder only (no QE save) and calls
+  `pyskeaf(...)`, which writes `qo_EF_<energy>_freqvsangle_<band>.out` there.
+- **Running:** `mpirun -np N python main.pyskeaf.py`; the field directions are spread over the ranks.
+  `plot.pyskeaf.py` (asked, default yes) saves the dHvA figures as PDF files in `<folder>/figures`.
+
+**Plot scripts.** `outputs.PLOT_DEFAULTS` records which plot scripts each workflow writes by default:
+- the Property run, phonons and pyskeaf ask "Also generate a plotting script?" (default yes);
+- ACBN0 and the electron–phonon folder write theirs;
+- SSCHA writes `plot.sscha.py` only with `--plot`.
+
+`cfg['plot'] = False` drops them, including the `plot_*.py` of an electron–phonon folder and its Figures
+steps. `plot.sscha.py` and `plot.pyskeaf.py` (`gen/results_plot.py`) render the datasets of the Results layer
+with matplotlib and save them, with no display needed. The Studio hides the plot questions and shows one
+*Write the plot scripts* switch per workflow, which starts from these defaults.
+
 ## A Complete Workflow
 
 Here's what a typical end-to-end session looks like:

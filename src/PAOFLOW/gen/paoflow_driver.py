@@ -3265,7 +3265,7 @@ def main(argv: list[str] | None = None) -> int:
 
     workflow = ask_choice(
         'Which workflow?',
-        ['acbn0', 'run', 'phonon', 'elphon', 'sscha'],
+        ['acbn0', 'run', 'phonon', 'elphon', 'sscha', 'pyskeaf'],
         'run',
     )
 
@@ -3289,6 +3289,11 @@ def main(argv: list[str] | None = None) -> int:
         from .sscha_driver import collect_sscha
 
         cfg = collect_sscha(args, workdir)
+    elif workflow == 'pyskeaf':
+        # Quantum oscillations from the BXSF files of a Property run (no QE save needed).
+        from .questions import collect
+
+        cfg = collect('pyskeaf', args, workdir)
     else:
         common = collect_common(args, workdir)
         collect = {'acbn0': collect_acbn0, 'phonon': collect_phonon, 'run': collect_run}[workflow]

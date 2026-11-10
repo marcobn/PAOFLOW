@@ -220,6 +220,7 @@ PHONON_ITEMS = (
         kind='bool',
         default=True,
         section='Output',
+        gui=False,  # the Studio: "Write the plot scripts" of its Output box (options.plot)
     ),
     Question(
         'raman_method',

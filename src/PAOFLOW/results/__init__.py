@@ -132,7 +132,7 @@ class ResultsFolder:
             spec = resolve_spec(spec, theme)
         return spec
 
-    def save(self, dataset: Dataset, path: str) -> str:
+    def save(self, dataset: Dataset, path: str, limits: dict | None = None) -> str:
         """Save a matplotlib rendering (format from the extension: pdf, png, svg).
 
         Parameters
@@ -141,6 +141,8 @@ class ResultsFolder:
             Loaded dataset.
         path : str
             Output file.
+        limits : dict, optional
+            Axis limits, ``{'x': [low, high], 'y': [low, high]}`` (``None``: automatic end).
 
         Returns
         -------
@@ -151,5 +153,5 @@ class ResultsFolder:
 
         fmt = os.path.splitext(path)[1].lstrip('.').lower() or 'pdf'
         with open(path, 'wb') as handle:
-            handle.write(matplotlib_figure(dataset, fmt=fmt))
+            handle.write(matplotlib_figure(dataset, fmt=fmt, limits=limits))
         return os.path.abspath(path)

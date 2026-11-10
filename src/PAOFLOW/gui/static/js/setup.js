@@ -36,6 +36,8 @@ export class SetupView {
     this.resolved = null;
     this.selectedFile = null;
     this.showDiff = false;
+    this.edits = {}; // path -> {text, base}: the user's text of a previewed file, and the generated one
+    this.editing = null; // path of the file open in the editor
     this.requestId = 0;
     this.options = {};
     this.build();
@@ -263,6 +265,8 @@ export class SetupView {
     clear(this.preview);
     this.resolved = null;
     this.selectedFile = null;
+    this.editing = null;
+    this.edits = storage(this.editsKey()) || {};
     this.requestId += 1; // a resolve still in flight belongs to the previous form: drop it
     const info = this.workflows.find((w) => w.name === name);
     if (info.kind === 'tool') {
@@ -301,6 +305,7 @@ export class SetupView {
             title: 'Forget the answers of this form',
             onclick: () => {
               storage(this.answersKey(), {});
+              storage(this.editsKey(), {});
               this.selectWorkflow(name);
             },
           },
@@ -329,8 +334,8 @@ export class SetupView {
 
   renderOptions(name) {
     const set = (key, value) => {
-      if (value === '' || value === false) delete this.options[key];
-      else this.options[key] = value;
+      if (value === '' || value === undefined || value === null) delete this.options[key];
+      else this.options[key] = value; // false is kept: "do not write the plot scripts"
       storage(this.answersKey(), { answers: this.form.answers, options: this.options });
       this.scheduleResolve();
     };
@@ -386,6 +391,7 @@ export class SetupView {
         acbn0: 'main.acbn0.py',
         phonon: 'main.phonon.py',
         sscha: 'main.sscha.py',
+        pyskeaf: 'main.pyskeaf.py',
       };
       const out = h('input', {
         type: 'text',
@@ -394,21 +400,30 @@ export class SetupView {
         oninput: () => set('out', out.value.trim()),
       });
       box.append(field('Driver file', out, 'in the working folder (paoflow-gen -o)'));
-      if (name !== 'sscha') {
-        const plot = h('input', {
-          type: 'checkbox',
-          checked: Boolean(this.options.plot),
-          onchange: () => set('plot', plot.checked),
-        });
-        box.append(
-          field(
-            'Always write the plot script',
-            h('label', { class: 'switch' }, plot, h('span')),
-            'paoflow-gen --plot',
-          ),
-        );
-      }
     }
+    // One plot switch per workflow (the CLI asks "Also generate a plotting script?" or uses
+    // --plot): it starts from what paoflow-gen does by default.
+    const info = this.workflows.find((w) => w.name === name);
+    const scripts = {
+      run: 'plot.py',
+      acbn0: 'plot.acbn0.py',
+      phonon: 'plot.phonon.py (and plot.raman.py)',
+      elphon: 'the plot_*.py of the chosen workflows',
+      sscha: 'plot.sscha.py: the figures saved as PDF',
+      pyskeaf: 'plot.pyskeaf.py: the figures saved as PDF',
+    };
+    const plot = h('input', {
+      type: 'checkbox',
+      checked: this.options.plot ?? Boolean(info?.plot_default),
+      onchange: () => set('plot', plot.checked),
+    });
+    box.append(
+      field(
+        'Write the plot scripts',
+        h('label', { class: 'switch' }, plot, h('span')),
+        scripts[name] || 'the plotting scripts of the workflow',
+      ),
+    );
     return box;
   }
 
@@ -488,8 +503,17 @@ export class SetupView {
     }
   }
 
+  editsKey() {
+    return `edits:${this.answersKey()}`;
+  }
+
+  saveEdits() {
+    storage(this.editsKey(), this.edits);
+  }
+
   payload(extra = {}) {
     return {
+      edits: Object.fromEntries(Object.entries(this.edits).map(([path, e]) => [path, e.text])),
       workflow: this.workflow,
       workdir: this.workdir,
       answers: this.form.answers,
@@ -543,6 +567,15 @@ export class SetupView {
       { class: 'btn primary', onclick: () => this.write() },
       'Write files',
     );
+    this.editButton = h(
+      'button',
+      {
+        class: 'btn small',
+        title: 'Edit the selected file before writing it',
+        onclick: () => this.toggleEditing(),
+      },
+      'Edit',
+    );
     this.statusLine = h('span', { class: 'small muted grow' });
     this.preview.append(
       h(
@@ -550,6 +583,7 @@ export class SetupView {
         { class: 'preview-head' },
         h('h3', {}, 'Files'),
         this.previewTarget,
+        this.editButton,
         h(
           'label',
           { class: 'row small muted' },
@@ -573,6 +607,13 @@ export class SetupView {
 
   renderPreview() {
     const r = this.resolved;
+    if (r.unused_edits?.length) {
+      toast(
+        `Your edits of ${r.unused_edits.join(', ')} are kept, but the form does not write ${r.unused_edits.length > 1 ? 'these files' : 'this file'} now`,
+        'warn',
+        6000,
+      );
+    }
     this.previewTarget.textContent = r.target ? `→ ${r.target}` : '';
     clear(this.fileTabs);
     if (!r.complete) {
@@ -627,6 +668,7 @@ export class SetupView {
             'aria-selected': String(file.path === this.selectedFile),
             title: `${file.location} (${STATUS_LABEL[file.status]})`,
             onclick: (ev) => {
+              if (this.editing && this.editing !== file.path) this.stopEditing();
               this.selectedFile = file.path;
               for (const node of this.fileTabs.children)
                 node.setAttribute('aria-selected', String(node === ev.currentTarget));
@@ -635,6 +677,7 @@ export class SetupView {
           },
           h('span', { class: `dot ${file.status}` }),
           file.path,
+          file.edited ? h('span', { class: 'edited-mark', title: 'edited here' }, ' ✎') : null,
         ),
       );
     }
@@ -644,8 +687,45 @@ export class SetupView {
   renderFile() {
     if (!this.resolved?.files) return;
     const file = this.resolved.files.find((f) => f.path === this.selectedFile);
+    if (file && this.editing === file.path && this.editor?.isConnected) {
+      // Typing: keep the editor (and its cursor); only the notice follows the new resolve.
+      const notice = this.renderEditNotice(file);
+      this.editNotice.replaceWith(notice);
+      this.editNotice = notice;
+      return;
+    }
     clear(this.previewBody);
+    this.editButton.textContent = file && this.editing === file.path ? 'Done' : 'Edit';
+    this.editButton.disabled = !file || this.session.read_only;
     if (!file) return;
+    this.editNotice = this.renderEditNotice(file);
+    this.previewBody.append(this.editNotice);
+    if (this.editing === file.path) {
+      const entry = this.edits[file.path];
+      this.editor = h('textarea', {
+        class: 'code-editor',
+        spellcheck: 'false',
+        autocomplete: 'off',
+        'aria-label': `text of ${file.path}`,
+        oninput: () => {
+          const before = file.path in this.edits;
+          const base = this.edits[file.path]?.base ?? file.generated ?? file.text;
+          if (this.editor.value === base) delete this.edits[file.path];
+          else this.edits[file.path] = { text: this.editor.value, base };
+          this.saveEdits();
+          if (before !== file.path in this.edits) {
+            // The first change (or its undoing) shows in the notice at once.
+            const notice = this.renderEditNotice(file);
+            this.editNotice.replaceWith(notice);
+            this.editNotice = notice;
+          }
+        },
+      });
+      this.editor.value = entry ? entry.text : file.text;
+      this.previewBody.append(this.editor);
+      this.editor.focus();
+      return;
+    }
     if (this.showDiff && file.status === 'changed' && file.diff)
       this.previewBody.append(diffView(file.diff));
     else if (this.showDiff && file.status !== 'changed') {
@@ -659,8 +739,62 @@ export class SetupView {
     } else this.previewBody.append(codeView(file.text, file.path));
   }
 
+  // An edited file says so, and warns when the form has changed the file since the edit.
+  renderEditNotice(file) {
+    const entry = this.edits[file.path];
+    if (!entry && this.editing !== file.path) return h('span', { hidden: true });
+    const stale = entry && file.generated !== undefined && entry.base !== file.generated;
+    const notice = h(
+      'div',
+      { class: `edit-notice${stale ? ' stale' : ''}` },
+      entry
+        ? stale
+          ? '✎ Edited here. The form has changed this file since: Write keeps your text.'
+          : '✎ Edited here: Write uses your text.'
+        : 'Editing: Write uses your text once it differs from the generated one.',
+    );
+    if (entry) {
+      notice.append(
+        h(
+          'button',
+          {
+            class: 'btn small',
+            onclick: () => {
+              delete this.edits[file.path];
+              this.saveEdits();
+              if (this.editing === file.path) this.editing = null;
+              this.editor = null;
+              this.resolve();
+            },
+          },
+          stale ? 'Take the new file (discard my edits)' : 'Discard my edits',
+        ),
+      );
+    }
+    return notice;
+  }
+
+  toggleEditing() {
+    if (this.editing) return this.stopEditing();
+    if (!this.selectedFile || this.session.read_only) return;
+    this.editing = this.selectedFile;
+    this.renderFile();
+  }
+
+  // Leave the editor: the edits are already saved; a resolve shows their status and diff.
+  stopEditing() {
+    this.editing = null;
+    this.editor = null;
+    this.resolve();
+  }
+
   // ----------------------------------------------------------------------- actions
   async write() {
+    if (this.editing) {
+      this.editing = null;
+      this.editor = null;
+      await this.resolve();
+    }
     const r = this.resolved;
     if (!r?.complete) return;
     const changed = r.files.filter((f) => f.status === 'changed');

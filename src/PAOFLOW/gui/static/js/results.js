@@ -46,6 +46,67 @@ async function postForBlob(path, body) {
   return response.blob();
 }
 
+// ------------------------------------------------------------------------- axis limits
+// The y axes of a figure ('y', 'y2', ... of the stacked panels of an overlay) after 'x'.
+function figureAxes(figure) {
+  const layout = figure?.layout || {};
+  if (!layout.xaxis || layout.scene) return [];
+  const ys = Object.keys(layout)
+    .filter((key) => /^yaxis\d*$/.test(key))
+    .map((key) => `y${key.slice(5)}`)
+    .sort();
+  return ['x', ...(ys.length ? ys : ['y'])];
+}
+
+function layoutKey(axis) {
+  return `${axis[0]}axis${axis.slice(1)}`;
+}
+
+// Smallest and largest finite value the traces put on an axis (the automatic end of a range
+// set on one side only).
+function dataExtent(figure, axis) {
+  let low = Infinity;
+  let high = -Infinity;
+  for (const trace of figure.data || []) {
+    if (axis !== 'x' && (trace.yaxis || 'y') !== axis) continue;
+    for (const value of (axis === 'x' ? trace.x : trace.y) || []) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        if (value < low) low = value;
+        if (value > high) high = value;
+      }
+    }
+  }
+  return Number.isFinite(low) ? [low, high] : null;
+}
+
+// The figure with the limits of the Axes card: explicit ranges (log axes in decades, as Plotly
+// wants them); an end left blank takes the extent of the data, both blank stay automatic.
+function withLimits(figure, limits) {
+  if (!limits || !Object.keys(limits).length) return figure;
+  const layout = { ...figure.layout };
+  for (const axis of figureAxes(figure)) {
+    const pair = limits[axis];
+    if (!pair || (pair[0] === null && pair[1] === null)) continue;
+    const extent = dataExtent(figure, axis);
+    const low = pair[0] ?? extent?.[0];
+    const high = pair[1] ?? extent?.[1];
+    if (low === undefined || high === undefined || !(low < high)) continue;
+    const key = layoutKey(axis);
+    const log = layout[key]?.type === 'log';
+    if (log && low <= 0) continue;
+    layout[key] = {
+      ...layout[key],
+      autorange: false,
+      range: log ? [Math.log10(low), Math.log10(high)] : [low, high],
+    };
+  }
+  return { ...figure, layout };
+}
+
+function shortNumber(value) {
+  return Number(Number(value).toPrecision(6));
+}
+
 export class ResultsView {
   constructor(root, app) {
     this.root = root;
@@ -56,6 +117,7 @@ export class ResultsView {
     this.current = null;
     this.optionsById = {};
     this.overlays = {}; // open dataset id -> [{id, slot}]: properties drawn on its x axis
+    this.limits = storage(`limits:${this.session.root}`) || {}; // dataset id -> {x: [lo, hi], y, y2}
     this.overlaySeries = {}; // open dataset id -> series names of the overlay (components)
     this.compare = [];
     this.experiment = null;
@@ -355,11 +417,7 @@ export class ResultsView {
     if (result.figure) {
       this.plot = h('div', { class: 'plot' });
       this.center.append(this.plot);
-      const rendered = renderFigure(
-        this.plot,
-        result.figure,
-        result.title.replace(/\W+/g, '_'),
-      ).catch((error) => {
+      const rendered = this.drawPlot(result).catch((error) => {
         clear(this.plot).append(h('div', { class: 'callout bad' }, error.message));
       });
       if (result.family === 'map') {
@@ -520,8 +578,118 @@ export class ResultsView {
   }
 
   // Theme change: the figure and the colour swatches of the cards take the new theme's colours.
+  // The figure of the open dataset with its axis limits; a mouse zoom shows in the Axes card.
+  async drawPlot(result) {
+    const limits = this.limits[result.ref?.id];
+    await renderFigure(
+      this.plot,
+      withLimits(result.figure, limits),
+      result.title.replace(/\W+/g, '_'),
+    );
+    if (this.plot.removeAllListeners) this.plot.removeAllListeners('plotly_relayout');
+    if (this.plot.on) this.plot.on('plotly_relayout', () => this.showRanges());
+  }
+
+  // Fill the Axes fields with the ranges on screen (after a zoom, a pan or a double click).
+  showRanges() {
+    const layout = this.plot?._fullLayout;
+    if (!layout || !this.limitFields) return;
+    for (const [axis, [low, high]] of Object.entries(this.limitFields)) {
+      const scale = layout[layoutKey(axis)];
+      if (!scale?.range) continue;
+      const toData = (v) => (scale.type === 'log' ? 10 ** v : v);
+      if (document.activeElement !== low) low.value = shortNumber(toData(scale.range[0]));
+      if (document.activeElement !== high) high.value = shortNumber(toData(scale.range[1]));
+    }
+  }
+
+  setLimits(id, axis, low, high) {
+    const parse = (text) => (text.trim() === '' ? null : Number(text));
+    const pair = [parse(low), parse(high)];
+    if (pair.some((v) => v !== null && !Number.isFinite(v)))
+      return toast('Limits are numbers (blank: automatic)', 'warn');
+    if (pair[0] !== null && pair[1] !== null && pair[0] >= pair[1])
+      return toast('The minimum must be below the maximum', 'warn');
+    const limits = { ...(this.limits[id] || {}) };
+    if (pair[0] === null && pair[1] === null) delete limits[axis];
+    else limits[axis] = pair;
+    if (Object.keys(limits).length) this.limits[id] = limits;
+    else delete this.limits[id];
+    storage(`limits:${this.session.root}`, this.limits);
+    if (this.result?.ref?.id === id) this.drawPlot(this.result);
+  }
+
+  // x and y limits typed in, instead of the zoom of the figure; kept per dataset and used by the
+  // PDF, PNG, SVG and Python exports.
+  axesCard(result) {
+    const axes = figureAxes(result.figure);
+    if (!axes.length || result.family === 'volume') return null;
+    const id = result.ref.id;
+    const limits = this.limits[id] || {};
+    const card = h('div', { class: 'card' }, h('h3', {}, 'Axes'));
+    this.limitFields = {};
+    for (const axis of axes) {
+      const title = result.figure.layout[layoutKey(axis)]?.title?.text || axis;
+      const field = (value) =>
+        h('input', {
+          type: 'text',
+          inputmode: 'decimal',
+          class: 'limit',
+          placeholder: 'auto',
+          value: value ?? '',
+          'aria-label': `${axis} limit`,
+        });
+      const low = field(limits[axis]?.[0]);
+      const high = field(limits[axis]?.[1]);
+      const commit = () => this.setLimits(id, axis, low.value, high.value);
+      for (const input of [low, high]) {
+        input.addEventListener('change', commit);
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') commit();
+        });
+      }
+      this.limitFields[axis] = [low, high];
+      card.append(
+        h(
+          'div',
+          { class: 'option' },
+          h('div', { class: 'small muted ellipsis', title }, `${axis} · ${title}`),
+          h('div', { class: 'row limits' }, low, h('span', { class: 'small muted' }, 'to'), high),
+        ),
+      );
+    }
+    card.append(
+      h(
+        'div',
+        { class: 'row', style: { marginTop: '6px' } },
+        h(
+          'button',
+          {
+            class: 'btn small',
+            onclick: () => {
+              delete this.limits[id];
+              storage(`limits:${this.session.root}`, this.limits);
+              for (const [low, high] of Object.values(this.limitFields)) {
+                low.value = '';
+                high.value = '';
+              }
+              this.drawPlot(result);
+            },
+          },
+          'Automatic',
+        ),
+      ),
+      h(
+        'div',
+        { class: 'small muted', style: { marginTop: '4px' } },
+        'Enter applies; blank is automatic. A zoom with the mouse shows its range here.',
+      ),
+    );
+    return card;
+  }
+
   redraw() {
-    if (this.plot && this.result?.figure) renderFigure(this.plot, this.result.figure);
+    if (this.plot && this.result?.figure) this.drawPlot(this.result);
     if (this.result?.ref) this.renderRight(this.result);
   }
 
@@ -539,16 +707,20 @@ export class ResultsView {
       for (const [name, option] of options) card.append(this.optionControl(name, option));
       this.right.append(card);
     }
+    const axesCard = this.axesCard(result);
+    if (axesCard) this.right.append(axesCard);
     const overlayCard = this.overlayCard(result);
     if (overlayCard) this.right.append(overlayCard);
     const ref = result.ref;
     const exportCard = h('div', { class: 'card' }, h('h3', {}, 'Export'));
     const exports = h('div', { class: 'row wrap' });
     const exportAs = (format) => async () => {
+      const limits = this.limits[ref.id] || {};
       const body = {
         path: this.folder,
         id: ref.id,
         options: this.optionsById[ref.id] || {},
+        limits: { x: limits.x || null, y: limits.y || null }, // the Axes card (first panel)
         format,
       };
       try {

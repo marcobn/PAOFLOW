@@ -965,3 +965,102 @@ every other run.
   ranks of every step.
 - Tests: `tests/unit/utils/test_qe_launch.py`; `test_every_qe_run_takes_the_runs_tab_settings` (phonon,
   Raman, SSCHA local and Slurm); the electron–phonon plan flags; the thermal script; the browser commands.
+
+**Plot switch, editable files, pyskeaf workflow, site icon (9 November 2026, user requests).**
+
+- **One plot setting.** The Setup output box had *Always write the plot script* (`--plot`) on top of each
+  workflow's own question "Also generate a plotting script?" (Property run, phonons; ACBN0 always writes
+  `plot.acbn0.py`, so the switch did nothing there). The switch is gone, and the server passes `plot=False` to
+  `workflow_outputs` from the GUI, so a value stored by an earlier version does not force the script.
+- **Editable files.**
+  - `generator_api.apply_edits` puts the browser's `edits` (`path -> text`) in place of the generated files
+    before the statuses, diffs, conflicts and the write. So the overwrite check and the backup act on what
+    will really be written.
+  - Only the paths of the form are used: others are listed in `unused_edits` and never written. Each edited
+    file carries `edited` and `generated` (the text the form makes now).
+  - Front end: *Edit* / *Done* in the Files panel, a ✎ mark on the tab, and an edit notice. The notice turns
+    to a warning with *Take the new file* when `generated` differs from the text the edit started from. Edits
+    are stored per folder and workflow (`edits:<answers key>`), cleared by *Reset*, and the editor keeps its
+    cursor across the folder refreshes.
+- **pyskeaf workflow.**
+  - `questions/pyskeaf.py`: the BXSF folder (`widget='folder'`, detection, a note with the bands found, or a
+    warning when there is none), bands, energies, interpolation, field direction with θ/φ start/end or one
+    direction, number of directions, and the orbit settings (advanced). Field docs point at the
+    `PAOFLOW.pyskeaf` parameters.
+  - `gen/pyskeaf_driver.py` builds `main.pyskeaf.py`: `PAOFLOW(outputdir=...)` plus `pyskeaf(...)`, the MPI
+    guard, and an MPI run step.
+  - The CLI menu lists `pyskeaf`, and the Studio suggests it when `Fermi_surf_band_*.bxsf` files exist.
+    Checked on the Pt example: `PAOFLOW(outputdir)`+`pyskeaf` on 2 ranks wrote `qo_EF_0_freqvsangle_{1,2}.out`.
+  - Found on the way, in the Results dHvA loader: the angle names were swapped (the files hold azimuth θ,
+    then polar φ), and the x axis was always the first column, so a polar sweep collapsed onto x = 0. It now
+    defaults to the angle that varies.
+- **Icon.** `static/favicon.ico` is `docs/_static/images/logos/favicon.ico`, which paoflow.org (built from
+  these docs) serves; checked identical by SHA-256. It is served at `/static/favicon.ico` and `/favicon.ico`.
+  The old `favicon.svg` is still in the tree, unused.
+- **Tests.**
+  - `test_pyskeaf_workflow.py`: rotation, modes, checks, no BXSF, dHvA axis;
+  - `test_edited_files_are_previewed_and_written`, `test_plot_script_follows_the_question_only`,
+    `test_the_icon_of_paoflow_org`;
+  - browser `test_edit_a_file_before_writing_it`: edit, write, form change, discard.
+
+**One plot switch per workflow (9 November 2026, user request: "restore 'write the plot script' in the Output
+section, remove the duplicate from other boxes, check that the plot option is on every workflow").**
+
+- The Output box of every workflow has *Write the plot scripts* (`options.plot`). It starts from
+  `outputs.PLOT_DEFAULTS`, the `paoflow-gen` defaults, served as `plot_default` in `/api/gen/workflows`, so
+  a GUI run with defaults writes the CLI's files. The server sets `cfg['plot']` from it.
+- The questions "Also generate a plotting script?" of the Property run and phonons now take `gui=False`: they
+  are still asked by the CLI and are no longer shown twice. `set()` in `renderOptions` keeps `false`, which it
+  used to delete, so the switch can be turned off.
+- Every workflow now has the option:
+  - ACBN0 (`plot.acbn0.py`, which used to be always written) and the electron–phonon folder (its
+    `plot_*.py` and the Figures steps of its plan) follow `cfg['plot']`;
+  - SSCHA (`plot.sscha.py`, CLI `--plot`) and pyskeaf (`plot.pyskeaf.py`, its own question) got plot scripts
+    built on the Results layer (`gen/results_plot.py`: `ResultsFolder` + `export.matplotlib_figure`, PDFs in
+    `output/figures`, named from the file path so the `sscha_T*/state` files do not collide). They are
+    non-interactive steps of the plan (`SAVING_PLOT_SCRIPTS`).
+- Tests:
+  - `test_one_plot_switch_for_every_workflow`: six workflows × on/off/default, no visible plot question, no
+    Figures step without a script;
+  - `test_the_plot_script_draws_the_results`: `plot.pyskeaf.py` writes a PDF;
+  - browser `test_plot_switch_writes_or_drops_the_plot_script`, and the switch test (Property run, SSCHA).
+
+**Axis limits by number (9 November 2026, user request: "change the x and y limits without the zoom tool").**
+
+- Results tab: an *Axes* card with an x row and one row per y axis of the figure (`yaxis`, `yaxis2`, … of an
+  overlay's panels). There is none for 3D or text.
+  - `withLimits` builds the drawn figure: explicit ranges with `autorange: false`, and decades on log axes. A
+    blank end takes the data extent of that axis (`dataExtent`), and both blank stay automatic.
+  - The limits are stored per dataset (`limits:<root>`) and applied on every redraw (option changes, theme).
+  - `plotly_relayout` fills the fields with the range on screen (`showRanges`), so a mouse zoom can be refined
+    by hand. *Automatic* clears the limits.
+- Exports: the export request carries `limits` (x and the first y). `export.clean_limits` validates them (a low
+  end below the high one, finite numbers; 422 otherwise). `matplotlib_figure(..., limits=)` sets
+  `xlim`/`ylim`, `ResultsFolder.save(..., limits=)` passes them on, and the Python snippet writes
+  `results.save(dataset, 'figure.pdf', limits={...})`.
+- Tests: `test_axis_limits_of_the_exports`, `test_export_with_axis_limits`, and browser
+  `test_axis_limits_typed_in` (typed limits, a half-set end, a reload, a zoom filling the fields, Automatic).
+
+**FermiSurf_<s>.bxsf against the pyskeaf sheets (9 November 2026, user report: the two Fermi-surface plots
+differ).** `write2bxsf4skeaf` writes the SKEAF inputs `Fermi_surf_band_<n>.bxsf`:
+- energies in Rydberg (×0.0735), E_F set to 0, reciprocal vectors without the 2π;
+- `n` is the position of the file, while its `BAND:` line holds the band (file 1 is band 2 for the user's Si).
+
+`FermiSurf_<s>.bxsf` is in eV with the 2π. The Results viewer read both literally, so for the sheets:
+- *Level − E_F* acted in Rydberg (Si at −0.5 eV: −6.8 eV, one band instead of three);
+- the zone was 2π smaller;
+- |v_F| was on another scale;
+- the bands were named by file number.
+
+The data agree to 3e-6 eV on the user's Si. `volumes.fermi_mesh(skeaf=True)` (kind `fermi_sheet`) now converts
+the energies to eV and the vectors to 2π, and names the bands from the `BAND:` lines (the file number when two
+files claim one band). The user's Si then gives the same bands, extents, velocities and triangle counts in both
+views at −0.5, −0.1 and +1.0 eV, and the viewer adds a note. The pyskeaf form lists "file number (band)", since
+`pyskeaf(bands=...)` takes file numbers.
+
+The example08 (Pt) reference files are from an older writer and inconsistent: absolute energies with E_F 0,
+and files 1–2 hold unrelated data. They are worth regenerating with the asset tarballs.
+
+Test: `test_pyskeaf_sheets_match_the_fermi_surface` writes synthetic files in both formats (the formats of the
+two writers). The unfolded points must be identical, and the folded sheets equal within the 6-decimal rounding
+of the vectors.

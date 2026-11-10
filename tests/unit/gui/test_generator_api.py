@@ -25,7 +25,7 @@ def _resolve(client, workflow, answers=None, options=None, workdir='Si'):
 
 def test_workflows_listed(client):
     names = [w['name'] for w in client.get('/api/gen/workflows')[1]['workflows']]
-    assert names == ['acbn0', 'run', 'phonon', 'elphon', 'sscha', 'qe_input', 'basis']
+    assert names == ['acbn0', 'run', 'phonon', 'elphon', 'sscha', 'pyskeaf', 'qe_input', 'basis']
 
 
 def test_detection_of_the_example(client):
@@ -222,3 +222,74 @@ def test_save_directory_without_a_save_is_flagged(client):
     items = {i['key']: i for i in body['items'] if 'key' in i}
     assert status == 200 and 'gaas.save does not exist' in items['savedir']['warning']
     assert items['savedir']['suggestions'] == ['silicon.save']
+
+
+def test_edited_files_are_previewed_and_written(client, gui_root):
+    """Edits of the previewed files replace the generated text (status, diff and write)."""
+    payload = {'workflow': 'run', 'workdir': 'Si', 'answers': {'properties': ['bands']}}
+    status, body, _ = client.post('/api/gen/resolve', dict(payload, edits={'main.py': 'x = 1\n'}))
+    main = next(f for f in body['files'] if f['path'] == 'main.py')
+    assert main['edited'] and main['text'] == 'x = 1\n' and 'PAOFLOW' in main['generated']
+    assert not next(f for f in body['files'] if f['path'] == 'plot.py')['edited']
+    edits = {'main.py': 'x = 1\n', 'gone.py': 'y = 2\n'}
+    status, body, _ = client.post('/api/gen/write', dict(payload, edits=edits))
+    assert status == 200 and (gui_root / 'Si' / 'main.py').read_text() == 'x = 1\n'
+    assert not (gui_root / 'Si' / 'gone.py').exists()  # never outside the files of the form
+    status, body, _ = client.post('/api/gen/resolve', dict(payload, edits=edits))
+    assert body['unused_edits'] == ['gone.py']
+    assert next(f for f in body['files'] if f['path'] == 'main.py')['status'] == 'identical'
+    status, body, _ = client.post('/api/gen/resolve', dict(payload, edits=['main.py']))
+    assert status == 400
+
+
+def test_one_plot_switch_for_every_workflow(client, gui_root):
+    """The Output switch (options.plot) decides the plot scripts of every workflow; without it,
+    the defaults of paoflow-gen (PLOT_DEFAULTS); the form shows no second plot question."""
+    from PAOFLOW.gen.outputs import PLOT_DEFAULTS
+
+    answers = {
+        'run': {'properties': ['bands']},
+        'acbn0': {'hubbard': [['Si-3p', '0.5']]},
+        'phonon': {'raman_method': 'static'},
+        'sscha': {},
+        'pyskeaf': {},
+        'elphon': {'workflows': ['transport']},
+    }
+    workflows = {w['name']: w for w in client.get('/api/gen/workflows')[1]['workflows']}
+    for name, given in answers.items():
+        assert workflows[name]['plot_default'] == PLOT_DEFAULTS[name]
+        payload = {'workflow': name, 'workdir': 'Si', 'answers': given}
+        if name == 'elphon':
+            payload['options'] = {'folder': 'Si/system'}
+        results = {}
+        for plot in (None, True, False):
+            body = dict(payload)
+            if plot is not None:
+                body['options'] = dict(payload.get('options', {}), plot=plot)
+            resolved = client.post('/api/gen/resolve', body)[1]
+            assert resolved['complete'], (name, resolved['errors'])
+            plots = [f['path'] for f in resolved['files'] if 'plot' in f['path'].split('/')[-1]]
+            results[plot] = plots
+            shown = [i for i in resolved['items'] if i.get('key') == 'plot' and i['visible']]
+            assert not shown, name  # no plot question in the form
+        assert results[True] and not results[False], (name, results)
+        assert bool(results[None]) == PLOT_DEFAULTS[name], (name, results)
+        figures = [s for s in resolved['plan'] if s['label'].startswith('Figures')]
+        assert not figures, (name, figures)  # no step for a script that is not written
+
+
+def test_the_icon_of_paoflow_org(client):
+    from pathlib import Path
+
+    icon = (
+        Path(__file__).resolve().parents[3]
+        / 'docs'
+        / '_static'
+        / 'images'
+        / 'logos'
+        / 'favicon.ico'
+    )
+    for path in ('/favicon.ico', '/static/favicon.ico'):
+        status, body, response = client.get(path)
+        assert status == 200 and body == icon.read_bytes()
+        assert 'icon' in response.getheader('Content-Type')

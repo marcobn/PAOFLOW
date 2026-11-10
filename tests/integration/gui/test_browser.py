@@ -351,7 +351,8 @@ def test_switches_toggle_and_reach_the_server(browser, studio, monkeypatch):
     monkeypatch.setattr(cli, 'generate_qe_input', generate)
     _open(browser, server, 'setup')
     fields = {
-        'run': ['Always write the plot script'],
+        'run': ['Write the plot scripts'],
+        'sscha': ['Write the plot scripts'],
         'basis': ['Keep existing tables'],
         'qe_input': ['Spin-orbit cards', "assume_isolated = '2D'"],
     }
@@ -753,4 +754,118 @@ def test_acbn0_runs_with_the_runs_tab_settings(browser, studio, tmp_path, monkey
     log = browser.find_element(By.CSS_SELECTOR, '#view-runs pre.log')
     _wait(lambda: 'PAOFLOW_QE_OPTIONS=-nk 2' in log.text, timeout=60)
     assert '-np 2' in log.text and 'PAOFLOW_QE_BIN=%s' % bin_dir in log.text
+    assert _errors(browser) == []
+
+
+def test_edit_a_file_before_writing_it(browser, studio):
+    """Edit the preview, write it, see the form change under the edit, then discard it."""
+    server, work = studio
+    _open(browser, server, 'setup')
+    browser.find_element(By.CSS_SELECTOR, '.workflow-item[data-name="run"]').click()
+    _wait(lambda: browser.find_elements(By.CSS_SELECTOR, '.choice-card'))[0].click()
+    _wait(lambda: browser.find_elements(By.CSS_SELECTOR, '.file-tab'))
+    browser.find_element(By.XPATH, "//button[text()='Edit']").click()
+    editor = _wait(lambda: browser.find_elements(By.CSS_SELECTOR, 'textarea.code-editor'))[0]
+    browser.execute_script('arguments[0].setSelectionRange(0, 0)', editor)
+    editor.send_keys('# my note\n')
+    notice = "return document.querySelector('.edit-notice')?.textContent || ''"
+    _wait(lambda: 'Edited here' in browser.execute_script(notice))
+    browser.find_element(By.XPATH, "//button[text()='Done']").click()
+    first_tab = "return document.querySelector('.file-tab').textContent"  # tabs are rebuilt
+    _wait(lambda: '✎' in browser.execute_script(first_tab))
+    browser.find_element(By.XPATH, "//button[text()='Write files']").click()
+    _wait(lambda: (work / 'main.py').exists())
+    assert (work / 'main.py').read_text().startswith('# my note\n#!/usr/bin/env python3')
+    for button in browser.find_elements(By.XPATH, "//button[text()='Close']"):
+        button.click()
+    # A form change: the edit stays, with a warning.
+    browser.execute_script("window.paoflowApp.setup.form.fields.get('nk').pick('201')")
+    _wait(lambda: 'changed this file' in browser.execute_script(notice))
+    browser.find_element(By.XPATH, "//button[starts-with(text(), 'Take the new file')]").click()
+    _wait(lambda: '✎' not in browser.execute_script(first_tab))
+    text = browser.execute_script(
+        "return window.paoflowApp.setup.resolved.files.find(f => f.path === 'main.py').text"
+    )
+    assert not text.startswith('# my note') and 'NK = 201' in text
+    assert _errors(browser) == []
+
+
+def test_plot_switch_writes_or_drops_the_plot_script(browser, studio):
+    """The single plot switch of the Output box: off drops plot.py from the files and the plan."""
+    server, _work = studio
+    _open(browser, server, 'setup')
+    browser.find_element(By.CSS_SELECTOR, '.workflow-item[data-name="run"]').click()
+    _wait(lambda: browser.find_elements(By.CSS_SELECTOR, '.choice-card'))[0].click()
+    tabs = "return [...document.querySelectorAll('.file-tab')].map(t => t.textContent.trim())"
+    _wait(lambda: 'plot.py' in browser.execute_script(tabs))
+    labels = browser.execute_script(
+        "return [...document.querySelectorAll('#view-setup label.name')]"
+        '.filter(n => n.offsetParent !== null).map(n => n.textContent)'
+    )
+    assert labels.count('Write the plot scripts') == 1
+    assert not [label for label in labels if 'plotting script' in label]  # no second question
+    box, track = _switch_of(browser, 'Write the plot scripts')
+    assert box.is_selected()
+    track.click()
+    _wait(lambda: browser.execute_script(tabs) == ['main.py'])
+    plan = browser.execute_script('return window.paoflowApp.setup.resolved.plan.map(s => s.label)')
+    assert not [label for label in plan if label.startswith('Figures')]
+    assert _errors(browser) == []
+
+
+def test_axis_limits_typed_in(browser, studio):
+    """x and y limits typed in the Axes card: applied, half-set ends from the data, kept per
+    dataset across a reload, filled in by a zoom, and cleared by Automatic."""
+    from selenium.webdriver.common.keys import Keys
+
+    server, _work = studio
+    _open(browser, server, 'results')
+    browser.execute_script('localStorage.clear()')
+    browser.execute_script("window.paoflowApp.results.open('Si')")
+    item = _wait(
+        lambda: [
+            n
+            for n in browser.find_elements(By.CSS_SELECTOR, '.tree-item')
+            if n.text.strip().startswith('Density of states')
+        ]
+    )[0]
+    item.click()
+    shown = "const r = window.paoflowApp.results.result; return r ? r.title : ''"
+    _wait(lambda: browser.execute_script(shown).startswith('Density of states'))
+    fields = _wait(lambda: browser.find_elements(By.CSS_SELECTOR, '.limits .limit'))
+    fields[0].send_keys('-4')
+    fields[1].send_keys('4' + Keys.ENTER)
+    ranges = (
+        'const l = window.paoflowApp.results.plot.layout;'
+        'return [l.xaxis.range, l.xaxis.autorange, l.yaxis.range];'
+    )
+    _wait(lambda: browser.execute_script(ranges)[0] == [-4, 4])
+    fields = browser.find_elements(By.CSS_SELECTOR, '.limits .limit')
+    fields[2].send_keys('0' + Keys.ENTER)
+    _wait(lambda: (browser.execute_script(ranges)[2] or [None])[0] == 0)
+    assert browser.execute_script(ranges)[2][1] > 0  # the open end: the largest DOS value
+    browser.refresh()  # kept per dataset
+    _wait(
+        lambda: browser.execute_script(
+            'return Boolean(window.paoflowApp && window.paoflowApp.results)'
+        )
+    )
+    browser.execute_script('window.paoflowApp.help.close()')
+    browser.execute_script(
+        "window.paoflowApp.show('results'); window.paoflowApp.results.open('Si')"
+    )
+    _wait(
+        lambda: browser.execute_script(
+            'const p = window.paoflowApp.results.plot; return Boolean(p && p.layout && p.layout.xaxis.range)'
+        )
+    )
+    _wait(lambda: browser.execute_script(ranges)[0] == [-4, 4])
+    browser.execute_script(
+        "Plotly.relayout(window.paoflowApp.results.plot, {'xaxis.range': [-1, 2]})"
+    )
+    values = "return [...document.querySelectorAll('.limits .limit')].map(i => i.value)"
+    _wait(lambda: browser.execute_script(values)[:2] == ['-1', '2'])
+    browser.find_element(By.XPATH, "//button[text()='Automatic']").click()
+    _wait(lambda: browser.execute_script(ranges)[1] is True)
+    assert browser.execute_script(values) == ['', '', '', '']
     assert _errors(browser) == []

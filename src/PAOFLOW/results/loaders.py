@@ -791,14 +791,24 @@ def load_sscha(ref: DatasetRef, root: str, options: dict) -> Dataset:
 
 
 def load_dhva(ref: DatasetRef, root: str, options: dict) -> Dataset:
+    # pyskeaf writes 'Azimuthal(deg), Polar(deg), Freq(kT), ...': theta is the azimuth of the
+    # field in the xy plane, phi its polar angle from +z (PAOFLOW.pyskeaf azimuthal / polar).
     dataset = _new(ref)
-    angles = ['polar θ', 'azimuthal φ']
-    angle = _choice(options, 'angle', 'Angle', angles, angles[0])
-    _option(dataset, 'angle', 'Angle', angles, angle)
+    angles = ['azimuthal θ', 'polar φ']
+    tables = []
     for file, label, role in zip(ref.files, ref.labels, _labels_roles(ref)):
         data, header = read_columns(_path(root, file))
-        if data.shape[0] == 0 or data.shape[1] < 3:
-            continue
+        if data.shape[0] and data.shape[1] >= 3:
+            tables.append((file, label, role, data))
+    # By default the angle that the rotation varies (a polar sweep keeps the azimuth fixed).
+    spread = [
+        max((float(np.ptp(data[:, column])) for *_, data in tables), default=0.0)
+        for column in (0, 1)
+    ]
+    default = angles[1] if spread[1] > spread[0] else angles[0]
+    angle = _choice(options, 'angle', 'Angle', angles, default)
+    _option(dataset, 'angle', 'Angle', angles, angle)
+    for file, label, role, data in tables:
         x = data[:, 0] if angle == angles[0] else data[:, 1]
         dataset.series.append(
             Series(label or 'orbits', x, data[:, 2], mode='markers', role=role, meta={'file': file})

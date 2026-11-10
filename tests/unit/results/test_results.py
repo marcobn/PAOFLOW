@@ -286,3 +286,89 @@ def test_overlay_figure_panels_per_unit():
             'solid',
             'dash',
         }
+
+
+def test_axis_limits_of_the_exports(monkeypatch):
+    """The Axes card's limits reach the matplotlib figure and the Python snippet."""
+    pytest.importorskip('matplotlib')
+    import matplotlib.axes
+
+    from PAOFLOW.results.export import clean_limits, matplotlib_figure, python_snippet
+
+    assert clean_limits({'x': [0, 6], 'y': [None, 2.5]}) == {'x': [0.0, 6.0], 'y': [None, 2.5]}
+    assert clean_limits({'x': [None, None], 'y': None}) == {}
+    with pytest.raises(ValueError, match='below'):
+        clean_limits({'x': [3, 1]})
+    with pytest.raises(ValueError):
+        clean_limits({'y': ['a', 1]})
+    calls = []
+    monkeypatch.setattr(
+        matplotlib.axes.Axes, 'set_xlim', lambda self, *a, **k: calls.append(('x', a))
+    )
+    monkeypatch.setattr(
+        matplotlib.axes.Axes, 'set_ylim', lambda self, *a, **k: calls.append(('y', a))
+    )
+    kinds, _ = _by_kind(SI)
+    dataset = load(kinds['dos'][0], str(SI))
+    assert (
+        matplotlib_figure(dataset, 'png', limits={'x': [-5, 5], 'y': [0, None]})[:4] == b'\x89PNG'
+    )
+    assert ('x', (-5.0, 5.0)) in calls and ('y', (0.0, None)) in calls
+    text = python_snippet(dataset, str(SI), {}, {'x': [-5, 5]})
+    assert "limits={'x': [-5.0, 5.0]}" in text
+
+
+def _bxsf(path, bands, vectors, fermi=0.0):
+    """A BXSF file as the PAOFLOW writers make it (general grid, BAND blocks)."""
+    shape = next(iter(bands.values())).shape
+    lines = ['', 'BEGIN_INFO', '  Fermi Energy: %15.9f' % fermi, 'END_INFO', '']
+    lines += ['BEGIN_BLOCK_BANDGRID_3D', 'band_energies', 'BEGIN_BANDGRID_3D_BANDS']
+    lines += ['%12d' % len(bands), '%12d%12d%12d' % shape, '    0.000000  0.000000  0.000000']
+    lines += ['  '.join('%10.6f' % v for v in row) for row in vectors]
+    for label, grid in bands.items():
+        lines.append('  BAND: %5d' % label)
+        flat = grid.ravel()
+        lines += [' '.join('%15.9f' % v for v in flat[i : i + 6]) for i in range(0, flat.size, 6)]
+    lines += ['END_BANDGRID_3D', 'END_BLOCK_BANDGRID_3d']
+    path.write_text('\n'.join(lines) + '\n')
+
+
+def test_pyskeaf_sheets_match_the_fermi_surface(tmp_path):
+    """Fermi_surf_band_<n>.bxsf (SKEAF input: Rydberg, vectors without 2π, file n = position)
+    and FermiSurf_0.bxsf (eV, 2π) of the same bands draw the same sheets at the same level."""
+    pytest.importorskip('skimage')
+    n = 13
+    k = np.linspace(0, 1, n)
+    kx, ky, kz = np.meshgrid(k, k, k, indexing='ij')
+    cosines = np.cos(2 * np.pi * kx) + np.cos(2 * np.pi * ky) + np.cos(2 * np.pi * kz)
+    bands = {7: -1.0 - 0.6 * cosines, 8: 1.5 + 0.8 * cosines}  # eV from E_F
+    vectors = np.array([[-0.6, -0.6, 0.6], [0.6, 0.6, 0.6], [-0.6, 0.6, -0.6]])
+    _bxsf(tmp_path / 'FermiSurf_0.bxsf', bands, vectors)
+    for number, label in enumerate(bands, start=1):
+        _bxsf(
+            tmp_path / ('Fermi_surf_band_%d.bxsf' % number),
+            {label: bands[label] / 13.605693122994},
+            vectors / (2 * np.pi),
+        )
+    kinds, _ = _by_kind(tmp_path)
+    for shift in (-1.2, 1.0):
+        for zone in ('cell', 'ws'):
+            options = {'shift': shift, 'zone': zone}
+            whole = load(kinds['fermi_surface'][0], str(tmp_path), options)
+            sheets = load(kinds['fermi_sheet'][0], str(tmp_path), options)
+            assert whole.options['bands']['choices'] == sheets.options['bands']['choices']
+            pairs = list(zip(whole.mesh['sheets'], sheets.mesh['sheets']))
+            assert pairs and [a['band'] for a, _ in pairs] == [b['band'] for _, b in pairs]
+            for a, b in pairs:
+                if zone == 'cell':  # unfolded: the same points (the 6-decimal vectors aside)
+                    assert np.allclose(a['x'], b['x'], atol=1e-5)
+                    assert np.allclose(a['speed'], b['speed'], rtol=1e-4)
+                    continue
+                # Folded: the 6-decimal vectors move a few triangles across the zone faces.
+                assert abs(len(a['x']) - len(b['x'])) <= 0.01 * len(a['x'])
+                for key in ('x', 'y', 'z'):
+                    assert np.isclose(np.abs(a[key]).max(), np.abs(b[key]).max(), atol=1e-4)
+                assert np.isclose(np.max(a['speed']), np.max(b['speed']), rtol=1e-3)
+                assert np.isclose(np.min(a['speed']), np.min(b['speed']), rtol=1e-3)
+    assert any('Rydberg' in note for note in sheets.notes)
+    assert sheets.options['bands']['choices'] == [8]  # the BAND line of file 2, not 2

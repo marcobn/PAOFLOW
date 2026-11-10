@@ -189,8 +189,14 @@ def detect(app: 'GuiApp', relative: str | None) -> dict:
         suggestions.append(('sscha', 'anharmonic phonons at temperature'))
     if pw_inputs:
         suggestions.append(('elphon', 'a pw.x input is present: electron-phonon system folder'))
-    if not saves and not pw_inputs:
+    if any(
+        glob.glob(os.path.join(workdir, place, 'Fermi_surf_band_*.bxsf'))
+        for place in ('.', 'output', os.path.join('*', 'output'))
+    ):
+        suggestions.append(('pyskeaf', 'Fermi-surface BXSF files: quantum oscillations'))
+    if not saves and not pw_inputs and not suggestions:
         suggestions.append(('qe_input', 'no QE run here: start from a database entry'))
+    if not saves and not pw_inputs:
         warnings.append('No <prefix>.save and no pw.x input in this folder.')
     if save_summary is not None:
         if save_summary['augmented']:

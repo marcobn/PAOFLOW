@@ -80,7 +80,24 @@ DRIVER_NAMES = {
     'acbn0': 'main.acbn0.py',
     'phonon': 'main.phonon.py',
     'sscha': 'main.sscha.py',
+    'pyskeaf': 'main.pyskeaf.py',
 }
+
+#: Whether a workflow writes its plot scripts by default (``cfg['plot']`` decides otherwise): the
+#: defaults of ``paoflow-gen``, which the *Write the plot scripts* switch of the Studio starts from.
+#: ``run``, ``phonon`` and ``pyskeaf`` ask ("Also generate a plotting script?", default yes),
+#: ``acbn0`` and ``elphon`` always wrote them, ``sscha`` only with ``--plot``.
+PLOT_DEFAULTS = {
+    'run': True,
+    'acbn0': True,
+    'phonon': True,
+    'elphon': True,
+    'sscha': False,
+    'pyskeaf': True,
+}
+
+#: Plot scripts that save their figures (no display): the Runs tab can run them.
+SAVING_PLOT_SCRIPTS = ('plot.sscha.py', 'plot.pyskeaf.py')
 
 
 def workflow_outputs(
@@ -118,12 +135,29 @@ def workflow_outputs(
         return system_folder_files(cfg)
     driver = GeneratedFile(out or DRIVER_NAMES[name], text=_driver_text(name, cfg))
     files = [driver]
-    wants_plot = plot or bool(cfg.get('plot'))
+    wants_plot = plot or bool(cfg.get('plot', PLOT_DEFAULTS.get(name, False)))
     if name == 'run' and wants_plot:
         files.append(GeneratedFile(plot_out or 'plot.py', text=pd.build_plot_script(cfg)))
-    elif name == 'acbn0':
+    elif name == 'acbn0' and wants_plot:
         files.append(
             GeneratedFile(plot_out or 'plot.acbn0.py', text=pd.build_acbn0_plot_script(cfg))
+        )
+    elif name in ('sscha', 'pyskeaf') and wants_plot:
+        from .results_plot import build_results_plot_script
+
+        title, kinds, outputdir = {
+            'sscha': ('anharmonic phonons (SSCHA)', ('sscha',), 'output'),
+            'pyskeaf': (
+                'quantum oscillations (pyskeaf)',
+                ('dhva',),
+                cfg.get('outputdir', 'output'),
+            ),
+        }[name]
+        files.append(
+            GeneratedFile(
+                plot_out or 'plot.%s.py' % name,
+                text=build_results_plot_script(title, DRIVER_NAMES[name], kinds, outputdir),
+            )
         )
     elif name == 'phonon':
         if wants_plot:
@@ -150,6 +184,10 @@ def _driver_text(name: str, cfg: dict) -> str:
         from .sscha_driver import build_sscha_script
 
         return build_sscha_script(cfg)
+    if name == 'pyskeaf':
+        from .pyskeaf_driver import build_pyskeaf_script
+
+        return build_pyskeaf_script(cfg)
     raise ValueError('unknown workflow %r' % name)
 
 
@@ -357,14 +395,27 @@ def run_plan(name: str, cfg: dict, files: list[GeneratedFile] | None = None) -> 
             )
         )
         steps.append(RunStep('Status of every temperature', ('python', driver, 'status')))
+    elif name == 'pyskeaf':
+        steps.append(
+            RunStep(
+                'Quantum oscillations (pyskeaf)',
+                ('python', driver),
+                mpi=True,
+                note='the field directions spread over the ranks; the Results tab plots the '
+                'frequencies against the angle',
+            )
+        )
     for plot in names[1:]:
         if plot.startswith('plot'):
+            saving = plot in SAVING_PLOT_SCRIPTS
             steps.append(
                 RunStep(
                     'Figures (%s)' % plot,
                     ('python', plot),
-                    interactive=True,
-                    note='or the Results tab',
+                    interactive=not saving,
+                    note='PDF files in output/figures; or the Results tab'
+                    if saving
+                    else 'or the Results tab',
                 )
             )
     return steps
@@ -372,6 +423,7 @@ def run_plan(name: str, cfg: dict, files: list[GeneratedFile] | None = None) -> 
 
 def _elphon_plan(cfg: dict) -> list[RunStep]:
     steps = []
+    plots = cfg.get('plot', True)  # the plot_*.py of the workflows (see system_folder_files)
     if not cfg.get('pw_template_text'):
         steps.append(
             RunStep(
@@ -444,14 +496,15 @@ def _elphon_plan(cfg: dict) -> list[RunStep]:
                         ('python', 'superconductivity/me_aniso.py'),
                     )
                 )
-            steps.append(
-                RunStep(
-                    'Figures (gap)',
-                    ('python', 'superconductivity/plot_me.py'),
-                    interactive=True,
-                    note='or the Results tab',
+            if plots:
+                steps.append(
+                    RunStep(
+                        'Figures (gap)',
+                        ('python', 'superconductivity/plot_me.py'),
+                        interactive=True,
+                        note='or the Results tab',
+                    )
                 )
-            )
         elif workflow == 'optics' and not metal:
             if cfg.get('optics_nscf'):
                 steps.append(
@@ -463,14 +516,15 @@ def _elphon_plan(cfg: dict) -> list[RunStep]:
             steps.append(
                 RunStep('Phonon-assisted absorption', ('python', 'optics/absorption.py'), mpi=True)
             )
-            steps.append(
-                RunStep(
-                    'Figures (absorption)',
-                    ('python', 'optics/plot_absorption.py'),
-                    interactive=True,
-                    note='or the Results tab',
+            if plots:
+                steps.append(
+                    RunStep(
+                        'Figures (absorption)',
+                        ('python', 'optics/plot_absorption.py'),
+                        interactive=True,
+                        note='or the Results tab',
+                    )
                 )
-            )
         elif workflow == 'optics' and metal:
             steps.append(
                 RunStep(
@@ -486,24 +540,26 @@ def _elphon_plan(cfg: dict) -> list[RunStep]:
                     note='after eliashberg.py with the transport Eliashberg function',
                 )
             )
-            steps.append(
-                RunStep(
-                    'Figures (resistivity)',
-                    ('python', 'transport/plot_resistivity.py'),
-                    interactive=True,
-                    note='or the Results tab',
+            if plots:
+                steps.append(
+                    RunStep(
+                        'Figures (resistivity)',
+                        ('python', 'transport/plot_resistivity.py'),
+                        interactive=True,
+                        note='or the Results tab',
+                    )
                 )
-            )
         elif workflow == 'transport':
             steps.append(RunStep('Carrier mobility', ('python', 'transport/mobility.py'), mpi=True))
-            steps.append(
-                RunStep(
-                    'Figures (mobility)',
-                    ('python', 'transport/plot_mobility.py'),
-                    interactive=True,
-                    note='or the Results tab',
+            if plots:
+                steps.append(
+                    RunStep(
+                        'Figures (mobility)',
+                        ('python', 'transport/plot_mobility.py'),
+                        interactive=True,
+                        note='or the Results tab',
+                    )
                 )
-            )
         elif workflow == 'arpes':
             steps.append(RunStep('ARPES maps', ('python', 'arpes/arpes.py', '--no-plot'), mpi=True))
         elif workflow == 'thermal':

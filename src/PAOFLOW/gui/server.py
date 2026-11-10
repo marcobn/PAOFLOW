@@ -414,6 +414,8 @@ class GuiApp:
         """
         if path in ('/', '/index.html'):
             target = STATIC_DIR / 'index.html'
+        elif path == '/favicon.ico':  # the icon of paoflow.org (docs/_static/images/logos)
+            target = STATIC_DIR / 'favicon.ico'
         elif path == '/vendor/plotly.min.js':
             target = plotly_bundle()
             if target is None:

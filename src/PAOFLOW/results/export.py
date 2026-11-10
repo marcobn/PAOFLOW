@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 
 import numpy as np
@@ -73,7 +74,7 @@ def to_csv(dataset: Dataset) -> str:
     return buffer.getvalue()
 
 
-def python_snippet(dataset: Dataset, root: str, options: dict) -> str:
+def python_snippet(dataset: Dataset, root: str, options: dict, limits: dict | None = None) -> str:
     """A script that rebuilds the figure from the files (results API, plus GPAO when it applies).
 
     Parameters
@@ -84,6 +85,8 @@ def python_snippet(dataset: Dataset, root: str, options: dict) -> str:
         Absolute folder the reference paths are relative to.
     options : dict
         The selected options.
+    limits : dict, optional
+        Axis limits set in the Results tab (:func:`clean_limits`).
 
     Returns
     -------
@@ -101,7 +104,8 @@ def python_snippet(dataset: Dataset, root: str, options: dict) -> str:
         '',
         'results = ResultsFolder(%r)' % root,
         'dataset = results.load(%r, options=%s)' % (ref.id, json.dumps(shown, ensure_ascii=False)),
-        "results.save(dataset, 'figure.pdf')        # matplotlib; or results.figure(dataset) -> Plotly spec",
+        "results.save(dataset, 'figure.pdf'%s)        # matplotlib; or results.figure(dataset) -> Plotly spec"
+        % (', limits=%r' % clean_limits(limits) if clean_limits(limits) else ''),
     ]
     files = [os.path.join(root, f) for f in ref.files]
     if kind.gpao == 'plot_bands' and dataset.family == 'bands':
@@ -130,7 +134,49 @@ def python_snippet(dataset: Dataset, root: str, options: dict) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def matplotlib_figure(dataset: Dataset, fmt: str = 'pdf', theme: str = 'light') -> bytes:
+def clean_limits(limits: dict | None) -> dict[str, list]:
+    """Axis limits of a request: ``{'x': [low, high], 'y': [low, high]}``, ``None`` for automatic.
+
+    Parameters
+    ----------
+    limits : dict or None
+        As sent by the Results tab (numbers, or ``None`` / missing for an automatic end).
+
+    Returns
+    -------
+    dict
+        Only the axes with at least one finite end; ends as floats or ``None``.
+
+    Raises
+    ------
+    ValueError
+        For an end that is not a number, or a low end not below the high one.
+    """
+    cleaned: dict[str, list] = {}
+    for axis in ('x', 'y'):
+        pair = (limits or {}).get(axis)
+        if not pair:
+            continue
+        ends = []
+        for value in list(pair)[:2]:
+            if value is None or value == '':
+                ends.append(None)
+                continue
+            number = float(value)
+            if not math.isfinite(number):
+                raise ValueError('the %s limits must be finite numbers' % axis)
+            ends.append(number)
+        ends += [None] * (2 - len(ends))
+        if ends[0] is not None and ends[1] is not None and ends[0] >= ends[1]:
+            raise ValueError('the %s minimum must be below its maximum' % axis)
+        if ends != [None, None]:
+            cleaned[axis] = ends
+    return cleaned
+
+
+def matplotlib_figure(
+    dataset: Dataset, fmt: str = 'pdf', theme: str = 'light', limits: dict | None = None
+) -> bytes:
     """A static figure of the dataset (lines, bands, maps) rendered with matplotlib.
 
     Parameters
@@ -141,6 +187,9 @@ def matplotlib_figure(dataset: Dataset, fmt: str = 'pdf', theme: str = 'light') 
         ``pdf``, ``png`` or ``svg``.
     theme : str, optional
         Palette column used for the colours.
+    limits : dict, optional
+        Axis limits set in the Results tab (:func:`clean_limits`); an end left ``None`` stays
+        automatic.
 
     Returns
     -------
@@ -246,6 +295,8 @@ def matplotlib_figure(dataset: Dataset, fmt: str = 'pdf', theme: str = 'light') 
         axes.set_ylim(*window)
     if dataset.options.get('log_y', {}).get('value'):
         axes.set_yscale('log')
+    for axis, (low, high) in clean_limits(limits).items():
+        (axes.set_xlim if axis == 'x' else axes.set_ylim)(low, high)
     if dataset.zero == 'y':
         axes.axhline(0.0, color=table['neutral'], lw=0.8, ls=':')
     elif dataset.zero == 'x':

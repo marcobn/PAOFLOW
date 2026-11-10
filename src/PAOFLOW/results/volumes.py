@@ -17,6 +17,9 @@ import numpy as np
 
 from .model import Dataset, DatasetRef
 
+#: eV per Rydberg: the energy unit of the SKEAF input files ``Fermi_surf_band_<n>.bxsf``.
+RYDBERG_EV = 13.605693122994
+
 #: Triangles sent to the browser at most (meshes beyond it are thinned by face sampling).
 MAX_FACES = 150000
 
@@ -36,6 +39,7 @@ def fermi_mesh(
     interp: int = 1,
     shift: float = 0.0,
     zone: str = 'ws',
+    skeaf: bool = False,
 ) -> dict:
     """Fermi sheets of BXSF files as triangle meshes.
 
@@ -52,6 +56,13 @@ def fermi_mesh(
     zone : str, optional
         ``'ws'`` folds the sheets into the first Brillouin zone and draws it; ``'cell'`` keeps
         the reciprocal parallelepiped.
+    skeaf : bool, optional
+        The files are the SKEAF inputs ``Fermi_surf_band_<n>.bxsf``
+        (:func:`PAOFLOW.writers.write2bxsf4skeaf.write2bxsf4skeaf`): energies in Rydberg and
+        reciprocal vectors without the :math:`2\\pi`.  They are brought to eV and to the
+        vectors of ``FermiSurf_<s>.bxsf``, and the bands take the label of their ``BAND`` line
+        (``Fermi_surf_band_1.bxsf`` holds band 2 when the first band is below the window), so
+        both kinds of file give the same picture.
 
     Returns
     -------
@@ -77,16 +88,20 @@ def fermi_mesh(
     grids: dict[int, np.ndarray] = {}
     recip = None
     fermi = 0.0
+    energy_unit = RYDBERG_EV if skeaf else 1.0
     for path in paths:
         data = read_fermi_bxsf(path)
-        recip = data.recip if recip is None else recip
-        fermi = data.fermi_energy
+        vectors = np.asarray(data.recip, dtype=float) * (2.0 * np.pi if skeaf else 1.0)
+        recip = vectors if recip is None else recip
+        fermi = data.fermi_energy * energy_unit
         label_offset = 0
         if len(paths) > 1:
             digits = ''.join(ch for ch in os.path.basename(path) if ch.isdigit())
             label_offset = int(digits) if digits else len(grids) + 1
         for label, grid in data.bands.items():
-            grids[label_offset or label] = grid
+            # SKEAF files: the band of the BAND line, unless two files claim the same one.
+            key = label if skeaf and label not in grids else label_offset or label
+            grids[key] = grid * energy_unit
     level = fermi + shift
     available = [label for label, grid in grids.items() if grid.min() <= level <= grid.max()]
     header_ignored = False
@@ -269,6 +284,7 @@ def load_volume(ref: DatasetRef, root: str, options: dict, dataset: Dataset) -> 
             interp=interp,
             shift=shift,
             zone=zone,
+            skeaf=ref.kind == 'fermi_sheet',
         )
     except ImportError as exc:
         dataset.notes.append(str(exc))
@@ -291,6 +307,12 @@ def load_volume(ref: DatasetRef, root: str, options: dict, dataset: Dataset) -> 
     }
     dataset.options['zone'] = {'label': 'Zone', 'choices': ['ws', 'cell'], 'value': zone}
     dataset.options['shift'] = {'label': 'Level − E_F', 'value': shift, 'number': True}
+    if ref.kind == 'fermi_sheet':
+        dataset.notes.append(
+            'pyskeaf input files: energies converted from Rydberg to eV and reciprocal vectors '
+            'multiplied by 2π, as in FermiSurf_<s>.bxsf; the bands are those of the BAND lines '
+            '(the number of a file name is its position, not its band).'
+        )
     if not mesh['available']:
         dataset.notes.append('No band crosses the chosen level (move Level − E_F into a band).')
     elif not mesh['sheets']:

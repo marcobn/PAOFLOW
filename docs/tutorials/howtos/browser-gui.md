@@ -62,7 +62,8 @@ Other options:
    files, the `pw.x` inputs, existing drivers. From the save it reads a summary of the system: formula, lattice,
    electrons, gap or metal, k-grid, pseudopotential types, 2D slab.
 2. **Workflow.** The workflows are those of `paoflow-gen`: property run, ACBN0/eACBN0, harmonic phonons (with
-   Raman), electron–phonon system folder, SSCHA. Two tools sit next to them: a QE input from an AFLOW or C2DB entry
+   Raman), electron–phonon system folder, SSCHA, quantum oscillations (pyskeaf, from the Fermi-surface BXSF files
+   of a property run). Two tools sit next to them: a QE input from an AFLOW or C2DB entry
    (`paoflow-gen-qe`), and the pseudo-atom basis tables (`paoflow-genbasis-ps`).
 3. **Form.** These are the CLI questions, shown only when they apply. Defaults follow the earlier answers: the
    dense grids follow the coarse ones, and the smearing follows the adaptive prefactor. Invalid values are marked
@@ -86,10 +87,21 @@ Other options:
    - `ibrav`, spin-orbit and 2D from the save;
    - metal, `nelec`, `nbnd` and the coupling source (`epw` for ultrasoft or PAW pseudopotentials) from the
      `pw.x` template of the electron–phonon workflow.
-4. **Preview and write.** Every generated file is shown with its status (new, changed, unchanged) and, for
+4. **Output.** Every workflow has an *Output* box. It holds the driver file name (the system folder for
+   electron–phonon) and one switch, *Write the plot scripts*:
+   - `plot.py`, `plot.acbn0.py`, `plot.phonon.py` (and `plot.raman.py`);
+   - the `plot_*.py` of the electron–phonon workflows;
+   - `plot.sscha.py` and `plot.pyskeaf.py`. These two save the figures of the Results tab as PDF files in
+     `output/figures`, so the Runs tab can run them.
+
+   The switch starts from what `paoflow-gen` does by default: on, except for SSCHA.
+5. **Preview and write.** Every generated file is shown with its status (new, changed, unchanged) and, for
    changed files, its diff against the copy on disk. *Write files* asks before overwriting and keeps a timestamped
    backup (`main.py.bak-YYYYmmdd-HHMMSS`).
-   - *Python* shows a script that writes the same files without the GUI.
+   - *Edit* opens the selected file in an editor before writing. An edited file is marked ✎, and *Write files*
+     writes your text. The edit stays while the form changes; when the form would generate a different file,
+     the panel says so, and *Take the new file* discards the edit.
+   - *Python* shows a script that writes the same files without the GUI (without your edits).
    - *Next steps* lists the commands of the workflow in order.
 
 **From a database entry to a QE run.** The *QE input from a database* tool writes `<compound>.scf.in`, then
@@ -182,6 +194,10 @@ The tensor components, spin channels or temperatures of one quantity are the ser
   momentum distribution curves (EDC and MDC) through it.
 - **Fermi surfaces** are drawn in 3D in the browser, coloured by |v_F|, inside the Wigner–Seitz zone. This needs
   scikit-image. Berry-curvature grids are shown as plane slices.
+- **Axes.** The x and y limits are set by number, with one row per y panel of an overlay. *Enter* applies them,
+  a blank end stays automatic (the data decide it), and *Automatic* clears them. A zoom with the mouse shows
+  its range in the fields, ready to be adjusted. The limits are kept per dataset, also across a reload, and the
+  PDF, PNG, SVG and Python exports use them.
 - **Overlay properties.** With a curve open, tick other datasets of the folder that share its x axis: Re ε with
   Im ε, n with k, DOS with PDOS, σ/τ with S. Properties of one unit share a panel; another unit gets its own panel
   below on the same x axis, never a second y axis. The colour marks the property, and the line style marks the
