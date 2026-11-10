@@ -325,9 +325,9 @@ def run_mesh(
     ``PAD_DELTA`` rather than 0 because the kernels divide by it.
     """
     from ..spectrum.do_adaptive_smearing import adaptive_widths
-    from ..spectrum.do_band_curvature import band_curvature_k
     from ..utils.communication import scatter_full
     from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
+    from .curvature import band_curvature_k
     from .kpoint import DenseOnDemand, KPoint, degenerate_groups
     from .log import get_sparse_log
     from .solver import creep_warning, hk_solver_fields, solve_k
