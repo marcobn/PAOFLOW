@@ -93,35 +93,59 @@ def list_directory(app: 'GuiApp', relative: str | None) -> dict:
         and ``writable`` of that top folder) and ``entries`` (name, kind, size, modification time,
         tags).
     """
-    folder = app.resolve_readable(relative)
+    try:
+        folder = app.resolve_readable(relative)
+        inside = True
+    except HttpError:
+        # Anywhere on the computer (the picker's Home and / places), unless --fixed-root: the
+        # listing only; a folder chosen there joins the session through /api/fs/open.
+        text = os.path.expanduser(str(relative or ''))
+        if app.fixed_root or not os.path.isabs(text):
+            raise
+        folder = Path(text).resolve()
+        inside = False
     if not folder.is_dir():
         raise HttpError(404, '%s is not a folder' % relative)
     entries = []
     try:
-        children = sorted(folder.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        children = list(folder.iterdir())
     except PermissionError as exc:
         raise HttpError(403, str(exc)) from None
     for child in children:
         if child.name in HIDDEN or child.name.startswith('.'):
             continue
+        # System folders hold entries the user may not read (macOS /private/var, ...): an entry
+        # that cannot be inspected is left out instead of failing the whole listing.
         try:
             stat = child.stat()
+            is_dir = child.is_dir()
+            tags = entry_tags(child)
         except OSError:
             continue
-        if not app.sandbox.readable(child):
+        if inside and not app.sandbox.readable(child):
             continue
         entries.append(
             {
                 'name': child.name,
-                'kind': 'dir' if child.is_dir() else 'file',
+                'kind': 'dir' if is_dir else 'file',
                 'size': stat.st_size,
                 'mtime': stat.st_mtime,
-                'tags': entry_tags(child),
+                'tags': tags,
             }
         )
+    entries.sort(key=lambda entry: (entry['kind'] != 'dir', entry['name'].lower()))
+    top = None if app.fixed_root or folder.parent == folder else str(folder.parent)
+    if not inside:
+        return {
+            'path': str(folder),
+            'absolute': str(folder),
+            'parent': top,
+            'place': {'path': '/', 'label': 'computer', 'writable': False, 'outside': True},
+            'entries': entries,
+        }
     place = app.sandbox.place(folder)
     path = app.sandbox.relative(folder)
-    parent = None if folder == place else app.sandbox.relative(folder.parent)
+    parent = top if folder == place else app.sandbox.relative(folder.parent)
     return {
         'path': path,
         'absolute': str(folder),
@@ -129,7 +153,8 @@ def list_directory(app: 'GuiApp', relative: str | None) -> dict:
         'place': {
             'path': app.sandbox.relative(place),
             'label': 'root' if place == app.sandbox.root else str(place),
-            'writable': place == app.sandbox.root,
+            'writable': app.sandbox.writable(place),
+            'outside': False,
         },
         'entries': entries,
     }
@@ -283,12 +308,24 @@ def register(app: 'GuiApp') -> None:
                 'features': {**environment_features(), 'pw': bool(app.qe_installations())},
                 'started': app.started,
                 'restart_needed': code_changed_since(app.started),
+                'home': str(Path.home()),
+                'fixed_root': app.fixed_root,
+                'opened': app.opened(),
             }
         )
 
     @app.route('GET', '/api/fs/list')
     def fs_list(request: Request) -> Response:
         return json_response(list_directory(app, request.query.get('path')))
+
+    @app.route('POST', '/api/fs/open')
+    def fs_open(request: Request) -> Response:
+        payload = request.json()
+        return json_response(
+            app.open_folder(
+                str(payload.get('path') or ''), payload.get('writable', True) is not False
+            )
+        )
 
     @app.route('GET', '/api/fs/read')
     def fs_read(request: Request) -> Response:

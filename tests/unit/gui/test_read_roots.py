@@ -41,15 +41,22 @@ def test_listing_and_session(make_client, tmp_path):
     status, session, _ = client.get('/api/session')
     assert str(pseudos.resolve()) in session['read_roots']
     status, listing, _ = client.get('/api/fs/list?path=%s' % pseudos)
-    assert status == 200 and listing['parent'] is None and listing['place']['writable'] is False
+    assert status == 200 and listing['place']['writable'] is False
+    assert listing['parent'] == str(tmp_path.resolve())  # the picker may go up (browse anywhere)
     assert [e['name'] for e in listing['entries']] == ['nc', 'Si.upf'] and listing['entries'][1][
         'tags'
     ] == ['upf']
     status, listing, _ = client.get('/api/fs/list?path=%s' % (pseudos / 'nc'))
     assert listing['parent'] == str(pseudos.resolve())
     status, root_listing, _ = client.get('/api/fs/list')
-    assert root_listing['place'] == {'path': '.', 'label': 'root', 'writable': True}
-    assert client.get('/api/fs/list?path=%s' % tmp_path)[0] == 403
+    assert root_listing['place'] == {
+        'path': '.',
+        'label': 'root',
+        'writable': True,
+        'outside': False,
+    }
+    status, elsewhere, _ = client.get('/api/fs/list?path=%s' % tmp_path)
+    assert status == 200 and elsewhere['place']['outside']  # listed, not opened
 
 
 def test_paoflow_pseudos_are_readable_by_default(client):
@@ -126,3 +133,94 @@ def test_path_answers_must_be_readable(make_client, tmp_path):
         {'workflow': 'run', 'workdir': 'Si', 'answers': {'savedir': '../../../../etc'}},
     )
     assert status == 403
+
+
+def test_sandbox_opens_folders_for_writing_or_reading(tmp_path):
+    from PAOFLOW.gui.security import Sandbox
+
+    root, work, data = tmp_path / 'root', tmp_path / 'work', tmp_path / 'data'
+    for folder in (root, work, data):
+        folder.mkdir()
+    sandbox = Sandbox(root)
+    with pytest.raises(PermissionError, match='open it'):
+        sandbox.resolve(str(work))
+    sandbox.open(work, writable=True)
+    sandbox.open(data, writable=False)
+    assert sandbox.resolve(str(work / 'new')) == (work / 'new').resolve()
+    assert sandbox.resolve_readable(str(data)) == data.resolve()
+    with pytest.raises(PermissionError, match='read-only'):
+        sandbox.resolve(str(data / 'x'))
+    assert (
+        sandbox.writable(work)
+        and not sandbox.writable(data)
+        and sandbox.place(work / 'a') == work.resolve()
+    )
+    assert sandbox.relative(work) == str(work.resolve())  # absolute outside the root
+    with pytest.raises(NotADirectoryError):
+        sandbox.open(tmp_path / 'missing')
+
+
+def test_picker_browses_the_computer_and_opens_folders(tmp_path):
+    from PAOFLOW.gui.server import GuiApp, start_in_thread
+
+    from conftest import Client
+
+    root, work = tmp_path / 'root', tmp_path / 'elsewhere' / 'Si'
+    locked = tmp_path / 'elsewhere' / 'locked'
+    root.mkdir()
+    work.mkdir(parents=True)
+    (work / 'scf.in').write_text('&control\n/\n')
+    servers = []
+
+    def client(**options):
+        app = GuiApp(root, default_read_roots=False, **options)
+        server, _ = start_in_thread(app)
+        servers.append(server)
+        return Client(app)
+
+    try:
+        free = client()
+        status, listing, _ = free.get('/api/fs/list?path=%s' % (tmp_path / 'elsewhere'))
+        assert (
+            status == 200
+            and listing['place']['outside']
+            and listing['parent'] == str(tmp_path.resolve())
+        )
+        assert [e['name'] for e in listing['entries']] == ['Si']
+        assert free.get('/api/workspace/detect?path=%s' % work)[0] == 403  # listed, not opened
+        status, opened, _ = free.post('/api/fs/open', {'path': str(work), 'writable': True})
+        assert (
+            status == 200
+            and opened['writable']
+            and opened['opened'][0]['path'] == str(work.resolve())
+        )
+        status, detection, _ = free.get('/api/workspace/detect?path=%s' % work)
+        assert status == 200 and detection['pw_inputs'] == ['scf.in']
+        session = free.get('/api/session')[1]
+        assert session['home'] and not session['fixed_root'] and session['opened'][0]['writable']
+        # remembered: a restarted server has the folder again
+        again = client()
+        assert again.get('/api/workspace/detect?path=%s' % work)[0] == 200
+        # --read-only: an opened folder is read only; --fixed-root: no browsing, no opening
+        reader = client(read_only=True)
+        other = tmp_path / 'elsewhere'
+        assert not reader.post('/api/fs/open', {'path': str(other), 'writable': True})[1][
+            'writable'
+        ]
+        fixed = client(fixed_root=True)
+        assert fixed.get('/api/fs/list?path=%s' % (tmp_path / 'elsewhere'))[0] == 403
+        status, body, _ = fixed.post('/api/fs/open', {'path': str(work)})
+        assert status == 403 and '--fixed-root' in body['error']
+        assert fixed.get('/api/fs/list?path=.')[1]['parent'] is None  # no way above the root
+        # an entry that cannot be inspected (system folders) does not fail the listing
+        locked.mkdir()
+        (locked / 'inner').mkdir()
+        locked.chmod(0)
+        status, listing, _ = free.get('/api/fs/list?path=%s' % (tmp_path / 'elsewhere'))
+        assert status == 200 and 'Si' in [e['name'] for e in listing['entries']]
+    finally:
+        if locked.exists():
+            locked.chmod(0o755)
+        for server in servers:
+            server.shutdown()
+            server.server_close()

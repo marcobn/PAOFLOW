@@ -202,6 +202,10 @@ class GuiApp:
     qe_search : bool, optional
         Look for Quantum ESPRESSO in the common places (default); the PATH, its siblings and
         ``qe_bins`` are always searched.
+    fixed_root : bool, optional
+        Keep the browser inside the root and the read-only folders (``--fixed-root``).  By
+        default its folder picker browses the whole computer, and a folder chosen there joins the
+        session (:meth:`open_folder`), remembered in ``<root>/.paoflow-studio/opened.json``.
     """
 
     def __init__(
@@ -215,9 +219,11 @@ class GuiApp:
         default_read_roots: bool = True,
         qe_bins: Sequence[str | Path] = (),
         qe_search: bool = True,
+        fixed_root: bool = False,
     ) -> None:
         folders = list(read_roots) + (paoflow_data_folders() if default_read_roots else [])
         self.sandbox = security.Sandbox(root, read_roots=folders)
+        self._fixed_read_roots = list(self.sandbox.read_roots)  # the start-up ones
         self.token = token or security.new_token()
         self.read_only = read_only
         self.max_ranks = max_ranks
@@ -228,6 +234,8 @@ class GuiApp:
         self.qe_bins = tuple(qe_bins)
         self.qe_search = qe_search
         self._qe_installations: list | None = None
+        self.fixed_root = fixed_root
+        self._load_opened()
         self._routes: dict[tuple[str, str], Route] = {}
         self._prefix_routes: list[tuple[str, str, Route]] = []
         self.services: dict[str, Any] = {}
@@ -262,6 +270,74 @@ class GuiApp:
             return function
 
         return register
+
+    # ----------------------------------------------------------------------- opened folders
+    @property
+    def opened_file(self) -> Path:
+        """Where the folders opened from the browser are remembered."""
+        return self.sandbox.root / '.paoflow-studio' / 'opened.json'
+
+    def _load_opened(self) -> None:
+        if self.fixed_root:
+            return
+        try:
+            entries = json.loads(self.opened_file.read_text())
+        except (OSError, ValueError):
+            return
+        for entry in entries if isinstance(entries, list) else []:
+            try:
+                self.sandbox.open(entry['path'], bool(entry.get('writable')) and not self.read_only)
+            except (KeyError, TypeError, OSError):
+                continue  # a folder that went away
+
+    def opened(self) -> list[dict]:
+        """The folders opened from the browser (``path``, ``writable``).
+
+        Returns
+        -------
+        list of dict
+        """
+        return [{'path': str(f), 'writable': True} for f in self.sandbox.write_roots] + [
+            {'path': str(f), 'writable': False}
+            for f in self.sandbox.read_roots
+            if f not in self._fixed_read_roots
+        ]
+
+    def open_folder(self, path: str, writable: bool = True) -> dict:
+        """Add a folder chosen in the browser's folder picker to the session.
+
+        Parameters
+        ----------
+        path : str
+            Absolute path of the folder.
+        writable : bool, optional
+            A working folder (read and written) or a folder to read (pseudopotentials, results).
+
+        Returns
+        -------
+        dict
+            ``path`` (absolute), ``writable`` and ``opened`` (every opened folder).
+
+        Raises
+        ------
+        HttpError
+            403 with ``--fixed-root``, 404 when it is not a folder.
+        """
+        if self.fixed_root:
+            raise HttpError(403, 'this PAOFLOW Studio keeps to its root (--fixed-root)')
+        writable = writable and not self.read_only
+        try:
+            folder = self.sandbox.open(path, writable)
+        except (NotADirectoryError, OSError) as exc:
+            raise HttpError(404, str(exc)) from None
+        if not self.read_only:
+            self.opened_file.parent.mkdir(parents=True, exist_ok=True)
+            self.opened_file.write_text(json.dumps(self.opened(), indent=1))
+        return {
+            'path': str(folder),
+            'writable': self.sandbox.writable(folder),
+            'opened': self.opened(),
+        }
 
     # --------------------------------------------------------------------- Quantum ESPRESSO
     def qe_installations(self, rescan: bool = False) -> list:

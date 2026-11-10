@@ -160,11 +160,17 @@ class Sandbox:
         The root folder (``paoflow-studio --root``): read and written.
     read_roots : sequence of str or Path, optional
         Extra folders that are read only (``paoflow-studio --allow-read``, PAOFLOW's own
-        ``PSEUDOS`` and ``BASIS``).  They are fixed when the server starts; no request can add one.
+        ``PSEUDOS`` and ``BASIS``).
+
+    Notes
+    -----
+    Folders opened from the browser's folder picker (:meth:`open`, unless the server runs with
+    ``--fixed-root``) join the root (``write_roots``) or the read-only folders.
     """
 
     def __init__(self, root: str | Path, read_roots: Sequence[str | Path] = ()) -> None:
         self.root = Path(root).expanduser().resolve()
+        self.write_roots: list[Path] = []
         roots: list[Path] = []
         for folder in read_roots:
             path = Path(folder).expanduser().resolve()
@@ -189,6 +195,56 @@ class Sandbox:
     def _inside(path: Path, folder: Path) -> bool:
         return path == folder or path.is_relative_to(folder)
 
+    def _writable_roots(self) -> list[Path]:
+        return [self.root, *self.write_roots]
+
+    def writable(self, path: str | Path) -> bool:
+        """Whether a path is inside the root or a folder opened for writing.
+
+        Parameters
+        ----------
+        path : str or Path
+            Absolute path, or relative to the root.
+
+        Returns
+        -------
+        bool
+        """
+        _text, resolved = self._candidate(self.root, path)
+        return any(self._inside(resolved, folder) for folder in self._writable_roots())
+
+    def open(self, path: str | Path, writable: bool = True) -> Path:
+        """Add a folder chosen in the browser to the folders of the session.
+
+        Parameters
+        ----------
+        path : str or Path
+            Absolute path of an existing folder.
+        writable : bool, optional
+            Read and write it (a working folder), or read it only.
+
+        Returns
+        -------
+        Path
+            The resolved folder.
+
+        Raises
+        ------
+        NotADirectoryError
+            If the path is not a folder.
+        """
+        resolved = Path(path).expanduser().resolve()
+        if not resolved.is_dir():
+            raise NotADirectoryError('%s is not a folder' % path)
+        if self.writable(resolved):
+            return resolved
+        if writable:
+            self.write_roots.append(resolved)
+            self.read_roots = [f for f in self.read_roots if f != resolved]
+        elif not any(self._inside(resolved, folder) for folder in self.read_roots):
+            self.read_roots.append(resolved)
+        return resolved
+
     def resolve(self, path: str | Path | None) -> Path:
         """Absolute path of ``path`` inside the root (relative to it, or absolute): where writes go.
 
@@ -207,15 +263,15 @@ class Sandbox:
             If the path (after resolving symbolic links and ``..``) leaves the root.
         """
         text, resolved = self._candidate(self.root, path)
-        if not self._inside(resolved, self.root):
+        if not any(self._inside(resolved, folder) for folder in self._writable_roots()):
             readable = any(self._inside(resolved, folder) for folder in self.read_roots)
             raise PermissionError(
                 '%s is %s'
                 % (
                     text,
-                    'read-only (an --allow-read folder)'
+                    'read-only (an --allow-read folder, or one opened for reading)'
                     if readable
-                    else 'outside the GUI root %s' % self.root,
+                    else 'outside the GUI root %s (open it with Change… or Browse…)' % self.root,
                 )
             )
         return resolved
@@ -238,8 +294,8 @@ class Sandbox:
             If the path is outside the root and every read-only folder.
         """
         text, resolved = self._candidate(self.root, path)
-        if self._inside(resolved, self.root) or any(
-            self._inside(resolved, folder) for folder in self.read_roots
+        if any(
+            self._inside(resolved, folder) for folder in [*self._writable_roots(), *self.read_roots]
         ):
             return resolved
         raise PermissionError(
@@ -278,7 +334,7 @@ class Sandbox:
         Path
         """
         resolved = Path(path).resolve()
-        for folder in [self.root, *self.read_roots]:
+        for folder in [self.root, *self.write_roots, *self.read_roots]:
             if self._inside(resolved, folder):
                 return folder
         raise PermissionError('%s is not readable' % path)

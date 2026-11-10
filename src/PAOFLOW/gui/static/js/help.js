@@ -36,10 +36,16 @@ const SECTIONS = [
     id: 'folders',
     title: 'Folders and permissions',
     body: [
-      'The server reads and writes only under its **root** (`paoflow-studio --root DIR`, shown in the header). Paths in the forms are relative to the working folder unless they are absolute.',
-      'Some folders can be **read but never written**: PAOFLOW’s own `PSEUDOS/` and `BASIS/`, and every folder given with `--allow-read DIR`. The folder picker lists them under *Places* with a lock; use them for pseudopotentials or for results kept elsewhere.',
-      'Generated files, QE inputs, basis tables and runs always go under the root. Writing into a read-only folder, or reading a folder outside both, is refused with a message that names the option to use.',
-      '`--read-only` turns the session into a viewer: no writes and no runs.',
+      'The server starts on its **root** (`paoflow-studio --root DIR`, shown in the header). Paths in the forms are relative to the working folder unless they are absolute.',
+      [
+        'The folder picker (*Change…*, *Browse…*) is not limited to the root: its *Places* are **root**, **home** and **computer** (`/`), so it walks the whole directory tree of the machine. Folders your account cannot read are left out of the listings.',
+        'Choosing a folder outside the root **opens** it for the session: a working folder (Setup and Runs) is opened for reading and writing, a folder picked to read from (pseudopotentials, results, data) for reading only. The picker says which before you choose.',
+        'Opened folders are listed under *Places* and remembered across restarts of the server (`.paoflow-studio/opened.json` in the root).',
+        'Browsing alone opens nothing: a folder only joins the session when it is chosen.',
+      ],
+      'Some folders are **read but never written**: PAOFLOW’s own `PSEUDOS/` and `BASIS/`, and every folder given with `--allow-read DIR`. *Places* shows them with a lock.',
+      '`--fixed-root` keeps the session inside the root and the `--allow-read` folders: no *home* or *computer* places and no opening. Use it when the Studio is shared or when the root should be the only place written.',
+      '`--read-only` turns the session into a viewer: no writes and no runs (folders chosen outside the root open for reading).',
     ],
   },
   {
@@ -137,7 +143,7 @@ const SECTIONS = [
     title: 'Results: finding and plotting',
     body: [
       [
-        '*Change…* opens any folder under the root or a read-only folder: an `output/` folder, a run folder, an electron–phonon system folder. Subfolders are scanned too.',
+        '*Change…* opens any folder of the machine (see *Folders and permissions*): an `output/` folder, a run folder, an electron–phonon system folder. Subfolders are scanned too.',
         'The tree groups the datasets by category; tensor components, spin channels and temperatures of one quantity are the series of one figure. *filter* searches titles and file names.',
         '*Options* depend on the dataset: energy window of band plots, tensor component and temperatures of transport (at most five at once), PDOS grouping (element and ℓ, site, shell, orbital) and display (lines or stacked areas), the quantity of tables that mix units, the η column of absorption spectra, the bands, smoothing and zone of a Fermi surface.',
         'Figures zoom by dragging, pan with the toolbar, and reset with a double click; hovering shows values. *Table view* lists the plotted numbers.',
@@ -184,7 +190,7 @@ const SECTIONS = [
     title: 'Command line',
     body: [
       {
-        code: 'paoflow-studio [--root DIR] [--port 8765] [--no-browser] [--allow-read DIR]...\n               [--qe-bin DIR]... [--read-only] [--max-ranks N] [--verbose]\npaoflow-studio plot DIR                     # open the Results tab on DIR\npaoflow-studio report DIR -o report.html    # static HTML report, no server\npaoflow-gen --gui                           # the paoflow-gen questions in the browser',
+        code: 'paoflow-studio [--root DIR] [--port 8765] [--no-browser] [--allow-read DIR]...\n               [--qe-bin DIR]... [--fixed-root] [--read-only] [--max-ranks N] [--verbose]\npaoflow-studio plot DIR                     # open the Results tab on DIR\npaoflow-studio report DIR -o report.html    # static HTML report, no server\npaoflow-gen --gui                           # the paoflow-gen questions in the browser',
       },
       'Without a free port at 8765 the next twenty are tried. The forms, plots and runs have command-line equivalents: `paoflow-gen`, `paoflow-gen-qe`, `paoflow-genbasis-ps`, the generated `plot.py`, and `PAOFLOW.results.ResultsFolder` in scripts and notebooks.',
     ],
@@ -194,8 +200,10 @@ const SECTIONS = [
     title: 'Troubleshooting',
     body: [
       [
-        '“… is outside the GUI root …”: the path is outside `--root` and the read-only folders. Start the server with a wider `--root`, or add the folder with `--allow-read` if it only needs reading.',
-        '“… is read-only (an --allow-read folder)”: writes go under the root; pick a working folder there.',
+        '“… is outside the GUI root …”: the path is outside the root and every opened folder (a path typed into a form). Choose its folder once with *Change…* or *Browse…*; with `--fixed-root`, start the server with a wider `--root` or add the folder with `--allow-read`.',
+        '“… is read-only …”: an `--allow-read` folder, or one opened for reading only (picked with *Browse…* for pseudopotentials or results). Choose it with *Change…* in Setup to open it for writing.',
+        '“this PAOFLOW Studio keeps to its root (--fixed-root)”: the server was started with `--fixed-root`; restart it without that option, or with a wider `--root`.',
+        'A system folder that lists fewer entries than `ls`: entries your account cannot read are skipped.',
         '“no Quantum ESPRESSO installation found”, or a build missing from the list: load QE in the shell, or name its folder with `paoflow-studio --qe-bin DIR`, and start the server again (*↻* finds builds installed in the searched places meanwhile).',
         '“existing files differ”: a file changed on disk since the preview; write again and confirm.',
         '“PAOFLOW was updated after this server started” (a yellow banner), or a button that does nothing: the page is newer than the running server (a source checkout after `git pull` or an edit). Stop `paoflow-studio` with Ctrl-C and start it again.',

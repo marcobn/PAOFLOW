@@ -869,3 +869,44 @@ def test_axis_limits_typed_in(browser, studio):
     _wait(lambda: browser.execute_script(ranges)[1] is True)
     assert browser.execute_script(values) == ['', '', '', '']
     assert _errors(browser) == []
+
+
+def test_change_folder_anywhere_on_the_computer(browser, studio, tmp_path):
+    """Change… browses from / to a folder outside the root; choosing it opens it (writable) and
+    makes it the working folder."""
+    server, _work = studio
+    elsewhere = tmp_path.parent / ('%s_elsewhere' % tmp_path.name) / 'GaAs'
+    elsewhere.mkdir(parents=True)
+    (elsewhere / 'gaas.scf.in').write_text("&control\n  calculation = 'scf'\n/\n")
+    _open(browser, server, 'setup')
+    browser.find_element(By.XPATH, "//button[text()='Change…']").click()
+    _wait(lambda: browser.find_elements(By.XPATH, "//dialog//button[text()='computer']"))[0].click()
+    parts = elsewhere.resolve().parts[1:]
+    for index, part in enumerate(parts):
+        entry = _wait(
+            lambda part=part: [
+                e
+                for e in browser.find_elements(
+                    By.CSS_SELECTOR, 'dialog .browser-entry.dir .grow.ellipsis'
+                )
+                if e.text == part
+            ]
+        )[0]
+        entry.click()
+        here = '/' + '/'.join(parts[: index + 1])
+        _wait(  # the status line of the picker: the absolute path listed
+            lambda here=here: browser.execute_script(
+                "return document.querySelector('dialog .small.muted:last-child').textContent"
+            )
+            == here
+        )
+    browser.find_element(By.XPATH, "//dialog//button[text()='Use this folder']").click()
+    _wait(
+        lambda: browser.execute_script('return window.paoflowApp.setup.workdir')
+        == str(elsewhere.resolve())
+    )
+    detected = "return (window.paoflowApp.setup.detection.pw_inputs || []).join(',')"
+    _wait(lambda: browser.execute_script(detected) == 'gaas.scf.in')
+    opened = browser.execute_script('return window.paoflowApp.session.opened')
+    assert opened == [{'path': str(elsewhere.resolve()), 'writable': True}]
+    assert _errors(browser) == []

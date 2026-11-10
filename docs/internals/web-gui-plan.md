@@ -116,7 +116,8 @@ two:
   and the path answers the server reads (`savedir`, `pw_template`): inside the root or a read-only folder.
 
 The read-only folders are the `--allow-read DIR` options plus PAOFLOW's own `PSEUDOS/` and `BASIS/`. They are
-fixed at start-up, so no request can add one, and symbolic links that leave them are refused. Listings report
+fixed at start-up, and symbolic links that leave them are refused. (Since 9 November the picker can also open
+other folders for the session, unless `--fixed-root`: see *Browse anywhere* below.) Listings report
 their `place` (`writable` false), and the folder picker shows them as places. Tests: `test_read_roots.py`, plus a
 browser test that picks `PSEUDOS` in the QE-input tool.
 
@@ -1094,3 +1095,32 @@ reached the local Studio, which answered `{"error": "wrong token"}`.
 - Help *Remote machines* has a tmux/conda/same-port/free-port/Plotly checklist, and troubleshooting has the
   three messages. The how-to and the `gui/cli.py` docstring say the same.
 - Tests: `test_wrong_token_and_wrong_port_explain_the_tunnel`, `test_startup_message_gives_the_tunnel`.
+
+**Browse anywhere, open on choice (9 November 2026, user request).** The folder picker used to stop at the root
+and the `--allow-read` folders. It now walks the whole tree of the machine, and a folder chosen outside the root
+joins the session.
+
+- `Sandbox.write_roots` and `Sandbox.open(path, writable)`. `resolve` (writes, runs) accepts the root plus the
+  write roots. `resolve_readable` also accepts the read roots, and `place` reports all three.
+- `GET /api/fs/list` with an absolute path outside every root lists it (`place.outside` true) without opening it.
+  Entries the account cannot inspect (`stat`, `is_dir` or the tags raise `OSError`, as in macOS `/private/var`)
+  are skipped, so the listing does not fail.
+- `POST /api/fs/open {path, writable}` opens a folder. The picker posts it when the chosen path is outside:
+  - writable for a working folder (Setup *Change…*, Runs *Run a pw.x input…*, `places: false`);
+  - read-only for the other pickers (form *Browse…*, Results, experimental data).
+
+  `--read-only` forces read-only. Opened folders persist in `<root>/.paoflow-studio/opened.json` and are reloaded
+  at start-up. The session reports `home`, `fixed_root` and `opened`.
+- Picker places: root, home, computer (`/`), the opened folders (writable ones only in a writable picker), and the
+  read roots with a lock. Outside a place, the crumbs are the absolute steps, plus a chip saying how the folder
+  will open.
+- `--fixed-root` restores the old rule. It removes the home and computer places, `/api/fs/list` refuses paths
+  outside the roots, `/api/fs/open` answers 403, and `parent` stops at the root.
+- Security: the token, Host and Origin checks are unchanged. The token now reaches whatever the account can
+  reach, and the how-to says so.
+- Tests:
+  - `test_sandbox_opens_folders_for_writing_or_reading`;
+  - `test_picker_browses_the_computer_and_opens_folders` (list, open, detect, persistence, `--read-only`,
+    `--fixed-root`, an unreadable entry);
+  - browser: `test_change_folder_anywhere_on_the_computer` walks from `/` to a temporary folder and makes it the
+    working folder.

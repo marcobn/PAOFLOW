@@ -61,6 +61,7 @@ def _serve(args: argparse.Namespace, start: str | None, tab: str) -> int:
         start=start,
         read_roots=args.allow_read or (),
         qe_bins=args.qe_bin or (),
+        fixed_root=args.fixed_root,
     )
     server = None
     last_error = None
@@ -162,6 +163,12 @@ def build_parser() -> argparse.ArgumentParser:
         help='a Quantum ESPRESSO build (its folder or bin/) to offer in the Runs tab; repeatable. '
         'Builds on the PATH, next to it, in ~/Programs, ~/Local/Programs, /opt, /usr/local and '
         'the conda environments are found by themselves',
+    )
+    parser.add_argument(
+        '--fixed-root',
+        action='store_true',
+        help='keep the browser inside --root and the read-only folders (by default the folder '
+        'picker browses the whole computer and a chosen folder joins the session)',
     )
     parser.add_argument('--max-ranks', type=int, default=None, help='cap of the MPI ranks of a run')
     parser.add_argument('--token', default=None, help=argparse.SUPPRESS)

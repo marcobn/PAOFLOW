@@ -46,20 +46,42 @@ export function relativeTo(from, path) {
   return relative || '.';
 }
 
-// Resolves with the chosen folder (or file) or null. `places: false` keeps the picker inside the
-// writable root (the working folder of the generators).
+// Resolves with the chosen folder (or file) or null.  The picker browses the whole computer
+// (Home, /) unless the server runs with --fixed-root; a folder chosen outside the folders of the
+// session is opened first (/api/fs/open): writable for a working folder (`places: false`), read
+// only for the other pickers (pseudopotentials, saves, results, files).
 export async function pickFolder(
   start,
   { title = 'Choose the working folder', allowFiles = false, places = true } = {},
 ) {
   let current = start || '.';
+  let outside = false;
   let selectedFile = null;
   const session = window.paoflowApp ? window.paoflowApp.session : { read_roots: [] };
-  const readRoots = places ? session.read_roots || [] : [];
+  const writable = places === false;
   const placesBar = h('div', { class: 'places' });
   const crumbs = h('div', { class: 'crumbs' });
   const list = h('div', { class: 'browser-list' });
   const status = h('div', { class: 'small muted', style: { marginTop: '6px' } });
+
+  function placeList() {
+    const items = [['root', '.', session.root]];
+    if (!session.fixed_root) {
+      items.push(['home', session.home, session.home], ['computer', '/', '/']);
+      for (const folder of session.opened || []) {
+        if (!writable || folder.writable)
+          items.push([folder.path.split('/').slice(-2).join('/'), folder.path, folder.path]);
+      }
+    }
+    if (!writable)
+      for (const folder of session.read_roots || [])
+        items.push([
+          `${folder.split('/').slice(-2).join('/')} 🔒`,
+          folder,
+          `${folder} (read-only)`,
+        ]);
+    return items;
+  }
 
   async function load(path) {
     let listing;
@@ -70,41 +92,52 @@ export async function pickFolder(
       return;
     }
     current = listing.path;
+    outside = Boolean(listing.place.outside);
     selectedFile = null;
     clear(placesBar);
-    if (readRoots.length) {
+    const items = placeList();
+    if (items.length > 1) {
       placesBar.append(h('span', { class: 'small muted' }, 'Places'));
-      for (const [label, target] of [
-        ['root', '.'],
-        ...readRoots.map((folder) => [folder, folder]),
-      ]) {
-        const active = listing.place.path === target;
+      for (const [label, target, hint] of items) {
+        const active = target === listing.path;
         placesBar.append(
           h(
             'button',
-            {
-              class: `chip${active ? ' accent' : ''}`,
-              title: target === '.' ? session.root : `${target} (read-only)`,
-              onclick: () => load(target),
-            },
-            label === 'root' ? 'root' : label.split('/').slice(-2).join('/'),
-            target === '.' ? null : ' 🔒',
+            { class: `chip${active ? ' accent' : ''}`, title: hint, onclick: () => load(target) },
+            label,
           ),
         );
       }
     }
     clear(crumbs);
     const place = listing.place;
-    const inner =
-      current === place.path ? '' : current.slice(place.path === '.' ? 0 : place.path.length + 1);
-    const parts = inner ? inner.split('/') : [];
-    crumbs.append(h('button', { onclick: () => load(place.path) }, place.label));
-    parts.forEach((part, index) => {
-      const target = join(place.path, parts.slice(0, index + 1).join('/'));
-      crumbs.append(' / ', h('button', { onclick: () => load(target) }, part));
-    });
-    if (!place.writable)
-      crumbs.append(h('span', { class: 'chip warn', style: { marginLeft: '8px' } }, 'read-only'));
+    if (outside) {
+      // An absolute path anywhere on the computer: every folder of it is a step.
+      const parts = current.split('/').filter(Boolean);
+      crumbs.append(h('button', { onclick: () => load('/') }, '/'));
+      parts.forEach((part, index) => {
+        const target = `/${parts.slice(0, index + 1).join('/')}`;
+        crumbs.append(index ? ' / ' : '', h('button', { onclick: () => load(target) }, part));
+      });
+      crumbs.append(
+        h(
+          'span',
+          { class: 'chip warn', style: { marginLeft: '8px' }, title: 'outside the Studio folders' },
+          writable ? 'opened for writing when chosen' : 'opened for reading when chosen',
+        ),
+      );
+    } else {
+      const inner =
+        current === place.path ? '' : current.slice(place.path === '.' ? 0 : place.path.length + 1);
+      const parts = inner ? inner.split('/') : [];
+      crumbs.append(h('button', { onclick: () => load(place.path) }, place.label));
+      parts.forEach((part, index) => {
+        const target = join(place.path, parts.slice(0, index + 1).join('/'));
+        crumbs.append(' / ', h('button', { onclick: () => load(target) }, part));
+      });
+      if (!place.writable)
+        crumbs.append(h('span', { class: 'chip warn', style: { marginLeft: '8px' } }, 'read-only'));
+    }
     clear(list);
     if (listing.parent !== null) {
       list.append(
@@ -144,7 +177,7 @@ export async function pickFolder(
   }
 
   await load(current);
-  return dialog({
+  const chosen = await dialog({
     title,
     body: h('div', {}, placesBar, crumbs, list, status),
     actions: [
@@ -156,4 +189,20 @@ export async function pickFolder(
       },
     ],
   });
+  if (!chosen || !outside) return chosen;
+  // Outside the folders of the session: open the folder (a file's folder) before using it.
+  const folder = allowFiles ? chosen.slice(0, chosen.lastIndexOf('/')) || '/' : chosen;
+  try {
+    const opened = await api.post('/api/fs/open', { path: folder, writable });
+    if (window.paoflowApp) window.paoflowApp.session.opened = opened.opened;
+    if (writable && !opened.writable) {
+      toast(`${folder} is read-only for this Studio (--read-only)`, 'warn', 6000);
+      return null;
+    }
+    toast(`Opened ${folder}${opened.writable ? '' : ' (read-only)'}`, 'ok');
+  } catch (error) {
+    toast(error.message, 'bad', 7000);
+    return null;
+  }
+  return chosen;
 }

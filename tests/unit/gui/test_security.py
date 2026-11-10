@@ -50,9 +50,15 @@ def test_security_headers(client):
     assert response.getheader('X-Content-Type-Options') == 'nosniff'
 
 
-def test_paths_stay_inside_the_root(client, gui_root, tmp_path):
-    assert client.get('/api/fs/list?path=..')[0] == 403
-    assert client.get('/api/fs/list?path=/etc')[0] == 403
+def test_paths_stay_inside_the_root(client, make_client, gui_root, tmp_path):
+    assert client.get('/api/fs/list?path=..')[0] == 403  # relative paths stay in the root
+    # The folder picker lists the computer (absolute paths) but nothing is read or written
+    # there until the folder is opened (/api/fs/open); --fixed-root does not even list.
+    status, listing, _ = client.get('/api/fs/list?path=/etc')
+    assert status == 200 and listing['place']['outside']
+    assert client.get('/api/fs/read?path=/etc/hosts')[0] == 403
+    assert client.get('/api/workspace/detect?path=/etc')[0] == 403
+    assert make_client(fixed_root=True).get('/api/fs/list?path=/etc')[0] == 403
     outside = tmp_path / 'outside'
     outside.mkdir()
     os.symlink(outside, gui_root / 'link')

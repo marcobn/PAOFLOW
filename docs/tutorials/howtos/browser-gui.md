@@ -21,20 +21,35 @@ paoflow-gen --gui                     # the same questions as paoflow-gen, in th
 ```
 
 The server prints a URL that ends with `?token=...`; open it once and the browser keeps the session. The GUI
-writes and runs only under `--root`.
+starts on `--root`, shown in the header.
 
-It may also *read* other folders, but never write them:
+### Folders
 
-- PAOFLOW's own `PSEUDOS/` and `BASIS/`, always;
+The folder picker (*Change…*, *Browse…*) can browse the whole directory tree of the machine. Its *Places* are
+**root**, **home** and **computer** (`/`). Folders your account cannot read are left out of the listings.
+
+Browsing opens nothing. A folder outside the root joins the session only when you choose it:
+
+- A **working folder**, chosen with *Change…* in Setup or *Run a pw.x input…* in Runs, is opened for reading and
+  writing. The generators write there and the runs start there.
+- A folder picked **to read from** is opened for reading only: pseudopotentials (*Browse…* in a form), results (the
+  Results tab) or experimental data.
+
+The picker says which of the two it will do before you choose. Opened folders appear under *Places* and are
+remembered across restarts in `<root>/.paoflow-studio/opened.json`. Delete that file to forget them.
+
+Some folders are always read-only:
+
+- PAOFLOW's own `PSEUDOS/` and `BASIS/`;
 - every folder given with `--allow-read`, for example pseudopotentials or results kept elsewhere:
 
 ```bash
 paoflow-studio --root ~/runs --allow-read ~/pseudos --allow-read /data/TaC_results
 ```
 
-The folder picker lists them under *Places*, marked read-only. The QE-input and basis tools take a
-pseudopotential folder from there (*Browse…*), and the Results tab can open results in them. The list is fixed
-when the server starts; nothing in the browser can widen it.
+To keep a session inside the root and the `--allow-read` folders, start it with `--fixed-root`. The picker then
+has no *home* or *computer* place, and the browser cannot open other folders. This is the setting for a Studio
+whose root should be the only place written.
 
 **On a remote machine** (cluster login node, workstation), start the server without a browser, inside `tmux` so
 that it survives the logout, and tunnel its port from your laptop:
@@ -59,11 +74,15 @@ Three things make it work:
 
 The server listens on `127.0.0.1` only. Every request needs the session token, and requests whose Host or Origin
 header is not the GUI's own are refused. These checks keep other users of a shared login node out of your session.
+Anyone holding the token URL can open any folder your account can reach, so keep it private. Start the server
+with `--fixed-root` to confine a session to its root.
 
 Other options:
 
 - `--allow-read DIR`: also read `DIR`, never write it (repeatable).
-- `--read-only`: browse and plot only, with no writes and no runs.
+- `--fixed-root`: no browsing or opening outside the root and the `--allow-read` folders.
+- `--read-only`: browse and plot only, with no writes and no runs. Folders chosen outside the root open for
+  reading.
 - `--max-ranks N`: cap the MPI ranks of a run (the default is the core budget of the machine).
 - `--port`: the first port to try (the default is 8765).
 
