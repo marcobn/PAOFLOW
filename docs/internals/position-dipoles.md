@@ -105,6 +105,13 @@ not a validation of a velocity operator.
   basis tables of the projection, else the UPF `PP_PSWFC` block), so ultrasoft and PAW saves run the
   dipole route like norm-conserving ones (the norm-conserving guard of the removed term went with it on
   2026-10-22; checked on ultrasoft Si and PAW GaAs).
+- PAW augmentation: the partial-wave correction of the position matrix (`PP_FULL_WFC`) and the
+  q_ij term of the overlap (`ProjectorAugmentation`, `build_projector_augmentation`,
+  `augmentation_kspace`) are added to S(k), ∂_k S and X(k) by
+  `position_dipole_operator(augmentation='auto')`, scalar-relativistic only. The `dHksp` route
+  (`position_dipoles_on_grid`) does not apply it yet. With an all-electron-only basis S + ΔS can
+  be nearly singular (a `RuntimeWarning` flags ill-conditioned PAO overlaps); prefer the UPF
+  pseudo-orbital basis (`configuration='minimal'`) for ultrasoft / PAW species.
 - The former non-local correction Δp was removed in October 2026 (`nonlocal-velocity.md`):
   v = i[H, τ + d] is already the full commutator of a Hamiltonian that contains V_NL, and adding
   Δp double counted (exact plane-wave ε₂ of Si: dipoles 0.99–1.01, dipoles + Δp 0.87).

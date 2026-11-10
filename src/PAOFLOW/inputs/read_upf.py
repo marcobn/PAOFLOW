@@ -78,6 +78,9 @@ class UPF:
     has_augmentation : bool
         Whether the pseudopotential exposes a ``PP_AUGMENTATION`` block
         (true for USPP and PAW).
+    aewfc, pswfc_partial : list of np.ndarray or None
+        PAW partial waves of every projector (``PP_FULL_WFC``: ``r phi_i(r)`` all-electron and
+        pseudo, in the order of :attr:`beta`); ``None`` without the block.
     rho_atc : np.ndarray or None, shape ``(npoints,)``
         Smooth pseudo-core density :math:`n_c(r)` in :math:`\mathrm{Bohr}^{-3}`
         from ``PP_NLCC``.  ``None`` when the pseudopotential carries no
@@ -300,6 +303,7 @@ class UPF:
 
         self._read_nonlocal_v2(root)
         self._read_augmentation_v2(root)
+        self._read_full_wfc_v2(root)
 
         # TODO: GIPAW data
 
@@ -379,6 +383,30 @@ class UPF:
         if dij.size != expected:
             raise RuntimeError(f'UPF v2 PP_DIJ size mismatch: expected {expected}, got {dij.size}.')
         self.dion = dij.reshape(self.nproj, self.nproj) / 2.0
+
+    def _read_full_wfc_v2(self, root):
+        """Read ``PP_FULL_WFC`` (PAW): the all-electron and pseudo partial waves of every projector.
+
+        Sets :attr:`aewfc` and :attr:`pswfc_partial`: lists (one entry per projector, in the
+        order of :attr:`beta`) of ``r phi(r)`` on :attr:`r`, or ``None`` when the block is absent
+        (norm-conserving and ultrasoft files). They give the PAW augmentation of a local operator
+        between projectors, e.g. the position: ``<phi_i|r|phi_j> - <phi~_i|r|phi~_j>``.
+        """
+        self.aewfc = None
+        self.pswfc_partial = None
+        node = root.find('PP_FULL_WFC')
+        if node is None:
+            return
+        ae, ps = [], []
+        for i in range(1, self.nproj + 1):
+            ae_node = node.find(f'PP_AEWFC.{i}')
+            ps_node = node.find(f'PP_PSWFC.{i}')
+            if ae_node is None or ps_node is None or ae_node.text is None or ps_node.text is None:
+                return
+            ae.append(np.fromstring(ae_node.text, sep=' ', dtype=float))
+            ps.append(np.fromstring(ps_node.text, sep=' ', dtype=float))
+        self.aewfc = ae
+        self.pswfc_partial = ps
 
     def _read_augmentation_v2(self, root):
         r"""Read PP_NONLOCAL/PP_AUGMENTATION (USPP and PAW).
