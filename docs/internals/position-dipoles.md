@@ -110,8 +110,9 @@ not a validation of a velocity operator.
   `augmentation_kspace`) are added to S(k), ∂_k S and X(k) by
   `position_dipole_operator(augmentation='auto')`, scalar-relativistic only. The `dHksp` route
   (`position_dipoles_on_grid`) does not apply it yet. With an all-electron-only basis S + ΔS can
-  be nearly singular (a `RuntimeWarning` flags ill-conditioned PAO overlaps); prefer the UPF
-  pseudo-orbital basis (`configuration='minimal'`) for ultrasoft / PAW species.
+  be nearly singular (a `RuntimeWarning` flags ill-conditioned PAO overlaps); the default basis
+  route of `projections(pseudo_orbitals='auto')` takes the valence shells of ultrasoft / PAW
+  species from the UPF pseudo-orbitals (`internal-basis.md`).
 - The former non-local correction Δp was removed in October 2026 (`nonlocal-velocity.md`):
   v = i[H, τ + d] is already the full commutator of a Hamiltonian that contains V_NL, and adding
   Δp double counted (exact plane-wave ε₂ of Si: dipoles 0.99–1.01, dipoles + Δp 0.87).

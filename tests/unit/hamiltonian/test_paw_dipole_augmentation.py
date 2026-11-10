@@ -99,12 +99,10 @@ def test_isolated_atom_augmentation_reproduces_the_radial_references(ga):
     pseudo-orbitals: S-orthonormality of the pseudo-orbitals and the all-electron <4s|r|4p>."""
     from PAOFLOW.elphon.pseudopotential_terms import qe_simpson
     from PAOFLOW.hamiltonian.nonlocal_velocity import load_pao_orbitals
-    from PAOFLOW.projection.do_atwfc_proj import build_pswfc_basis_all
+    from PAOFLOW.projection.do_atwfc_proj import build_basis_from_sources
 
     dc = _IsolatedGa()
-    # the UPF pseudo-orbitals of Ga (PP_PSWFC: 4S, 4P, 3D)
-    basis, _ = build_pswfc_basis_all(dc)
-    assert [b['label'] for b in basis if b['m'] == 1] == ['4S', '4P', '3D']
+    basis, _ = build_basis_from_sources(dc, {'Ga': ['4S', '4P', '3D']})
     dc.data_arrays['atomic_basis'] = basis
     catalog = load_pao_orbitals(dc)
     pairs = pd.enumerate_pao_pairs(catalog, np.eye(3) * 30.0)

@@ -62,15 +62,32 @@ bands).
 Two consequences for ultrasoft / PAW runs:
 
 - **Projectabilities change** (they were inflated by the re-orthonormalisation): the
-  62-orbital all-electron basis of GaAs now projects the Ga 3d semicore bands at 0.91 and 12
-  instead of 18 bands above 0.95. All-electron radial tables (`BASIS/`) are not the natural
-  partners of a pseudo-wavefunction inside the augmentation sphere; prefer the pseudo-atom
-  tables generated from the same pseudopotentials (`paoflow-genbasis-ps`, `BASIS_PS/`) or the
-  UPF pseudo-atomic orbitals, and check the projectability vector.
+  62-orbital all-electron basis of GaAs projects the Ga 3d semicore bands at 0.91 and 12
+  instead of 18 bands above 0.95 in the augmented metric. All-electron radial tables are not
+  the natural partners of a pseudo-wavefunction inside the augmentation sphere; see the next
+  section for the basis route that replaces them.
 - **Reference data move**: every integration example that uses internal projections on
   ultrasoft / PAW inputs (`example10`, `example17`) needs regenerated `Reference/` assets.
 
-### Spin-orbit coupling: the spinor augmentation
+## Which shells come from where: `projections(pseudo_orbitals='auto')`
+
+Since PAOFLOW 3.0.1 the shells of a configuration are taken from two sources
+(`projection/do_atwfc_proj.py::build_basis_from_sources`, records ordered atom by atom as
+`pao_sym` requires): the shells that the pseudopotential carries as pseudo-orbitals (`PP_PSWFC`,
+the pseudo-atom's own solutions, consistent with the augmented metric) from the UPF, the other
+shells of the preset or dictionary from the tables of `basispath`; the pseudo-orbitals of a
+species that mixes the two are resampled on the mesh of its tables, so that every shell of a
+species shares one radial mesh (the position-dipole tables require it). `pseudo_orbitals='auto'`
+(default) does this for ultrasoft / PAW inputs and keeps the pure table basis for
+norm-conserving ones; `True` / `False` force either choice (not with `'minimal'`, which is the
+UPF basis already, nor with spin-orbit). On PAW GaAs (example10, 62 orbitals):
+
+| basis | bands above 0.95 | Ga 3d bands | sp valence | conduction 9–17 |
+|---|---|---|---|---|
+| all-electron tables only (`pseudo_orbitals=False`) | 12 | 0.86–0.90 | 0.98 | 0.98 → 0.92 |
+| UPF pseudo-orbitals + all-electron augmentation (`'auto'`) | 23 | 1.00 | 0.995 | 0.995 → 0.96 |
+
+## Spin-orbit coupling with ultrasoft / PAW: the spinor augmentation
 
 With fully relativistic ultrasoft / PAW pseudopotentials (`lspinorb`, `npol = 2`) the charges
 are rotated into the spinor basis exactly as in QE's `init_us_1` (`qq_so`):
