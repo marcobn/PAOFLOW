@@ -132,7 +132,8 @@ def build_command(
     app : GuiApp
         The application (root, rank cap, Quantum ESPRESSO installations).
     step : dict
-        ``argv``, ``cwd`` (relative to the root), ``mpi`` and ``ranks_env``.
+        ``argv``, ``cwd`` (relative to the root), ``mpi`` and ``ranks_env``; ``capture`` runs a
+        ``python`` plot script through :mod:`PAOFLOW.graphics.figure_capture` (the Plots tab).
     ranks : int
         Requested MPI ranks.
     qe_bin : str, optional
@@ -173,6 +174,21 @@ def build_command(
         if not script.is_file():
             raise HttpError(400, '%s not found (write the files first)' % argv[1])
         command = [_python_executable(), '-u', *argv[1:]]
+        if step.get('capture'):
+            # A plot script without a display (the Plots tab): its figures go to
+            # figures/<script>/ next to it, as PNG and PDF files listed in figures.json.
+            from ..graphics.figure_capture import capture_folder
+
+            figures = app.resolve(str(cwd / capture_folder(argv[1])))
+            command = [
+                _python_executable(),
+                '-u',
+                '-m',
+                'PAOFLOW.graphics.figure_capture',
+                '--out',
+                str(figures),
+                *argv[1:],
+            ]
     elif program == 'bash':
         if len(argv) != 2 or not SHELL_SCRIPT.match(argv[1]):
             raise HttpError(400, 'bash runs one generated shell script')

@@ -985,3 +985,44 @@ def test_folder_change_reaches_every_tab(browser, studio, tmp_path):
     assert 'Setup and Runs stay in Si' in warning[0].text
     assert browser.execute_script(folders) == ['Si', 'Si', pseudos]
     assert _errors(browser) == []
+
+
+def test_plots_tab_runs_the_plot_script(browser, studio):
+    """The Plots tab runs the generated plot.py without a display and shows its figures; a plot
+    step of the run plan does the same from the Runs tab."""
+    from PAOFLOW.gen.outputs import workflow_outputs
+    from PAOFLOW.gen.questions import WORKFLOWS
+    from PAOFLOW.gen.questions.model import Context
+    from PAOFLOW.gen.questions.resolve import resolve_form
+
+    server, work = studio
+    form = resolve_form(
+        WORKFLOWS['run'], {'properties': ['bands', 'dos']}, Context(workdir=str(work))
+    )
+    files = {f.path: f.content() for f in workflow_outputs('run', form.config)}
+    (work / 'plot.py').write_text(files['plot.py'])
+    _open(browser, server, 'plots')
+    _wait(lambda: 'plot.py' in browser.find_element(By.CSS_SELECTOR, '#view-plots .side').text)
+    arguments = browser.find_element(By.CSS_SELECTOR, '.plots-head input[type="text"]')
+    assert arguments.get_attribute('value') == '--all'
+    browser.find_element(By.XPATH, "//*[@id='view-plots']//button[text()='Run']").click()
+    loaded = (
+        "return [...document.querySelectorAll('#view-plots .figure-card img')]"
+        '.filter((img) => img.complete && img.naturalWidth > 0).length'
+    )
+    _wait(lambda: browser.execute_script(loaded) >= 4, timeout=60)
+    captions = [e.text for e in browser.find_elements(By.CSS_SELECTOR, '.figure-card figcaption')]
+    assert any('Band structure' in text for text in captions)
+    assert (work / 'figures' / 'plot' / 'figures.json').is_file()
+    # Runs: the interactive plot step has "Run in Plots"
+    (work / 'figures' / 'plot' / 'figures.json').unlink()
+    browser.execute_script(
+        "window.paoflowApp.runs.setPlan('Si', [{label: 'Figures (plot.py)', argv: ['python', "
+        "'plot.py'], cwd: '.', interactive: true, command: 'python plot.py'}], 'run');"
+        "window.paoflowApp.show('runs')"
+    )
+    _wait(lambda: browser.find_elements(By.XPATH, "//button[text()='Run in Plots']"))[0].click()
+    _wait(lambda: (work / 'figures' / 'plot' / 'figures.json').is_file(), timeout=60)
+    assert browser.execute_script('return window.paoflowApp.currentTab()') == 'plots'
+    _wait(lambda: browser.execute_script(loaded) >= 4, timeout=60)
+    assert _errors(browser) == []

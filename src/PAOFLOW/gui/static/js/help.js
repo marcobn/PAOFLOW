@@ -10,11 +10,12 @@ const SECTIONS = [
     id: 'start',
     title: 'Getting started',
     body: [
-      'PAOFLOW Studio is the browser interface of PAOFLOW. It writes the driver scripts of `paoflow-gen`, runs them on this machine and plots what they produce. It has three tabs:',
+      'PAOFLOW Studio is the browser interface of PAOFLOW. It writes the driver scripts of `paoflow-gen`, runs them on this machine and plots what they produce. It has four tabs:',
       [
         '**Setup**: choose a folder, pick a workflow, answer its questions, preview and write the files.',
         '**Runs**: start the commands of the written workflow and follow their logs.',
         '**Results**: open a folder with PAOFLOW outputs and explore them as interactive figures.',
+        '**Plots**: run the generated plot scripts (`plot.py`, …) without a display and see the figures they make.',
       ],
       '**You already have a QE run** (a `<prefix>.save` folder):',
       [
@@ -56,7 +57,7 @@ const SECTIONS = [
       'The save also gives defaults: `ibrav`, spin–orbit and the 2D flag of the property run; for the electron–phonon system the `pw.x` input gives the metal flag, `nelec`, `nbnd` and the coupling source (EPW for ultrasoft or PAW pseudopotentials). The command line uses the same defaults.',
       'Workflows marked *suggested* match what is in the folder.',
       [
-        '**One folder for every tab.** A folder chosen in one tab becomes the folder of the others: *Change…* here moves Runs and Results to it, *Run a pw.x input…* in Runs moves Setup and Results to the folder of the input, and *Change…* in Results moves Setup and Runs.',
+        '**One folder for every tab.** A folder chosen in one tab becomes the folder of the others: *Change…* here moves Runs, Results and Plots to it, *Run a pw.x input…* in Runs moves Setup and Results to the folder of the input, and *Change…* in Results moves Setup and Runs.',
         'A Results folder named `output/` gives Setup and Runs its parent, the run folder; Setup on that run folder leaves Results on its `output/`.',
         'A Results folder that can only be read (an `--allow-read` folder, PAOFLOW’s `PSEUDOS/`, a folder opened for reading) stays in Results: Setup and Runs keep their folder and say so.',
         'Runs shows the last plan written in the folder, or none yet.',
@@ -140,7 +141,7 @@ const SECTIONS = [
         '*Quantum ESPRESSO* chooses the build: every installation found on the machine (the one on the PATH, the folders next to it, `~/Programs`, `~/Local/Programs`, `/opt`, `/usr/local`, conda environments, and `paoflow-studio --qe-bin DIR`), with its version; *serial* marks a build without MPI (1 rank). The choice is remembered; *↻* searches again. Its `bin/` also goes first on the PATH of every run, so `run_qe.sh` and the drivers that call QE use it.',
         'The log follows the run live; scrolling up pauses the follow. *Cancel* stops the whole process group. *Results* opens the folder of the run.',
         'Runs keep going when the browser or the server is closed. A restarted server lists them again (records and logs in `.paoflow-studio/jobs/` under the root).',
-        'Steps marked *interactive* (`plot*.py`) need a terminal or a display; the Results tab replaces them. Steps with an *Open Setup* button continue in the Setup tab.',
+        'Plot steps (`plot*.py`) open windows: *Run in Plots* runs them in the Plots tab instead, without a display. Other steps marked *interactive* need a terminal. Steps with an *Open Setup* button continue in the Setup tab.',
       ],
     ],
   },
@@ -158,6 +159,24 @@ const SECTIONS = [
         '**Fermi surfaces** are drawn in 3D, coloured by the Fermi velocity, in the Wigner–Seitz zone (needs scikit-image). `FermiSurf_<s>.bxsf` (all bands, eV) and the pyskeaf files `Fermi_surf_band_<n>.bxsf` (one band each, written in Rydberg with the reciprocal vectors without 2π, as SKEAF wants them) give the same picture: the latter are converted, and their bands are named from the file content (file 1 may hold band 2).',
         '*PAOFLOW runs of this folder* (`paoflow_outputs.json`) records the DFT Fermi energy, spin and basis facts and the files of every run.',
       ],
+    ],
+  },
+  {
+    id: 'plots',
+    title: 'Plots: the figures of the plot scripts',
+    body: [
+      'The Plots tab lists the plot scripts of the working folder: the `plot*.py` written by Setup (*Write the plot scripts* in the Output box) and the `plot_*.py` of the workflow folders of an electron–phonon system (`superconductivity/plot_me.py`, ...).',
+      [
+        '*Run* starts the selected script with no display, through the Runs tab (its log is there too). Each figure the script shows (`plt.show()`) or saves (`savefig`) is kept, once, as PNG (shown here) and PDF.',
+        'The figures go to `figures/<script>/` next to the script (`figures/plot/01_Band_structure.png`, ...), listed in `figures.json`; a new run replaces them. They appear one by one while the script runs.',
+        'The arguments field is passed to the script: `--all` is filled in when the script has it (every quantity, no menu); add `--emin -6 --emax 4` and the like (the options of the script are listed under the field). Prompts (`input()`) take their default answers.',
+        'Click a figure to enlarge it; *PNG* and *PDF* download it. *Log of the last run* shows what the script printed, and opens by itself when it failed (for example `run main.py first`).',
+        'The Plots tab follows the working folder of Setup, Runs and Results.',
+      ],
+      {
+        code: 'python -m PAOFLOW.graphics.figure_capture --out figures/plot plot.py --all',
+      },
+      'The same command runs a plot script on a machine with no display (a cluster login node).',
     ],
   },
   {
@@ -340,4 +359,4 @@ export class HelpPanel {
 }
 
 // The section that explains a tab (the ? buttons of the tabs).
-export const TAB_HELP = { setup: 'forms', runs: 'runs', results: 'results' };
+export const TAB_HELP = { setup: 'forms', runs: 'runs', results: 'results', plots: 'plots' };

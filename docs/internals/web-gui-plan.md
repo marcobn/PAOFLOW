@@ -1143,3 +1143,36 @@ Now a folder chosen in one tab moves the others, through `App.changeFolder(path,
 - Programmatic navigations do not propagate: start-up, `showResults(job.cwd)` from a job, and the write
   notifications.
 - Test: `test_folder_change_reaches_every_tab` (browser), plus the `writable` flag in the unit scans.
+
+**Plots tab (10 November 2026, user request: "we generate the plot.py but never run it").** The plot scripts call
+`plt.show()` (GPAO, `plot.py`, `plot.acbn0.py`, `plot.phonon.py`) or `savefig` (the electron–phonon
+`plot_*.py`), and `plot.py` asks for axis limits and a menu choice. The Runs tab therefore listed them as
+*interactive* and never ran them.
+
+- `PAOFLOW.graphics.figure_capture` (`python -m … --out DIR script.py [args]`) runs a script as `__main__` on Agg.
+  - It patches `plt.show`, `Figure.savefig`, `matplotlib.use` (a no-op) and `input` (returns the default).
+  - Each figure is written once to DIR as PNG (150 dpi) and PDF. The "once" uses the figure's `stale` flag, cleared
+    after every save, because a save restores size and colours.
+  - Figures left open at the end are kept too. `figures.json` is rewritten after each figure. A new run removes
+    only the files its previous manifest listed.
+  - The exit status is in the manifest; figures made before an error stay.
+- `jobs.build_command`: a `python` step with `capture: true` runs through the module, with `--out` computed by the
+  server (`capture_folder`: `figures/<script path with / as _>` next to the script).
+- `gui/plots_api.py`:
+  - `GET /api/plots?path=` lists the `plot*.py` of the folder and of its subfolders, one level down (`output/`,
+    `figures/` and hidden folders skipped). Each script carries its docstring title, its `--options` (regex on
+    `add_argument`), the default arguments (`--all` when it exists), the capture manifest (paths relative to the
+    root) and its last capture job.
+  - `GET /api/plots/file?path=` serves PNG (inline) and PDF (always an attachment: the CSP `object-src 'none'`
+    keeps PDFs from opening); other types get 400.
+- `static/js/plotsview.js` (`plots.js` is the Plotly helper module):
+  - layout: scripts on the left; the selected one on the right with title, arguments field (stored per script),
+    Run/Run again/Cancel, the gallery (click to enlarge, PNG/PDF download) and the log (`<details>`, opened on
+    failure);
+  - it refreshes every 2 s while shown, re-rendering only when scripts, figures or job state change;
+  - refreshes are serialised, so a caller that awaits one sees the current folder.
+- Wiring: it follows the shared folder (`App.changeFolder` → `plots.follow`). In Runs, interactive `plot*.py` steps
+  have *Run in Plots* (`App.runPlot`: opens the tab and runs the script).
+- Tests: `tests/unit/graphics/test_figure_capture.py` (subprocess), `tests/unit/gui/test_plots.py`, and the browser
+  test `test_plots_tab_runs_the_plot_script` (generated `plot.py` on the example01 outputs: four or more figures
+  loaded, then *Run in Plots* from Runs).

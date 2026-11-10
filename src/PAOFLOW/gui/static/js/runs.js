@@ -107,6 +107,15 @@ function duration(seconds) {
   return `${Math.floor(seconds / 3600)} h ${Math.round((seconds % 3600) / 60)} min`;
 }
 
+// A step that runs a plot script that shows its figures (plot.py, superconductivity/plot_me.py).
+function isPlotStep(step) {
+  return (
+    step.interactive &&
+    step.argv?.[0] === 'python' &&
+    /(^|\/)plot[\w.-]*\.py$/.test(step.argv[1] || '')
+  );
+}
+
 export class RunsView {
   constructor(root, app) {
     this.root = root;
@@ -374,13 +383,33 @@ export class RunsView {
                     actionLabel(step.action),
                   ),
                 )
-              : step.interactive
+              : isPlotStep(step)
                 ? h(
                     'div',
-                    { class: 'small muted' },
-                    'needs a terminal or a display: run it there, or use the Results tab',
+                    { class: 'row', style: { marginTop: '4px' } },
+                    h(
+                      'span',
+                      { class: 'grow small muted' },
+                      'opens windows: the Plots tab runs it without a display',
+                    ),
+                    h(
+                      'button',
+                      {
+                        class: 'btn small primary',
+                        disabled: this.session.read_only,
+                        onclick: () =>
+                          this.app.runPlot(joinPath(this.folder, step.cwd), step.argv[1]),
+                      },
+                      'Run in Plots',
+                    ),
                   )
-                : null,
+                : step.interactive
+                  ? h(
+                      'div',
+                      { class: 'small muted' },
+                      'needs a terminal or a display: run it there, or use the Results tab',
+                    )
+                  : null,
         ),
       );
     }

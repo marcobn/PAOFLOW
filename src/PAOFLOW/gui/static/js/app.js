@@ -6,7 +6,7 @@ import { h, storage, toast } from './dom.js';
 import { HelpPanel, TAB_HELP } from './help.js';
 import { SetupView } from './setup.js';
 
-const TABS = ['setup', 'runs', 'results'];
+const TABS = ['setup', 'runs', 'results', 'plots'];
 
 class App {
   constructor(session) {
@@ -15,6 +15,7 @@ class App {
     this.views = {};
     this.runs = null;
     this.results = null;
+    this.plots = null;
   }
 
   async init() {
@@ -104,6 +105,12 @@ class App {
         'The results viewer is not available in this version.',
       );
     }
+    try {
+      const { PlotsView } = await import('./plotsview.js');
+      this.plots = new PlotsView(document.getElementById('view-plots'), this);
+    } catch (_error) {
+      this.placeholder('plots', 'Plots', 'The plot runner is not available in this version.');
+    }
   }
 
   placeholder(name, title, text) {
@@ -126,7 +133,9 @@ class App {
       document.getElementById(`view-${tab}`).classList.toggle('active', tab === name);
     if (updateHash && location.hash.slice(1).split('/')[0] !== name)
       history.replaceState(null, '', `#${name}`);
-    const view = { setup: this.setup, runs: this.runs, results: this.results }[name];
+    const view = { setup: this.setup, runs: this.runs, results: this.results, plots: this.plots }[
+      name
+    ];
     if (view?.activate) view.activate();
   }
 
@@ -179,6 +188,7 @@ class App {
     }
     if (source !== 'runs') this.runs?.showFolder?.(working);
     if (source !== 'results') this.results?.follow?.(working);
+    this.plots?.follow?.(working);
   }
 
   notifyWritten(result) {
@@ -204,6 +214,13 @@ class App {
     if (!this.runs) return toast('The run manager is not available', 'warn');
     this.runs.launch({ ...step, rootRelative: true });
     this.show('runs');
+  }
+
+  // A plot step of a run plan: the Plots tab runs it without a display and shows its figures.
+  runPlot(folder, script) {
+    if (!this.plots) return toast('The plot runner is not available', 'warn');
+    this.show('plots');
+    this.plots.runScript(folder, script);
   }
 
   showResults(folder) {

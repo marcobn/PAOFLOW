@@ -1318,3 +1318,69 @@ details.doc[open] summary {
   min-width: 0;
   font-family: var(--mono);
 }
+
+/* ------------------------------------------------------------------------- plots */
+.plots-grid {
+  grid-template-columns: 300px 1fr;
+}
+.plots-center {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plots-head input.mono {
+  min-width: 0;
+}
+.figure-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 12px;
+}
+.figure-card {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.figure-card img {
+  width: 100%;
+  height: auto;
+  background: #fff;
+  border-radius: 4px;
+  cursor: zoom-in;
+}
+.figure-card figcaption {
+  font-size: 13px;
+}
+.figure-card a.btn {
+  text-decoration: none;
+}
+.figure-large {
+  max-width: 100%;
+  max-height: 78vh;
+  display: block;
+  margin: 0 auto;
+  background: #fff;
+}
+.plots-log-box {
+  margin-top: 12px;
+}
+.plots-log-title {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+pre.log.plots-log {
+  min-height: 0;
+  max-height: 340px;
+  margin-top: 6px;
+}
+@media (max-width: 1100px) {
+  .plots-grid {
+    grid-template-columns: 1fr;
+  }
+}

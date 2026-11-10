@@ -1,10 +1,11 @@
 # Working in the browser: PAOFLOW Studio
 
-PAOFLOW Studio (`paoflow-studio`) is a browser interface for PAOFLOW. It has three tabs:
+PAOFLOW Studio (`paoflow-studio`) is a browser interface for PAOFLOW. It has four tabs:
 
 - **Setup** asks the questions of `paoflow-gen` as a form, previews the generated files and writes them.
 - **Runs** starts the generated drivers on the machine that serves the GUI and follows their logs.
 - **Results** finds the outputs of a folder and plots them interactively.
+- **Plots** runs the generated plot scripts without a display and shows the figures they make.
 
 The setup and plotting code is the same as on the command line. For the same answers, the form writes the same
 bytes as `paoflow-gen`, and the plots read the files with the same readers as `GPAO`.
@@ -167,9 +168,9 @@ server is not: stop it with Ctrl-C and start it again.
 
 ### One folder for every tab
 
-A folder chosen in one tab becomes the folder of the other two:
+A folder chosen in one tab becomes the folder of the others:
 
-- *Change…* in Setup moves Runs and Results to it.
+- *Change…* in Setup moves Runs, Results and Plots to it.
 - *Run a pw.x input…* in Runs moves Setup and Results to the folder of the input.
 - *Change…* in Results moves Setup and Runs. For a folder named `output/`, they take its parent, the run folder.
   Setup on that run folder leaves Results on its `output/`.
@@ -207,8 +208,9 @@ Every run is niced, with one thread per rank. Runs continue when the GUI stops; 
 The log updates live, *Cancel* stops the process group, and *Results* opens the outputs.
 
 Only the steps of a generated plan can run: Python drivers and shell scripts inside the root,
-`paoflow-genbasis-ps`, and the QE programs with an input file inside the root. There is no free command line. Steps that need a terminal or a display (the `plot*.py`
-scripts) are listed but not run; the Results tab replaces them.
+`paoflow-genbasis-ps`, and the QE programs with an input file inside the root. There is no free command line.
+The `plot*.py` steps open windows, so they have *Run in Plots* instead of *Run*: the Plots tab runs them without a
+display. Other steps that need a terminal are listed but not run.
 
 ## Results
 
@@ -285,8 +287,30 @@ At the end of every run, PAOFLOW writes `paoflow_outputs.json` in the output fol
 version, the DFT Fermi energy (output energies are relative to it), the spin and basis facts, and the files the run
 wrote, each with its kind. The Results tab shows it as *Run information*.
 
+## Plots
+
+The generated plot scripts (`plot.py`, `plot.acbn0.py`, `plot.phonon.py`, the `plot_*.py` of an electron–phonon
+system) draw with matplotlib and open windows. The Plots tab runs them without a display and shows their figures.
+
+- The list holds the `plot*.py` of the working folder and of its subfolders (one level).
+- *Run* starts the selected script as a job: its log is in Runs, and *Cancel* stops it.
+- Each figure that the script shows (`plt.show()`) or saves (`savefig`) is kept once, as a PNG (shown) and a PDF.
+  The files go to `figures/<script>/` next to the script, for example `figures/plot/01_Band_structure.png`, and
+  `figures.json` lists them. A new run replaces them, and the figures appear one by one while the script runs.
+- The arguments field goes to the script. `--all` is filled in when the script has it, so `plot.py` draws every
+  quantity without its menu. Add options such as `--emin -6 --emax 4`; the field lists the script's options.
+  Prompts (`input()`) take their default answers.
+- Click a figure to enlarge it; *PNG* and *PDF* download it. *Log of the last run* shows the script's output and
+  opens by itself when the run failed, for example before `main.py` has written the outputs.
+
+The same runner works in a terminal on a machine with no display, such as a cluster login node:
+
+```bash
+python -m PAOFLOW.graphics.figure_capture --out figures/plot plot.py --all
+```
+
 ## The guide inside the Studio
 
 *Help* in the header (or the `?` key) opens the guide of PAOFLOW Studio, with a search box: getting started,
-folders and permissions, every Setup step and tool, Runs, Results, remote use, the command line, and
+folders and permissions, every Setup step and tool, Runs, Results, Plots, remote use, the command line, and
 troubleshooting. It opens by itself on the first visit.

@@ -239,9 +239,9 @@ class GuiApp:
         self._routes: dict[tuple[str, str], Route] = {}
         self._prefix_routes: list[tuple[str, str, Route]] = []
         self.services: dict[str, Any] = {}
-        from . import generator_api, jobs, results_api, workspace
+        from . import generator_api, jobs, plots_api, results_api, workspace
 
-        for module in (workspace, generator_api, results_api, jobs):
+        for module in (workspace, generator_api, results_api, jobs, plots_api):
             module.register(self)
 
     # ----------------------------------------------------------------------------- routes
