@@ -86,3 +86,43 @@ def test_sandbox_unit(tmp_path):
         'localhost:1', 8765
     )
     assert security.origin_allowed(None, 8765) and not security.origin_allowed('null', 8765)
+
+
+def test_wrong_token_and_wrong_port_explain_the_tunnel(client):
+    """The two ways an SSH tunnel goes wrong get a page that says what to do."""
+    port = client.app.port
+    status, body, response = client.get('/?token=not-this-one', token=False)
+    page = body.decode() if isinstance(body, bytes) else str(body)
+    assert status == 403 and response.getheader('Content-Type').startswith('text/html')
+    assert "not this session's token" in page and 'port %d' % port in page
+    assert 'ExitOnForwardFailure' in page and str(client.app.sandbox.root) not in page
+    status, body, _ = client.get('/api/session?token=not-this-one', token=False)
+    assert status == 403 and body['error'] == 'wrong token'  # the API keeps its JSON answer
+    status, body, response = client.get('/', headers={'Host': '127.0.0.1:%d' % (port + 1)})
+    page = body.decode() if isinstance(body, bytes) else str(body)
+    assert status == 403 and 'same port on both ends' in page
+    assert '-L %d:127.0.0.1:%d' % (port, port) in page
+    status, body, _ = client.get('/', headers={'Host': 'evil.example:%d' % port})
+    assert status == 403 and body == {'error': 'unexpected Host header'}  # no page for others
+
+
+def test_startup_message_gives_the_tunnel(tmp_path, monkeypatch, capsys):
+    from PAOFLOW.gui import cli
+
+    class Server:
+        url = 'http://127.0.0.1:8780/?token=t'
+
+        def __init__(self, app, port, verbose):
+            app.port = port
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr('PAOFLOW.gui.server.GuiServer', Server)
+    assert cli.main(['--root', str(tmp_path), '--port', '8780', '--no-browser']) == 0
+    out = capsys.readouterr().out
+    assert 'ssh -N -o ExitOnForwardFailure=yes -L 8780:127.0.0.1:8780' in out
+    assert 'the same port on both ends' in out

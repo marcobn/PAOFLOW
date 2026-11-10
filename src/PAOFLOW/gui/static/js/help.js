@@ -166,11 +166,17 @@ const SECTIONS = [
     id: 'remote',
     title: 'Remote machines',
     body: [
-      'Start the server on the remote machine without a browser, then tunnel its port from your computer and open the printed URL:',
+      'Start the server on the remote machine without a browser (inside tmux, so that it survives the logout), then tunnel its port from your computer and open the printed URL:',
       {
-        code: 'paoflow-studio --root ~/runs --no-browser            # on the remote machine\nssh -N -L 8765:127.0.0.1:8765 user@remote         # on your computer',
+        code: '# on the remote machine\ntmux new -s studio\nconda activate <env with PAOFLOW>\npaoflow-studio --root ~/runs --no-browser --port 8780\n\n# on your computer: the SAME port on both ends\nssh -N -o ExitOnForwardFailure=yes -L 8780:127.0.0.1:8780 user@remote',
       },
-      'The server listens on 127.0.0.1 only and every request needs the session token of the URL (kept in a cookie after the first visit). On a cluster, keep heavy runs off the login nodes: run the server on a compute node, or use the Runs tab only for light steps.',
+      [
+        '**The same port number on both ends.** The Studio only accepts requests addressed to its own port, so `-L 8780:127.0.0.1:8780` works and `-L 8766:127.0.0.1:8765` does not.',
+        '**A port that is free on your computer.** If you also run `paoflow-studio` locally, it holds 8765: give the remote one another `--port`. `ExitOnForwardFailure` makes ssh stop with an error instead of tunnelling to nothing; without it the browser reaches your local Studio, which rejects the remote token.',
+        '**The whole printed URL**, `http://127.0.0.1:8780/?token=…`; after the first visit the token is kept in a cookie. If the port was busy on the remote machine, the Studio takes the next free one and prints it: tunnel that one.',
+        '*Ctrl-b d* leaves tmux with the Studio running; `tmux attach -t studio` returns to it (Ctrl-C stops it). Plots need Plotly in the remote environment (`pip install "plotly>=5.18"`).',
+      ],
+      'The server listens on 127.0.0.1 only and every request needs the session token of the URL. On a cluster, keep heavy runs off the login nodes: run the server on a compute node, or use the Runs tab only for light steps.',
     ],
   },
   {
@@ -178,7 +184,7 @@ const SECTIONS = [
     title: 'Command line',
     body: [
       {
-        code: 'paoflow-studio [--root DIR] [--port 8765] [--no-browser] [--allow-read DIR]...\n               [--read-only] [--max-ranks N] [--verbose]\npaoflow-studio plot DIR                     # open the Results tab on DIR\npaoflow-studio report DIR -o report.html    # static HTML report, no server\npaoflow-gen --gui                           # the paoflow-gen questions in the browser',
+        code: 'paoflow-studio [--root DIR] [--port 8765] [--no-browser] [--allow-read DIR]...\n               [--qe-bin DIR]... [--read-only] [--max-ranks N] [--verbose]\npaoflow-studio plot DIR                     # open the Results tab on DIR\npaoflow-studio report DIR -o report.html    # static HTML report, no server\npaoflow-gen --gui                           # the paoflow-gen questions in the browser',
       },
       'Without a free port at 8765 the next twenty are tried. The forms, plots and runs have command-line equivalents: `paoflow-gen`, `paoflow-gen-qe`, `paoflow-genbasis-ps`, the generated `plot.py`, and `PAOFLOW.results.ResultsFolder` in scripts and notebooks.',
     ],
@@ -195,6 +201,9 @@ const SECTIONS = [
         '“PAOFLOW was updated after this server started” (a yellow banner), or a button that does nothing: the page is newer than the running server (a source checkout after `git pull` or an edit). Stop `paoflow-studio` with Ctrl-C and start it again.',
         '“Plotly is not available”: `pip install "PAOFLOW[gui]"`. The 3D Fermi surface needs `pip install "PAOFLOW[fermisurface]"`.',
         'A page that asks for the token: open the full URL printed by `paoflow-studio` (it ends with `?token=…`).',
+        "“not this session's token” on a remote URL: the port is taken on your computer (by a local `paoflow-studio`), so the tunnel could not use it and the browser reached the local Studio. Restart the remote Studio with another `--port` and tunnel that port (see *Remote machines*).",
+        '“use the same port on both ends”: the tunnel maps two port numbers (`-L 8766:127.0.0.1:8765`); use one number on both sides.',
+        '“Plotly is not available” on a remote Studio: `pip install "plotly>=5.18"` in its environment, then restart it.',
         'A run shown as *lost*: its process ended while no server was watching (for example after a reboot); its log is still in `.paoflow-studio/jobs/`.',
       ],
     ],

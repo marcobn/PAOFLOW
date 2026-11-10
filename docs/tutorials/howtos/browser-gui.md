@@ -36,13 +36,26 @@ The folder picker lists them under *Places*, marked read-only. The QE-input and 
 pseudopotential folder from there (*Browse…*), and the Results tab can open results in them. The list is fixed
 when the server starts; nothing in the browser can widen it.
 
-**On a remote machine** (cluster login node, workstation), start the server without a browser and tunnel the port
-from your laptop:
+**On a remote machine** (cluster login node, workstation), start the server without a browser, inside `tmux` so
+that it survives the logout, and tunnel its port from your laptop:
 
 ```bash
-paoflow-studio --root ~/runs --no-browser            # on the remote machine
-ssh -N -L 8765:127.0.0.1:8765 user@remote         # on the laptop, then open the printed URL
+# on the remote machine
+tmux new -s studio                 # Ctrl-b d leaves it running; tmux attach -t studio returns
+conda activate <env with PAOFLOW>
+paoflow-studio --root ~/runs --no-browser --port 8780
+
+# on the laptop: the same port on both ends, then open the printed URL (with its ?token=...)
+ssh -N -o ExitOnForwardFailure=yes -L 8780:127.0.0.1:8780 user@remote
 ```
+
+Three things make it work:
+- **The same port number on both ends.** The Studio only accepts requests addressed to its own port, so a tunnel
+  such as `-L 8766:127.0.0.1:8765` is refused. The page then says "use the same port on both ends".
+- **A port that is free on the laptop.** A local `paoflow-studio` holds 8765, so give the remote one another
+  `--port`. With `ExitOnForwardFailure`, ssh stops with an error instead of tunnelling to nothing. Without it, the
+  browser reaches the local Studio, which answers "not this session's token".
+- **The remote environment has Plotly** for the plots: `pip install "plotly>=5.18"`, or the `gui` extra.
 
 The server listens on `127.0.0.1` only. Every request needs the session token, and requests whose Host or Origin
 header is not the GUI's own are refused. These checks keep other users of a shared login node out of your session.

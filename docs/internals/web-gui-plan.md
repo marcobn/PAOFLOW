@@ -1079,3 +1079,18 @@ The qo_analysis agentic code already reads the pyskeaf files in Rydberg.
 
 Tests: `tests/unit/graphics/test_fermi_plotter_units.py` covers the reader and the command line, with the
 Mayavi drawing replaced by a stand-in that captures the data.
+
+**Remote use, the two tunnel mistakes explained (9 November 2026, after a failed connection to `music`).** The
+user's Mac ran its own Studio on 127.0.0.1:8765. `ssh -L 8765:…` then bound only `[::1]:8765`, and the browser
+reached the local Studio, which answered `{"error": "wrong token"}`.
+
+- `server.WRONG_TOKEN_PAGE`: a token this server did not issue, opened at `/`, gets a page. It explains the busy
+  local port and gives the remote `--port` and `ssh -N -o ExitOnForwardFailure=yes -L P:127.0.0.1:P` commands.
+  It names no folder, since anyone who reaches the port sees it. The API keeps its JSON 403.
+- `server.WRONG_PORT_PAGE`: a loopback `Host` with another port (a tunnel mapping two numbers) gets a page asking
+  for the same port on both ends. Other host names keep the plain refusal (DNS rebinding).
+- The startup message prints `ssh -N -o ExitOnForwardFailure=yes -L P:127.0.0.1:P <this host>` and the
+  same-port rule. ExitOnForwardFailure makes ssh fail loudly instead of tunnelling to nothing.
+- Help *Remote machines* has a tmux/conda/same-port/free-port/Plotly checklist, and troubleshooting has the
+  three messages. The how-to and the `gui/cli.py` docstring say the same.
+- Tests: `test_wrong_token_and_wrong_port_explain_the_tunnel`, `test_startup_message_gives_the_tunnel`.

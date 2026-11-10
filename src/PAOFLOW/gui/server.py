@@ -511,6 +511,50 @@ UNAUTHORISED_PAGE = b"""<!doctype html><meta charset="utf-8"><title>PAOFLOW Stud
 <code>paoflow-studio</code> printed in the terminal (it ends with <code>?token=...</code>).</p>
 </body>"""
 
+#: A token this server did not issue: most often the URL of a Studio on another machine opened
+#: while this computer's port is taken (by this Studio), so the SSH tunnel could not use it.
+#: The page names no folder: anyone who reaches the port sees it.
+WRONG_TOKEN_PAGE = """<!doctype html><meta charset="utf-8"><title>PAOFLOW Studio</title>
+<body style="font-family:system-ui;margin:3em;max-width:44em;line-height:1.45">
+<h1>PAOFLOW Studio: not this session's token</h1>
+<p>The PAOFLOW Studio answering on port {port} of this computer did not print this URL.</p>
+<p><b>A Studio on another machine through an SSH tunnel?</b> Then port {port} of this computer
+is already taken (very likely by another <code>paoflow-studio</code> running here), so the tunnel
+could not use it and the browser reached this one instead. On the remote machine, restart the
+Studio on a free port, and tunnel <i>the same</i> port:</p>
+<pre style="background:#f4f4f4;padding:10px">paoflow-studio --root ~/runs --no-browser --port 8780       # on the remote machine
+ssh -N -o ExitOnForwardFailure=yes -L 8780:127.0.0.1:8780 user@remote   # on this computer</pre>
+<p>then open the new URL that the remote Studio prints. Otherwise, open the URL printed by the
+<code>paoflow-studio</code> that you started on this computer.</p>
+</body>"""
+
+#: The browser used another port than the server's: a tunnel with different port numbers.
+WRONG_PORT_PAGE = """<!doctype html><meta charset="utf-8"><title>PAOFLOW Studio</title>
+<body style="font-family:system-ui;margin:3em;max-width:44em;line-height:1.45">
+<h1>PAOFLOW Studio: use the same port on both ends</h1>
+<p>This Studio listens on port {port}, but the browser addressed port {asked}: the SSH tunnel
+maps two different port numbers. The Studio only accepts its own port (a protection against
+other web pages), so tunnel the same number on both ends:</p>
+<pre style="background:#f4f4f4;padding:10px">ssh -N -o ExitOnForwardFailure=yes -L {port}:127.0.0.1:{port} user@remote</pre>
+<p>and open <code>http://127.0.0.1:{port}/?token=...</code> as printed by the Studio. If port {port} is
+taken on your computer, restart the remote Studio with another <code>--port</code>.</p>
+</body>"""
+
+
+HTML = 'text/html; charset=utf-8'
+
+
+def _loopback_port(host: str | None) -> int | None:
+    """The port of a loopback ``Host`` header (``127.0.0.1:8766`` -> 8766), else ``None``.
+
+    Only loopback names get the explanatory page: another name is a DNS-rebinding attempt or a
+    misconfiguration, answered with the plain refusal.
+    """
+    name, _, port = (host or '').strip().lower().rpartition(':')
+    if name not in ('127.0.0.1', 'localhost', '[::1]') or not port.isdigit():
+        return None
+    return int(port)
+
 
 class GuiRequestHandler(BaseHTTPRequestHandler):
     """Request handler: Host, token and Origin checks, then :meth:`GuiApp.dispatch`."""
@@ -563,12 +607,21 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         query = {key: values[-1] for key, values in parse_qs(url.query).items()}
         if not security.host_allowed(self.headers.get('Host'), app.port):
-            self._error(403, 'unexpected Host header')
+            asked = _loopback_port(self.headers.get('Host'))
+            if method == 'GET' and asked is not None and url.path in ('/', '/index.html'):
+                page = WRONG_PORT_PAGE.format(port=app.port, asked=asked)
+                self._send(Response(status=403, body=page.encode(), content_type=HTML))
+            else:
+                self._error(403, 'unexpected Host header')
             return
         given = query.pop('token', None)
         if given is not None and method == 'GET':
             if not security.same_token(given, app.token):
-                self._error(403, 'wrong token')
+                if url.path in ('/', '/index.html'):
+                    page = WRONG_TOKEN_PAGE.format(port=app.port)
+                    self._send(Response(status=403, body=page.encode(), content_type=HTML))
+                else:
+                    self._error(403, 'wrong token')
                 return
             location = url.path + ('?' + urlencode(query) if query else '')
             self._send(

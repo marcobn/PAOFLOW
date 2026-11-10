@@ -9,11 +9,14 @@ Usage::
     paoflow-studio plot Si/output          # open the Results tab on a folder
     paoflow-studio report Si/output -o Si_report.html   # static HTML report, no server
 
-On a remote machine run it with ``--no-browser`` and tunnel the port::
+On a remote machine run it with ``--no-browser`` (in ``tmux`` so that it survives the logout) and
+tunnel the port, the same number on both ends::
 
-    ssh -N -L 8765:127.0.0.1:8765 <host>
+    ssh -N -o ExitOnForwardFailure=yes -L 8765:127.0.0.1:8765 <host>
 
-then open the printed URL (it carries the session token) in the local browser.
+then open the printed URL (it carries the session token) in the local browser.  When the local
+computer already uses that port (another ``paoflow-studio``), start the remote one with another
+``--port``: ``ExitOnForwardFailure`` makes ssh stop instead of tunnelling to nothing.
 """
 
 from __future__ import annotations
@@ -77,8 +80,12 @@ def _serve(args: argparse.Namespace, start: str | None, tab: str) -> int:
     print('  QE:     %s' % _qe_summary(app))
     print('  open:   %s' % url)
     print(
-        '  remote: ssh -N -L %d:127.0.0.1:%d <this host>, then open the URL above'
-        % (app.port, app.port)
+        '  remote: ssh -N -o ExitOnForwardFailure=yes -L %d:127.0.0.1:%d <this host>, then open '
+        'the URL above' % (app.port, app.port)
+    )
+    print(
+        '          (the same port on both ends; if it is taken on your computer, e.g. by another '
+        'paoflow-studio, restart this one with another --port)'
     )
     print('  stop:   Ctrl-C')
     sys.stdout.flush()
