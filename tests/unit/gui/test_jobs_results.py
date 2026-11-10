@@ -92,7 +92,7 @@ def test_results_scan_figure_compare_and_export(client, gui_root):
     shutil.copytree(EXAMPLE / 'Reference', gui_root / 'Si' / 'output')
     shutil.copytree(EXAMPLE / 'Reference', gui_root / 'Si' / 'output_copy')
     status, body, _ = client.post('/api/results/scan', {'path': 'Si'})
-    assert status == 200
+    assert status == 200 and body['writable']  # under the root: Setup and Runs may follow it
     bands = [d for d in body['datasets'] if d['kind'] == 'bands']
     assert len(bands) == 2
     status, figure, _ = client.post('/api/results/figure', {'path': 'Si', 'id': bands[0]['id']})

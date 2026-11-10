@@ -60,17 +60,20 @@ export class SetupView {
   async init() {
     const { workflows } = await api.get('/api/gen/workflows');
     this.workflows = workflows;
-    await this.openFolder(this.workdir);
+    await this.openFolder(this.workdir, { propagate: false });
   }
 
   // ----------------------------------------------------------------------- folder
-  async openFolder(path) {
+  // The working folder.  `propagate`: Runs and Results follow (a folder chosen here); `fallback`:
+  // a folder that cannot be opened reports it and opens the root, instead of returning false.
+  async openFolder(path, { propagate = true, fallback = true } = {}) {
     try {
       this.detection = await api.get('/api/workspace/detect', { path });
     } catch (error) {
+      if (!fallback) return false;
       toast(error.message, 'bad');
-      if (path !== '.') return this.openFolder('.');
-      return;
+      if (path !== '.') return this.openFolder('.', { propagate: false });
+      return false;
     }
     this.workdir = this.detection.path;
     storage(`workdir:${this.session.root}`, this.workdir);
@@ -82,6 +85,8 @@ export class SetupView {
       this.workflows.some((w) => w.name === s.workflow),
     );
     this.selectWorkflow(remembered || suggested?.workflow || 'run');
+    if (propagate) this.app.changeFolder(this.workdir, 'setup');
+    return true;
   }
 
   // Files change outside the form (a pw.x run writes the save, a UPF is copied in): look at the

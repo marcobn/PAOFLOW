@@ -1,6 +1,7 @@
 // PAOFLOW Studio: session, tabs, theme, and the links between Setup, Runs and Results.
 
 import { api } from './api.js';
+import { runFolderOf } from './browser.js';
 import { h, storage, toast } from './dom.js';
 import { HelpPanel, TAB_HELP } from './help.js';
 import { SetupView } from './setup.js';
@@ -148,6 +149,36 @@ class App {
   setWorkdir(path) {
     this.workdir = path;
     if (this.results?.setDefaultFolder) this.results.setDefaultFolder(path);
+  }
+
+  // One folder for every tab: a folder chosen in one tab (Change… in Setup or Results, Run a
+  // pw.x input… in Runs) becomes the folder of the others. Setup and Runs work in the run folder,
+  // so a Results folder named output/ gives them its parent; a folder they may not write (opened
+  // for reading) stays in Results only.
+  async changeFolder(path, source) {
+    let working = path;
+    if (source === 'results') {
+      const parent = runFolderOf(path);
+      if (parent !== this.setup.workdir) {
+        const opened =
+          this.results.writable &&
+          (await this.setup.openFolder(parent, { propagate: false, fallback: false }));
+        if (!opened) {
+          toast(
+            `Setup and Runs stay in ${this.setup.workdir}: ${path} is read-only. ` +
+              'Choose it with Change… in Setup to write there.',
+            'warn',
+            7000,
+          );
+          return;
+        }
+      }
+      working = this.setup.workdir;
+    } else if (source === 'runs' && path !== this.setup.workdir) {
+      await this.setup.openFolder(path, { propagate: false, fallback: false });
+    }
+    if (source !== 'runs') this.runs?.showFolder?.(working);
+    if (source !== 'results') this.results?.follow?.(working);
   }
 
   notifyWritten(result) {

@@ -1124,3 +1124,22 @@ joins the session.
     `--fixed-root`, an unreadable entry);
   - browser: `test_change_folder_anywhere_on_the_computer` walks from `/` to a temporary folder and makes it the
     working folder.
+
+**One folder for every tab (9 November 2026, user request).** Each tab used to keep its own folder: Setup the
+working folder, Runs the folder of its plan, Results its scan folder. Only Setup pushed a default into Results.
+Now a folder chosen in one tab moves the others, through `App.changeFolder(path, source)` in `app.js`:
+
+- `source = 'setup'`: `SetupView.openFolder(path)` (default `propagate: true`, as used by *Change…* and by the
+  plan actions). Runs calls `showFolder` and Results calls `follow`.
+- `source = 'runs'`: *Run a pw.x input…* moves Setup (`openFolder(…, {propagate: false, fallback: false})`) and
+  Results.
+- `source = 'results'`: *Change…* (`open(folder, {propagate: true})`) moves Setup and Runs. `runFolderOf` (in
+  `browser.js`) maps an `output/` folder to its parent. A folder the scan reports as not writable
+  (`/api/results/scan` → `writable` = `Sandbox.writable`) stays in Results, with a warning toast.
+- `RunsView` stores the last plan of each folder (`plan:<root>:<folder>`); `showFolder` shows it, or "No run plan
+  in …".
+- `ResultsView.follow` keeps an open `output/` of the new folder. Otherwise it rescans when the tab is shown (at
+  once if it is in view).
+- Programmatic navigations do not propagate: start-up, `showResults(job.cwd)` from a job, and the write
+  notifications.
+- Test: `test_folder_change_reaches_every_tab` (browser), plus the `writable` flag in the unit scans.

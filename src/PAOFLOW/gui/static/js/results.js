@@ -1,7 +1,7 @@
 // Results tab: datasets of a folder, interactive figures, options, comparison, exports.
 
 import { api } from './api.js';
-import { pickFolder } from './browser.js';
+import { pickFolder, runFolderOf } from './browser.js';
 import { codeView } from './codeview.js';
 import {
   clear,
@@ -159,11 +159,29 @@ export class ResultsView {
     this.defaultFolder = path;
   }
 
-  async open(folder) {
+  // The working folder chosen in Setup or Runs: its results, scanned when the tab is shown (now if
+  // it is in view).  Its output/ folder, already open here, stays.
+  follow(folder) {
+    if (!this.folder) {
+      this.defaultFolder = folder;
+      return;
+    }
+    if (folder === this.folder || runFolderOf(this.folder) === folder) return;
+    this.folder = folder;
+    storage(`results-folder:${this.session.root}`, folder);
+    this.loaded = false;
+    this.current = null;
+    this.signature = '';
+    if (document.getElementById('view-results').classList.contains('active')) this.activate();
+  }
+
+  // `propagate`: a folder chosen here; Setup and Runs follow it (App.changeFolder).
+  async open(folder, { propagate = false } = {}) {
     this.folder = folder;
     storage(`results-folder:${this.session.root}`, folder);
     this.loaded = true;
-    await this.scan(true);
+    const scanned = await this.scan(true);
+    if (propagate && scanned) this.app.changeFolder(this.folder, 'results');
   }
 
   async scan(selectFirst = false) {
@@ -172,8 +190,8 @@ export class ResultsView {
       result = await api.post('/api/results/scan', { path: this.folder });
     } catch (error) {
       toast(error.message, 'bad');
-      if (this.folder !== '.') return this.open('.');
-      return;
+      if (this.folder !== '.') await this.open('.');
+      return false;
     }
     const signature = result.datasets.map((d) => `${d.id}:${d.mtime}`).join('|');
     const changed = signature !== this.signature;
@@ -181,6 +199,7 @@ export class ResultsView {
     this.signature = signature;
     this.folder = result.folder;
     this.absolute = result.absolute;
+    this.writable = result.writable !== false;
     this.categories = result.categories;
     this.fresh = new Set(
       result.datasets
@@ -201,6 +220,7 @@ export class ResultsView {
       if (first) this.showDataset(first.id);
       else this.renderEmpty();
     }
+    return true;
   }
 
   renderEmpty() {
@@ -235,7 +255,7 @@ export class ResultsView {
               const chosen = await pickFolder(this.folder, {
                 title: 'Folder with PAOFLOW outputs',
               });
-              if (chosen !== null) this.open(chosen);
+              if (chosen !== null) this.open(chosen, { propagate: true });
             },
           },
           'Change…',

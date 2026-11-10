@@ -55,6 +55,12 @@ const SECTIONS = [
       '*Change…* picks the working folder. The card shows what PAOFLOW found there: the QE save, the pseudopotentials, the `pw.x` inputs, existing drivers, and a summary read from the save (formula, lattice, electrons, gap or metal, k-grid, pseudopotential types, 2D slab).',
       'The save also gives defaults: `ibrav`, spin–orbit and the 2D flag of the property run; for the electron–phonon system the `pw.x` input gives the metal flag, `nelec`, `nbnd` and the coupling source (EPW for ultrasoft or PAW pseudopotentials). The command line uses the same defaults.',
       'Workflows marked *suggested* match what is in the folder.',
+      [
+        '**One folder for every tab.** A folder chosen in one tab becomes the folder of the others: *Change…* here moves Runs and Results to it, *Run a pw.x input…* in Runs moves Setup and Results to the folder of the input, and *Change…* in Results moves Setup and Runs.',
+        'A Results folder named `output/` gives Setup and Runs its parent, the run folder; Setup on that run folder leaves Results on its `output/`.',
+        'A Results folder that can only be read (an `--allow-read` folder, PAOFLOW’s `PSEUDOS/`, a folder opened for reading) stays in Results: Setup and Runs keep their folder and say so.',
+        'Runs shows the last plan written in the folder, or none yet.',
+      ],
     ],
   },
   {
@@ -126,7 +132,7 @@ const SECTIONS = [
     title: 'Runs',
     body: [
       [
-        'The *Run plan* is the list of commands of the last written workflow. *Run* starts a step; MPI steps ask for the number of ranks (at most the cap shown, `--max-ranks`). *Run a pw.x input…* loads the plan of any `pw.x` input file in the root instead.',
+        'The *Run plan* is the list of commands of the last workflow written in the working folder (each folder keeps its own plan; *No run plan in …* when nothing was written there). *Run* starts a step; MPI steps ask for the number of ranks (at most the cap shown, `--max-ranks`). *Run a pw.x input…* loads the plan of a `pw.x` input file instead, and its folder becomes the folder of every tab.',
         'Python drivers run with the Python of the server, one thread per rank, niced. Shell scripts get their rank count through `NP` (`run_qe.sh`).',
         'QE programs (`pw.x`, `ph.x`, `projwfc.x`, ...) run under `mpirun -np N` with their input file; their output goes to the file named in the plan (for example `scf.out`).',
         'Steps that start Quantum ESPRESSO themselves — ACBN0, the run phases of phonons and Raman, SSCHA with the local launcher, `run_qe.sh` and `run_zg.sh` of an electron–phonon system — run one process that launches pw.x (ph.x, the ACBN0 Hartree step): their *ranks*, the Quantum ESPRESSO build and the *options* are those of pw.x, passed as `PAOFLOW_MPI_QE`, `PAOFLOW_QE_BIN` and `PAOFLOW_QE_OPTIONS`. Every command shows what runs (`mpirun -np N` of an MPI step, `NP=`, the variables), ready for a terminal.',
@@ -143,7 +149,7 @@ const SECTIONS = [
     title: 'Results: finding and plotting',
     body: [
       [
-        '*Change…* opens any folder of the machine (see *Folders and permissions*): an `output/` folder, a run folder, an electron–phonon system folder. Subfolders are scanned too.',
+        '*Change…* opens any folder of the machine (see *Folders and permissions*): an `output/` folder, a run folder, an electron–phonon system folder. Subfolders are scanned too. The folder chosen becomes the working folder of Setup and Runs (the run folder for an `output/` folder; not for a read-only folder), and a working folder chosen in Setup or Runs opens here.',
         'The tree groups the datasets by category; tensor components, spin channels and temperatures of one quantity are the series of one figure. *filter* searches titles and file names.',
         '*Options* depend on the dataset: energy window of band plots, tensor component and temperatures of transport (at most five at once), PDOS grouping (element and ℓ, site, shell, orbital) and display (lines or stacked areas), the quantity of tables that mix units, the η column of absorption spectra, the bands, smoothing and zone of a Fermi surface.',
         'Figures zoom by dragging, pan with the toolbar, and reset with a double click; hovering shows values. *Table view* lists the plotted numbers.',

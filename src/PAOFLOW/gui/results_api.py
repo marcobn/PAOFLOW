@@ -302,6 +302,7 @@ def register(app: 'GuiApp') -> None:
             {
                 'folder': app.sandbox.relative(folder),
                 'absolute': folder,
+                'writable': app.sandbox.writable(folder),  # Setup and Runs may follow it
                 'categories': list(CATEGORY_ORDER),
                 'datasets': [dict(ref.to_json(), **_overlay_facts(ref)) for ref in references],
             }

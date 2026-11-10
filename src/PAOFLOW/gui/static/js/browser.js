@@ -46,6 +46,16 @@ export function relativeTo(from, path) {
   return relative || '.';
 }
 
+// The run folder of a results folder: the parent of an output/ folder (PAOFLOW's outputdir),
+// the folder itself otherwise.  Paths relative to the root, or absolute.
+export function runFolderOf(path) {
+  const parts = path.split('/');
+  if (parts[parts.length - 1] !== 'output') return path;
+  if (parts.length === 1) return '.';
+  const parent = parts.slice(0, -1).join('/');
+  return parent === '' ? '/' : parent;
+}
+
 // Resolves with the chosen folder (or file) or null.  The picker browses the whole computer
 // (Home, /) unless the server runs with --fixed-root; a folder chosen outside the folders of the
 // session is opened first (/api/fs/open): writable for a working folder (`places: false`), read

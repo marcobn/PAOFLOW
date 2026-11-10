@@ -92,7 +92,8 @@ Other options:
 
 1. **Working folder.** Choose the folder of the QE run. The GUI shows what it found: the `*.save` folder, the UPF
    files, the `pw.x` inputs, existing drivers. From the save it reads a summary of the system: formula, lattice,
-   electrons, gap or metal, k-grid, pseudopotential types, 2D slab.
+   electrons, gap or metal, k-grid, pseudopotential types, 2D slab. The folder is shared by every tab (see
+   [One folder for every tab](#one-folder-for-every-tab)).
 2. **Workflow.** The workflows are those of `paoflow-gen`: property run, ACBN0/eACBN0, harmonic phonons (with
    Raman), electron–phonon system folder, SSCHA, quantum oscillations (pyskeaf, from the Fermi-surface BXSF files
    of a property run). Two tools sit next to them: a QE input from an AFLOW or C2DB entry
@@ -164,10 +165,23 @@ A yellow banner, *PAOFLOW was updated after this server started*, means the Pyth
 `paoflow-studio` started (a source checkout after a pull or an edit). The page is already the new one but the
 server is not: stop it with Ctrl-C and start it again.
 
+### One folder for every tab
+
+A folder chosen in one tab becomes the folder of the other two:
+
+- *Change…* in Setup moves Runs and Results to it.
+- *Run a pw.x input…* in Runs moves Setup and Results to the folder of the input.
+- *Change…* in Results moves Setup and Runs. For a folder named `output/`, they take its parent, the run folder.
+  Setup on that run folder leaves Results on its `output/`.
+
+Setup and Runs write, so a Results folder that can only be read stays in Results. This covers an `--allow-read`
+folder, PAOFLOW's `PSEUDOS/` and a folder opened for reading. Setup and Runs keep their folder and say so.
+
 ## Runs
 
-The Runs tab shows the run plan of the last written workflow, or of a `pw.x` input chosen with *Run a pw.x
-input…*. *Run* starts a step:
+The Runs tab shows the run plan of the last workflow written in the working folder, or of a `pw.x` input chosen
+with *Run a pw.x input…*. Each folder keeps its own plan; *No run plan in …* means nothing was written there yet.
+*Run* starts a step:
 
 - `python` drivers run under `mpirun -np N` when the step supports MPI.
 - QE programs (`pw.x`, `ph.x`, `projwfc.x`, ...) run under `mpirun -np N` with their input file; their output goes

@@ -112,6 +112,8 @@ export class RunsView {
     this.root = root;
     this.app = app;
     this.session = app.session;
+    // The plan shown (`plan:<root>`) and the last plan written in each folder
+    // (`plan:<root>:<folder>`), shown again when the folder is chosen in another tab.
     const saved = storage(`plan:${this.session.root}`) || {};
     this.folder = saved.folder || null;
     this.plan = saved.plan || [];
@@ -159,6 +161,18 @@ export class RunsView {
     this.plan = plan || [];
     this.workflow = workflow || this.workflow;
     storage(`plan:${this.session.root}`, { folder, plan: this.plan, workflow: this.workflow });
+    storage(`plan:${this.session.root}:${folder}`, { plan: this.plan, workflow: this.workflow });
+    this.renderPlan();
+  }
+
+  // The folder chosen in Setup or Results: the last plan written there, or none yet.
+  showFolder(folder) {
+    if (folder === this.folder) return;
+    const saved = storage(`plan:${this.session.root}:${folder}`) || {};
+    this.folder = folder;
+    this.plan = saved.plan || [];
+    this.workflow = saved.workflow || '';
+    storage(`plan:${this.session.root}`, { folder, plan: this.plan, workflow: this.workflow });
     this.renderPlan();
   }
 
@@ -174,6 +188,7 @@ export class RunsView {
     try {
       const result = await api.post('/api/gen/qe-input/plan', { path: chosen });
       this.setPlan(result.folder, result.plan, 'qe_input');
+      this.app.changeFolder(result.folder, 'runs');
     } catch (error) {
       toast(error.message, 'bad', 7000);
     }
@@ -205,6 +220,9 @@ export class RunsView {
         h(
           'div',
           { class: 'small muted' },
+          this.folder ? 'No run plan in ' : null,
+          this.folder ? h('code', {}, this.folder === '.' ? '(root)' : this.folder) : null,
+          this.folder ? ' yet. ' : null,
           'Write the files of a workflow in the Setup tab; its steps appear here. For a pw.x ' +
             'input already on disk, use the button above.',
         ),

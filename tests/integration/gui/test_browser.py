@@ -84,6 +84,27 @@ def _navigate(driver, url):
     driver.get(url)
 
 
+def _click_entry(driver, css, match):
+    """Click the first element of ``css`` whose text matches, again if the list re-renders.
+
+    The folder picker redraws its listing when a request returns: an element found just before
+    may be gone (stale) when it is read or clicked.
+    """
+    from selenium.common.exceptions import StaleElementReferenceException
+
+    def attempt():
+        try:
+            for element in driver.find_elements(By.CSS_SELECTOR, css):
+                if match(element.text):
+                    element.click()
+                    return True
+        except StaleElementReferenceException:
+            pass
+        return False
+
+    _wait(attempt)
+
+
 def _open(driver, server, tab):
     _navigate(driver, server.url + '#' + tab)
     _wait(
@@ -909,4 +930,58 @@ def test_change_folder_anywhere_on_the_computer(browser, studio, tmp_path):
     _wait(lambda: browser.execute_script(detected) == 'gaas.scf.in')
     opened = browser.execute_script('return window.paoflowApp.session.opened')
     assert opened == [{'path': str(elsewhere.resolve()), 'writable': True}]
+    assert _errors(browser) == []
+
+
+def test_folder_change_reaches_every_tab(browser, studio, tmp_path):
+    """A folder chosen in Setup, Runs or Results becomes the folder of the other tabs; Runs shows
+    the plan of that folder; a Results output/ folder gives Setup its run folder; a read-only
+    Results folder leaves Setup and Runs where they are."""
+    server, work = studio
+    (tmp_path / 'Pb').mkdir()
+    (work / 'relax').mkdir()
+    (work / 'relax' / 'relax.in').write_text("&control\n  calculation = 'relax'\n/\n")
+    app = 'window.paoflowApp'
+    folders = 'return [%s.setup.workdir, %s.runs.folder, %s.results.folder]' % (app, app, app)
+    _open(browser, server, 'setup')
+    browser.execute_script('%s.results.open("Si")' % app)
+    _wait(lambda: browser.execute_script(folders) == ['Si', None, 'Si'])
+    # Runs: "Run a pw.x input…" in a subfolder; Setup and Results follow its folder.
+    browser.execute_script("%s.show('runs')" % app)
+    browser.find_element(By.XPATH, "//button[text()='Run a pw.x input…']").click()
+    _click_entry(browser, 'dialog .browser-entry.dir .grow.ellipsis', lambda text: text == 'relax')
+    _click_entry(browser, 'dialog .browser-entry', lambda text: 'relax.in' in text)
+    browser.find_element(By.XPATH, "//button[text()='Use the selected file']").click()
+    _wait(lambda: browser.execute_script(folders) == ['Si/relax'] * 3)
+    plan_card = browser.find_element(By.CSS_SELECTOR, '#view-runs .side .card')
+    assert 'pw.x -in relax.in' in plan_card.text
+    # Setup: another folder; Runs has no plan there, Results scans it.
+    browser.execute_script("%s.show('setup'); %s.setup.openFolder('Pb')" % (app, app))
+    _wait(lambda: browser.execute_script(folders) == ['Pb'] * 3)
+    browser.execute_script("%s.show('runs')" % app)
+    _wait(lambda: 'No run plan in Pb' in plan_card.text)
+    # back to the subfolder: its plan comes back
+    browser.execute_script("%s.setup.openFolder('Si/relax')" % app)
+    _wait(lambda: 'pw.x -in relax.in' in plan_card.text)
+    # Results: an output/ folder; Setup and Runs take the run folder, and Setup on that folder
+    # leaves the Results output/ folder open.
+    browser.execute_script(
+        "%s.show('results'); %s.results.open('Si/output', {propagate: true})" % (app, app)
+    )
+    _wait(lambda: browser.execute_script(folders) == ['Si', 'Si', 'Si/output'])
+    browser.execute_script("%s.setup.openFolder('Si')" % app)
+    time.sleep(0.5)
+    assert browser.execute_script(folders) == ['Si', 'Si', 'Si/output']
+    # Results: a read-only folder (PAOFLOW's PSEUDOS) stays in Results only.
+    pseudos = browser.execute_script('return %s.session.read_roots[0]' % app)
+    browser.execute_script('%s.results.open(arguments[0], {propagate: true})' % app, pseudos)
+    warning = _wait(
+        lambda: [
+            t
+            for t in browser.find_elements(By.CSS_SELECTOR, '.toast.warn')
+            if 'read-only' in t.text
+        ]
+    )
+    assert 'Setup and Runs stay in Si' in warning[0].text
+    assert browser.execute_script(folders) == ['Si', 'Si', pseudos]
     assert _errors(browser) == []

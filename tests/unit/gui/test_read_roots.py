@@ -108,6 +108,7 @@ def test_basis_command_and_results_from_read_roots(make_client, tmp_path):
     assert status == 403
     status, scan, _ = client.post('/api/results/scan', {'path': str(shared)})
     assert status == 200 and scan['folder'] == str(shared.resolve()) and scan['datasets']
+    assert not scan['writable']  # read-only: Setup and Runs do not follow it
     bands = next(d for d in scan['datasets'] if d['kind'] == 'bands')
     status, figure, _ = client.post('/api/results/figure', {'path': str(shared), 'id': bands['id']})
     assert status == 200 and figure['figure']['data']
