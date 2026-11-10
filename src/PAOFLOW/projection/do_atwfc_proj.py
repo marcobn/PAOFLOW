@@ -1592,7 +1592,7 @@ def calc_gvec_VASP(data_controller, ikpt=0):
 
 # ---------------------------------------------------------------------------
 # Per-shell change-of-basis matrices used by the relativistic NL-velocity
-# rotation (see ``hamiltonian/nonlocal_velocity.py``).  Both helpers probe
+# rotation (``_jm_shell_transform`` in ``hamiltonian/nonlocal_velocity.py``).  Both helpers probe
 # the existing ``calc_ylmg_complex_0`` / ``calc_ylmg_so`` routines with
 # one-hot inputs so they inherit PAOFLOW's tesseral/spinor conventions
 # (including the non-standard odd-|m| sign).

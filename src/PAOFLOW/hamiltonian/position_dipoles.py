@@ -47,8 +47,8 @@ and from the bra-site origin of :math:`X`; :math:`\mathbf d(\mathbf k)` is Hermi
 blocks of :math:`X` only.
 
 The real-space tables are built with the primitives of :mod:`PAOFLOW.hamiltonian._two_center`
-(the PAO radial function as bra, :math:`g(r) = r\,R(r)` at :math:`l \pm 1` for the dipole, as the
-projector bra of :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.build_nl_real_space_tables`).
+(the PAO radial function as bra, :math:`g(r) = r\,R(r)` at :math:`l \pm 1` for the dipole),
+vectorised over the orbitals of a site pair in :mod:`PAOFLOW.hamiltonian.two_center_blocks`.
 """
 
 from __future__ import annotations
@@ -355,9 +355,8 @@ def assemble_position_kspace(
     Notes
     -----
     The phase carries the lattice translation only, as the Hamiltonian of
-    :func:`~PAOFLOW.elphon.elph_bloch.band_velocities` and the projector sums of
-    :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.assemble_beta_projections_k`; the orbital
-    centres enter through :math:`\boldsymbol\tau` in :func:`lowdin_dipole_kspace`.
+    :func:`~PAOFLOW.elphon.elph_bloch.band_velocities`; the orbital centres enter through
+    :math:`\boldsymbol\tau` in :func:`lowdin_dipole_kspace`.
     """
     k_points_cart = np.asarray(k_points_cart, dtype=float)
     if k_points_cart.ndim != 2 or k_points_cart.shape[1] != 3:
@@ -693,7 +692,7 @@ def position_dipoles_on_grid(
     -----
     The input of :func:`inject_dipole_velocity_into_dHksp`; the k-grid layout is the caller's
     (global, or the rank's slice under MPI, as in
-    :meth:`PAOFLOW.PAOFLOW.nonlocal_velocity_correction`).
+    :meth:`PAOFLOW.PAOFLOW.position_dipole_correction`).
     """
     from .nonlocal_velocity import _kgrid_to_cart, _pao_jm_channel_info, scalar_to_jm_matrix
 

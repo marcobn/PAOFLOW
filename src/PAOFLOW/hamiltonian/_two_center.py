@@ -1,7 +1,7 @@
 r"""Two-center integral primitives for atom-centered orbitals.
 
-This file is internal to :mod:`PAOFLOW.hamiltonian.nonlocal_velocity` and
-implements the radial / angular building blocks needed to assemble the
+This file is internal to :mod:`PAOFLOW.hamiltonian.position_dipoles` (through
+:mod:`PAOFLOW.hamiltonian.two_center_blocks`) and implements the radial / angular building blocks needed to assemble the
 real-space overlap tables
 
 .. math::
