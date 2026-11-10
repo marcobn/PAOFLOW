@@ -20,6 +20,11 @@ A single band (by its BXSF band label)::
 
     fermi-plotter FermiSurf_0.bxsf --band 58
 
+A pyskeaf input file (Rydberg, vectors without 2π) is converted to eV, so it gives the same
+sheet as the band of ``FermiSurf_0.bxsf`` (``--units`` overrides the detection by name)::
+
+    fermi-plotter Fermi_surf_band_1.bxsf --fermi-shift -0.5
+
 A subset of bands, upsampled 2x for smoother sheets, saved to PNG::
 
     fermi-plotter FermiSurf_0.bxsf --band 57,58 --interp 2 --save fermi.png
@@ -85,25 +90,50 @@ class FermiSurfData:
     Attributes
     ----------
     fermi_energy : float
-        Fermi energy in eV, as written in the ``BEGIN_INFO`` block.
+        Fermi energy in eV, as written in the ``BEGIN_INFO`` block (converted from Rydberg for a
+        pyskeaf input file).
     dims : tuple[int, int, int]
         Grid dimensions ``(Nx, Ny, Nz)`` as stored in the file.  PAOFLOW writes
         the periodic wrap-around grid, so ``Nx = nk1 + 1`` etc.
     recip : np.ndarray, shape (3, 3)
-        Reciprocal-lattice (spanning) vectors as stored in the file; row ``i``
-        is the ``i``-th vector (units of :math:`2\\pi/a_{\\rm lat}`).
+        Reciprocal-lattice (spanning) vectors; row ``i`` is the ``i``-th vector, in bohr⁻¹ with
+        the :math:`2\\pi` (``write2bxsf`` writes :math:`2\\pi\\,\\mathbf b_i/a_{\\rm lat}`).
     bands : dict[int, np.ndarray]
         Mapping of BXSF band label -> energy grid of shape ``dims`` (eV).
+    skeaf : bool
+        The file was a pyskeaf input (``Fermi_surf_band_<n>.bxsf``) brought to these units.
     """
 
     fermi_energy: float
     dims: tuple[int, int, int]
     recip: np.ndarray
     bands: dict[int, np.ndarray]
+    skeaf: bool = False
 
 
-def read_fermi_bxsf(path: str | Path) -> FermiSurfData:
-    """Read a PAOFLOW Fermi-surface BXSF file (single or multi-band).
+#: eV per Rydberg: the energy unit of the pyskeaf input files.
+RYDBERG_EV = 13.605693122994
+#: Name of the pyskeaf input files (:func:`PAOFLOW.writers.write2bxsf4skeaf.write2bxsf4skeaf`).
+SKEAF_INPUT = re.compile(r'Fermi_surf_band_\d+\.bxsf$')
+
+
+def is_skeaf_input(path: str | Path) -> bool:
+    """Whether a BXSF file is a pyskeaf input by its name (``Fermi_surf_band_<n>.bxsf``).
+
+    Parameters
+    ----------
+    path : str or Path
+        The file.
+
+    Returns
+    -------
+    bool
+    """
+    return bool(SKEAF_INPUT.search(Path(path).name))
+
+
+def read_fermi_bxsf(path: str | Path, skeaf: bool | None = None) -> FermiSurfData:
+    """Read a PAOFLOW Fermi-surface BXSF file (single or multi-band), in eV and bohr⁻¹ (2π in).
 
     Unlike ``PAOFLOW.pyskeaf.io_bxsf.read_bxsf`` (which targets single-band,
     non-periodic SKEAF grids), this reader accepts the multi-band,
@@ -113,6 +143,11 @@ def read_fermi_bxsf(path: str | Path) -> FermiSurfData:
     ----------
     path : str or Path
         Path to the ``.bxsf`` file.
+    skeaf : bool, optional
+        The file is a pyskeaf input, ``Fermi_surf_band_<n>.bxsf``: energies in Rydberg and
+        reciprocal vectors without the :math:`2\\pi`, as SKEAF wants them.  They are brought to
+        the units of ``FermiSurf_<s>.bxsf`` (eV, :math:`2\\pi` included) so that both files give
+        the same Fermi surface at the same level.  ``None`` (default) decides by the file name.
 
     Returns
     -------
@@ -192,6 +227,16 @@ def read_fermi_bxsf(path: str | Path) -> FermiSurfData:
     if not np.allclose(origin, 0.0):
         print(f'warning: non-zero grid origin {origin} ignored.', file=sys.stderr)
 
+    if skeaf is None:
+        skeaf = is_skeaf_input(path)
+    if skeaf:
+        return FermiSurfData(
+            fermi_energy * RYDBERG_EV,
+            dims,
+            recip * 2.0 * np.pi,
+            {label: grid * RYDBERG_EV for label, grid in bands.items()},
+            skeaf=True,
+        )
     return FermiSurfData(fermi_energy, dims, recip, bands)
 
 
@@ -1268,7 +1313,18 @@ def _build_parser() -> argparse.ArgumentParser:
         prog='fermi-plotter',
         description='Interactive Mayavi Fermi-surface viewer for PAOFLOW BXSF files.',
     )
-    p.add_argument('bxsf', help='Path to a FermiSurf_{ispin}.bxsf file.')
+    p.add_argument(
+        'bxsf',
+        help='Path to a FermiSurf_{ispin}.bxsf file (or a pyskeaf Fermi_surf_band_<n>.bxsf).',
+    )
+    p.add_argument(
+        '--units',
+        choices=('auto', 'fermisurf', 'skeaf'),
+        default='auto',
+        help='Units of the file: "fermisurf" (eV, vectors with 2π: FermiSurf_<s>.bxsf), '
+        '"skeaf" (Rydberg, vectors without 2π: the pyskeaf inputs Fermi_surf_band_<n>.bxsf, '
+        'converted to eV), "auto" (default) by the file name.',
+    )
     p.add_argument(
         '--band',
         default=None,
@@ -1373,7 +1429,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f'error: file not found: {path}', file=sys.stderr)
         return 2
 
-    data = read_fermi_bxsf(path)
+    units = {'auto': None, 'fermisurf': False, 'skeaf': True}[args.units]
+    data = read_fermi_bxsf(path, skeaf=units)
+    if data.skeaf:
+        print(
+            f'{path.name}: pyskeaf input (Rydberg, reciprocal vectors without 2π) converted to '
+            'eV and 2π, as FermiSurf_<s>.bxsf; --fermi-shift is in eV.'
+        )
     labels = _parse_bands(args.band, list(data.bands.keys()))
     supercell = _parse_supercell(args.supercell)
     field = _build_field(args)

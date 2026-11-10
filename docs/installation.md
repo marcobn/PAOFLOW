@@ -71,7 +71,7 @@ The package installs five console commands:
 | `paoflow-gen` | Driver scripts from a QE run: property run, ACBN0, phonons, electron-phonon system folder |
 | `paoflow-genbasis-ps` | Atomic-orbital basis tables generated from the pseudopotentials |
 | `pyskeaf` | Extremal Fermi-surface orbits (de Haas-van Alphen frequencies and masses) |
-| `fermi-plotter` | Fermi-surface and field-direction viewer for the quantum-oscillation analysis |
+| `fermi-plotter` | Fermi-surface and field-direction viewer for the quantum-oscillation analysis (`FermiSurf_<s>.bxsf`, or a pyskeaf `Fermi_surf_band_<n>.bxsf`, converted from Rydberg; `--units` overrides the detection) |
 
 See [CLI generators](internals/cli-generators.md).
 

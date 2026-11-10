@@ -1064,3 +1064,18 @@ and files 1–2 hold unrelated data. They are worth regenerating with the asset 
 Test: `test_pyskeaf_sheets_match_the_fermi_surface` writes synthetic files in both formats (the formats of the
 two writers). The unfolded points must be identical, and the folded sheets equal within the 6-decimal rounding
 of the vectors.
+
+**fermi-plotter, same fix (9 November 2026, user remark).** `fermi-plotter` read a pyskeaf
+`Fermi_surf_band_<n>.bxsf` as a `FermiSurf_<s>.bxsf`. The conversion now lives in the shared reader:
+- `gen/fermi_plotter.read_fermi_bxsf(path, skeaf=None)` brings a pyskeaf input to eV and bohr⁻¹ with 2π.
+  `None` decides by the name (`is_skeaf_input`), and the result carries `FermiSurfData.skeaf`.
+- `fermi-plotter --units {auto, fermisurf, skeaf}` overrides that, and the plotter says when it converts.
+- The Results viewer (`volumes.fermi_mesh(skeaf=...)`) calls the same reader, so there is one conversion.
+
+The `FermiSurfData.recip` docstring said "units of 2π/a_lat". `write2bxsf` writes `2π b/alat` (bohr⁻¹ with the
+2π) and `write2bxsf4skeaf` writes `b/alat`, a factor of exactly 2π.
+
+The qo_analysis agentic code already reads the pyskeaf files in Rydberg.
+
+Tests: `tests/unit/graphics/test_fermi_plotter_units.py` covers the reader and the command line, with the
+Mayavi drawing replaced by a stand-in that captures the data.

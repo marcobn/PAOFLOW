@@ -17,9 +17,6 @@ import numpy as np
 
 from .model import Dataset, DatasetRef
 
-#: eV per Rydberg: the energy unit of the SKEAF input files ``Fermi_surf_band_<n>.bxsf``.
-RYDBERG_EV = 13.605693122994
-
 #: Triangles sent to the browser at most (meshes beyond it are thinned by face sampling).
 MAX_FACES = 150000
 
@@ -88,12 +85,10 @@ def fermi_mesh(
     grids: dict[int, np.ndarray] = {}
     recip = None
     fermi = 0.0
-    energy_unit = RYDBERG_EV if skeaf else 1.0
     for path in paths:
-        data = read_fermi_bxsf(path)
-        vectors = np.asarray(data.recip, dtype=float) * (2.0 * np.pi if skeaf else 1.0)
-        recip = vectors if recip is None else recip
-        fermi = data.fermi_energy * energy_unit
+        data = read_fermi_bxsf(path, skeaf=skeaf)  # eV and bohr⁻¹ with 2π, whatever the file
+        recip = np.asarray(data.recip, dtype=float) if recip is None else recip
+        fermi = data.fermi_energy
         label_offset = 0
         if len(paths) > 1:
             digits = ''.join(ch for ch in os.path.basename(path) if ch.isdigit())
@@ -101,7 +96,7 @@ def fermi_mesh(
         for label, grid in data.bands.items():
             # SKEAF files: the band of the BAND line, unless two files claim the same one.
             key = label if skeaf and label not in grids else label_offset or label
-            grids[key] = grid * energy_unit
+            grids[key] = grid
     level = fermi + shift
     available = [label for label, grid in grids.items() if grid.min() <= level <= grid.max()]
     header_ignored = False
