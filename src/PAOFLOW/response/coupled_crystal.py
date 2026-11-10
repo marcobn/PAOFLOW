@@ -368,8 +368,9 @@ class CrystalChannel:
             return array
         from mpi4py import MPI
 
-        self.comm.Allreduce(MPI.IN_PLACE, array, op=MPI.SUM)
-        return array
+        from ..utils.communication import allreduce_inplace  # slices beyond the MPI count
+
+        return allreduce_inplace(array, MPI.SUM, communicator=self.comm)
 
     def ground_state_density(self) -> NDArray[np.float64]:
         """Ground-state density on the grid from the occupied states of the local k (allreduced)."""

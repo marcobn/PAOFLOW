@@ -1411,8 +1411,10 @@ def phonon_assisted_absorption_dense_q(
 
     if size > 1:
         arrays = [eps_ind, eps_ind_l, eps_dir, eps_dir_l] + ([wide] if wide is not None else [])
+        from ..utils.communication import allreduce_inplace  # slices beyond the MPI count
+
         for array in arrays:
-            comm.Allreduce(MPI.IN_PLACE, array, op=MPI.SUM)
+            allreduce_inplace(array, MPI.SUM, communicator=comm)
     comm.Barrier()
     velocity_window.Free()
     vertex['window'].Free()

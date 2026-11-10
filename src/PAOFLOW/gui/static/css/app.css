@@ -1384,3 +1384,37 @@ pre.log.plots-log {
     grid-template-columns: 1fr;
   }
 }
+
+/* ------------------------------------------------------------------------- crystal */
+.crystal-view {
+  height: 240px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.crystal-controls {
+  margin-top: 4px;
+}
+.crystal-controls > .grow {
+  min-width: 0;
+}
+.crystal-repeat {
+  width: auto;
+  flex: none;
+}
+.crystal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.species-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  vertical-align: -1px;
+}

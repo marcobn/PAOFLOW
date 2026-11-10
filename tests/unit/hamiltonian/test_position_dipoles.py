@@ -386,3 +386,23 @@ def test_ill_conditioning_warning_once_on_the_first_rank(monkeypatch):
     world.Get_rank = lambda: 0
     shown = messages()
     assert len(shown) == 1 and 'Shown once, by the first MPI rank' in str(shown[0].message)
+
+
+def test_position_dipoles_of_three_k_points_are_not_transposed(si_data_controller):
+    """A (3, nk = 3) grid is PAOFLOW's (3, nk) layout: the batch equals the k-points one by one.
+
+    Until November 2026 the shape-based layout check read (3, 3) as (nk, 3), so an MPI rank holding
+    exactly three k-points got the dipoles of transposed k-points.
+    """
+    from PAOFLOW.hamiltonian.position_dipoles import position_dipoles_on_grid
+
+    dc, _alat, _a_vectors = si_data_controller
+    kgrid = np.random.default_rng(5).uniform(-0.5, 0.5, size=(3, 4))
+    batch = position_dipoles_on_grid(dc, kgrid[:, :3], pao_tol=1e-2, n_q=300)
+    for k in range(3):
+        alone = position_dipoles_on_grid(dc, kgrid[:, [k]], pao_tol=1e-2, n_q=300)[0]
+        np.testing.assert_allclose(batch[k], alone, rtol=0.0, atol=1e-12)
+    rows = position_dipoles_on_grid(dc, kgrid.T, pao_tol=1e-2, n_q=300)  # (nk, 3) with nk = 4
+    np.testing.assert_allclose(
+        rows, position_dipoles_on_grid(dc, kgrid, pao_tol=1e-2, n_q=300), atol=1e-12
+    )

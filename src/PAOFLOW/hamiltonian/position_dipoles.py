@@ -1045,7 +1045,8 @@ def position_dipoles_on_grid(
         ``alat``, ``dftSO``, ``adhoc_SO``).  The tables are cached under
         ``'_PD_tables'`` / ``'_PD_on_site'`` so repeated calls (MPI slices) are cheap.
     kgrid_2pi_alat : ndarray, shape ``(3, nk)`` or ``(nk, 3)``
-        Cartesian k-points in units of :math:`2\pi/a` (PAOFLOW's ``arrays['kgrid']``).
+        Cartesian k-points in units of :math:`2\pi/a` (PAOFLOW's ``arrays['kgrid']``). A first
+        axis of length 3 is read as ``(3, nk)``, also for ``nk = 3``.
     level : {'full', 'intra-atomic'}, optional
         See :func:`lowdin_dipole_kspace`.
     q_max, n_q, pao_tol : optional

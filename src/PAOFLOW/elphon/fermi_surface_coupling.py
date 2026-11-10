@@ -244,8 +244,10 @@ class FermiSurfacePairCoupling:
         if comm is not None and comm.Get_size() > 1:
             from mpi4py import MPI
 
-            comm.Allreduce(MPI.IN_PLACE, self.coupling, op=MPI.SUM)
-            comm.Allreduce(MPI.IN_PLACE, self.coulomb, op=MPI.SUM)
+            from ..utils.communication import allreduce_inplace  # slices beyond the MPI count
+
+            allreduce_inplace(self.coupling, MPI.SUM, communicator=comm)
+            allreduce_inplace(self.coulomb, MPI.SUM, communicator=comm)
 
     def result(self, bg: ArrayLike, at: ArrayLike, nq_side: int) -> dict[str, Any]:
         """The Fermi-surface coupling as a dictionary of arrays.

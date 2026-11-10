@@ -2081,23 +2081,14 @@ class PAOFLOW:
                     pao_tol=pao_tol,
                 )
 
-            from .utils.communication import gather_array, load_balancing, scatter_full
+            from .utils.communication import scatter_full_indices
 
             if attr.get('mpisize', 1) > 1:
+                # every rank builds the dipoles of the k-points it holds in the scatter_full layout
+                # of the k-distributed arrays: no gather of the nk x 3 x nawf^2 array on one rank
                 kgrid = np.asarray(arry['kgrid'])
-                nktot = kgrid.shape[1]
-                ks, ke = load_balancing(self.size, self.rank, nktot)
-                part = np.ascontiguousarray(_build(kgrid[:, ks:ke]))
-                full = (
-                    np.zeros((nktot,) + part.shape[1:], dtype=part.dtype)
-                    if self.rank == 0
-                    else None
-                )
-                gather_array(full, part)
-                if self.rank == 0:
-                    local = scatter_full(np.ascontiguousarray(full), attr['npool'])
-                else:
-                    local = scatter_full(None, attr['npool'])
+                mine = scatter_full_indices(kgrid.shape[1], attr['npool'], self.size, self.rank)
+                local = np.ascontiguousarray(_build(kgrid[:, mine]))
             else:
                 local = _build(arry['kgrid'])
 

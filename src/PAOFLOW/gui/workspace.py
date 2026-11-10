@@ -160,6 +160,51 @@ def list_directory(app: 'GuiApp', relative: str | None) -> dict:
     }
 
 
+def structure_view(
+    app: 'GuiApp', relative: str | None, source: str | None, repeat: object = 1
+) -> dict:
+    """The crystal of a folder for the Setup tab: a save (final structure) or a ``pw.x`` input.
+
+    Parameters
+    ----------
+    app : GuiApp
+        The application.
+    relative : str or None
+        The folder, relative to the root or absolute.
+    source : str or None
+        One of its saves or ``pw.x`` inputs (default: the first save, else the first input).
+    repeat : int, optional
+        Cells per axis shown (1 to 3).
+
+    Returns
+    -------
+    dict
+        ``sources`` (the saves, then the inputs), ``source``, ``kind`` and the fields of
+        :func:`PAOFLOW.gen.crystal_structure.structure_figure`; or ``sources`` and ``error``.
+    """
+    from ..gen.crystal_structure import MAX_REPEAT, folder_structure, structure_figure
+    from ..gen.system_summary import find_saves
+
+    folder = app.resolve_readable(relative)
+    if not folder.is_dir():
+        raise HttpError(404, '%s is not a folder' % relative)
+    inputs = sorted(p.name for p in folder.glob('*.in') if p.is_file() and _is_pw_input(p))
+    sources = list(find_saves(str(folder))) + inputs
+    if not sources:
+        return {'sources': [], 'error': 'no QE save or pw.x input in this folder'}
+    source = source if source in sources else sources[0]
+    try:
+        repeat = min(max(1, int(repeat)), MAX_REPEAT)
+    except (TypeError, ValueError):
+        repeat = 1
+    structure = folder_structure(str(folder), source)
+    if structure is None:
+        return {'sources': sources, 'source': source, 'error': 'no structure in %s' % source}
+    result = structure_figure(structure, repeat)
+    result.update({'sources': sources, 'source': source, 'kind': structure['kind']})
+    return result
+
+
 def detect(app: 'GuiApp', relative: str | None) -> dict:
     """What a working folder holds for the generators, with summaries and suggestions.
 
@@ -334,3 +379,10 @@ def register(app: 'GuiApp') -> None:
     @app.route('GET', '/api/workspace/detect')
     def workspace_detect(request: Request) -> Response:
         return json_response(detect(app, request.query.get('path')))
+
+    @app.route('GET', '/api/workspace/structure')
+    def workspace_structure(request: Request) -> Response:
+        query = request.query
+        return json_response(
+            structure_view(app, query.get('path'), query.get('source'), query.get('repeat', 1))
+        )

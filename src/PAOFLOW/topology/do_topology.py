@@ -186,7 +186,9 @@ def do_topology(data_controller):
         dHRs = gather_full(dHRs, npool)
         if rank != 0:
             dHRs = np.zeros((nk1 * nk2 * nk3, nawf, nawf, nspin), dtype=complex)
-        comm.Bcast(dHRs)
+        from ..utils.communication import bcast_array
+
+        bcast_array(dHRs)  # in slices: nk x nawf^2 can exceed the MPI count
         dHRs = np.moveaxis(dHRs, 0, 2)
 
         # Compute dH(k)/dk on the path
@@ -246,7 +248,9 @@ def do_topology(data_controller):
                 d2HRs = gather_full(d2HRs, npool)
                 if rank != 0:
                     d2HRs = np.zeros((nk1 * nk2 * nk3, nawf, nawf, nspin), dtype=complex)
-                comm.Bcast(d2HRs)
+                from ..utils.communication import bcast_array
+
+                bcast_array(d2HRs)
                 d2HRs = np.moveaxis(d2HRs, 0, 2)
 
                 # Compute d2H(k)/dk*dkp on the path

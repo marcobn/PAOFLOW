@@ -716,12 +716,38 @@ def scalar_to_jm_matrix(matrix_k: np.ndarray, pao_catalog: PAOCatalog) -> np.nda
 
 
 def _kgrid_to_cart(kgrid_2pi_alat: np.ndarray, alat: float) -> np.ndarray:
-    """PAOFLOW's ``(3, nk)`` or ``(nk, 3)`` k-grid in units of 2 pi/alat -> ``(nk, 3)`` 1/bohr."""
+    """PAOFLOW's ``(3, nk)`` or ``(nk, 3)`` k-grid in units of 2 pi/alat -> ``(nk, 3)`` 1/bohr.
+
+    Parameters
+    ----------
+    kgrid_2pi_alat : ndarray, shape ``(3, nk)`` or ``(nk, 3)``
+        k-points in units of 2 pi/alat. A first axis of length 3 is read as PAOFLOW's ``(3, nk)``
+        layout (``arrays['kgrid']``), also for ``nk = 3``, where the shape alone is ambiguous;
+        ``(nk, 3)`` otherwise.
+    alat : float
+        Lattice parameter (bohr).
+
+    Returns
+    -------
+    ndarray, shape ``(nk, 3)``
+        Cartesian k-points (1/bohr).
+
+    Raises
+    ------
+    ValueError
+        For an array that is not 2-D or has no axis of length 3.
+
+    Notes
+    -----
+    Until November 2026 a ``(3, 3)`` array was read as ``(nk, 3)``: a batch of exactly three
+    k-points in PAOFLOW's layout (an MPI rank holding three k-points in
+    ``PAOFLOW.position_dipole_correction``) was transposed.
+    """
     k_arr = np.asarray(kgrid_2pi_alat, dtype=float)
     if k_arr.ndim != 2:
         raise ValueError('kgrid_2pi_alat must be 2-D')
-    if k_arr.shape[0] == 3 and k_arr.shape[1] != 3:
-        k_arr = k_arr.T  # (3, nk) → (nk, 3)
+    if k_arr.shape[0] == 3:
+        k_arr = k_arr.T  # (3, nk) → (nk, 3), PAOFLOW's layout, also for nk = 3
     elif k_arr.shape[1] != 3:
         raise ValueError('kgrid_2pi_alat must have a length-3 axis')
     return k_arr * (2.0 * np.pi / float(alat))

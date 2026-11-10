@@ -363,3 +363,19 @@ def test_export_with_axis_limits(client, gui_root):
     assert status == 422 and 'below' in data['error']
     status, data, _ = client.post('/api/results/export', dict(body, format='python'))
     assert status == 200 and "limits={'x': [-4.0, 4.0]}" in data['text']
+
+
+def test_structure_of_the_working_folder(client, gui_root):
+    status, body, _ = client.get('/api/workspace/structure?path=Si')
+    assert status == 200 and body['sources'] == ['silicon.save', 'scf.in']
+    assert body['source'] == 'silicon.save' and body['kind'] == 'save'
+    assert body['formula'] == 'Si2' and body['figure']['data'][2]['name'] == 'Si'
+    body = client.get('/api/workspace/structure?path=Si&source=scf.in&repeat=2')[1]
+    assert body['kind'] == 'pw.x input' and body['repeat'] == 2 and body['shown'] == 35
+    # a source of another folder is not taken: the first of this one is
+    assert (
+        client.get('/api/workspace/structure?path=Si&source=../x.in')[1]['source'] == 'silicon.save'
+    )
+    (gui_root / 'empty').mkdir()
+    assert 'error' in client.get('/api/workspace/structure?path=empty')[1]
+    assert client.get('/api/workspace/structure?path=../')[0] == 403

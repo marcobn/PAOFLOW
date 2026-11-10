@@ -83,7 +83,9 @@ def do_berry_curvature(data_controller):
         dHRs = gather_full(dHRs, npool)
         if rank != 0:
             dHRs = np.zeros((nk1 * nk2 * nk3, nawf, nawf, nspin), dtype=complex)
-        comm.Bcast(dHRs)
+        from ..utils.communication import bcast_array
+
+        bcast_array(dHRs)  # in slices: nk x nawf^2 can exceed the MPI count
         dHRs = np.moveaxis(dHRs, 0, 2)
 
         # Compute dH(k)/dk on the path

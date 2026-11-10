@@ -856,8 +856,9 @@ def _allreduce(comm, array: NDArray) -> NDArray:
         return array
     from mpi4py import MPI
 
-    comm.Allreduce(MPI.IN_PLACE, array, op=MPI.SUM)
-    return array
+    from ..utils.communication import allreduce_inplace  # slices beyond the MPI count
+
+    return allreduce_inplace(array, MPI.SUM, communicator=comm)
 
 
 def static_hyperpolarizability(

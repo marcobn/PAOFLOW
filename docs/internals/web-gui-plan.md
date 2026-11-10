@@ -1176,3 +1176,28 @@ Now a folder chosen in one tab moves the others, through `App.changeFolder(path,
 - Tests: `tests/unit/graphics/test_figure_capture.py` (subprocess), `tests/unit/gui/test_plots.py`, and the browser
   test `test_plots_tab_runs_the_plot_script` (generated `plot.py` on the example01 outputs: four or more figures
   loaded, then *Run in Plots* from Runs).
+
+**Crystal viewer in Setup (10 November 2026, user request).** A *Crystal structure* card under the working folder.
+
+- `gen/crystal_structure.py` (GUI-independent):
+  - `structure_from_save` reads the `output/atomic_structure` of `data-file-schema.xml`.
+  - `structure_from_pw_input` reads `ibrav` with `celldm` or `A, B, C, cos*` (QE `abc2celldm` mapping), through
+    `lattice_format_QE`, or `CELL_PARAMETERS` in alat, bohr or angstrom. Positions can be in alat, bohr, angstrom or
+    crystal; `crystal_sg` is not read.
+  - `structure_figure(structure, repeat)` builds the Plotly spec:
+    - the cell edges (role `axis`) and a, b, c labels;
+    - one marker trace per species, in Jmol colours with sizes from the Cordero covalent radii;
+    - bonds where the distance is below 1.15 × the sum of the radii, half bonds to atoms outside the block;
+    - the camera from `band_paths.camera_eye`.
+  - The bond search runs in chunks, and above 2000 shown atoms the block uses fewer copies.
+- Reader check: identical to ASE on the 10 `ibrav = 0` example inputs ASE reads, and identical to the saves of 80
+  of 84 inputs in examples and Workspace. The other 4 share a prefix with another run, so their save comes from a
+  different input.
+- `GET /api/workspace/structure?path=&source=&repeat=`: the sources are the saves, then the `pw.x` inputs of the
+  folder, and a source outside that list falls back to the first.
+- `setup.js` `renderCrystal`:
+  - it redraws when the detection, the source, the repeat or the theme changes;
+  - the source and repeat are stored per folder, and the collapsed state globally;
+  - the legend chips carry the species colours.
+- Tests: `tests/unit/gen/test_crystal_structure.py`, `test_structure_of_the_working_folder`, and the browser test
+  `test_crystal_structure_under_the_working_folder`.

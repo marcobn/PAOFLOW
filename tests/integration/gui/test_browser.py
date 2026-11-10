@@ -1026,3 +1026,27 @@ def test_plots_tab_runs_the_plot_script(browser, studio):
     assert browser.execute_script('return window.paoflowApp.currentTab()') == 'plots'
     _wait(lambda: browser.execute_script(loaded) >= 4, timeout=60)
     assert _errors(browser) == []
+
+
+def test_crystal_structure_under_the_working_folder(browser, studio):
+    """The Setup tab draws the structure of the working folder (its save), repeats it and hides it."""
+    Select = pytest.importorskip('selenium.webdriver.support.select').Select
+    server, _work = studio
+    _open(browser, server, 'setup')
+    rendered = "return document.querySelector('.crystal-card .crystal-view')?.dataset.rendered"
+    _wait(lambda: browser.execute_script(rendered) == 'true')
+    card = browser.find_element(By.CSS_SELECTOR, '.crystal-card')
+    assert 'Si ×2' in card.text and 'after the run (silicon.save)' in card.text
+    assert 'α = β = γ = 60°' in card.text
+    points = (
+        "const view = document.querySelector('.crystal-card .crystal-view');"
+        "return view.data.filter((t) => t.name === 'Si')[0].x.length"
+    )
+    assert browser.execute_script(points) == 9
+    Select(browser.find_element(By.CSS_SELECTOR, '.crystal-repeat')).select_by_visible_text('2×2×2')
+    _wait(lambda: browser.execute_script(points) == 35)
+    browser.find_element(By.CSS_SELECTOR, '.crystal-card .icon-btn').click()
+    _wait(lambda: not browser.find_elements(By.CSS_SELECTOR, '.crystal-card .crystal-view'))
+    browser.find_element(By.CSS_SELECTOR, '.crystal-card .icon-btn').click()  # shown again
+    _wait(lambda: browser.execute_script(rendered) == 'true')
+    assert _errors(browser) == []

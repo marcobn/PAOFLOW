@@ -19,6 +19,7 @@ overview
 :caption: Development Environment
 
 dev-environment
+mpi-large-collectives-plan
 
 ```
 

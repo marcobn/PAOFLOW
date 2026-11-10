@@ -407,7 +407,9 @@ def fan_migdal_self_energy(
                 w, eta, eps_acoustic, weight=q_weight,
             )[0]  # fmt: skip
     if size > 1:
-        comm.Allreduce(MPI.IN_PLACE, sigma, op=MPI.SUM)
+        from ..utils.communication import allreduce_inplace  # slices beyond the MPI count
+
+        allreduce_inplace(sigma, MPI.SUM, communicator=comm)
     comm.Barrier()
     vertex['window'].Free()
     release_dense_electrons(electrons)

@@ -42,6 +42,10 @@ export class SetupView {
     this.options = {};
     this.build();
     this.scheduleResolve = debounce(() => this.resolve(), 250);
+    // The structure takes the colours of the theme (background, cell, bonds).
+    window.addEventListener('paoflow-theme', () => {
+      if (this.detection) this.renderCrystal(true);
+    });
   }
 
   build() {
@@ -52,9 +56,11 @@ export class SetupView {
       h('div', { class: 'columns setup-grid' }, this.side, this.center, this.preview),
     );
     this.folderCard = h('div', { class: 'card' });
+    this.crystalCard = h('div', { class: 'card crystal-card', hidden: true });
+    this.crystalView = h('div', { class: 'crystal-view' });
     this.workflowCard = h('div', { class: 'card' });
     this.sectionCard = h('div', { class: 'card', hidden: true });
-    this.side.append(this.folderCard, this.workflowCard, this.sectionCard);
+    this.side.append(this.folderCard, this.crystalCard, this.workflowCard, this.sectionCard);
   }
 
   async init() {
@@ -214,6 +220,140 @@ export class SetupView {
       this.folderCard.append(
         h('div', { class: 'callout warn', style: { marginTop: '8px' } }, warning),
       );
+    this.renderCrystal();
+  }
+
+  // ------------------------------------------------------------------- crystal
+  // The structure of the working folder: a save (the structure after the run) or a pw.x input.
+  // Drawn again when the folder changes (a relaxation writes its save, an input is edited).
+  crystalSettings() {
+    return storage(`crystal:${this.session.root}:${this.workdir}`) || {};
+  }
+
+  async renderCrystal(force = false) {
+    const d = this.detection;
+    const sources = [...d.saves, ...d.pw_inputs];
+    if (!sources.length) {
+      this.crystalCard.hidden = true;
+      this.crystalKey = null;
+      return;
+    }
+    const settings = this.crystalSettings();
+    const source = sources.includes(settings.source) ? settings.source : sources[0];
+    const repeat = settings.repeat || 1;
+    const collapsed = Boolean(storage('crystal-collapsed'));
+    const key = JSON.stringify([
+      this.workdir,
+      source,
+      repeat,
+      collapsed,
+      sources,
+      d.save_summary,
+      d.template_summary,
+    ]);
+    if (key === this.crystalKey && !force) return;
+    this.crystalKey = key;
+    this.crystalCard.hidden = false;
+    const toggle = h(
+      'button',
+      {
+        class: 'icon-btn',
+        title: collapsed ? 'Show the structure' : 'Hide the structure',
+        'aria-expanded': String(!collapsed),
+        onclick: () => {
+          storage('crystal-collapsed', !collapsed);
+          this.renderCrystal(true);
+        },
+      },
+      collapsed ? '▸' : '▾',
+    );
+    const head = h(
+      'div',
+      { class: 'row' },
+      h('h3', { class: 'grow' }, 'Crystal structure'),
+      toggle,
+    );
+    if (collapsed) {
+      clear(this.crystalCard).append(head);
+      return;
+    }
+    const remember = (change) => {
+      storage(`crystal:${this.session.root}:${this.workdir}`, { ...settings, ...change });
+      this.renderCrystal(true);
+    };
+    const repeats = h(
+      'select',
+      {
+        class: 'small crystal-repeat',
+        title: 'Cells per axis',
+        onchange: () => remember({ repeat: Number(repeats.value) }),
+      },
+      [1, 2, 3].map((n) => h('option', { value: n, selected: n === repeat }, `${n}×${n}×${n}`)),
+    );
+    const controls = h(
+      'div',
+      { class: 'row crystal-controls' },
+      sources.length > 1
+        ? h(
+            'select',
+            {
+              class: 'small grow',
+              title: 'Structure of a save (after the run) or of a pw.x input',
+              onchange: (event) => remember({ source: event.target.value }),
+            },
+            sources.map((name) => h('option', { value: name, selected: name === source }, name)),
+          )
+        : h('span', { class: 'grow small muted ellipsis' }, source),
+      repeats,
+    );
+    let result;
+    try {
+      result = await api.get('/api/workspace/structure', { path: this.workdir, source, repeat });
+    } catch (error) {
+      result = { error: error.message };
+    }
+    if (key !== this.crystalKey) return; // the folder changed meanwhile
+    clear(this.crystalCard).append(head, controls);
+    if (result.error) {
+      this.crystalCard.append(h('div', { class: 'small muted' }, result.error));
+      return;
+    }
+    const c = result.cell;
+    const same = (x, y) => Math.abs(x - y) < 5e-4;
+    const lengths =
+      same(c.a, c.b) && same(c.b, c.c)
+        ? `a = b = c = ${fmt(c.a)} Å`
+        : `a ${fmt(c.a)}, b ${fmt(c.b)}, c ${fmt(c.c)} Å`;
+    const angles =
+      same(c.alpha, c.beta) && same(c.beta, c.gamma)
+        ? `α = β = γ = ${fmt(c.alpha, 2)}°`
+        : `α ${fmt(c.alpha, 2)}, β ${fmt(c.beta, 2)}, γ ${fmt(c.gamma, 2)}°`;
+    this.crystalCard.append(
+      this.crystalView,
+      h(
+        'div',
+        { class: 'crystal-legend' },
+        result.species.map((s) =>
+          h(
+            'span',
+            { class: 'chip', title: s.element },
+            h('span', { class: 'species-dot', style: { background: s.color } }),
+            `${s.label}${s.count > 1 ? ` ×${s.count}` : ''}`,
+          ),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'small muted', style: { marginTop: '6px' } },
+        `${result.formula} · ${result.nat} atoms · ${lengths} · ${angles} · ${fmt(c.volume, 2)} Å³`,
+      ),
+      h(
+        'div',
+        { class: 'small muted' },
+        `${result.kind === 'save' ? 'after the run' : 'from the input'} (${result.source}) · drag to rotate, scroll to zoom`,
+      ),
+    );
+    await renderFigure(this.crystalView, result.figure, 'structure');
   }
 
   renderWorkflows() {

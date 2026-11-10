@@ -1020,8 +1020,10 @@ def nonlinear_optical_spectra(
     if comm is not None and size > 1:
         from mpi4py import MPI
 
+        from ..utils.communication import allreduce_inplace  # slices beyond the MPI count
+
         for array in list(out.values()) + list(hist.values()):
-            comm.Allreduce(MPI.IN_PLACE, array, op=MPI.SUM)
+            allreduce_inplace(array, MPI.SUM, communicator=comm)
     if ops_cart is not None:
         for key in list(out):
             out[key] = symmetrize_components(out[key], comps, ops_cart, requested)

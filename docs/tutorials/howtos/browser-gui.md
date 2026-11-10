@@ -95,6 +95,11 @@ Other options:
    files, the `pw.x` inputs, existing drivers. From the save it reads a summary of the system: formula, lattice,
    electrons, gap or metal, k-grid, pseudopotential types, 2D slab. The folder is shared by every tab (see
    [One folder for every tab](#one-folder-for-every-tab)).
+
+   Under it, **Crystal structure** draws the cell, the atoms and the bonds of a save or of a `pw.x` input, chosen
+   in its menu. A save shows the structure after the run, so a relaxation shows the relaxed cell. The cell can
+   be repeated up to 3×3×3, and the card can be hidden. Hover an atom for its coordinates; the cell lengths,
+   angles and volume are listed below the view.
 2. **Workflow.** The workflows are those of `paoflow-gen`: property run, ACBN0/eACBN0, harmonic phonons (with
    Raman), electron–phonon system folder, SSCHA, quantum oscillations (pyskeaf, from the Fermi-surface BXSF files
    of a property run). Two tools sit next to them: a QE input from an AFLOW or C2DB entry
