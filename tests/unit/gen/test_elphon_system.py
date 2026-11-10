@@ -388,3 +388,101 @@ def test_kmesh_template_rewrites_the_nscf_card_and_system_py(tmp_path, monkeypat
     monkeypatch.setattr(sys, 'argv', [script, '8', '8', '8'])  # 3 does not divide 8
     with pytest.raises(SystemExit):
         runpy.run_path(script, run_name='__main__')
+
+
+# ------------------------------------------------------------------ finite-difference source
+def _fd_cfg(**kw):
+    settings = dict(
+        supercell=(2, 2, 2),
+        mode='cartesian',
+        distance=0.06,
+        nconfig=None,
+        seed=0,
+        nbnd=None,
+        primitive_save='qe/phonon/lead.save',
+        pseudo_dir='../',
+        prefix='lead',
+    )
+    return _cfg(
+        coupling_source='fd',
+        kgrid=[3, 3, 3],
+        qgrid=[1, 1, 1],
+        finite_differences=settings,
+        fd_options={},
+        workflows=['superconductivity', 'transport'],
+        **kw,
+    )
+
+
+def test_fd_source_system_py_qe_inputs_and_driver(tmp_path, monkeypatch):
+    path = tmp_path / 'system.py'
+    path.write_text(es.render_system_py(_fd_cfg()))
+    ns = _load(path)
+    system = ns['SYSTEM']
+    assert system.coupling_source == 'fd' and system.qgrid == (1, 1, 1)
+    assert system.coarse_grid == (3, 3, 3) and system.nelec == 14 * 8
+    assert system.prefix == 'lead_sc_ref' and not system.long_range
+    assert system.coupling_dir == str(tmp_path / 'qe' / 'fd')
+    assert system.save_path == str(tmp_path / 'qe/fd/tmp_lead_sc_ref/lead_sc_ref.save')
+    assert ns['FINITE_DIFFERENCES']['supercell'] == (2, 2, 2)
+    assert ns['FINITE_DIFFERENCES']['primitive_save'] == 'qe/phonon/lead.save'
+    # the QE steps of the source: the scf of the primitive cell, no ph.x and no nscf
+    inputs = es.qe_inputs(_fd_cfg())
+    assert sorted(inputs) == ['qe/phonon/scf.in', 'qe/run_qe.sh']
+    assert '$PW $OPT -in scf.in' in inputs['qe/run_qe.sh'] and 'ph.x' not in inputs['qe/run_qe.sh']
+    assert 'qe/finite_differences.py' in es.workflow_files(_fd_cfg())
+    # the written driver reads system.py and reports that nothing is written yet
+    folder = tmp_path / 'system'
+    es.write_system_folder(_fd_cfg(), str(folder))
+    driver = folder / 'qe' / 'finite_differences.py'
+    assert (
+        driver.read_bytes() == (Path(es.TEMPLATE_DIR) / 'qe' / 'finite_differences.py').read_bytes()
+    )
+    monkeypatch.setattr(sys, 'argv', [str(driver), '--status'])
+    runpy.run_path(str(driver), run_name='__main__')
+    monkeypatch.setattr(sys, 'argv', [str(driver), '--write'])
+    with pytest.raises(SystemExit, match='run the scf of run_qe.sh first'):
+        runpy.run_path(str(driver), run_name='__main__')
+
+
+def test_fd_source_questions_plan_and_limits(tmp_path):
+    from PAOFLOW.gen.outputs import _elphon_plan
+    from PAOFLOW.gen.questions import WORKFLOWS
+    from PAOFLOW.gen.questions.model import Context
+    from PAOFLOW.gen.questions.resolve import resolve_form
+
+    (tmp_path / 'scf.in').write_text(PB_SCF)
+    context = Context(workdir=str(tmp_path))
+    answers = {'coupling_source': 'fd', 'metal': True, 'kgrid_axis': 6}
+    form = resolve_form(WORKFLOWS['elphon'], answers, context)
+    assert not form.errors
+    visible = {i['key'] for i in form.items if i.get('visible') and i.get('key')}
+    assert {'fd_supercell', 'fd_mode', 'fd_distance'} <= visible
+    assert not {'qgrid_axis', 'sc_nq', 'sc_fs_coupling', 'fd_nconfig'} & visible
+    cfg = form.config
+    assert cfg['kgrid'] == [3, 3, 3] and cfg['qgrid'] == [1, 1, 1]
+    assert cfg['workflows'] == ['superconductivity', 'transport']
+    assert cfg['superconductivity']['nq'] == 1 and not cfg['superconductivity']['fs_coupling']
+    assert cfg['finite_differences']['mode'] == 'cartesian'  # 6 x 8 atoms
+    steps = {step.label: step for step in _elphon_plan(cfg)}
+    assert steps['Displaced supercells: pw.x inputs'].argv == (
+        'python',
+        'qe/finite_differences.py',
+        '--write',
+    )
+    assert steps['Displaced supercells: pw.x scf'].cwd == 'qe/fd'
+    assert not steps['Eliashberg function'].mpi  # the fd source runs on one rank
+    assert 'QE: scf, ph.x (dvscf), nscf' not in steps
+    # random displacements: 3 N configurations by default, the cutoff goes to fd_options
+    random = resolve_form(
+        WORKFLOWS['elphon'], {**answers, 'fd_mode': 'random', 'fd_cutoff': '8'}, context
+    )
+    assert random.config['finite_differences']['nconfig'] == 24
+    assert random.config['fd_options'] == {'locality_cutoff': 8.0}
+    # what the source cannot do
+    optics = resolve_form(WORKFLOWS['elphon'], {**answers, 'workflows': 'optics'}, context)
+    assert 'optics need the dfpt or epw source' in optics.errors['workflows']
+    odd = resolve_form(WORKFLOWS['elphon'], {**answers, 'fd_supercell': 4}, context)
+    assert 'multiple of the supercell' in odd.errors['fd_supercell']
+    insulator = resolve_form(WORKFLOWS['elphon'], {**answers, 'metal': False}, context)
+    assert insulator.config['workflows'] == []

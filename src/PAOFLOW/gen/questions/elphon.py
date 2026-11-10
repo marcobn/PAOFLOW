@@ -28,6 +28,7 @@ TRANSPORT = 'Transport'
 ARPES = 'ARPES'
 THERMAL = 'Thermal (special displacements)'
 OPTICS_NSCF = 'Extended-basis optics nscf'
+FD = 'Finite differences'
 
 #: The workflow folders a system can hold, in the order of the prompt.
 ELPHON_WORKFLOWS = (
@@ -39,6 +40,11 @@ ELPHON_WORKFLOWS = (
     'arpes',
     'thermal',
 )
+
+#: The workflows of the finite-difference source: the Eliashberg route (Gamma of the supercell
+#: carries every mode; the other dense drivers zero the modes at Gamma) and, for metals, the
+#: resistivity that reads its transport Eliashberg function.
+FD_WORKFLOWS = ('superconductivity', 'transport')
 
 
 # ---------------------------------------------------------------------------- the template
@@ -216,6 +222,49 @@ def _metal(answers: Answers) -> bool:
     return bool(answers.get('metal'))
 
 
+def _fd(answers: Answers) -> bool:
+    return answers.get('coupling_source') == 'fd'
+
+
+def _nat(answers: Answers, context: Context) -> int:
+    """Atoms of the primitive cell (``nat`` of the template; 1 without a template)."""
+    nat = _namelist(answers, context, 'nat')
+    try:
+        return max(1, int(float(str(nat).strip(' ,\'"'))))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _fd_atoms(answers: Answers, context: Context) -> int:
+    """Atoms of the finite-difference supercell."""
+    return _nat(answers, context) * int(answers.get('fd_supercell', 1)) ** 3
+
+
+def _validate_fd_supercell(value: int, answers: Answers, context: Context) -> str | None:
+    if value < 1:
+        return '  The supercell must have at least one cell per axis.'
+    if _kg(answers) % value:
+        return (
+            '  The coarse k-grid (%d) must be a multiple of the supercell: the supercell runs '
+            'use k/%d per axis.' % (_kg(answers), value)
+        )
+    return None
+
+
+def _fd_cost(answers: Answers, context: Context) -> str:
+    atoms = _fd_atoms(answers, context)
+    if answers.get('fd_mode') == 'random':
+        cells = 2 * int(answers.get('fd_nconfig') or 3 * atoms)
+    else:
+        cells = 6 * atoms
+    return (
+        '  (%d pw.x runs of %d atoms: the reference supercell and %d displaced cells, on a '
+        '%d^3 k-grid; Gamma of the supercell holds the primitive phonons of a %d^3 q-grid)'
+        % (cells + 1, atoms, cells, _kg(answers) // max(1, answers.get('fd_supercell', 1)),
+           answers.get('fd_supercell', 1))
+    )  # fmt: skip
+
+
 def _validate_qgrid(value: int, answers: Answers, context: Context) -> str | None:
     kg = _kg(answers)
     if value > 0 and kg % value == 0:
@@ -227,10 +276,20 @@ def _validate_workflows(value: list[str], answers: Answers, context: Context) ->
     unknown = [name for name in value if name not in ELPHON_WORKFLOWS]
     if unknown:
         return '  unknown workflow(s): %s' % ', '.join(unknown)
+    if _fd(answers):
+        allowed = FD_WORKFLOWS if _metal(answers) else ()
+        other = [name for name in value if name not in allowed]
+        if other:
+            return (
+                '  The finite-difference source gives superconductivity and, for a metal, the '
+                'resistivity; %s need the dfpt or epw source.' % ', '.join(other)
+            )
     return None
 
 
 def _default_workflows(answers: Answers, context: Context) -> list[str]:
+    if _fd(answers):
+        return list(FD_WORKFLOWS) if _metal(answers) else []
     if _metal(answers):
         return ['superconductivity', 'transport', 'arpes']
     return ['optics', 'transport', 'arpes']
@@ -294,15 +353,18 @@ SYSTEM_ITEMS = (
     Question(
         'coupling_source',
         "Coupling source (dfpt = PAOFLOW's vertex from ph.x dvscf, norm-conserving; "
-        'epw = EPW epbwrite, any pseudopotential)',
+        'epw = EPW epbwrite, any pseudopotential; fd = finite differences of a supercell, '
+        'pw.x only)',
         kind='choice',
-        choices=['dfpt', 'epw'],
+        choices=['dfpt', 'epw', 'fd'],
         default=from_template(
             'augmented', 'dfpt', lambda augmented: 'epw' if augmented else 'dfpt'
         ),
         label='Coupling source',
         help='Default epw when a pseudopotential of the template is ultrasoft or PAW (the '
-        'native DFPT vertex is norm-conserving only).',
+        'native DFPT vertex is norm-conserving only). fd displaces the atoms of a supercell and '
+        'differentiates its PAO Hamiltonian: no ph.x, so any pseudopotential, DFT+U or hybrid '
+        'that pw.x runs; it gives superconductivity and the metal resistivity.',
         section=SYSTEM,
     ),
     Question(
@@ -318,6 +380,7 @@ SYSTEM_ITEMS = (
         kind='int',
         default=lambda a, c: _kg(a),
         validate=_validate_qgrid,
+        when=lambda a, c: not _fd(a),
         section=COARSE,
     ),
     Question(
@@ -331,14 +394,81 @@ SYSTEM_ITEMS = (
     ),
     Note(
         '  (EPW needs the explicit full k list: K_POINTS crystal)',
-        when=lambda a, c: a.get('coupling_source') != 'dfpt',
+        when=lambda a, c: a.get('coupling_source') == 'epw',
         section=COARSE,
     ),
+    Question(
+        'fd_supercell',
+        'Supercell of the finite differences (primitive cells per axis)',
+        kind='int',
+        default=2,
+        validate=_validate_fd_supercell,
+        label='Supercell',
+        help='The ideal n x n x n supercell is the unit cell of the finite differences: its '
+        'Gamma phonons are the primitive phonons on the n^3 q-grid, and its runs use the coarse '
+        'k-grid divided by n.',
+        when=lambda a, c: _fd(a),
+        section=FD,
+    ),
+    Question(
+        'fd_mode',
+        'Displacements (cartesian = every atom along +-x, +-y, +-z, 6 N cells; random = all '
+        'atoms at once in random patterns, 2 M cells, least squares)',
+        kind='choice',
+        choices=['cartesian', 'random'],
+        default=lambda a, c: 'cartesian' if 6 * _fd_atoms(a, c) <= 300 else 'random',
+        label='Displacements',
+        when=lambda a, c: _fd(a),
+        section=FD,
+    ),
+    Question(
+        'fd_distance',
+        'Displacement amplitude (bohr)',
+        kind='float',
+        default=0.06,
+        unit='bohr',
+        when=lambda a, c: _fd(a),
+        section=FD,
+    ),
+    Question(
+        'fd_nconfig',
+        'Random configurations M (3 N gives a full-rank fit without a locality cutoff)',
+        kind='int',
+        default=lambda a, c: 3 * _fd_atoms(a, c),
+        when=lambda a, c: _fd(a) and a.get('fd_mode') == 'random',
+        section=FD,
+    ),
+    Question(
+        'fd_cutoff',
+        'Locality cutoff of the fit (bohr; blank = every atom; with a cutoff M can be smaller)',
+        default='',
+        parse=optional_number,
+        unit='bohr',
+        when=lambda a, c: _fd(a) and a.get('fd_mode') == 'random',
+        section=FD,
+        level='advanced',
+    ),
+    Question(
+        'fd_seed',
+        'Seed of the random directions',
+        kind='int',
+        default=0,
+        when=lambda a, c: _fd(a) and a.get('fd_mode') == 'random',
+        section=FD,
+        level='advanced',
+    ),
+    Note(_fd_cost, when=lambda a, c: _fd(a), section=FD),
     Question(
         'nbnd',
         'Bands in the nscf run (nbnd, > number of PAO orbitals)',
         kind='int',
         default=from_template('nbnd', 0),
+        section=COARSE,
+    ),
+    Note(
+        '  (fd: nbnd is per primitive cell, the supercell runs get n^3 times it; 0 sizes them '
+        'to the PAO basis)',
+        when=lambda a, c: _fd(a),
         section=COARSE,
     ),
     Question(
@@ -391,6 +521,7 @@ SYSTEM_ITEMS = (
         'ph.x self-consistency threshold (tr2_ph)',
         kind='float',
         default=1.0e-16,
+        when=lambda a, c: not _fd(a),
         section=COARSE,
         level='advanced',
         cli=False,
@@ -398,7 +529,13 @@ SYSTEM_ITEMS = (
     Note(
         '  (ph.in gets epsil = .true.: the dielectric tensor and Born charges of the '
         'long-range model; quadrupoles come from coupling/quadrupoles.py)',
-        when=lambda a, c: not _metal(a),
+        when=lambda a, c: not _metal(a) and not _fd(a),
+        section=SYSTEM,
+    ),
+    Note(
+        '  (fd gives superconductivity and the resistivity of a metal; an insulator needs the '
+        'dfpt or epw source)',
+        when=lambda a, c: _fd(a) and not _metal(a),
         section=SYSTEM,
     ),
     Question(
@@ -423,14 +560,21 @@ SUPERCONDUCTIVITY_ITEMS = gated(
             'Superconductivity: dense phonon q-grid per axis (NQ_DENSE)',
             kind='int',
             default=lambda a, c: 4 * _kg(a),
+            when=lambda a, c: not _fd(a),
             section=SC,
         ),
         Question(
             'sc_nk',
             'Superconductivity: dense electron k-grid per axis (NK_DENSE)',
             kind='int',
-            default=lambda a, c: 8 * _kg(a),
-            validate=divisible_by(lambda a: a['sc_nq'], 'NK_DENSE'),
+            default=lambda a, c: 8 * _kg(a) // (a.get('fd_supercell', 1) if _fd(a) else 1),
+            validate=divisible_by(lambda a: 1 if _fd(a) else a['sc_nq'], 'NK_DENSE'),
+            section=SC,
+        ),
+        Note(
+            '  (fd: the k-grid is of the supercell; q is its Gamma point, and eliashberg.py runs '
+            'on one MPI rank)',
+            when=lambda a, c: _fd(a),
             section=SC,
         ),
         Question(
@@ -469,6 +613,7 @@ SUPERCONDUCTIVITY_ITEMS = gated(
             'equations (needs nk == nq)?',
             kind='bool',
             default=lambda a, c: a['sc_nk'] == a['sc_nq'],
+            when=lambda a, c: not _fd(a),
             section=SC,
         ),
         Question(
@@ -880,7 +1025,9 @@ OPTICS_NSCF_ITEMS = gated(
 
 FINAL_NOTE = Note(
     '\nNote: nbnd, masses_amu and nelec are system-specific; edit system.py and qe/ before running.',
-    when=lambda a, c: a.get('nbnd', 0) <= 0 or not a.get('masses_amu') or a.get('nelec', 0) <= 0,
+    when=lambda a, c: (a.get('nbnd', 0) <= 0 and not _fd(a))
+    or not a.get('masses_amu')
+    or a.get('nelec', 0) <= 0,
 )
 
 ELPHON_ITEMS = (
@@ -908,10 +1055,10 @@ def _superconductivity(answers: Answers) -> dict:
         me_temps = [round(float(t), 3) for t in np.linspace(temps[0], temps[1], int(temps[2]))]
     else:
         me_temps = temps or [1.0, 2.0, 4.0]
-    fs_coupling = answers['sc_fs_coupling']
+    fs_coupling = answers.get('sc_fs_coupling', False)  # not with the fd source (q = Gamma)
     return dict(
         nk=answers['sc_nk'],
-        nq=answers['sc_nq'],
+        nq=answers.get('sc_nq', 1),
         sigma_ev=answers['sc_sigma'],
         adaptive_smearing=answers['sc_adaptive'] or None,
         mu_star=answers['sc_mu_star'],
@@ -1068,6 +1215,27 @@ def _thermal(cfg: dict, answers: Answers) -> dict:
     )
 
 
+def _finite_differences(cfg: dict, answers: Answers) -> None:
+    """The supercell runs of the ``'fd'`` source (``FINITE_DIFFERENCES`` of ``system.py``)."""
+    n = answers['fd_supercell']
+    random = answers['fd_mode'] == 'random'
+    cfg['kgrid'] = [answers['kgrid_axis'] // n] * 3  # the k-grid of the supercell
+    cfg['qgrid'] = [1, 1, 1]
+    cfg['finite_differences'] = dict(
+        supercell=(n, n, n),
+        mode=answers['fd_mode'],
+        distance=answers['fd_distance'],
+        nconfig=answers['fd_nconfig'] if random else None,
+        seed=answers['fd_seed'] if random else 0,
+        nbnd=answers['nbnd'] * n**3 if answers['nbnd'] > 0 else None,
+        primitive_save='qe/phonon/%s.save' % answers['prefix'],
+        pseudo_dir=answers['pseudo_dir'],
+        prefix=answers['prefix'],
+    )
+    cutoff = answers.get('fd_cutoff') if random else None
+    cfg['fd_options'] = {'locality_cutoff': cutoff} if cutoff is not None else {}
+
+
 def assemble_elphon(answers: Answers, context: Context) -> dict:
     """Configuration of the system folder (:func:`PAOFLOW.gen.elphon_system.write_system_folder`).
 
@@ -1090,8 +1258,11 @@ def assemble_elphon(answers: Answers, context: Context) -> dict:
     cfg['out'] = output_folder(context)
     cfg['pseudo_dir'] = answers['pseudo_dir']
     cfg['coupling_source'] = answers['coupling_source']
-    kg, qg = answers['kgrid_axis'], answers['qgrid_axis']
-    cfg['kgrid'], cfg['qgrid'] = [kg] * 3, [qg] * 3
+    if answers['coupling_source'] == 'fd':
+        _finite_differences(cfg, answers)
+    else:
+        kg, qg = answers['kgrid_axis'], answers['qgrid_axis']
+        cfg['kgrid'], cfg['qgrid'] = [kg] * 3, [qg] * 3
     cfg['irreducible'] = answers['irreducible'] if answers['coupling_source'] == 'dfpt' else False
     cfg['nbnd'] = answers['nbnd']
     cfg['exclude_bands'] = answers['exclude_bands'] if answers['coupling_source'] == 'epw' else []

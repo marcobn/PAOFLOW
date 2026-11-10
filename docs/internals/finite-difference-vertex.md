@@ -196,6 +196,42 @@ the validation README: 0.949 vs 0.955 at σ = 0.2 eV for the ideal and zero-poin
 interpolation of the 144-orbital supercell (24³ = primitive 48³) is the converged number. First run: the zero-point
 2³ ZG cell (`fd_zg/`) as `fd_zg_native/` on music (`scripts/fd_native/`).
 
+## 8. The crystal in a system folder: `paoflow-gen elphon` with `coupling_source fd` (10 November 2026)
+
+Section 7 made a cell that is its own unit cell a coupling source; the thermal workflow uses it for ZG cells. The
+system-folder generator (`paoflow-gen`, workflow `elphon`, and the Setup tab of `paoflow-studio`) now offers
+`fd` for an ideal crystal next to `dfpt` and `epw`. The cell is the ideal n×n×n supercell of the primitive cell.
+
+- `elphon/workflows/finite_differences.write_supercell_displacements(primitive_save, fd_dir, supercell, ...)` builds
+  the supercell from the primitive scf save (`init_phonopy`) and makes it a phonopy unit cell with
+  `supercell_matrix = 1` and `primitive_matrix = 'P'`. With every atom a reference atom, the `cartesian` mode
+  displaces all N atoms (6N cells), and `random` displaces them all at once (2M cells).
+- The inputs come from the `electron_phonon` writers (`generate_eph_displacements`, `write_eph_displaced_supercells`):
+  - prefixes `<prefix>_sc_ref` and `<prefix>_sc_dispNNN`, `tprnfor` on, `nbnd` sized to the PAO basis of the
+    supercell (with a relative `pseudo_dir`, the files are read from the fd directory);
+  - `run_fd.sh` of the thermal workflow.
+
+  The reference run is the scf of the ideal supercell, so no separate supercell scf is needed.
+- `system.py`: `coupling_source='fd'`, `prefix='<prefix>_sc_ref'`, `fd_dir='qe/fd'`,
+  `save_dir='qe/fd/tmp_<prefix>_sc_ref/<prefix>_sc_ref.save'`, the supercell k-grid as `coarse_grid`, `qgrid=(1, 1, 1)`,
+  `nelec` times n³ and `long_range=False`, plus a `FINITE_DIFFERENCES` dictionary for `qe/finite_differences.py`
+  (`--write`, `--status`).
+- Run plan: scf of the primitive cell (`run_qe.sh`), `--write`, `run_fd.sh` (QE launch variables of the Runs tab),
+  the basis, then `eliashberg.py` on one rank (section 7).
+- Only superconductivity and the metal resistivity (α²F_tr) are offered. The mobility, absorption and Fan–Migdal
+  drivers zero every mode at Γ, which for this source is every mode. `ElphonSystem.check_inputs` now names the
+  displaced runs for this source instead of the nscf.
+- `phonon/io._detect_ibrav_cell` caches the lattice classification (`_ibrav_of_lattice`), because the displaced cells
+  share one lattice. Writing 97 Si inputs took 157 s and now takes 2 s, with byte-identical files. The
+  `electron_phonon` and thermal displaced runs gain the same.
+
+Smoke test of the generated folder (Mac Studio, `Workspace/PAOFLOW/scratch/fd_route_smoke_2026-11-10`): fcc Al,
+ONCV nc-sr-05, 30 Ry (deliberately low), m-p 0.05 Ry, primitive 6³ k, 2×2×2 supercell (8 atoms, 3³ k), Cartesian
+±0.06 bohr (49 pw.x runs, 13 min on 4 ranks), `eliashberg.py --nk 12 --transport` on one rank (2.5 min):
+λ = 0.33, ω_log = 25.8 meV, λ_tr = 0.30, ω_p = 10.7 eV; `resistivity.py`: ρ(300 K) = 2.97 µΩ cm (measured
+about 2.7). The 2³ q-grid of the supercell and the low cutoff are not converged; these numbers show that the files
+work together, not a validated λ.
+
 ## Questions and answers (1 November 2026)
 
 Three clarifications written during the zero-point test on Pb (`Workspace/PAOFLOW/validation/Pb_fd_fixed_basis`,

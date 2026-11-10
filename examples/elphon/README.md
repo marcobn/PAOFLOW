@@ -38,7 +38,8 @@ once the DFT/DFPT assets of the system exist:
 
 - **`system.py`** builds one `ElphonSystem` (`PAOFLOW.elphon.workflows`): the QE prefix, the
   coupling source (`'dfpt'`: PAOFLOW's native vertex from the `ph.x` `dvscf` files and the nscf
-  wavefunctions; `'epw'`: EPW's `.epb` files), the coarse k- and q-grids, the masses, `nelec`,
+  wavefunctions; `'epw'`: EPW's `.epb` files; `'fd'`: finite differences of an ideal supercell,
+  see below), the coarse k- and q-grids, the masses, `nelec`,
   the PAO basis, the long-range (dipole + quadrupole) treatment and the cache directory. The
   dictionaries below it hold the defaults of the workflow drivers; every command-line option
   of a driver overrides them.
@@ -77,6 +78,26 @@ cp <pseudopotentials> qe/ && (cd qe && NP=8 bash run_qe.sh)      # scf, ph.x (fi
 paoflow-genbasis-ps --pseudo-dir qe --out BASIS_PS --preset standard
 mpirun -np 8 python <workflow>/<driver>.py                        # see the README of each system
 ```
+
+**The finite-difference source** (`coupling_source fd`) needs no `ph.x`, so it works with any
+pseudopotential, DFT+U or hybrid functional that `pw.x` runs. It displaces the atoms of an ideal
+n×n×n supercell and differentiates its PAO Hamiltonian in the fixed basis of the undisplaced
+cell. The Γ phonons of the supercell are the primitive phonons on the n³ q-grid, and they come
+from the forces of the same runs. It gives superconductivity (α²F, λ, Tc, the isotropic
+Migdal–Eliashberg gap) and, for a metal, the resistivity:
+
+```bash
+cp <pseudopotentials> qe/ && (cd qe && NP=8 bash run_qe.sh)   # scf of the primitive cell
+python qe/finite_differences.py --write                        # qe/fd: supercell.in, disp-NNN.in
+(cd qe/fd && NP=8 bash run_fd.sh)                              # 6 N (cartesian) or 2 M (random) runs
+paoflow-genbasis-ps --pseudo-dir qe --out BASIS_PS --preset standard
+python superconductivity/eliashberg.py --transport             # one MPI rank for this source
+```
+
+The supercell and its settings are `FINITE_DIFFERENCES` in `system.py`. The k-grid of the supercell
+runs is `SYSTEM.coarse_grid` and `nelec` counts the electrons of the supercell; change them
+together with the supercell. See `docs/internals/finite-difference-vertex.md` for the method and
+its validation against the DFPT vertex.
 
 See `docs/internals/Electron-Phonon-Coupling.md` (method, validation, the workflow layer) and
 `docs/internals/cli-generators.md` (the generator).

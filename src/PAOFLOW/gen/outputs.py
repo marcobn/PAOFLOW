@@ -424,18 +424,21 @@ def run_plan(name: str, cfg: dict, files: list[GeneratedFile] | None = None) -> 
 def _elphon_plan(cfg: dict) -> list[RunStep]:
     steps = []
     plots = cfg.get('plot', True)  # the plot_*.py of the workflows (see system_folder_files)
+    fd = cfg.get('coupling_source') == 'fd'
     if not cfg.get('pw_template_text'):
         steps.append(
             RunStep(
-                'Write qe/phonon/scf.in and qe/nscf/nscf.in',
+                'Write qe/phonon/scf.in' + ('' if fd else ' and qe/nscf/nscf.in'),
                 (),
                 manual=True,
-                note='K_POINTS card of qe/nscf/nscf.kpoints, nbnd = %d' % cfg.get('nbnd', 0),
+                note='the scf of the primitive cell'
+                if fd
+                else 'K_POINTS card of qe/nscf/nscf.kpoints, nbnd = %d' % cfg.get('nbnd', 0),
             )
         )
     steps.append(
         RunStep(
-            'QE: scf, ph.x (dvscf), nscf',
+            'QE: scf of the primitive cell' if fd else 'QE: scf, ph.x (dvscf), nscf',
             ('bash', 'run_qe.sh'),
             cwd='qe',
             ranks_env='NP',
@@ -443,6 +446,29 @@ def _elphon_plan(cfg: dict) -> list[RunStep]:
             note='copy the pseudopotentials into qe/ first',
         )
     )
+    if fd:
+        settings = cfg.get('finite_differences', {})
+        steps.append(
+            RunStep(
+                'Displaced supercells: pw.x inputs',
+                ('python', 'qe/finite_differences.py', '--write'),
+                note='%s displacements of the %s supercell'
+                % (
+                    settings.get('mode', 'cartesian'),
+                    'x'.join(map(str, settings.get('supercell', ()))),
+                ),
+            )
+        )
+        steps.append(
+            RunStep(
+                'Displaced supercells: pw.x scf',
+                ('bash', 'run_fd.sh'),
+                cwd='qe/fd',
+                ranks_env='NP',
+                qe_launch=True,
+                note='finished runs are skipped when it starts again',
+            )
+        )
     steps.append(
         RunStep(
             'Pseudo-atom basis',
@@ -483,7 +509,12 @@ def _elphon_plan(cfg: dict) -> list[RunStep]:
         elif workflow == 'superconductivity':
             steps.append(
                 RunStep(
-                    'Eliashberg function', ('python', 'superconductivity/eliashberg.py'), mpi=True
+                    'Eliashberg function',
+                    ('python', 'superconductivity/eliashberg.py'),
+                    mpi=not fd,  # the fd source builds the cell derivatives on one rank
+                    note='one rank: the derivatives of the displaced cells are serial runs'
+                    if fd
+                    else '',
                 )
             )
             steps.append(

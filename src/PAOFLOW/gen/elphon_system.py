@@ -98,6 +98,27 @@ SYSTEM_COMMENTS = {
     'quadrupoles': "'coupling/quadrupole.fmt' from coupling/quadrupoles.py",
     'cache_dir': 'coarse vertex g(R_e, R_p), shared by every workflow',
     'spin_degeneracy': '2 without spin-orbit coupling, 1 with it (None: from the save)',
+    'fd_dir': 'displaced runs of the supercell (qe/finite_differences.py --write, run_fd.sh)',
+    'save_dir': 'save of the undisplaced supercell: the electrons of the coupling',
+}
+#: ``system.py`` comments of the finite-difference source, where the cell is the supercell.
+FD_SYSTEM_COMMENTS = {
+    'qe_dir': 'qe/phonon (scf of the primitive cell), qe/fd (the supercell runs)',
+    'coarse_grid': 'k-grid of the supercell runs',
+    'qgrid': 'Gamma only: the modes of the supercell (the primitive q-grid of the supercell)',
+    'nelec': 'valence electrons of the supercell',
+    'long_range': 'no dipole model: the supercell vertex is used as computed',
+}
+FD_COMMENTS = {
+    'supercell': 'ideal supercell (primitive cells per axis): the unit cell of the finite differences',
+    'mode': "'cartesian': every atom along +-x, +-y, +-z (6 N cells); 'random': 2 nconfig cells",
+    'distance': 'displacement amplitude (bohr)',
+    'nconfig': "random configurations ('random' mode; None: 3 N)",
+    'seed': 'seed of the random directions',
+    'nbnd': 'bands of the supercell runs (None: the PAO basis of the supercell)',
+    'primitive_save': 'scf save of the primitive cell (run_qe.sh): structure and settings of the inputs',
+    'pseudo_dir': 'pseudo_dir of the supercell inputs, as seen from qe/fd',
+    'prefix': 'prefix of the primitive cell (the runs are <prefix>_sc_ref, <prefix>_sc_dispNNN)',
 }
 SUPERCONDUCTIVITY_COMMENTS = {
     'nk': 'dense electron grid per axis (EPW nkf)',
@@ -228,6 +249,8 @@ def render_system_py(cfg: dict[str, Any]) -> str:
     str
         The module text.
     """
+    fd = cfg.get('coupling_source') == 'fd'
+    prefix = cfg['prefix']
     system = dict(
         coupling_source=cfg.get('coupling_source', 'dfpt'),
         qe_dir='qe',
@@ -243,6 +266,23 @@ def render_system_py(cfg: dict[str, Any]) -> str:
         cache_dir=cfg.get('cache_dir', 'cache'),
         spin_degeneracy=cfg.get('spin_degeneracy'),
     )
+    comments = dict(SYSTEM_COMMENTS)
+    if fd:
+        # The cell of the coupling is the ideal supercell: its runs, its save, its electrons.
+        from ..elphon.workflows.finite_differences import reference_save, supercell_prefix
+
+        settings = cfg['finite_differences']
+        cells = int(np.prod(settings['supercell']))
+        prefix = supercell_prefix(cfg['prefix']) + '_ref'
+        system['qgrid'] = (1, 1, 1)
+        system['nelec'] = cfg['nelec'] * cells
+        system['long_range'] = False
+        del system['quadrupoles']  # no dipole or quadrupole model on the supercell vertex
+        system['fd_dir'] = 'qe/fd'
+        system['save_dir'] = reference_save('qe/fd', cfg['prefix'])
+        system['fd_options'] = dict(cfg.get('fd_options') or {})
+        comments.update(FD_SYSTEM_COMMENTS)
+        comments['nelec'] = '%s per primitive cell x %d cells' % (_value(cfg['nelec']), cells)
     lines = [
         '#!/usr/bin/env python3',
         '"""%s: configuration of the electron-phonon workflows (one folder per property).'
@@ -260,13 +300,20 @@ def render_system_py(cfg: dict[str, Any]) -> str:
         'NAME = %r' % cfg['name'],
         '',
         'SYSTEM = ElphonSystem(',
-        '    prefix=%r,' % cfg['prefix'],
+        '    prefix=%r,%s' % (prefix, '  # the undisplaced supercell (qe/fd)' if fd else ''),
         '    root=HERE,',
     ]
     for key, value in system.items():
-        comment = SYSTEM_COMMENTS.get(key)
+        comment = comments.get(key)
         lines.append('    %s=%s,%s' % (key, _value(value), '  # %s' % comment if comment else ''))
-    lines += [')', '', '# Defaults of the workflow drivers (command-line options override them).']
+    lines += [')', '']
+    if fd:
+        lines += [
+            '# The displaced supercells of qe/finite_differences.py (coupling_source fd).',
+            _format_dict('FINITE_DIFFERENCES', cfg['finite_differences'], FD_COMMENTS).rstrip('\n'),
+            '',
+        ]
+    lines += ['# Defaults of the workflow drivers (command-line options override them).']
     for name, comments in (
         ('SUPERCONDUCTIVITY', SUPERCONDUCTIVITY_COMMENTS),
         ('OPTICS', OPTICS_COMMENTS),
@@ -295,6 +342,8 @@ def render_run_qe(cfg: dict[str, Any]) -> str:
     """
     prefix = cfg['prefix']
     epw = cfg.get('coupling_source', 'dfpt') == 'epw'
+    if cfg.get('coupling_source') == 'fd':
+        return render_fd_run_qe(cfg)
     lines = [
         '#!/bin/bash',
         '# QE steps of the electron-phonon workflows (run from this directory): NP=8 bash run_qe.sh',
@@ -341,6 +390,48 @@ def render_run_qe(cfg: dict[str, Any]) -> str:
         ]
     lines += ['cd ..', 'log done']
     return '\n'.join(lines) + '\n'
+
+
+def render_fd_run_qe(cfg: dict[str, Any]) -> str:
+    """Text of ``qe/run_qe.sh`` for the finite-difference source: the scf of the primitive cell.
+
+    The displaced supercells come next (``finite_differences.py --write``, then
+    ``fd/run_fd.sh``); there is no ``ph.x`` and no nscf.
+
+    Parameters
+    ----------
+    cfg : dict
+        The generator configuration (``prefix``).
+
+    Returns
+    -------
+    str
+    """
+    return (
+        '\n'.join(
+            [
+                '#!/bin/bash',
+                '# scf of the primitive cell (run from this directory): NP=8 bash run_qe.sh',
+                '# Its save gives the structure and settings of the displaced supercells:',
+                '#   python finite_differences.py --write; (cd fd && NP=8 bash run_fd.sh)',
+                '# The PAOFLOW_* variables (set by the paoflow-studio Runs tab) take precedence: the MPI',
+                '# prefix, the Quantum ESPRESSO bin folder and the pw.x options (PAOFLOW.utils.qe_launch).',
+                'set -e',
+                'NP=${NP:-8}',
+                'MPI=${PAOFLOW_MPI_QE-mpirun -np $NP}',
+                'BIN=${PAOFLOW_QE_BIN:+$PAOFLOW_QE_BIN/}',
+                'PW=${PW:-${BIN}pw.x}',
+                'OPT=${PAOFLOW_QE_OPTIONS:-}',
+                'log() { echo "$(date +%T) $*"; }',
+                '',
+                'cd phonon',
+                'log scf;  $MPI $PW $OPT -in scf.in > scf.out',
+                'cd ..',
+                'log "done: python finite_differences.py --write"',
+            ]
+        )
+        + '\n'
+    )
 
 
 def write_ukk_script(cfg: dict[str, Any]) -> str:
@@ -402,6 +493,12 @@ def qe_inputs(cfg: dict[str, Any]) -> dict[str, str]:
     template = cfg.get('pw_template_text')
     pseudo_dir = cfg.get('pseudo_dir') or None
     files = {}
+    if cfg.get('coupling_source') == 'fd':
+        # The scf of the primitive cell only: the supercells come from finite_differences.py.
+        if template:
+            files['qe/phonon/scf.in'] = scf_input(template, prefix, pseudo_dir)
+        files['qe/run_qe.sh'] = render_run_qe(cfg)
+        return files
     if template:
         files['qe/phonon/scf.in'] = scf_input(template, prefix, pseudo_dir)
         files['qe/nscf/nscf.in'] = nscf_input(
@@ -433,6 +530,8 @@ def qe_inputs(cfg: dict[str, Any]) -> dict[str, str]:
 def workflow_files(cfg: dict[str, Any]) -> list[str]:
     """Template files (relative paths) of the workflows selected in ``cfg['workflows']``."""
     files = list(QE_HELPERS)
+    if cfg.get('coupling_source') == 'fd':
+        files.append('qe/finite_differences.py')
     for name in cfg.get('workflows', ()):
         key = name
         if name in ('transport', 'optics') and cfg.get('metal'):

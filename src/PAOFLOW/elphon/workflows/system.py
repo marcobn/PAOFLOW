@@ -388,10 +388,6 @@ class ElphonSystem:
         FileNotFoundError
             Missing nscf save, ``ph.x`` outputs (dfpt) or ``.epb`` files (epw).
         """
-        if not os.path.isdir(self.save_path):
-            raise FileNotFoundError(
-                '%s not found: run the pw.x nscf in %s first.' % (self.save_path, self.nscf_path)
-            )
         if self.coupling_source == 'fd':
             manifest = os.path.join(self.coupling_dir, 'displacements.json')
             if not os.path.isfile(manifest):
@@ -400,7 +396,16 @@ class ElphonSystem:
                     'electron_phonon(supercell_matrix=1, ...) and run pw.x on them first.'
                     % manifest
                 )
+            if not os.path.isdir(self.save_path):
+                raise FileNotFoundError(
+                    '%s not found: run pw.x on the reference and displaced cells in %s first '
+                    '(run_fd.sh).' % (self.save_path, self.coupling_dir)
+                )
             return
+        if not os.path.isdir(self.save_path):
+            raise FileNotFoundError(
+                '%s not found: run the pw.x nscf in %s first.' % (self.save_path, self.nscf_path)
+            )
         if self.coupling_source == 'epw':
             if not any(f.startswith(self.prefix + '.epb') for f in os.listdir(self.nscf_path)):
                 raise FileNotFoundError(

@@ -96,6 +96,26 @@ def _render(builder, cfg):
         return 'raised %s: %s' % (type(error).__name__, error)
 
 
+#: Intended changes of the prompts after the refactor: (frozen legacy text, current text).  The
+#: legacy output is updated with them before the comparison, so everything else stays exact.
+LEGACY_UPDATES = (
+    # 10 November 2026: the finite-difference coupling source of the electron-phonon system.
+    (
+        "Coupling source (dfpt = PAOFLOW's vertex from ph.x dvscf, norm-conserving; "
+        'epw = EPW epbwrite, any pseudopotential)\n  1: dfpt (default)\n  2: epw\n',
+        "Coupling source (dfpt = PAOFLOW's vertex from ph.x dvscf, norm-conserving; "
+        'epw = EPW epbwrite, any pseudopotential; fd = finite differences of a supercell, '
+        'pw.x only)\n  1: dfpt (default)\n  2: epw\n  3: fd\n',
+    ),
+)
+
+
+def _updated(text: str) -> str:
+    for old, new in LEGACY_UPDATES:
+        text = text.replace(old, new)
+    return text
+
+
 def _run_both(monkeypatch, capsys, rules, legacy_call, new_call):
     results = []
     for call in (legacy_call, new_call):
@@ -109,8 +129,8 @@ def _run_both(monkeypatch, capsys, rules, legacy_call, new_call):
         assert not unused, 'rules that matched no prompt: %s' % unused
         results.append((cfg, oracle.prompts, printed))
     (old_cfg, old_prompts, old_out), (new_cfg, new_prompts, new_out) = results
-    assert new_prompts == old_prompts
-    assert new_out == old_out
+    assert new_prompts == [_updated(prompt) for prompt in old_prompts]
+    assert new_out == _updated(old_out)
     if old_cfg is None:
         assert new_cfg is None
         return None
@@ -480,11 +500,22 @@ def _builders(name: str) -> list:
     }[name]
 
 
+#: Scenarios of questions added after the refactor: the frozen prompts do not have them, so they
+#: take part in the builder-key coverage below, not in the parity runs.
+ELPHON_NEW_SCENARIOS = {
+    'fd_source': {
+        'Coupling source': 'fd',
+        'Is the system a metal': 'y',
+        'Displacements': 'random',
+        'Locality cutoff': '9',
+    },
+}
+
 SCENARIOS = {
     'run': RUN_SCENARIOS,
     'acbn0': ACBN0_SCENARIOS,
     'phonon': PHONON_SCENARIOS,
-    'elphon': ELPHON_SCENARIOS,
+    'elphon': {**ELPHON_SCENARIOS, **ELPHON_NEW_SCENARIOS},
     'sscha': SSCHA_SCENARIOS,
 }
 

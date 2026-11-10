@@ -13,6 +13,8 @@ Ry/au forces), matching ``Phonopy(..., calculator='qe')`` set up in
 :mod:`PAOFLOW.phonon.do_phonopy`.
 """
 
+import copy
+import functools
 import os
 
 import numpy as np
@@ -69,6 +71,30 @@ def _supercell_kgrid(data_controller, supercell_matrix):
     return kg
 
 
+@functools.lru_cache(maxsize=16)
+def _ibrav_of_lattice(lattice: tuple, symprec: float) -> dict:
+    """:func:`~PAOFLOW.inputs.lattice_format.qe_ibrav_from_lattice` of a lattice, once per lattice.
+
+    The displaced cells of a supercell share its lattice, and the classification (a search over
+    the candidate ``ibrav``, about a second each) depends on the lattice alone.
+
+    Parameters
+    ----------
+    lattice : tuple of float
+        The nine components of the lattice vectors (Bohr, row-major).
+    symprec : float
+        Length tolerance (Bohr).
+
+    Returns
+    -------
+    dict
+        The classification (callers get a copy).
+    """
+    from PAOFLOW.inputs.lattice_format import qe_ibrav_from_lattice
+
+    return qe_ibrav_from_lattice(np.array(lattice, dtype=float).reshape(3, 3), symprec=symprec)
+
+
 def _detect_ibrav_cell(cell, symprec=1.0e-4):
     """Classify a (super)cell as a QE ``ibrav`` + ``celldm`` description.
 
@@ -99,13 +125,10 @@ def _detect_ibrav_cell(cell, symprec=1.0e-4):
         or ``None`` when the explicit ``CELL_PARAMETERS`` card must be kept.
     """
     try:
-        from PAOFLOW.inputs.lattice_format import (
-            lattice_format_QE,
-            qe_ibrav_from_lattice,
-        )
+        from PAOFLOW.inputs.lattice_format import lattice_format_QE
 
         lat = np.asarray(cell.cell, dtype=float)  # Bohr
-        res = qe_ibrav_from_lattice(lat, symprec=symprec)
+        res = copy.deepcopy(_ibrav_of_lattice(tuple(lat.ravel().tolist()), float(symprec)))
         ibrav = int(res.get('ibrav', 0))
         if ibrav == 0 or res.get('celldm') is None:
             return None
