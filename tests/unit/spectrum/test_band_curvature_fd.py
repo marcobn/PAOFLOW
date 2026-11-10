@@ -10,7 +10,8 @@ import numpy as np
 import pytest
 
 from PAOFLOW.hamiltonian.do_d2Hd2k import IJ_PAIRS
-from PAOFLOW.spectrum.do_band_curvature import band_curvature_k, band_curvature_k_ij
+from PAOFLOW.sparse.curvature import band_curvature_k
+from PAOFLOW.spectrum.do_band_curvature import band_curvature_k_ij
 from PAOFLOW.spectrum.do_eigh import get_degeneracies
 
 rng = np.random.default_rng(7)
