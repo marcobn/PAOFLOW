@@ -639,7 +639,9 @@ class PAOFLOW:
             from .projection.augmentation import k_plus_g_vectors
             from .projection.do_atwfc_proj import read_QE_wfc
 
-            gkspace, wfc = read_QE_wfc(self.data_controller, int(k_local[0]), 0, orthonormalize=False)
+            gkspace, wfc = read_QE_wfc(
+                self.data_controller, int(k_local[0]), 0, orthonormalize=False
+            )
             beta = arry['augmentation'].beta(k_plus_g_vectors(gkspace))
             ovp = arry['augmentation'].overlap(wfc['wfc'], wfc['wfc'], beta)
             deviation = float(np.abs(ovp - np.eye(ovp.shape[0])).max())
