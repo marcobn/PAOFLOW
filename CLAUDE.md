@@ -8,10 +8,13 @@ user-invocable: true
     Run all python code in the "conda -n work" environment
 
 2. **Existing instructions**
-    Follow the instructions in the folder .agents/skills when working on docstrings and feature-design:
+    Follow the instructions in the folder .agents/skills when working on docstrings, feature-design and the tutorial/how-to pages:
     - `.agents/skills/docstring/SKILL.md`: NumPy-style docstrings, type hints on every new or edited function, RST `.. math::` equations in `Notes`
+    - `.agents/skills/tutorials-howtos/SKILL.md`: writing and reviewing `docs/tutorials/tutorialNN.ipynb` and `docs/tutorials/howtos/<task>.md` (voice, physics depth, running the code, figures, checks)
     - `.agents/skills/feature-design/SKILL.md`: API and module design rules (summarized in section 5)
     - `.agents/skills/sparse-backend/SKILLS.md`: design notes and memory contract for `src/PAOFLOW/sparse/`. Read it before touching the sparse backend or `SparsePAOFLOW.py`
+
+    Several developers share these skills. When a request would break a rule in one of them, or the task cannot be done without breaking one, stop before doing that part. Name the skill and the rule, say why the rule exists, and offer the version that follows it. Go ahead with the exception only if the developer explicitly overrides that rule in their reply. An earlier override, one given for another file, or a general "go ahead" does not count. Record the override where the skill says (the tutorials skill uses a `% override:` line on the page); otherwise put it in the final report so it can go into the commit message.
 
 3. **What PAOFLOW is**
     PAOFLOW (version 3.0.0, GPL-3.0-or-later) is a Python package for post-processing DFT calculations. It projects Kohn–Sham states from Quantum ESPRESSO (or VASP) onto a Projected Atomic Orbital (PAO) basis to build *ab initio* tight-binding Hamiltonians. From these it computes bands, DOS/PDOS, Fermi surfaces, Boltzmann transport, Berry-phase/topology, spin/anomalous Hall, dielectric response, Green's-function (Landauer) transport, phonons, electron–phonon coupling and ACBN0 Hubbard U/V.

@@ -143,6 +143,9 @@ sparse/kpoint.py          KPoint: one live k-point (E, V, hk, dhk, vel, delta) w
 sparse/mesh.py            run_mesh: the fused BZ pass. Stores E_k/velkp/deltakp
                           (+ d2Ed2k product) for the window; solves the full
                           spectrum when a consumer needs it.
+sparse/curvature.py       band_curvature_k: all six d2E/dk_i dk_j at one k, the
+                          sparse-only rewrite of band_curvature_k_ij; expects V in
+                          mesh.py's joint dH/dk basis (velocity groups by v_x,v_y,v_z).
 sparse/bands.py           bands; prepare_path + run_path: the band-path pass
                           (sign=+1, cart=True) for path properties.
 sparse/operators.py       Sj/Lj as lists of CSR matrices (base cell, doubled by
