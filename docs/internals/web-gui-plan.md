@@ -1201,3 +1201,22 @@ Now a folder chosen in one tab moves the others, through `App.changeFolder(path,
   - the legend chips carry the species colours.
 - Tests: `tests/unit/gen/test_crystal_structure.py`, `test_structure_of_the_working_folder`, and the browser test
   `test_crystal_structure_under_the_working_folder`.
+
+**Fermi-surface smoothing gave a holed surface (11 November 2026, user report).** With *Smoothing* 2 on a large
+cell, the mesh exceeded `MAX_FACES` (150 000). `fermi_mesh` then kept a random fraction of the faces, which punched
+holes everywhere, and the backs of other triangles showed through as a speckle. With no smoothing the mesh stayed
+under the budget and was whole.
+
+- Now (`results/volumes.py`):
+  - the budget is 400 000;
+  - above it, marching cubes runs again with `step_size` 2, 3, … on the smoothed grid: closed sheets with larger
+    triangles, and `step` is returned;
+  - the note of the dataset says so, including when the step brings the grid back to the original resolution
+    (smoothing 2 with step 2).
+- `weld_vertices` merges the vertices that `fold_into_bz` leaves unshared (three per triangle). On TaN this means
+  49 234 vertices instead of 278 517 for 92 794 faces. Shading is smooth, and the JSON of smoothing 2 went from
+  49 MB to 14 MB.
+- `server._send` gzips JSON and text responses of at least 256 kB for clients that accept it. The browser received
+  3.9 MB for TaN at smoothing 2 and 1.0 MB at smoothing 1; the Plotly bundle is compressed too.
+- Tests: `test_large_fermi_mesh_is_coarsened_not_holed` (step, no face dropped, shared vertices) and
+  `test_large_responses_are_gzipped_for_clients_that_accept_it`.

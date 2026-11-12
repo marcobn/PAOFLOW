@@ -372,3 +372,37 @@ def test_pyskeaf_sheets_match_the_fermi_surface(tmp_path):
                 assert np.isclose(np.min(a['speed']), np.min(b['speed']), rtol=1e-3)
     assert any('Rydberg' in note for note in sheets.notes)
     assert sheets.options['bands']['choices'] == [8]  # the BAND line of file 2, not 2
+
+
+def test_large_fermi_mesh_is_coarsened_not_holed(tmp_path, monkeypatch):
+    """Above the browser budget the sheets are computed on a coarser marching-cubes step, so they
+    stay whole (faces sampled at random punched holes into a smoothed surface)."""
+    pytest.importorskip('skimage')
+    from skimage import measure
+
+    from PAOFLOW.results import volumes
+
+    n = 17
+    k = np.linspace(0, 1, n)
+    kx, ky, kz = np.meshgrid(k, k, k, indexing='ij')
+    band = -0.5 - 1.0 * (np.cos(2 * np.pi * kx) + np.cos(2 * np.pi * ky) + np.cos(2 * np.pi * kz))
+    vectors = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    _bxsf(tmp_path / 'FermiSurf_0.bxsf', {5: band}, vectors)
+    path = [str(tmp_path / 'FermiSurf_0.bxsf')]
+    full = volumes.fermi_mesh(path, interp=2, zone='cell')
+    assert full['step'] == 1
+    faces = len(full['sheets'][0]['i'])
+    monkeypatch.setattr(volumes, 'MAX_FACES', faces // 2)
+    coarse = volumes.fermi_mesh(path, interp=2, zone='cell')
+    assert coarse['step'] == 2 and len(coarse['sheets'][0]['i']) <= faces // 2
+    # every face of the coarser marching cubes is there: none was dropped
+    from PAOFLOW.gen.fermi_plotter import fft_upsample
+
+    _verts, expected = measure.marching_cubes(fft_upsample(band, 2), level=0.0, step_size=2)[:2]
+    assert len(coarse['sheets'][0]['i']) == len(expected)
+    # folded into the zone, the triangles share their vertices (smooth shading, smaller data)
+    folded = volumes.fermi_mesh(path, interp=1, zone='ws')['sheets'][0]
+    xyz = np.stack([folded['x'], folded['y'], folded['z']], axis=1)
+    assert len(np.unique(np.round(xyz, 5), axis=0)) == len(xyz) < 3 * len(folded['i'])
+    faces = np.stack([folded['i'], folded['j'], folded['k']], axis=1)
+    assert faces.max() < len(xyz) and np.all(faces[:, 0] != faces[:, 1])

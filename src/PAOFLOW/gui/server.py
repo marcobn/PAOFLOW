@@ -10,6 +10,7 @@ logs of the runs and the live results.
 
 from __future__ import annotations
 
+import gzip
 import json
 import mimetypes
 import os
@@ -23,6 +24,10 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import security
+
+#: Responses at least this large are sent gzip-compressed to clients that accept it.
+GZIP_MIN_BYTES = 256 * 1024
+COMPRESSIBLE = ('application/json', 'text/html', 'text/plain', 'text/javascript', 'text/css')
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
 MAX_BODY_BYTES = 20 * 1024 * 1024
@@ -670,10 +675,22 @@ class GuiRequestHandler(BaseHTTPRequestHandler):
                 pass
             self.close_connection = True
         else:
-            self.send_header('Content-Length', str(len(response.body)))
+            body = response.body
+            if (
+                len(body) >= GZIP_MIN_BYTES
+                and 'gzip' in self.headers.get('Accept-Encoding', '')
+                and response.content_type.split(';')[0] in COMPRESSIBLE
+                and 'Content-Encoding' not in response.headers
+            ):
+                # Large figures (a Fermi surface is several MB of numbers) travel compressed:
+                # 3-4 times less over an ssh tunnel; the browser decodes them itself.
+                body = gzip.compress(body, compresslevel=5)
+                self.send_header('Content-Encoding', 'gzip')
+                self.send_header('Vary', 'Accept-Encoding')
+            self.send_header('Content-Length', str(len(body)))
             self.end_headers()
             if self.command != 'HEAD':
-                self.wfile.write(response.body)
+                self.wfile.write(body)
 
     def _error(self, status: int, message: str, details: dict | None = None) -> None:
         self._send(json_response({'error': message, **(details or {})}, status=status))

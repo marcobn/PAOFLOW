@@ -132,3 +132,22 @@ def test_startup_message_gives_the_tunnel(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert 'ssh -N -o ExitOnForwardFailure=yes -L 8780:127.0.0.1:8780' in out
     assert 'the same port on both ends' in out
+
+
+def test_large_responses_are_gzipped_for_clients_that_accept_it(client):
+    import gzip
+
+    from PAOFLOW.gui.server import plotly_bundle
+
+    bundle = plotly_bundle()
+    if bundle is None:
+        pytest.skip('plotly is not installed')
+    status, body, response = client.get(
+        '/vendor/plotly.min.js', headers={'Accept-Encoding': 'gzip'}
+    )
+    assert status == 200 and response.getheader('Content-Encoding') == 'gzip'
+    assert gzip.decompress(body) == bundle.read_bytes()
+    status, body, response = client.get('/vendor/plotly.min.js')  # no Accept-Encoding: plain
+    assert response.getheader('Content-Encoding') is None and body == bundle.read_bytes()
+    small = client.get('/api/session', headers={'Accept-Encoding': 'gzip'})[2]
+    assert small.getheader('Content-Encoding') is None

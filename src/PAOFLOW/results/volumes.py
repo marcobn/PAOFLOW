@@ -17,8 +17,9 @@ import numpy as np
 
 from .model import Dataset, DatasetRef
 
-#: Triangles sent to the browser at most (meshes beyond it are thinned by face sampling).
-MAX_FACES = 150000
+#: Triangles sent to the browser at most.  A larger mesh is computed again by marching cubes on
+#: every second (third, ...) grid point: larger triangles, the sheets stay closed.
+MAX_FACES = 400000
 
 
 def _require_skimage() -> None:
@@ -28,6 +29,42 @@ def _require_skimage() -> None:
         raise ImportError(
             'the Fermi-surface view needs scikit-image: pip install "PAOFLOW[fermisurface]"'
         ) from None
+
+
+def weld_vertices(
+    xyz: np.ndarray, faces: np.ndarray, scalars: np.ndarray, decimals: int = 6
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Merge the vertices at the same position (the fold into the zone gives three per face).
+
+    Shared vertices let the browser shade the sheet smoothly and cut the vertex data about
+    five-fold.  Faces left with a repeated vertex (slivers of the clipping) are dropped.
+
+    Parameters
+    ----------
+    xyz : ndarray, shape (nv, 3)
+        Vertices.
+    faces : ndarray, shape (nf, 3)
+        Vertex indices of the triangles.
+    scalars : ndarray, shape (nv,)
+        Per-vertex values (equal at equal positions).
+    decimals : int, optional
+        Positions equal to this many decimals are one vertex.
+
+    Returns
+    -------
+    tuple of ndarray
+        ``(xyz, faces, scalars)`` with distinct vertices.
+    """
+    if not len(xyz):
+        return xyz, faces, scalars
+    _unique, first, inverse = np.unique(
+        np.round(xyz, decimals), axis=0, return_index=True, return_inverse=True
+    )
+    faces = inverse.reshape(-1)[faces]
+    keep = (
+        (faces[:, 0] != faces[:, 1]) & (faces[:, 1] != faces[:, 2]) & (faces[:, 0] != faces[:, 2])
+    )
+    return xyz[first], faces[keep], scalars[first]
 
 
 def fermi_mesh(
@@ -66,7 +103,8 @@ def fermi_mesh(
     dict
         ``sheets`` (``band``, ``x``, ``y``, ``z``, ``i``, ``j``, ``k``, ``speed``), ``edges``
         (segments), ``available`` (crossing band labels), ``speed_range``, ``fermi_energy`` and
-        ``thinned`` (whether faces were sampled).
+        ``step`` (the marching-cubes step: 1, or more when the mesh would exceed
+        :data:`MAX_FACES`).
     """
     _require_skimage()
     from scipy.ndimage import map_coordinates
@@ -121,32 +159,41 @@ def fermi_mesh(
             for b in range(a + 1, 8):
                 if bin(a ^ b).count('1') == 1:
                     edges.append(list(corners[a]) + list(corners[b]))
+    energies = {
+        label: fft_upsample(grids[label], interp) if interp > 1 else grids[label]
+        for label in chosen
+    }
+
+    def surfaces(step: int) -> dict:
+        found = {}
+        for label, energy in energies.items():
+            try:
+                found[label] = measure.marching_cubes(energy, level=level, step_size=step)[:2]
+            except (ValueError, RuntimeError):
+                continue
+        return found
+
+    # A mesh too large for the browser is computed again on a coarser step: marching cubes on
+    # every step-th grid point gives larger triangles and closed sheets.  (Dropping faces at
+    # random, as before 11 November 2026, punched holes through which the backs showed.)
+    step = 1
+    meshes = surfaces(step)
+    total_faces = sum(len(faces) for _verts, faces in meshes.values())
+    while total_faces > MAX_FACES:
+        step = max(step + 1, int(np.ceil(np.sqrt(total_faces / MAX_FACES) * step)))
+        meshes = surfaces(step)
+        total_faces = sum(len(faces) for _verts, faces in meshes.values())
     sheets = []
-    total_faces = 0
-    for label in chosen:
-        energy = grids[label]
-        if interp > 1:
-            energy = fft_upsample(energy, interp)
-        try:
-            verts, faces, _normals, _values = measure.marching_cubes(energy, level=level)
-        except (ValueError, RuntimeError):
-            continue
+    for label, (verts, faces) in meshes.items():
+        energy = energies[label]
         speed = fermi_velocity_field(energy, recip)
         span = np.where(np.array(energy.shape) > 1, np.array(energy.shape) - 1, 1)
         cart = (verts / span) @ recip
         vspeed = map_coordinates(speed, verts.T, order=1, mode='nearest')
         if planes is not None:
             cart, faces, vspeed = fold_into_bz(cart, faces, vspeed, recip, *planes)
-        total_faces += len(faces)
+            cart, faces, vspeed = weld_vertices(cart, faces, vspeed)
         sheets.append({'band': int(label), 'xyz': cart, 'faces': faces, 'speed': vspeed})
-    thinned = False
-    if total_faces > MAX_FACES:
-        keep = MAX_FACES / total_faces
-        thinned = True
-        rng = np.random.default_rng(0)
-        for sheet in sheets:
-            mask = rng.random(len(sheet['faces'])) < keep
-            sheet['faces'] = sheet['faces'][mask]
     speeds = [s['speed'] for s in sheets if len(s['speed'])]
     speed_range = (
         [float(min(s.min() for s in speeds)), float(max(s.max() for s in speeds))]
@@ -171,7 +218,7 @@ def fermi_mesh(
         'available': sorted(int(b) for b in available),
         'speed_range': speed_range,
         'fermi_energy': fermi,
-        'thinned': thinned,
+        'step': step,
         'header_ignored': header_ignored,
     }
 
@@ -317,8 +364,23 @@ def load_volume(ref: DatasetRef, root: str, options: dict, dataset: Dataset) -> 
             'The BXSF header gives an absolute Fermi energy but the grid is already relative to '
             'it (older writer): the sheets are drawn at 0.'
         )
-    if mesh['thinned']:
-        dataset.notes.append('Large mesh: faces sampled to %d for the browser.' % MAX_FACES)
+    if mesh['step'] > 1:
+        effective = interp / mesh['step']
+        dataset.notes.append(
+            'Large mesh: the sheets are drawn on every %s grid point of the smoothed grid, so the '
+            'browser gets at most %d triangles%s.'
+            % (
+                {2: 'second', 3: 'third'}.get(mesh['step'], '%dth' % mesh['step']),
+                MAX_FACES,
+                ''
+                if effective > 1
+                else (
+                    ': this is the original grid, so the smoothing shows nothing here'
+                    if effective == 1
+                    else ': coarser than the original grid'
+                ),
+            )
+        )
     dataset.table.append(
         {'name': 'bands crossing', 'value': ', '.join(map(str, mesh['available'])), 'unit': ''}
     )
