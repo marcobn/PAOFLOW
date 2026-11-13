@@ -26,6 +26,18 @@ This means you get consistent augmentation across the periodic table without nee
 
 The `"extended"` preset also enables j-resolved radials for spin-orbit pseudopotentials through a new pseudo-atom basis generator (`BASIS_PS/`). This fixes previous rank-deficiency issues that were causing spurious artifact bands in spin-orbit calculations.
 
+**Which radial function each spinor record takes (fixed 13 November 2026).** An $l > 0$ shell gives
+$2(2l+1)$ records, which `assign_jm` labels as the $2l$ states $|j = l - \tfrac12, m_j\rangle$ followed
+by the $2l + 2$ states $|j = l + \tfrac12, m_j\rangle$ (increasing $m_j$). Each record must carry the radial
+function of its own $j$ (`spinor_record_sources`): $2l$ on the $j = l - \tfrac12$ table, $2l + 2$ on the
+$j = l + \tfrac12$ one. The builders used to attach them per block of $2l + 1$, so
+$|l + \tfrac12, -(l + \tfrac12)\rangle$ took the $j = l - \tfrac12$ function; the basis then broke time
+reversal ($m_j \to -m_j$) and the rotations. In TaAs this put 1.8 meV of time-reversal and up to 8 meV of
+point-group error into the PAO Hamiltonian near $E_F$ (spurious time-odd photocurrents); with the fix both
+are at the scalar-relativistic level ($10^{-13}$ eV, $\le 40\,\mu$eV). The UPF route
+(`build_pswfc_basis_all`) now pairs the two pseudo-orbitals of a shell by their `jchi` (PseudoDojo lists
+$j = l + \tfrac12$ first). Tests: `tests/unit/projection/test_spinor_radials.py`.
+
 ## Ultrasoft and PAW pseudopotentials: the augmented metric
 
 The pseudo-wavefunctions of an ultrasoft or PAW calculation are orthonormal in the metric

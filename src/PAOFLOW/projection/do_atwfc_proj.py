@@ -1,5 +1,6 @@
 import os
 import re
+from typing import Any
 
 import numpy as np
 import scipy.fft as FFT
@@ -134,6 +135,38 @@ def radialfft_simpson(r, f, l, qmesh, volume):
     return fq
 
 
+def spinor_record_sources(l: int, j_minus_source: Any, j_plus_source: Any) -> list[Any]:
+    r"""Radial source of each of the :math:`2(2l+1)` spin-orbit records of an :math:`l > 0` shell.
+
+    Parameters
+    ----------
+    l : int
+        Orbital angular momentum, ``l > 0``.
+    j_minus_source, j_plus_source
+        The radial function (table entry, UPF orbital index, ...) of :math:`j = l - 1/2` and of
+        :math:`j = l + 1/2`.
+
+    Returns
+    -------
+    list
+        ``2 (2l + 1)`` items: ``j_minus_source`` for the first ``2l`` records, ``j_plus_source``
+        for the last ``2l + 2``.
+
+    Notes
+    -----
+    :func:`assign_jm` labels the records of a shell as the :math:`2l` states
+    :math:`|j = l - 1/2, m_j\rangle` followed by the :math:`2l + 2` states
+    :math:`|j = l + 1/2, m_j\rangle`, each with increasing :math:`m_j`. A radial function attached
+    per block of :math:`2l + 1` records gives :math:`|l + 1/2, -(l + 1/2)\rangle` the
+    :math:`j = l - 1/2` radial function: the basis then breaks time reversal (which maps
+    :math:`m_j \to -m_j`) and the rotations, by an amount set by the difference of the two
+    radial functions (meV in the PAO Hamiltonian of TaAs, 13 Nov 2026).
+    """
+    if l < 1:
+        raise ValueError('spin-orbit split shells have l > 0, got l = %d' % l)
+    return [j_minus_source] * (2 * l) + [j_plus_source] * (2 * l + 2)
+
+
 def assign_jm(basis):
     """Assign total-angular-momentum composite index ``jm`` to spin-orbit basis functions.
 
@@ -189,6 +222,50 @@ def assign_jm(basis):
             raise NotImplementedError('l > 3 not implemented')
 
 
+def _upf_record_sources(pswfc: list[dict], upf_j: list[float], spin_orbit: bool) -> list[list[int]]:
+    """Pseudo-orbital whose radial function each basis record of :func:`build_pswfc_basis_all` takes.
+
+    Parameters
+    ----------
+    pswfc : list of dict
+        Pseudo-orbitals of one UPF, in file order (``label``, ``wfc``).
+    upf_j : list of float
+        Their ``jchi`` (fully relativistic UPF; empty otherwise).
+    spin_orbit : bool
+
+    Returns
+    -------
+    list of list of int
+        For each pseudo-orbital, the indices (into ``pswfc``) of the radial functions of the
+        ``2l + 1`` records it emits.
+
+    Notes
+    -----
+    Without spin-orbit every record takes its own pseudo-orbital. With spin-orbit, the two
+    consecutive pseudo-orbitals of an ``l > 0`` shell (same label) emit ``2 (2l + 1)`` records
+    that :func:`assign_jm` labels ``j = l - 1/2`` (2l) then ``j = l + 1/2`` (2l + 2): each takes
+    the pseudo-orbital of its own ``j`` (:func:`spinor_record_sources`), whatever the order of
+    the two in the file (PseudoDojo lists ``j = l + 1/2`` first).
+    """
+    angular = ['SPDF'.find(pao['label'][1].upper()) for pao in pswfc]
+    sources = [[index] * (2 * l + 1) for index, l in enumerate(angular)]
+    if not spin_orbit:
+        return sources
+    index = 0
+    while index < len(pswfc) - 1:
+        l = angular[index]
+        if l > 0 and angular[index + 1] == l and pswfc[index + 1]['label'] == pswfc[index]['label']:
+            j_minus, j_plus = index, index + 1
+            if len(upf_j) == len(pswfc) and upf_j[index] > upf_j[index + 1]:
+                j_minus, j_plus = index + 1, index
+            records = spinor_record_sources(l, j_minus, j_plus)
+            sources[index], sources[index + 1] = records[: 2 * l + 1], records[2 * l + 1 :]
+            index += 2
+        else:
+            index += 1
+    return sources
+
+
 def build_pswfc_basis_all(data_controller):
     """Construct the pseudopotential wavefunction basis set from UPF files for all atoms.
 
@@ -240,7 +317,9 @@ def build_pswfc_basis_all(data_controller):
         atom = arry['atoms'][na]
         tau = arry['tau'][na]
         r, pswfc, pseudo = read_pswfc_from_upf(data_controller, atom)
-        per_atom.append((atom, tau, pswfc, pseudo, r))
+        # jchi of each pseudo-orbital (fully relativistic UPF; empty otherwise)
+        upf_j = list(arry['jchia'].get(atom, []))
+        per_atom.append((atom, tau, pswfc, pseudo, r, upf_j))
         task_offset.append(len(tasks))
         for pao in pswfc:
             l = 'SPDF'.find(pao['label'][1].upper())
@@ -251,10 +330,11 @@ def build_pswfc_basis_all(data_controller):
     wfc_g_list = _parallel_radialfft(tasks, qmesh, volume)
 
     # ----- Pass 2: build the basis dictionaries (cheap, replicated).
-    for na, (atom, tau, pswfc, pseudo, r) in enumerate(per_atom):
+    for na, (atom, tau, pswfc, pseudo, r, upf_j) in enumerate(per_atom):
         if verbose and rank == 0:
             print(f'atom: {atom:2s}  pseudo: {pseudo:30s}  tau: {tau}')
 
+        record_sources = _upf_record_sources(pswfc, upf_j, bool(attr['dftSO']))
         a_shells = []
         jchia = []
         s = 0.5
@@ -270,7 +350,7 @@ def build_pswfc_basis_all(data_controller):
 
             wfc_g = wfc_g_list[task_offset[na] + ish]
 
-            for m in range(1, 2 * l + 2):
+            for m, source in zip(range(1, 2 * l + 2), record_sources[ish]):
                 basis.append(
                     {
                         'atom': atom,
@@ -279,9 +359,9 @@ def build_pswfc_basis_all(data_controller):
                         'm': m,
                         'label': pao['label'],
                         'r': r,
-                        'wfc': pao['wfc'].copy(),
+                        'wfc': pswfc[source]['wfc'].copy(),
                         'qmesh': qmesh,
-                        'wfc_g': wfc_g,
+                        'wfc_g': wfc_g_list[task_offset[na] + source],
                     }
                 )
                 if verbose and rank == 0:
@@ -419,9 +499,9 @@ def build_aewfc_basis(data_controller):
     wfc_g_list = _parallel_radialfft(tasks, qmesh, volume)
 
     # ----- Pass 2: build the basis dictionaries (cheap, replicated).
-    # SO emits 2*(2l+1) records per shell with the same ordering as
-    # before (first (2l+1) -> j=l-1/2 block, second -> j=l+1/2 block).
-    # ``assign_jm`` relies on that ordering.
+    # SO emits 2*(2l+1) records per shell, labelled by ``assign_jm`` as
+    # the 2l states j=l-1/2 followed by the 2l+2 states j=l+1/2; each
+    # record carries the radial table of its own j (spinor_record_sources).
     for na, (atom, tau, shell_records) in enumerate(per_atom):
         ash = []
         jchia = []
@@ -451,24 +531,29 @@ def build_aewfc_basis(data_controller):
             else:
                 block_entries = [entries[0]]
 
-            for be in block_entries:
+            if so and l > 0:
+                # one radial table per (j, m_j) record, in the order of ``assign_jm``
+                record_entries = spinor_record_sources(l, block_entries[0], block_entries[1])
+            else:
+                record_entries = [be for be in block_entries for _ in range(2 * l + 1)]
+            for record, be in enumerate(record_entries):
                 wfc_g = wfc_g_list[be['task_idx']]
-                for m in range(1, 2 * l + 2):
-                    basis.append(
-                        {
-                            'atom': atom,
-                            'tau': tau,
-                            'l': l,
-                            'm': m,
-                            'label': shell_lbl,
-                            'r': be['r'],
-                            'wfc': be['wfc'].copy(),
-                            'qmesh': qmesh,
-                            'wfc_g': wfc_g,
-                        }
-                    )
-                    if verbose and rank == 0:
-                        print(f'      atwfc: {len(basis):3d}  {shell_lbl}  l={l:d}, m={m:-d}')
+                m = record % (2 * l + 1) + 1
+                basis.append(
+                    {
+                        'atom': atom,
+                        'tau': tau,
+                        'l': l,
+                        'm': m,
+                        'label': shell_lbl,
+                        'r': be['r'],
+                        'wfc': be['wfc'].copy(),
+                        'qmesh': qmesh,
+                        'wfc_g': wfc_g,
+                    }
+                )
+                if verbose and rank == 0:
+                    print(f'      atwfc: {len(basis):3d}  {shell_lbl}  l={l:d}, m={m:-d}')
 
         if atom not in shells:
             shells[atom] = ash
