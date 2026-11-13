@@ -24,6 +24,8 @@ import time
 from pathlib import Path
 
 MANIFEST = 'figures.json'
+#: Section headers that ``plot.py`` prints before each plot (``== Band structure ==``).
+SECTION = re.compile(r'^==\s*(.+?)\s*==$')
 FORMATS = ('png', 'pdf')
 DPI = 150
 
@@ -74,6 +76,30 @@ def figure_title(figure) -> str:
     return ''
 
 
+class _SectionWatch:
+    """``sys.stdout`` that also notes the section headers the script prints."""
+
+    def __init__(self, stream, capture: 'FigureCapture') -> None:
+        self._stream = stream
+        self._capture = capture
+        self._pending = ''
+
+    def write(self, text: str) -> int:
+        self._pending += text
+        *lines, self._pending = self._pending.split('\n')
+        for line in lines:
+            match = SECTION.match(line.strip())
+            if match:
+                self._capture.start_section(match.group(1))
+        return self._stream.write(text)
+
+    def flush(self) -> None:
+        self._stream.flush()
+
+    def __getattr__(self, name: str):
+        return getattr(self._stream, name)
+
+
 class FigureCapture:
     """The figures of one run: files in a folder and their manifest.
 
@@ -108,6 +134,27 @@ class FigureCapture:
         self.entries: list[dict] = []
         self._captured: set[int] = set()
         self._savefig = None  # the original Figure.savefig, set by install()
+        self.section: str | None = None  # the last section header printed
+        self._in_section = 0
+
+    def start_section(self, name: str) -> None:
+        """A section header of the script: the caption of its untitled figures.
+
+        Parameters
+        ----------
+        name : str
+            The header (``Photocurrent of a metal by channel``).
+        """
+        self.section = name
+        self._in_section = 0
+
+    def _section_title(self) -> str:
+        if not self.section:
+            return ''
+        self._in_section += 1
+        return (
+            self.section if self._in_section == 1 else '%s (%d)' % (self.section, self._in_section)
+        )
 
     # ------------------------------------------------------------------------ files
     def clear(self) -> None:
@@ -156,8 +203,13 @@ class FigureCapture:
             The file the script saved it to, if it did.
         """
         number = len(self.entries) + 1
+        # Its own title, the file the script saved it to, the section of the script printing it
+        # (plot.py: '== Shift current =='), or its number.
         title = (
-            figure_title(figure) or (Path(target).stem if target else '') or 'Figure %d' % number
+            figure_title(figure)
+            or (Path(target).stem if target else '')
+            or self._section_title()
+            or 'Figure %d' % number
         )
         stem = '%02d_%s' % (number, _slug(title))
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -232,6 +284,7 @@ class FigureCapture:
         plt.show = show
         matplotlib.use = use
         builtins.input = answer_default
+        sys.stdout = _SectionWatch(sys.stdout, self)
 
 
 def main(argv: list[str] | None = None) -> int:

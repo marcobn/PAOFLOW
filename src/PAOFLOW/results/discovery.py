@@ -92,6 +92,40 @@ def _walk(root: str):
             yield folder, name
 
 
+#: SHG terms of ``shgt{r,i}_<term>_<abc>.dat`` (PAOFLOW.response.nonlinear_optics.SHG_TERMS)
+SHG_TERM_LABELS = {
+    'interband_2w': 'interband, resonant at 2ω',
+    'interband_w': 'interband, resonant at ω',
+    'intraband_2w_derivative': 'intraband 2ω, generalized derivative',
+    'intraband_2w_velocity': 'intraband 2ω, velocity difference',
+    'intraband_w_derivative': 'intraband ω, generalized derivative',
+    'intraband_w_velocity': 'intraband ω, velocity difference',
+    'intraband_w_todd': 'intraband ω, T-odd',
+}
+
+
+def term_label(term: str) -> str:
+    """Name of a term of the SHG split or of a density-matrix channel of a metal.
+
+    The channels take the legends of the figures of ``plot.py``
+    (:data:`PAOFLOW.graphics.nonlinear_plots.CHANNEL_LABELS`).
+
+    Parameters
+    ----------
+    term : str
+        ``interband_2w``, ``fermi_surface_drude``, ...
+
+    Returns
+    -------
+    str
+    """
+    from ..graphics.nonlinear_plots import CHANNEL_LABELS
+
+    if term in CHANNEL_LABELS:
+        return CHANNEL_LABELS[term][0]
+    return SHG_TERM_LABELS.get(term, term.replace('_', ' '))
+
+
 def pretty_label(key: str, value: str) -> str:
     """Display text of one series group value.
 
@@ -122,6 +156,8 @@ def pretty_label(key: str, value: str) -> str:
         return 's=%s' % value
     if key == 'tr':
         return 'transport' if value else 'α²F'
+    if key == 'term':
+        return term_label(value)
     if key == 'level':
         return {
             'ipa': 'IPA',
@@ -135,6 +171,8 @@ def pretty_label(key: str, value: str) -> str:
 
 def _title(kind: Kind, groups: dict[str, str]) -> str:
     values = _Default({key: value.strip('_') for key, value in groups.items()})
+    if values.get('part') in ('r', 'i'):  # shgtr_, pcr_, beta_T_r_: the part of a complex quantity
+        values['part'] = 'real part' if values['part'] == 'r' else 'imaginary part'
     if kind.describe is not None:
         values['title'] = kind.describe(groups)[0]
     title = kind.title.format_map(values).strip()

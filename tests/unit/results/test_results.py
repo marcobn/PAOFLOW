@@ -406,3 +406,26 @@ def test_large_fermi_mesh_is_coarsened_not_holed(tmp_path, monkeypatch):
     assert len(np.unique(np.round(xyz, 5), axis=0)) == len(xyz) < 3 * len(folded['i'])
     faces = np.stack([folded['i'], folded['j'], folded['k']], axis=1)
     assert faces.max() < len(xyz) and np.all(faces[:, 0] != faces[:, 1])
+
+
+def test_photocurrent_channels_of_a_metal_have_readable_names(tmp_path):
+    """pc{r,i}_<channel>_<abc>.dat (the metal engine of nonlinear_optics) by channel, named as the
+    legends of plot.py; the part of a complex quantity is spelt out in the title."""
+    from PAOFLOW.graphics.nonlinear_plots import CHANNEL_LABELS
+    from PAOFLOW.results import ResultsFolder
+
+    energies = np.linspace(0.1, 2.0, 5)
+    for part in 'ri':
+        np.savetxt(tmp_path / ('pc%s_xxz.dat' % part), np.c_[energies, energies])
+        for channel in CHANNEL_LABELS:
+            np.savetxt(tmp_path / ('pc%s_%s_xxz.dat' % (part, channel)), np.c_[energies, energies])
+    folder = ResultsFolder(str(tmp_path))
+    channels = [r for r in folder.datasets if r.kind == 'photocurrent_channels']
+    assert sorted(r.title for r in channels) == [
+        'Photocurrent by channel (imaginary part) σ_xxz',
+        'Photocurrent by channel (real part) σ_xxz',
+    ]
+    names = {s.name for s in folder.load(channels[0].id).series}
+    assert names == {label for label, _ in CHANNEL_LABELS.values()}
+    totals = [r for r in folder.datasets if r.kind == 'nlo']
+    assert len(totals) == 2 and any('circular' in r.title for r in totals)

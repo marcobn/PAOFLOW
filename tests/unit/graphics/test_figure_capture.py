@@ -121,3 +121,23 @@ def test_capture_folder_and_figure_title():
     fig.suptitle('Whole figure')
     assert figure_title(fig) == 'Whole figure'
     plt.close(fig)
+
+
+def test_untitled_figures_take_the_section_the_script_prints(tmp_path):
+    (tmp_path / 'plot_sections.py').write_text(
+        'import matplotlib.pyplot as plt\n'
+        "print('\\n== Photocurrent by channel ==')\n"
+        'for _ in range(2):\n'
+        '    plt.plot([0, 1])\n'
+        '    plt.show()\n'
+        "print('== Band structure ==')\n"
+        "plt.plot([1, 0]); plt.title('Bands of Si')\n"  # its own title wins
+        'plt.show()\n'
+    )
+    assert _run(tmp_path, 'plot_sections.py').returncode == 0
+    manifest = json.loads((tmp_path / 'figures' / 'demo' / 'figures.json').read_text())
+    assert [f['title'] for f in manifest['figures']] == [
+        'Photocurrent by channel',
+        'Photocurrent by channel (2)',
+        'Bands of Si',
+    ]

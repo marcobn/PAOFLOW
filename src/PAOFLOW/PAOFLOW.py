@@ -3662,21 +3662,6 @@ class PAOFLOW:
             when orbital pairs couple across more than 0.45 of the box (minimum-image violation)
             or when the Hamiltonian has a k-grid.  With ``nspin = 2`` the channels are occupied
             by their own electron counts (``nelec`` may be a pair).
-
-        Returns
-        -------
-        dict
-            The spectra (``'energy_ev'``, ``'components'``, ``'shift'``, ``'shiftm'``,
-            ``'injectc'``, ``'injectm'``, ``'shg'``) summed over the spin channels, and the run
-            metadata (``'nocc'``, ``'gap_ev'``, ``'direct_gap_ev'``, ...); ``None`` on failure
-            when ``abort_on_exception`` is off.
-
-        Notes
-        -----
-        Units and conventions follow :mod:`PAOFLOW.response.nonlinear_optics`; see
-        ``docs/internals/nonlinear-optics.md`` for the formulas, the sign of the curvature term
-        in the sum rule, the histogram scheme of the SHG and the validation on GaAs and
-        tight-binding models.
         coupling : {None, 'none', 'monopole', 'hartree', 'hartree+alda'}, optional
             Molecules only: also solve the coupled (self-consistent) second-order response
             (:mod:`PAOFLOW.response.coupled_response`), in which the induced Hartree potential of the
@@ -3730,6 +3715,21 @@ class PAOFLOW:
             (``'coarse'`` (default), ``'full'`` or ``(n1, n2, n3)``), ``static_step`` (finite-field step, a.u.),
             ``tol`` (GMRES tolerance), ``n_threads`` (thread pool over the solves of each
             rank); the solves are also distributed over the MPI ranks.
+
+        Returns
+        -------
+        dict
+            The spectra (``'energy_ev'``, ``'components'``, ``'shift'``, ``'shiftm'``,
+            ``'injectc'``, ``'injectm'``, ``'shg'``) summed over the spin channels, and the run
+            metadata (``'nocc'``, ``'gap_ev'``, ``'direct_gap_ev'``, ...); ``None`` on failure
+            when ``abort_on_exception`` is off.
+
+        Notes
+        -----
+        Units and conventions follow :mod:`PAOFLOW.response.nonlinear_optics`; see
+        ``docs/internals/nonlinear-optics.md`` for the formulas, the sign of the curvature term
+        in the sum rule, the histogram scheme of the SHG and the validation on GaAs and
+        tight-binding models.
         """
         import numpy as np
 
