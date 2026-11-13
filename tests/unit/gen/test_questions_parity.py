@@ -18,6 +18,7 @@ import pytest
 from PAOFLOW.gen import elphon_system as es
 from PAOFLOW.gen import paoflow_driver as pd
 from PAOFLOW.gen import sscha_driver as sd
+from PAOFLOW.gen import tb_model_driver as tm
 from PAOFLOW.gen.questions import collect
 
 SI_SCF = """&control
@@ -461,11 +462,23 @@ def test_sscha_workflow_parity(name, qe_dir, monkeypatch, capsys):
 #: key must get a question in PAOFLOW.gen.questions (``cli=False`` for a GUI-only refinement) or
 #: be listed here on purpose.
 BUILDER_ONLY_KEYS: dict[str, set[str]] = {
-    'run': set(),
+    'run': {'periodic', 'tb_model'},  # the shared non-linear builder reads them for model runs
     'acbn0': set(),
     'phonon': set(),
     'elphon': set(),
     'sscha': set(),
+    # a model has no coupled response and no molecule (keys of the shared non-linear builder)
+    'tb_model': {
+        'coupled_components',
+        'coupled_emax',
+        'coupled_emin',
+        'coupled_eta',
+        'coupled_kernels',
+        'coupled_ne',
+        'coupled_nk',
+        'coupled_shg_energies',
+        'nlo_coupling',
+    },
 }
 
 
@@ -490,6 +503,7 @@ def _builders(name: str) -> list:
             pd._emit_standard_properties,
             pd._nonlinear_constant_lines,
             pd._nonlinear_run_lines,
+            pd._nonlinear_call_lines,
             pd._band_path_constant_lines,
             pd._wants_explicit_band_path,
             pd._nonlinear_plot_entries,
@@ -506,8 +520,31 @@ def _builders(name: str) -> list:
         ],
         'elphon': [es.render_system_py, es.render_run_qe, es.qe_inputs, es.workflow_files],
         'sscha': [sd.build_sscha_script],
+        'tb_model': [
+            tm.build_tb_model_script,
+            pd.build_plot_script,
+            pd._emit_standard_properties,
+            pd._nonlinear_constant_lines,
+            pd._nonlinear_call_lines,
+            pd._band_path_constant_lines,
+            pd._wants_explicit_band_path,
+            pd._nonlinear_plot_entries,
+        ],
     }[name]
 
+
+#: The tight-binding model run (added after the refactor: no frozen prompts, coverage only).
+TB_MODEL_SCENARIOS = {
+    'kane_mele_everything': {
+        'Tight-binding model': 'kane_mele',
+        'Available properties': '1 2 3 4 5 6 7 8 9',
+        'metal or semimetal': 'y',
+    },
+    'weyl_transport': {
+        'Tight-binding model': 'weyl',
+        'Available properties': '1 2 3 10',
+    },
+}
 
 #: Scenarios of questions added after the refactor: the frozen prompts do not have them, so they
 #: take part in the builder-key coverage below, not in the parity runs.
@@ -526,6 +563,7 @@ SCENARIOS = {
     'phonon': PHONON_SCENARIOS,
     'elphon': {**ELPHON_SCENARIOS, **ELPHON_NEW_SCENARIOS},
     'sscha': SSCHA_SCENARIOS,
+    'tb_model': TB_MODEL_SCENARIOS,
 }
 
 

@@ -25,7 +25,17 @@ def _resolve(client, workflow, answers=None, options=None, workdir='Si'):
 
 def test_workflows_listed(client):
     names = [w['name'] for w in client.get('/api/gen/workflows')[1]['workflows']]
-    assert names == ['acbn0', 'run', 'phonon', 'elphon', 'sscha', 'pyskeaf', 'qe_input', 'basis']
+    assert names == [
+        'acbn0',
+        'run',
+        'tb_model',
+        'phonon',
+        'elphon',
+        'sscha',
+        'pyskeaf',
+        'qe_input',
+        'basis',
+    ]
 
 
 def test_detection_of_the_example(client):
@@ -293,3 +303,34 @@ def test_the_icon_of_paoflow_org(client):
         status, body, response = client.get(path)
         assert status == 200 and body == icon.read_bytes()
         assert 'icon' in response.getheader('Content-Type')
+
+
+def test_tb_model_run_needs_no_save(client, gui_root):
+    """A property run on a tight-binding model: suggested where there is no QE data, its band
+    path drawn in the zone of the model's lattice, and its files written without a save."""
+    (gui_root / 'model').mkdir()
+    detection = client.get('/api/workspace/detect?path=model')[1]
+    assert 'tb_model' in [s['workflow'] for s in detection['suggestions']]
+    answers = {'tb_model': 'kane_mele', 'properties': ['bands', 'nonlinear']}
+    status, preview, _ = client.post(
+        '/api/gen/bandpath',
+        {
+            'workdir': 'model',
+            'workflow': 'tb_model',
+            'answers': answers,
+            'band_path': 'gG-M-K-gG',
+            'points': [['gG', 0, 0, 0], ['M', 0.5, 0, 0], ['K', 1 / 3, 1 / 3, 0]],
+        },
+    )
+    assert status == 200 and 'figure' in preview and preview['length'] > 0
+    status, body, _ = client.post(
+        '/api/gen/resolve', {'workflow': 'tb_model', 'workdir': 'model', 'answers': answers}
+    )
+    assert status == 200 and not body['errors']
+    assert [f['path'] for f in body['files']] == ['main.py', 'plot.py']
+    status, written, _ = client.post(
+        '/api/gen/write', {'workflow': 'tb_model', 'workdir': 'model', 'answers': answers}
+    )
+    assert status == 200 and (gui_root / 'model' / 'main.py').is_file()
+    assert 'kane_mele_model(**MODEL_PARAMETERS)' in (gui_root / 'model' / 'main.py').read_text()
+    assert written['plan'][0]['argv'] == ['python', 'main.py']

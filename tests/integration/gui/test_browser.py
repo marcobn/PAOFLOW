@@ -1050,3 +1050,31 @@ def test_crystal_structure_under_the_working_folder(browser, studio):
     browser.find_element(By.CSS_SELECTOR, '.crystal-card .icon-btn').click()  # shown again
     _wait(lambda: browser.execute_script(rendered) == 'true')
     assert _errors(browser) == []
+
+
+def test_property_run_from_a_tb_model(browser, studio, tmp_path):
+    """The TB-model workflow: model parameters instead of a save, the zone of the model drawn,
+    main.py written with the model function."""
+    server, work = studio
+    _open(browser, server, 'setup')
+    browser.find_element(By.CSS_SELECTOR, '.workflow-item[data-name="tb_model"]').click()
+    _wait(lambda: browser.execute_script('return window.paoflowApp.setup.workflow') == 'tb_model')
+    browser.execute_script(
+        "const s = window.paoflowApp.setup; s.form.answers.tb_model = 'kane_mele';"
+        "s.form.answers.properties = ['bands', 'spin_Hall']; s.scheduleResolve();"
+    )
+    labels = (
+        "return [...document.querySelectorAll('.field:not([hidden]) .name')]"
+        '.map((n) => n.textContent.trim()).join(",")'
+    )
+    _wait(lambda: 'soc' in browser.execute_script(labels).split(','))
+    _wait(
+        lambda: browser.find_elements(By.CSS_SELECTOR, '.bz-preview .main-svg, .bz-preview canvas')
+    )
+    caption = browser.find_element(By.CSS_SELECTOR, '.bz-caption').text
+    assert 'Brillouin zone' in caption
+    browser.find_element(By.XPATH, "//button[text()='Write files']").click()
+    _wait(lambda: (work / 'main.py').exists())
+    text = (work / 'main.py').read_text()
+    assert 'kane_mele_model(**MODEL_PARAMETERS)' in text and 'p.spin_Hall(' in text
+    assert _errors(browser) == []

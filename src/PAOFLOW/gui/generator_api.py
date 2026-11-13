@@ -594,7 +594,7 @@ def register(app: 'GuiApp') -> None:
     def workflows(request: Request) -> Response:
         from ..gen.questions import WORKFLOWS
 
-        from ..gen.outputs import PLOT_DEFAULTS
+        from ..gen.outputs import DRIVER_NAMES, PLOT_DEFAULTS
 
         items = [
             {
@@ -603,6 +603,7 @@ def register(app: 'GuiApp') -> None:
                 'description': w.description,
                 'kind': 'workflow',
                 'plot_default': PLOT_DEFAULTS.get(w.name, False),
+                'driver': DRIVER_NAMES.get(w.name),
             }
             for w in WORKFLOWS.values()
         ]
@@ -647,9 +648,30 @@ def register(app: 'GuiApp') -> None:
                     points.append(point_row(' '.join(cells)))
         except ValueError as exc:
             return json_response({'error': str(exc)})
+        cell = None
+        if payload.get('workflow') == 'tb_model':
+            # A tight-binding model: the zone of its lattice, not of a save.
+            import numpy as np
+
+            from ..gen.questions import WORKFLOWS
+            from ..gen.questions.model import Context
+            from ..gen.questions.resolve import resolve_form
+            from ..gen.questions.tb_model import build_model
+
+            context = Context(workdir=str(workdir))
+            form = resolve_form(WORKFLOWS['tb_model'], payload.get('answers') or {}, context)
+            try:
+                model = build_model(form.answers, context)
+            except (ValueError, KeyError) as exc:
+                return json_response({'error': 'the model cannot be built: %s' % exc})
+            cell = (float(model.alat), np.asarray(model.lattice_vectors, dtype=float))
         return json_response(
             path_figure(
-                str(workdir), payload.get('savedir'), payload.get('band_path') or '', points
+                str(workdir),
+                payload.get('savedir'),
+                payload.get('band_path') or '',
+                points,
+                cell=cell,
             )
         )
 

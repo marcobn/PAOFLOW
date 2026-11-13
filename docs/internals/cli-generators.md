@@ -117,6 +117,37 @@ The property `nonlinear` (non-linear optics) adds a separate `run_nonlinear()` t
 - **Running:** `mpirun -np N python main.pyskeaf.py`; the field directions are spread over the ranks.
   `plot.pyskeaf.py` (asked, default yes) saves the dHvA figures as PDF files in `<folder>/figures`.
 
+**Workflow G — Property run from a TB model** (`main.py` and `plot.py`, `PAOFLOW.gen.tb_model_driver`,
+questions in `PAOFLOW.gen.questions.tb_model`): the properties of workflow B on a tight-binding model of
+`PAOFLOW.models.models`. There is no DFT run, so no save, projection or basis; the parameters of the model come
+instead. Slater–Koster models come later.
+- **Models** (`TB_MODELS`): `honeycomb` (gapped graphene, Haldane; 2D), `kane_mele` (spin–orbit and Rashba
+  honeycomb; 2D, spinful), `tmd` (MX₂, three d bands; 2D), `rice_mele` (1D chain), `weyl` (two-band Weyl
+  semimetal; 3D, spinful), `parabolic` (2, 3 or 4 bands: chain, square, cubic).
+- **Parameters:** one question per keyword argument of the model function, from its signature (kind and
+  default) and its docstring (prompt, unit, Studio help), so new arguments in `models.py` appear by themselves.
+  `SPECIAL_PARAMETERS` turns the TMD material and functional and the number of parabolic bands into choices.
+  A note gives the orbitals, the spin, the filling, the dimension and the band range of the model, or the error
+  of the model function.
+- **Properties:** the menu of workflow B without what needs a PAO basis (orbital Hall, emissivity). Spin texture,
+  spin Hall and anomalous Hall are offered for spinful models only, because the Hall routines require
+  spin–orbit. Boltzmann transport is offered for 3D models only, because it inverts the 3×3 conductivity, which
+  is singular along a direction without hoppings.
+- **Defaults from the model:**
+  - the band path from its lattice: Γ-X for a chain; Γ-M-K-Γ for a hexagonal 2D lattice, with K computed as a
+    corner of its zone; Γ-X-M-Γ for other 2D lattices; Γ-X-M-Γ-R-X|M-R in 3D;
+  - the energy window from its band range;
+  - the dense grid per periodic direction (400, 96 or 32; 1 along the others), and the non-linear grid
+    (2000, 200 or 40).
+
+  The non-linear block leaves out the molecule, the Löwdin dipoles and the coupled response.
+- **Output:** `main.py` imports the model function and builds `PAOFLOW.PAOFLOW(model=<function>(**MODEL_PARAMETERS))`
+  in `new_paoflow()`. `run_properties()`, `run_optical()` (`gradient_and_momenta()` and `dielectric_tensor`) and
+  `run_nonlinear()` each start their own instance. The property calls are those of workflow B
+  (`_emit_standard_properties`, `_nonlinear_call_lines`), `IBRAV = 0` with the explicit band path, and `NFFT`
+  and `NLO_NK` have 1 along the directions without hoppings. `plot.py` is the one of workflow B.
+- **Running:** `python main.py` or `mpirun -np N python main.py`. The plan has one MPI step plus the plot step.
+
 **Plot scripts.** `outputs.PLOT_DEFAULTS` records which plot scripts each workflow writes by default:
 - the Property run, phonons and pyskeaf ask "Also generate a plotting script?" (default yes);
 - ACBN0 and the electron–phonon folder write theirs;

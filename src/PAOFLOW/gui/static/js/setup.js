@@ -531,17 +531,12 @@ export class SetupView {
         ),
       );
     } else {
-      const defaults = {
-        run: 'main.py',
-        acbn0: 'main.acbn0.py',
-        phonon: 'main.phonon.py',
-        sscha: 'main.sscha.py',
-        pyskeaf: 'main.pyskeaf.py',
-      };
+      // The default name of the driver (paoflow-gen's DRIVER_NAMES, from /api/gen/workflows).
+      const driver = this.workflows.find((w) => w.name === name)?.driver || 'main.py';
       const out = h('input', {
         type: 'text',
         value: this.options.out || '',
-        placeholder: defaults[name],
+        placeholder: driver,
         oninput: () => set('out', out.value.trim()),
       });
       box.append(field('Driver file', out, 'in the working folder (paoflow-gen -o)'));
@@ -609,6 +604,11 @@ export class SetupView {
         band_path: item.value,
         points: value('high_sym') || [],
       };
+      if (this.workflow === 'tb_model') {
+        // The zone of the model's lattice: the server builds the model from the answers.
+        request.workflow = this.workflow;
+        request.answers = this.form.answers;
+      }
       const key = JSON.stringify(request);
       if (key === field.previewKey) continue;
       field.previewKey = key;

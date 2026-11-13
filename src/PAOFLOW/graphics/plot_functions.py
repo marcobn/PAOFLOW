@@ -349,7 +349,6 @@ def plot_berry_under_bands(
     ax_ba.set_ylabel(band_label, fontsize=12)
 
     plt.show()
-    quit()
 
 
 def plot_tensor(

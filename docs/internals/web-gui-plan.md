@@ -1220,3 +1220,20 @@ under the budget and was whole.
   3.9 MB for TaN at smoothing 2 and 1.0 MB at smoothing 1; the Plotly bundle is compressed too.
 - Tests: `test_large_fermi_mesh_is_coarsened_not_holed` (step, no face dropped, shared vertices) and
   `test_large_responses_are_gzipped_for_clients_that_accept_it`.
+
+**Property runs from a tight-binding model (13 November 2026, user request).** New workflow `tb_model` (paoflow-gen
+menu and Setup), described in `cli-generators.md` (workflow G). On the Studio side:
+- it appears in the workflow list by itself;
+- the band-path preview takes the zone of the model's lattice (`/api/gen/bandpath` with `workflow` and `answers`:
+  the server resolves the form and builds the model);
+- an empty folder suggests it;
+- the *Driver file* placeholder now comes from `outputs.DRIVER_NAMES` through `/api/gen/workflows` (`driver`)
+  instead of a table in `setup.js`.
+
+Fixes found on the way:
+- `PAOFLOW.spin_operator(spin_orbit=...)` in the generated spin-texture call did not exist (TypeError), so the
+  line was dropped: `spin_texture` builds the operator.
+- A stray `quit()` at the end of `plot_functions.plot_berry_under_bands` stopped every `plot.py` after the Berry
+  curvature.
+- `DataController` defaults `insulator` to False for models: the dielectric tensor needs it, and only the QE
+  and VASP readers set it.

@@ -105,7 +105,9 @@ function followSize(node, Plotly) {
     if (!node.clientWidth || !node.clientHeight || size === last || !node.dataset.rendered) return;
     last = size;
     requestAnimationFrame(() => {
-      if (node.dataset.rendered) Plotly.Plots.resize(node);
+      // The card may have been redrawn meanwhile (another folder): the node is gone or hidden.
+      if (node.dataset.rendered && node.isConnected && node.offsetParent !== null)
+        Plotly.Plots.resize(node);
     });
   });
   observer.observe(node);

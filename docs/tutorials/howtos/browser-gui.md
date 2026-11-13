@@ -100,9 +100,10 @@ Other options:
    in its menu. A save shows the structure after the run, so a relaxation shows the relaxed cell. The cell can
    be repeated up to 3×3×3, and the card can be hidden. Hover an atom for its coordinates; the cell lengths,
    angles and volume are listed below the view.
-2. **Workflow.** The workflows are those of `paoflow-gen`: property run, ACBN0/eACBN0, harmonic phonons (with
-   Raman), electron–phonon system folder, SSCHA, quantum oscillations (pyskeaf, from the Fermi-surface BXSF files
-   of a property run). Two tools sit next to them: a QE input from an AFLOW or C2DB entry
+2. **Workflow.** The workflows are those of `paoflow-gen`: property run, property run from a TB model (no DFT: the
+   parameters of a tight-binding model of `PAOFLOW.models.models` instead of a save), ACBN0/eACBN0, harmonic
+   phonons (with Raman), electron–phonon system folder, SSCHA, quantum oscillations (pyskeaf, from the
+   Fermi-surface BXSF files of a property run). Two tools sit next to them: a QE input from an AFLOW or C2DB entry
    (`paoflow-gen-qe`), and the pseudo-atom basis tables (`paoflow-genbasis-ps`).
 3. **Form.** These are the CLI questions, shown only when they apply. Defaults follow the earlier answers: the
    dense grids follow the coarse ones, and the smearing follows the adaptive prefactor. Invalid values are marked

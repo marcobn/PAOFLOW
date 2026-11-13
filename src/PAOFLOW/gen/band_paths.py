@@ -221,7 +221,13 @@ def camera_eye(points: np.ndarray, distance: float = 1.6) -> dict:
     }
 
 
-def path_figure(workdir: str, savedir: str | None, band_path: str, points: list[Point]) -> dict:
+def path_figure(
+    workdir: str,
+    savedir: str | None,
+    band_path: str,
+    points: list[Point],
+    cell: tuple[float, np.ndarray] | None = None,
+) -> dict:
     """Plotly specification of the first Brillouin zone with the path (crystal points to Cartesian).
 
     Parameters
@@ -234,6 +240,9 @@ def path_figure(workdir: str, savedir: str | None, band_path: str, points: list[
         The path string.
     points : list of (str, float, float, float)
         Labelled crystal coordinates.
+    cell : tuple of (float, ndarray), optional
+        ``(alat, vectors)`` (bohr; rows in alat units) instead of the cell of the save: the
+        lattice of a tight-binding model.
 
     Returns
     -------
@@ -244,7 +253,7 @@ def path_figure(workdir: str, savedir: str | None, band_path: str, points: list[
     """
     from .fermi_plotter import brillouin_zone, bz_edges
 
-    cell = _cell_in_alat(workdir, savedir)
+    cell = cell if cell is not None else _cell_in_alat(workdir, savedir)
     if cell is None:
         problem = save_problem(workdir, savedir) or 'the cell of the save could not be read'
         return {

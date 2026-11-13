@@ -81,6 +81,7 @@ DRIVER_NAMES = {
     'phonon': 'main.phonon.py',
     'sscha': 'main.sscha.py',
     'pyskeaf': 'main.pyskeaf.py',
+    'tb_model': 'main.py',
 }
 
 #: Whether a workflow writes its plot scripts by default (``cfg['plot']`` decides otherwise): the
@@ -94,6 +95,7 @@ PLOT_DEFAULTS = {
     'elphon': True,
     'sscha': False,
     'pyskeaf': True,
+    'tb_model': True,
 }
 
 #: Plot scripts that save their figures (no display): the Runs tab can run them.
@@ -136,7 +138,7 @@ def workflow_outputs(
     driver = GeneratedFile(out or DRIVER_NAMES[name], text=_driver_text(name, cfg))
     files = [driver]
     wants_plot = plot or bool(cfg.get('plot', PLOT_DEFAULTS.get(name, False)))
-    if name == 'run' and wants_plot:
+    if name in ('run', 'tb_model') and wants_plot:
         files.append(GeneratedFile(plot_out or 'plot.py', text=pd.build_plot_script(cfg)))
     elif name == 'acbn0' and wants_plot:
         files.append(
@@ -188,6 +190,10 @@ def _driver_text(name: str, cfg: dict) -> str:
         from .pyskeaf_driver import build_pyskeaf_script
 
         return build_pyskeaf_script(cfg)
+    if name == 'tb_model':
+        from .tb_model_driver import build_tb_model_script
+
+        return build_tb_model_script(cfg)
     raise ValueError('unknown workflow %r' % name)
 
 
@@ -348,6 +354,15 @@ def run_plan(name: str, cfg: dict, files: list[GeneratedFile] | None = None) -> 
     steps: list[RunStep] = []
     if name == 'run':
         steps.append(RunStep('PAOFLOW properties', ('python', driver), mpi=True))
+    elif name == 'tb_model':
+        steps.append(
+            RunStep(
+                'PAOFLOW properties of the model',
+                ('python', driver),
+                mpi=True,
+                note='no DFT run: the Hamiltonian is the tight-binding model',
+            )
+        )
     elif name == 'acbn0':
         steps.append(
             RunStep(

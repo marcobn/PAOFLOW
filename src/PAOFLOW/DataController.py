@@ -359,6 +359,9 @@ class DataController:
                         print('\nERROR: Could not build tight-binding model')
                         self.report_exception('Data Controller Initialization')
                         raise e
+                # The QE and VASP readers say whether the system is an insulator; a model does
+                # not, and the dielectric tensor then takes the smeared (metal) occupations.
+                self.data_attributes.setdefault('insulator', False)
             elif not bxsf_only:
                 try:
                     if inputfile != None:

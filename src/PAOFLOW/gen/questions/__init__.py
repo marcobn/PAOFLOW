@@ -3,7 +3,8 @@
 Each workflow is a :class:`~PAOFLOW.gen.questions.model.Workflow`: an ordered list of questions and
 notes plus the ``assemble`` function that turns the answers into the configuration the script
 builders of :mod:`PAOFLOW.gen.paoflow_driver`, :mod:`PAOFLOW.gen.elphon_system`,
-:mod:`PAOFLOW.gen.sscha_driver` and :mod:`PAOFLOW.gen.pyskeaf_driver` read.  :func:`collect` is the interactive CLI of one workflow.
+:mod:`PAOFLOW.gen.sscha_driver`, :mod:`PAOFLOW.gen.pyskeaf_driver` and
+:mod:`PAOFLOW.gen.tb_model_driver` read.  :func:`collect` is the interactive CLI of one workflow.
 """
 
 from __future__ import annotations
@@ -18,10 +19,11 @@ from .prompt import ask_items
 from .pyskeaf import PYSKEAF
 from .run import RUN
 from .sscha import SSCHA
+from .tb_model import TB_MODEL
 
 #: The workflows of ``paoflow-gen``, in the order of its first prompt.
 WORKFLOWS: dict[str, Workflow] = {
-    workflow.name: workflow for workflow in (ACBN0, RUN, PHONON, ELPHON, SSCHA, PYSKEAF)
+    workflow.name: workflow for workflow in (ACBN0, RUN, TB_MODEL, PHONON, ELPHON, SSCHA, PYSKEAF)
 }
 
 

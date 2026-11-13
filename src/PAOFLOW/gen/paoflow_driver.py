@@ -490,13 +490,24 @@ def _nonlinear_constant_lines(cfg):
     two_d = bool(cfg.get('is_2d', False))
     nk = 1 if molecule else int(cfg.get('nlo_nk', 40))
     responses = cfg.get('nlo_responses', ('shift', 'injection', 'shg'))
-    lines = [
-        '# Non-linear optics (nonlinear_optics): dense k-grid, photon window (eV), broadening (eV),',
-        "# scissor of the conduction bands (eV). It runs on the extended basis of the run's own",
-        '# pseudopotentials (BASIS_PS) with the Löwdin position dipoles, the validated setting: the',
-        '# dipoles make the SHG independent of the basis (GaAs: 178 / 181 pm/V on two bases, while',
-        '# the orbital centres alone give 103 / 218).',
-        'NLO_NK = ({n}, {n}, {n})'.format(n=nk),
+    # A tight-binding model has a grid of one point along the directions without hoppings.
+    grid = tuple(nk if periodic else 1 for periodic in cfg.get('periodic', (True, True, True)))
+    if cfg.get('tb_model'):
+        about = [
+            '# Non-linear optics (nonlinear_optics): dense k-grid, photon window (eV), broadening (eV),',
+            '# scissor of the conduction bands (eV), on the real-space Hamiltonian of the model (the',
+            '# orbital centres give the position operator: a model has no Löwdin dipoles).',
+        ]
+    else:
+        about = [
+            '# Non-linear optics (nonlinear_optics): dense k-grid, photon window (eV), broadening (eV),',
+            "# scissor of the conduction bands (eV). It runs on the extended basis of the run's own",
+            '# pseudopotentials (BASIS_PS) with the Löwdin position dipoles, the validated setting: the',
+            '# dipoles make the SHG independent of the basis (GaAs: 178 / 181 pm/V on two bases, while',
+            '# the orbital centres alone give 103 / 218).',
+        ]
+    lines = about + [
+        'NLO_NK = ({}, {}, {})'.format(*grid),
         'NLO_EMIN, NLO_EMAX, NLO_NE = {}, {}, {}'.format(
             cfg.get('nlo_emin', 0.0), cfg.get('nlo_emax', 4.0), cfg.get('nlo_ne', 401)
         ),
@@ -596,6 +607,15 @@ def _nonlinear_run_lines(cfg):
     lines += [
         '    p.projectability(pthr=PTHR)',
         '    p.pao_hamiltonian()',
+    ]
+    lines += _nonlinear_call_lines(cfg)
+    lines += ['', '    p.finish_execution()', '']
+    return lines
+
+
+def _nonlinear_call_lines(cfg):
+    """The nonlinear_optics (and coupled_optical_response) calls of run_nonlinear() on ``p``."""
+    lines = [
         '    p.nonlinear_optics(',
         '        nk=NLO_NK, emin=NLO_EMIN, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA, scissor=NLO_SCISSOR,',
         "        components=NLO_COMPONENTS, shift_current='shift' in NLO_RESPONSES,",
@@ -619,7 +639,6 @@ def _nonlinear_run_lines(cfg):
             '        temperature=NLO_TEMPERATURE, relaxation_time=NLO_TAU,',
             '    )',
         ]
-    lines += ['', '    p.finish_execution()', '']
     return lines
 
 
@@ -829,8 +848,8 @@ def _emit_standard_properties(props, needs_spin, cfg):
     if 'fermi_surface' in selected:
         body.append('    p.fermi_surface()')
     if 'spin_texture' in selected:
-        # spin_texture needs the spin operator cached beforehand.
-        body.append('    p.spin_operator(spin_orbit=SPIN_ORBIT)')
+        # spin_texture builds the spin operator (from the shells of the save, or the one of a
+        # spinful model) when it is not there yet.
         body.append('    p.spin_texture()')
 
     body.append('    p.gradient_and_momenta()')
@@ -3269,7 +3288,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--plot',
         action='store_true',
-        help='Force generation of a plotting script (run workflow only)',
+        help='Force generation of a plotting script (run and tb_model workflows)',
     )
     parser.add_argument(
         '--plot-out',
@@ -3295,7 +3314,7 @@ def main(argv: list[str] | None = None) -> int:
 
     workflow = ask_choice(
         'Which workflow?',
-        ['acbn0', 'run', 'phonon', 'elphon', 'sscha', 'pyskeaf'],
+        ['acbn0', 'run', 'tb_model', 'phonon', 'elphon', 'sscha', 'pyskeaf'],
         'run',
     )
 
@@ -3319,11 +3338,14 @@ def main(argv: list[str] | None = None) -> int:
         from .sscha_driver import collect_sscha
 
         cfg = collect_sscha(args, workdir)
-    elif workflow == 'pyskeaf':
-        # Quantum oscillations from the BXSF files of a Property run (no QE save needed).
+    elif workflow in ('pyskeaf', 'tb_model'):
+        # Quantum oscillations from the BXSF files of a Property run, or a property run on a
+        # tight-binding model: no QE save needed.
         from .questions import collect
 
-        cfg = collect('pyskeaf', args, workdir)
+        cfg = collect(workflow, args, workdir)
+        if cfg is None:
+            return 1
     else:
         common = collect_common(args, workdir)
         collect = {'acbn0': collect_acbn0, 'phonon': collect_phonon, 'run': collect_run}[workflow]
