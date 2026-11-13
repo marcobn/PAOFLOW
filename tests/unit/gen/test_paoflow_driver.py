@@ -407,7 +407,7 @@ def test_build_run_script_nonlinear_terms_coupled_molecule_and_2d():
 
 
 def test_collect_nonlinear_prompts(monkeypatch):
-    answers = iter(['n', '30', '0.0', '5.0', '501', '0.1', '0.86', 'xyz', 'shg', 'y', 'y', 'y',
+    answers = iter(['n', '30', '0.0', '5.0', '501', '0.1', '0.86', 'xyz', 'shg', 'y', 'y', 'n', 'y',
                     '12', 'none,hartree,hartree+alda', '5.5', '56', '0.1,1.0', '0.1'])  # fmt: skip
     monkeypatch.setattr('builtins.input', lambda *_: next(answers))
     cfg = d.collect_nonlinear({'is_2d': False, 'projector': 'internal'})
@@ -415,6 +415,25 @@ def test_collect_nonlinear_prompts(monkeypatch):
     assert cfg['nlo_responses'] == ('shg',) and cfg['nlo_dipoles'] and cfg['nlo_shg_terms']
     assert cfg['nlo_coupled'] and cfg['coupled_kernels'] == ('none', 'hartree', 'hartree+alda')
     assert cfg['coupled_shg_energies'] == [0.1, 1.0] and cfg['coupled_ne'] == 56
+    assert cfg['nlo_metal'] is False and 'nlo_temperature' not in cfg
+
+
+def test_build_run_script_metal_block():
+    cfg = _run_cfg(
+        ibrav=2, is_2d=False, properties=['nonlinear'], nlo_metal=True, nlo_temperature=500.0,
+        nlo_tau=15.0, nlo_coupled=True, coupled_kernels=('none', 'hartree'),
+        coupled_shg_energies=[],
+    )  # fmt: skip
+    text = d.build_run_script(cfg)
+    assert 'NLO_FERMI_SURFACE = True' in text and 'NLO_TEMPERATURE = 500.0' in text
+    assert 'NLO_TAU = 15.0' in text
+    block = text[text.index('def run_nonlinear():') :].split('def main')[0]
+    assert 'fermi_surface=NLO_FERMI_SURFACE' in block
+    assert block.count('temperature=NLO_TEMPERATURE, relaxation_time=NLO_TAU') == 2
+    insulator = d.build_run_script(_run_cfg(ibrav=2, is_2d=False, properties=['nonlinear']))
+    assert "NLO_FERMI_SURFACE = 'auto'" in insulator and 'NLO_TEMPERATURE = 0.0' in insulator
+    plot = d.build_plot_script(cfg)
+    assert 'def plot_photocurrent_channels' in plot and 'def plot_shg_terms' in plot
 
 
 def test_plot_script_hall_coefficient_reads_smeared_three_column_file(tmp_path, monkeypatch):

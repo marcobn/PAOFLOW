@@ -181,6 +181,36 @@ NONLINEAR_ITEMS = (
         section=NONLINEAR,
     ),
     Question(
+        'nlo_metal',
+        '  metal or semimetal (Fermi-surface terms: Drude, Berry-curvature dipole)?',
+        kind='bool',
+        default=False,
+        when=lambda a, c: not _molecule(a),
+        label='Metal or semimetal (Fermi-surface terms)',
+        help='Keeps the Fermi-surface terms of the SHG and of the zero-frequency photocurrent '
+        '(nonlinear Drude, Berry-curvature dipole) and the Drude term of the coupled dielectric '
+        'function; needs an electronic temperature. Metallic channels are also detected.',
+        section=NONLINEAR,
+    ),
+    Question(
+        'nlo_temperature',
+        '    electronic temperature (K)',
+        kind='float',
+        default=300.0,
+        unit='K',
+        when=lambda a, c: bool(a.get('nlo_metal')),
+        section=NONLINEAR,
+    ),
+    Question(
+        'nlo_tau',
+        '    intraband relaxation time tau (fs)',
+        kind='float',
+        default=20.0,
+        unit='fs',
+        when=lambda a, c: bool(a.get('nlo_metal')),
+        section=NONLINEAR,
+    ),
+    Question(
         'nlo_coupling',
         '  coupled response of the molecule (none, monopole, hartree, hartree+alda)',
         default='hartree+alda',
@@ -207,7 +237,11 @@ NONLINEAR_ITEMS = (
             Question(
                 'coupled_kernels',
                 '    kernel levels (none,hartree,hartree+alda,hartree+alda+lrc,hartree+alda+bootstrap)',
-                default='none,hartree,hartree+alda,hartree+alda+bootstrap',
+                default=lambda a, c: (
+                    'none,hartree,hartree+alda'
+                    if a.get('nlo_metal')
+                    else 'none,hartree,hartree+alda,hartree+alda+bootstrap'
+                ),
                 parse=_tuple_of_names,
                 section=COUPLED,
             ),
@@ -427,6 +461,10 @@ def assemble_nonlinear(cfg: dict, answers: Answers) -> dict:
     cfg['nlo_responses'] = answers['nlo_responses']
     cfg['nlo_dipoles'] = answers['nlo_dipoles'] if _internal(cfg) else False
     cfg['nlo_shg_terms'] = answers['nlo_shg_terms']
+    cfg['nlo_metal'] = bool(answers.get('nlo_metal', False)) and not molecule
+    if cfg['nlo_metal']:
+        cfg['nlo_temperature'] = answers['nlo_temperature']
+        cfg['nlo_tau'] = answers['nlo_tau']
     if molecule:
         cfg['nlo_coupling'] = answers['nlo_coupling']
     cfg['nlo_coupled'] = bool(answers.get('nlo_coupled', False))

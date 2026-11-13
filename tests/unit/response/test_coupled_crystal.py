@@ -145,7 +145,9 @@ def _polar_crystal(seed=2):
     n = 2
     HRs = np.zeros((n, n, 3, 3, 3, 1), dtype=complex)
     # on-site energies and intra-cell hopping (R = 0)
-    H0 = np.array([[-1.0, 0.6], [0.6, 1.4]])
+    H0 = np.array(
+        [[-1.75, 0.6], [0.6, 2.15]]
+    )  # indirect gap 0.97 eV: an insulator (band-index occupations)
     HRs[:, :, 0, 0, 0, 0] = H0
     # nearest-neighbour hoppings along +-x, +-y, +-z (indices 1 and 2 = R = +1 and -1)
     t = {0: (-0.35, -0.25, 0.15), 1: (-0.30, -0.20, 0.10), 2: (-0.33, -0.22, 0.12)}
@@ -200,13 +202,13 @@ def test_long_range_kernel_second_order_closed_form():
     direction) is exact; the 2w feedback uses the current-based polarization and differs from the
     position-based chi1 by O(eta), hence the small eta."""
     HRs, at, alat, omega, pos = _polar_crystal()
-    nk, w, eta, alpha = (4, 4, 4), 0.3, 0.005, 5.0
+    nk, w, eta, alpha = (4, 4, 4), 0.3, 0.005, 10.0
     ch = cc.channel_from_HRs(
         HRs, at, alat, omega, pos, 2.0, nk, scissor_ev=0.0, degeneracy_tol=1e-6
     )
     k0 = cc.PeriodicKernel((1, 1, 1), at * alat, omega, hartree=False)
     kl = cc.PeriodicKernel((1, 1, 1), at * alat, omega, hartree=False, lrc_alpha=alpha)
-    assert not kl.grid_active and kl.label == 'lrc(5.000)'
+    assert not kl.grid_active and kl.label == 'lrc(10.000)'
     chi1 = (cc.dielectric_function_crystal(ch, k0, [w, 2 * w], eta)['epsilon'] - np.eye(3)) / (
         4 * np.pi
     )
@@ -216,7 +218,7 @@ def test_long_range_kernel_second_order_closed_form():
     c0 = cc.shg_crystal(ch, k0, comps, [w], eta)['chi_au'][:, 0].reshape(3, 3, 3)
     cl = cc.shg_crystal(ch, kl, comps, [w], eta)['chi_au'][:, 0].reshape(3, 3, 3)
     closed = np.einsum('aA,Abc,bB,cC->aBC', F2, c0, F1, F1)
-    assert np.linalg.norm(cl - c0) > 0.5 * np.linalg.norm(c0)  # a strong enhancement (F ~ 1.4)
+    assert np.linalg.norm(cl - c0) > 0.5 * np.linalg.norm(c0)  # a strong enhancement (F up to 1.2)
     assert np.linalg.norm(cl - closed) < 2.0e-2 * np.linalg.norm(closed)
     # the dressing alone is exact: dressed first-order legs, negligible feedback
     wh, eh = w / cc.HARTREE_EV, eta / cc.HARTREE_EV
@@ -308,3 +310,107 @@ def test_coupled_optical_spectra_second_order_and_errors(tmp_path):
         cc.kernel_for_level(ch, 'hartree+alda')  # no ground-state density
     with pytest.raises(ValueError):
         cc.kernel_for_level(ch, 'hartree+alda+bootstrap', n0=np.ones(1))  # no alpha
+
+
+# --------------------------------------------------------------------------- metals (Drude channel)
+def _models():
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        '_nonlinear_models', Path(__file__).resolve().parent / '_nonlinear_models.py'
+    )
+    models = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(models)
+    return models
+
+
+def test_metal_f_sum_rule_with_the_drude_channel():
+    """int_0^inf w Im eps_aa dw = (2 pi^2/Omega) sum_k w_k sum_n f_n <n|d_a d_a H|n> (tight binding).
+
+    Interband (k-dependent occupations) plus Drude: neither alone fulfils it in a metal."""
+    from PAOFLOW.hamiltonian.bloch_derivatives import (
+        bloch_terms_from_HRs,
+        hamiltonian_derivatives_block,
+        velocity_and_curvature_operators,
+    )
+    from PAOFLOW.response.density_matrix_response import fermi_dirac_derivatives
+
+    model = _models().random_hopping_model(seed=2, gap=False)
+    nk, mu, temperature, eta = (12, 12, 12), 0.3, 3000.0, 0.2
+    ch = cc.channel_from_HRs(
+        model.HRs, model.at, model.alat, model.volume, model.tau, 4.0, nk,
+        fermi_energy=mu, temperature=temperature,
+    )  # fmt: skip
+    energies = np.concatenate([[1.0e-4], np.arange(0.02, 40.0, 0.02)])  # Drude: from ~0
+    kernel = cc.kernel_for_level(ch, 'none', None, 0.0, None)
+    eps = cc.dielectric_function_crystal(ch, kernel, energies, eta, directions=(2,))['epsilon']
+    terms = bloch_terms_from_HRs(model.HRs, model.at, model.alat, model.tau)
+    K = nlo._k_grid(nk)
+    H, dH, d2H = hamiltonian_derivatives_block(terms, K)
+    _, w = velocity_and_curvature_operators(terms, H, dH, d2H)
+    E, U = np.linalg.eigh(H)
+    f = fermi_dirac_derivatives(E, mu, temperature)[0]
+    w_ha = energies / HA
+    drude = np.zeros(1)
+    for i, a in enumerate((2,)):
+        waa = np.real(np.einsum('kim,kij,kjm->km', U.conj(), w[:, a, a], U)) / HA  # Ha bohr^2
+        expected = 2.0 * np.pi**2 / model.volume * 2.0 * np.mean(np.sum(f * waa, axis=1))
+        integral = np.trapezoid(w_ha * eps[:, a, a].imag, w_ha)
+        assert abs(integral / expected - 1.0) < 0.01, (a, integral, expected)
+        drude[i] = integral
+    # the interband part alone (no Drude) misses the Fermi-surface weight
+    insulator_like = cc.CrystalChannel(**{**ch.__dict__, 'occupation_derivative': None})
+    eps_inter = cc.dielectric_function_crystal(insulator_like, kernel, energies, eta, (2,))
+    inter = np.trapezoid(w_ha * eps_inter['epsilon'][:, 2, 2].imag, w_ha)
+    assert inter < 0.9 * drude[0]
+
+
+def test_drude_dielectric_function_of_one_band():
+    """eps = 1 - w_p^2/(w (w + i gamma)), w_p^2 = (4 pi/Omega) g_s sum_k f d2 eps (one band)."""
+    models = _models()
+    hops = [(1, 1, (0, 0, 0), 12.0)]
+    for R, h in (((1, 0, 0), -1.0), ((0, 1, 0), -0.8), ((0, 0, 1), -0.5), ((1, 1, 0), 0.2)):
+        hops.append((0, 0, R, h))
+        hops.append((0, 0, tuple(-np.array(R)), np.conj(h)))
+    model = models.ExactModel(hops, 2, np.eye(3), 5.0, np.zeros((2, 3)), (5, 5, 5), nelec=0.8)
+    nk, mu, temperature, tau = (24, 24, 24), -0.5, 1500.0, 20.0
+    ch = cc.channel_from_HRs(
+        model.HRs, model.at, model.alat, model.volume, model.tau, 0.8, nk,
+        fermi_energy=mu, temperature=temperature, relaxation_time=tau,
+    )  # fmt: skip
+    energies = np.array([0.1, 0.5, 2.0])
+    kernel = cc.kernel_for_level(ch, 'none', None, 0.0, None)
+    eps = cc.dielectric_function_crystal(ch, kernel, energies, 0.05, directions=(0,))['epsilon']
+    K = nlo._k_grid(nk) * 2 * np.pi / model.alat
+    d2 = np.zeros(len(K))
+    eps_k = np.zeros(len(K))
+    for i, _, R, h in hops:
+        if i == 0:
+            d = model.alat * np.asarray(R, dtype=float)
+            eps_k += np.real(h * np.exp(1j * K @ d))
+            d2 += np.real(-(d[0] ** 2) * h * np.exp(1j * K @ d))
+    f = 1.0 / (1.0 + np.exp((eps_k - mu) / (8.617333262e-5 * temperature)))
+    wp2 = 4.0 * np.pi / model.volume * 2.0 * np.mean(f * d2) / HA  # Ha^2
+    gamma = 0.6582119569 / tau / HA
+    w = energies / HA
+    assert np.allclose(eps[:, 0, 0], 1.0 - wp2 / (w * (w + 1j * gamma)), rtol=5e-3)
+    with pytest.raises(ValueError, match='finite frequency'):
+        ch.polarization_of(np.zeros((ch.nk_local, 2, 2), dtype=complex), 0.0)
+
+
+def test_metal_kernel_levels_and_second_order_are_refused():
+    model = _models().random_hopping_model(seed=2, gap=False)
+    ch = cc.channel_from_HRs(
+        model.HRs, model.at, model.alat, model.volume, model.tau, 4.0, (4, 4, 4),
+        fermi_energy=0.3, temperature=1000.0,
+    )  # fmt: skip
+    with pytest.raises(ValueError, match='long-range'):
+        cc.coupled_optical_spectra(ch, ('none', 'hartree+alda+lrc'), dielectric_energies_ev=[1.0])
+    with pytest.raises(NotImplementedError, match='metals'):
+        cc.coupled_optical_spectra(ch, ('none',), shg_energies_ev=[0.5])
+    with pytest.raises(ValueError, match='scissor'):
+        cc.channel_from_HRs(
+            model.HRs, model.at, model.alat, model.volume, model.tau, 4.0, (4, 4, 4),
+            fermi_energy=0.3, temperature=1000.0, scissor_ev=0.5,
+        )  # fmt: skip

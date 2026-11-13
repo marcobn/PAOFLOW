@@ -177,6 +177,13 @@ def collect_nonlinear(cfg):
     cfg['nlo_shg_terms'] = ask_yes_no(
         '  split the SHG into interband / intraband terms at w and 2w?', False
     )
+    metal = False
+    if not molecule:  # 12 November 2026: metals (Fermi-surface terms)
+        metal = ask_yes_no('  metal or semimetal (Fermi-surface terms: Drude, Berry-curvature dipole)?', False)
+    cfg['nlo_metal'] = metal
+    if metal:
+        cfg['nlo_temperature'] = ask_float('    electronic temperature (K)', 300.0)
+        cfg['nlo_tau'] = ask_float('    intraband relaxation time tau (fs)', 20.0)
     if molecule:
         cfg['nlo_coupling'] = ask(
             '  coupled response of the molecule (none, monopole, hartree, hartree+alda)',
@@ -191,7 +198,7 @@ def collect_nonlinear(cfg):
         cfg['coupled_nk'] = ask_int('    coupled-response k-grid per direction', 16)
         kernels = ask(
             '    kernel levels (none,hartree,hartree+alda,hartree+alda+lrc,hartree+alda+bootstrap)',
-            'none,hartree,hartree+alda,hartree+alda+bootstrap',
+            'none,hartree,hartree+alda' if metal else 'none,hartree,hartree+alda,hartree+alda+bootstrap',
         )
         cfg['coupled_kernels'] = tuple(k.strip() for k in kernels.split(',') if k.strip())
         cfg['coupled_emax'] = ask_float(

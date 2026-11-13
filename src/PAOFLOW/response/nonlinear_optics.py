@@ -36,12 +36,14 @@ inside the kernels; energies in eV, lengths in bohr; SI prefactors applied once 
 
   .. math::
 
-      \\eta_C^{abc} = \\frac{2\\pi e^3 g_s}{\\hbar^2}\\int\\sum_{nm} f_{mn}\\Delta^a_{mn}\\,
+      \\eta_C^{abc} = -\\frac{2\\pi e^3 g_s}{\\hbar^2}\\int\\sum_{nm} f_{mn}\\Delta^a_{mn}\\,
       \\mathrm{Im}[r^b_{mn}r^c_{nm}]\\,\\delta(\\omega_{nm}-\\omega),\\qquad
       \\eta_M^{abc} = -\\frac{2\\pi e^3 g_s}{\\hbar^2}\\int\\sum_{nm} f_{mn}\\Delta^a_{mn}\\,
       \\mathrm{Re}[r^b_{mn}r^c_{nm}]\\,\\delta(\\omega_{nm}-\\omega)
 
-  (Chen *et al.* 2022, Eqs. 9, 12, 13);
+  (Chen *et al.* 2022, Eqs. 9, 12, 13, with the charge as :math:`e^3`, :math:`e > 0`, like every
+  response here: the Fermi golden rule for charge :math:`+e` gives these signs, and electrons
+  have the opposite ones);
 * **SHG**, :math:`P^a(2\\omega) = \\epsilon_0\\chi^{abc}E^b(\\omega)E^c(\\omega)`, the low-frequency
   convergent form of Chen *et al.* (2022), Eqs. (C1)-(C3) (Rashkeev 1998 / Wang 2017 with the
   T-odd term), with :math:`\\omega\\to\\omega+i\\eta` in every resonance denominator; the resonant
@@ -54,6 +56,7 @@ closer than ``degeneracy_tol`` are excluded from :math:`r` and from the band sum
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
@@ -424,7 +427,9 @@ def accumulate_shift_and_injection(
     F = occupation[:, None, :] - occupation[:, :, None]  # f_m - f_n  (n: first band index)
     if k_weights is not None:
         F = F * np.asarray(k_weights, dtype=float)[:, None, None]
-    span = 5.0 * float(np.max(widths))
+    # pairs far from the grid: negligible for Gaussians; Lorentzian tails (13 % of the weight beyond
+    # five widths) are kept
+    span = 5.0 * float(np.max(widths)) if smearing == 'gauss' else np.inf
     select = (
         geometry.pair_mask
         & (omega_scissored > 0.0)
@@ -458,7 +463,7 @@ def accumulate_shift_and_injection(
             inject = pd[ik, b, a, m, n] * rc_nm  # (r^b Delta^a)_mn r^c_nm, covariant
             out['shift'][ic] += (-f * shift) @ kernel
             out['shiftm'][ic] += (f * shift_m) @ kernel
-            out['injectc'][ic] += (f * inject.imag) @ kernel
+            out['injectc'][ic] += (-f * inject.imag) @ kernel
             out['injectm'][ic] += (-f * inject.real) @ kernel
 
 
@@ -798,7 +803,10 @@ def nonlinear_optical_spectra(
     temperature : float
         Electronic temperature (K); 0 gives step occupations.
     fermi_energy : float, optional
-        Chemical potential (eV); default: band-index occupations at 0 K, the mid-gap at finite T.
+        Chemical potential (eV; PAOFLOW Hamiltonians are referred to the Fermi level, so 0.0 is
+        the DFT Fermi level). Default: band-index occupations at 0 K, the mid-gap at finite T, both
+        for insulators only; a metallic channel (overlapping bands at the band-index cut or a
+        non-integer filling) raises without it.
     degeneracy_tol : float
         Pairs closer than this (eV) are treated as degenerate and dropped from :math:`r`
         and from the band sums.  DFT-derived PAO Hamiltonians have many nearly degenerate
@@ -885,14 +893,17 @@ def nonlinear_optical_spectra(
     nk = tuple(int(x) for x in nk)
     K = _k_grid(nk)
     nkd = K.shape[0]
-    # occupations and the scissor need the band count below the gap
+    # occupations and the scissor need the band count below the gap; a metal (non-integer filling, or
+    # overlapping bands at the band-index cut, below) needs energy occupations at a given Fermi energy
     nocc_float = float(nelec) / float(spin_factor)
-    if abs(nocc_float - round(nocc_float)) > 1.0e-6:
+    integer_filling = abs(nocc_float - round(nocc_float)) <= 1.0e-6
+    if not integer_filling and fermi_energy is None:
         raise ValueError(
-            'nelec / spin_factor = %g is not an integer: pass fermi_energy and a temperature'
-            % nocc_float
+            'nelec / spin_factor = %g is not an integer (a metal): pass fermi_energy (0.0 for PAOFLOW '
+            'Hamiltonians, which are referred to the Fermi level) and a temperature' % nocc_float
         )
-    nocc = int(round(nocc_float))
+    nocc = int(round(nocc_float)) if integer_filling else int(np.floor(nocc_float))
+    nocc = min(max(nocc, 1), n - 1) if fermi_energy is not None else nocc
     if nocc < 1 or nocc >= n:
         raise ValueError('%d occupied bands of %d: check nelec and the spin factor' % (nocc, n))
     # band edges on the coarse grid (the histogram range and the default Fermi level)
@@ -923,9 +934,24 @@ def nonlinear_optical_spectra(
     vbm, cbm = float(e0[:, nocc - 1].max()), float(e0[:, nocc].min())
     bandwidth = float(e0.max() - e0.min()) + abs(float(scissor)) + 2.0 * float(eta) + 1.0
     mu = fermi_energy
+    # a metallic channel: bands nocc and nocc + 1 overlap, or the filling is not an integer
+    metallic = (cbm <= vbm) or not integer_filling
+    if metallic and mu is None:
+        raise ValueError(
+            'metallic channel (band %d reaches %.3f eV, band %d starts at %.3f eV): band-index '
+            'occupations are for insulators; pass fermi_energy (0.0 for PAOFLOW Hamiltonians, '
+            'which are referred to the Fermi level) and a temperature' % (nocc, vbm, nocc + 1, cbm)
+        )
+    if metallic and float(scissor) != 0.0:
+        raise ValueError('a scissor needs a gap: the channel is metallic (set scissor=0)')
+    if metallic and temperature <= 0.0:
+        warnings.warn(
+            'metallic channel with step occupations: the Fermi-surface sampling of a uniform grid '
+            'converges slowly; pass an electronic temperature',
+            RuntimeWarning,
+            stacklevel=2,
+        )
     if temperature > 0.0 and mu is None:
-        if cbm <= vbm:
-            raise ValueError('no gap above band %d: pass fermi_energy at finite temperature' % nocc)
         mu = 0.5 * (vbm + cbm)
     conduction = (np.arange(n) >= nocc).astype(float)
     scissor_pair = float(scissor) * (conduction[:, None] - conduction[None, :])  # (n, n)
@@ -1093,6 +1119,9 @@ OUTPUT_FILES = (
     ('shgr', 'shg', lambda x: x.real, 'pm/V', 'pm^2/V'),
     ('shgi', 'shg', lambda x: x.imag, 'pm/V', 'pm^2/V'),
     ('shga', 'shg', lambda x: np.abs(x), 'pm/V', 'pm^2/V'),
+    # zero-frequency photocurrent of the density-matrix engine (metals): J = Re(s) Re[EE*] - Im(s) Im[EE*]
+    ('pcr', 'photocurrent', lambda x: 1.0e6 * x.real, 'uA/V^2', 'nm uA/V^2'),
+    ('pci', 'photocurrent', lambda x: 1.0e6 * x.imag, 'uA/V^2', 'nm uA/V^2'),
     # molecule mode (per molecule; see PAOFLOW.response.molecular_nlo)
     ('beta_T_r', 'beta_T_au', lambda x: x.real, 'a.u.', 'a.u.'),
     ('beta_T_i', 'beta_T_au', lambda x: x.imag, 'a.u.', 'a.u.'),
@@ -1107,7 +1136,10 @@ def write_nonlinear_outputs(
 
     With ``results['shg_terms']`` (``shg_terms=True``) every SHG term is also written, real and
     imaginary parts: ``shgtr_<term>_<abc><suffix>.dat`` and ``shgti_<term>_<abc><suffix>.dat``
-    (``<term>`` a name of :data:`SHG_TERMS`, same units as ``shgr``).
+    (``<term>`` a name of :data:`SHG_TERMS`, or a channel of
+    :data:`~PAOFLOW.response.density_matrix_response.CHANNELS` for metals; same units as ``shgr``).
+    With ``results['photocurrent_channels']`` (metals) the zero-frequency photocurrent channels go to
+    ``pcr_<channel>_<abc><suffix>.dat`` and ``pci_<channel>_<abc><suffix>.dat`` (uA/V^2).
 
     Parameters
     ----------
@@ -1146,6 +1178,14 @@ def write_nonlinear_outputs(
             for prefix, part in (('shgtr', np.real), ('shgti', np.imag)):
                 name = '%s_%s_%s%s.dat' % (prefix, term, label, suffix)
                 data_controller.write_file_row_col(name, energy, scale_pm * part(values[ic]))
+                written.append(name)
+    for channel, values in results.get('photocurrent_channels', {}).items():
+        for ic, label in enumerate(results['components']):
+            for prefix, part in (('pcr', np.real), ('pci', np.imag)):
+                name = '%s_%s_%s%s.dat' % (prefix, channel, label, suffix)
+                data_controller.write_file_row_col(
+                    name, energy, scale_nm * 1.0e6 * part(values[ic])
+                )
                 written.append(name)
     return written
 

@@ -68,6 +68,8 @@ NLO_QUANTITIES = {
     'shgr': ('SHG χ⁽²⁾ (real part)', 'pm/V'),
     'shgi': ('SHG χ⁽²⁾ (imaginary part)', 'pm/V'),
     'shga': ('SHG |χ⁽²⁾|', 'pm/V'),
+    'pcr': ('Photocurrent σ(0; ω, −ω), real part (linear polarisation)', 'μA/V²'),
+    'pci': ('Photocurrent σ(0; ω, −ω), imaginary part (circular polarisation)', 'μA/V²'),
 }
 
 TRANSPORT_QUANTITIES = {
@@ -406,7 +408,7 @@ KINDS: tuple[Kind, ...] = (
         'nlo',
         '{title}',
         NLO,
-        r'(?P<q>shift|shiftm|injectc|injectm|shgr|shgi|shga)_(?P<component>[xyz]{3})(?:_(?P<spin>\d))?\.dat',
+        r'(?P<q>shift|shiftm|injectc|injectm|shgr|shgi|shga|pcr|pci)_(?P<component>[xyz]{3})(?:_(?P<spin>\d))?\.dat',
         'curve',
         x=PHOTON,
         series=('component', 'spin'),
@@ -423,6 +425,17 @@ KINDS: tuple[Kind, ...] = (
         y=('χ⁽²⁾', 'pm/V'),
         series=('term',),
         gpao='plot_shg_terms',
+    ),
+    Kind(
+        'photocurrent_channels',
+        'Photocurrent by channel ({part}) σ_{component}',
+        NLO,
+        r'pc(?P<part>[ri])_(?P<term>(?:fermi_sea|fermi_surface)_\w+?)_(?P<component>[xyz]{3})\.dat',
+        'curve',
+        x=PHOTON,
+        y=('σ', 'μA/V²'),
+        series=('term',),
+        gpao='plot_photocurrent_channels',
     ),
     Kind(
         'coupled_dielectric',

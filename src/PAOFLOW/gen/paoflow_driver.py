@@ -524,6 +524,14 @@ def _nonlinear_constant_lines(cfg):
             cfg.get('nlo_coupling', 'hartree+alda')
         ),
         'NLO_COMPLEMENT_SHIFT = 30.0   # molecules: PAO complement this far above the HOMO (eV)',
+        '# Metals: the Fermi-surface terms (nonlinear Drude, Berry-curvature dipole) of the SHG and of',
+        "# the zero-frequency photocurrent (pcr_/pci_ files); 'auto' detects a metallic channel. A metal",
+        '# needs an electronic temperature (K); tau (fs) is the intraband relaxation (None: hbar/eta).',
+        'NLO_FERMI_SURFACE = {!r}'.format(True if cfg.get('nlo_metal') else 'auto'),
+        'NLO_TEMPERATURE = {}'.format(
+            cfg.get('nlo_temperature', 0.0) if cfg.get('nlo_metal') else 0.0
+        ),
+        'NLO_TAU = {}'.format(cfg.get('nlo_tau', 20.0) if cfg.get('nlo_metal') else None),
         '',
     ]
     if cfg.get('nlo_coupled'):
@@ -591,7 +599,8 @@ def _nonlinear_run_lines(cfg):
         '        symmetry=NLO_SYMMETRY, shg_terms=NLO_SHG_TERMS, twoD=NLO_TWOD,',
         '        slab_height=NLO_SLAB_HEIGHT, molecule=NLO_MOLECULE,',
         '        coupling=(NLO_COUPLING if NLO_MOLECULE else None),',
-        '        complement_shift=NLO_COMPLEMENT_SHIFT,',
+        '        complement_shift=NLO_COMPLEMENT_SHIFT, fermi_surface=NLO_FERMI_SURFACE,',
+        '        temperature=NLO_TEMPERATURE, relaxation_time=NLO_TAU,',
         '    )',
     ]
     if cfg.get('nlo_coupled'):
@@ -601,6 +610,7 @@ def _nonlinear_run_lines(cfg):
             '        ne=COUPLED_NE, second_harmonic=bool(COUPLED_SHG_ENERGIES),',
             '        shg_energies=COUPLED_SHG_ENERGIES, components=COUPLED_COMPONENTS, eta=COUPLED_ETA,',
             '        scissor=NLO_SCISSOR, lrc_alpha=COUPLED_LRC_ALPHA, position_dipoles=NLO_DIPOLES,',
+            '        temperature=NLO_TEMPERATURE, relaxation_time=NLO_TAU,',
             '    )',
         ]
     lines += ['', '    p.finish_execution()', '']
@@ -1853,7 +1863,21 @@ def _nonlinear_plot_entries(cfg, funcs, menu):
             body = ["for part in ('abs', 'real', 'imag'):"] + ['    ' + ln for ln in body]
         funcs += _plot_func(fname, body)
         menu.append((label, fname))
-    if cfg.get('nlo_shg_terms'):
+    if cfg.get('nlo_metal'):
+        funcs += _plot_func(
+            'plot_photocurrent_channels',
+            [
+                '# metals: zero-frequency photocurrent by channel (shift, injection, BCD, Drude)',
+                "comps = [os.path.basename(f)[4:-4] for f in _many('pcr_*.dat')]",
+                'comps = [c for c in comps if len(c) == 3]',
+                'if not comps:',
+                '    _missing(None)',
+                'for comp in comps:',
+                f'    pplt.plot_photocurrent_channels(OUTPUTDIR, comp, two_d={two_d})',
+            ],
+        )
+        menu.append(('Photocurrent of a metal by channel', 'plot_photocurrent_channels'))
+    if cfg.get('nlo_shg_terms') or cfg.get('nlo_metal'):
         funcs += _plot_func(
             'plot_shg_terms',
             [

@@ -141,3 +141,37 @@ def rice_mele_chain(t=1.0, dt=0.3, delta=0.4, nelec=2, alat=2.0):
         (0, 1, (-1, 0, 0), t - dt),
     ]
     return ExactModel(hops, 2, at, alat, tau, (8, 1, 1), nelec=nelec)
+
+
+def weyl_model(t=1.0, b=0.3):
+    """Two-band lattice Weyl semimetal with two nodes of opposite chirality at different energies.
+
+    ``H(k) = t[sin kx sx + sin ky sy + (2 - cos kx - cos ky - cos kz) sz] + b sin kz``: nodes at
+    ``k = (0, 0, +-pi/2)`` with isotropic velocity ``t`` (alat = 1 bohr), chiralities +-1, energies
+    ``+-b`` (the ``b sin kz`` term shifts them without tilting the cones). With the Fermi level at one
+    node the other is Pauli-blocked for ``hw < 4b``: there the trace of the circular injection tensor
+    is quantized by the chirality of the first (de Juan et al. 2017). One spinless electron per cell.
+    """
+    sx = np.array([[0, 1], [1, 0]], dtype=complex)
+    sy = np.array([[0, -1j], [1j, 0]])
+    sz = np.diag([1.0, -1.0]).astype(complex)
+    hops = []
+
+    def add(R, mat):
+        for i in range(2):
+            for j in range(2):
+                if mat[i, j] != 0:
+                    hops.append((i, j, np.array(R), mat[i, j]))
+
+    add((0, 0, 0), 2.0 * t * sz)
+    for axis, sigma in ((0, sx), (1, sy)):
+        e = np.eye(3, dtype=int)[axis]
+        add(tuple(e), t * sigma / 2j)
+        add(tuple(-e), -t * sigma / 2j)
+    for axis in range(3):
+        e = np.eye(3, dtype=int)[axis]
+        add(tuple(e), -t * sz / 2.0)
+        add(tuple(-e), -t * sz / 2.0)
+    add((0, 0, 1), b * np.eye(2) / 2j)
+    add((0, 0, -1), -b * np.eye(2) / 2j)
+    return ExactModel(hops, 2, np.eye(3), ALAT, np.zeros((2, 3)), (3, 3, 3), nelec=1)

@@ -3540,6 +3540,8 @@ class PAOFLOW:
         coupling_options=None,
         complement_shift=30.0,
         shg_terms=False,
+        fermi_surface='auto',
+        relaxation_time=None,
     ):
         r"""Second-order optical responses: shift and injection currents, second-harmonic generation.
 
@@ -3573,6 +3575,21 @@ class PAOFLOW:
         With ``nspin = 2`` the files hold the sum of the two channels and ``_0`` / ``_1``
         suffixed copies hold each channel.
 
+        **Metals** (a metallic channel, or ``fermi_surface=True``): the SHG and the zero-frequency
+        photocurrent come from the density-matrix equations of motion
+        (:mod:`PAOFLOW.response.density_matrix_response`), which keep the Fermi-surface terms
+        (nonlinear Drude, Berry-curvature dipole) next to the Fermi-sea ones; the shift and injection
+        files keep the :math:`\delta`-function formulas with metallic occupations (Pauli blocking).
+        Extra outputs: ``pcr_<abc>.dat`` and ``pci_<abc>.dat`` (:math:`\mu`\ A/V\ :sup:`2`), real
+        and imaginary parts of :math:`\sigma^{abc}(0;\omega,-\omega)`,
+        :math:`J^a = \mathrm{Re}\,\sigma\,\mathrm{Re}[E^bE^{c*}] - \mathrm{Im}\,\sigma\,\mathrm{Im}[E^bE^{c*}]`,
+        with the channels in ``pcr_<channel>_<abc>.dat`` / ``pci_...`` (``fermi_sea_inter``: shift,
+        :math:`\tau^0`; ``fermi_sea_intra``: injection, :math:`\propto\tau`; ``fermi_surface_mixed``:
+        Berry-curvature dipole, :math:`\propto\tau`; ``fermi_surface_drude``: :math:`\propto\tau^2`),
+        and the SHG channels in ``shgtr_<channel>_<abc>.dat`` / ``shgti_...``. A metal needs an
+        electronic ``temperature`` (the Fermi-surface terms vanish with step occupations);
+        ``fermi_energy`` defaults to 0, the DFT Fermi level.
+
         Parameters
         ----------
         nk : sequence of int
@@ -3592,7 +3609,10 @@ class PAOFLOW:
         temperature : float
             Electronic temperature (K); 0 gives step occupations (``nelec`` / spin factor bands).
         fermi_energy : float, optional
-            Chemical potential (eV) for finite temperatures or metals (default: the mid-gap).
+            Chemical potential (eV) for finite temperatures or metals. PAOFLOW Hamiltonians are
+            referred to the Fermi level, so 0.0 is the DFT Fermi level. Default: band-index
+            occupations at 0 K, the mid-gap at finite T, for insulators only; a metallic channel
+            raises without it (and a scissor raises for a metal).
         smearing : {'gauss', 'lorentz'}
             Shape of the :math:`\delta` functions.
         adaptive_smearing : float, optional
@@ -3685,6 +3705,16 @@ class PAOFLOW:
             they sum to the total). Writes ``shgtr_<term>_<abc>.dat`` and ``shgti_<term>_<abc>.dat``
             (real and imaginary parts, units of ``shgr``); the results carry ``'shg_terms'``. Costs a
             second binning of the SHG weights.
+        fermi_surface : {'auto', True, False}, optional
+            Use the density-matrix engine with the Fermi-surface terms for the SHG and the
+            zero-frequency photocurrent. ``'auto'`` switches it on for a metallic channel (bands at
+            the band-index cut overlap on the coarse grid, or a non-integer filling); ``True`` also
+            for an insulator (the photocurrent split by channel, e.g. of a doped semiconductor
+            with ``fermi_energy`` in a band). Insulators are unchanged with ``'auto'``.
+        relaxation_time : float or callable, optional
+            Intraband relaxation time :math:`\tau` (fs) of the density-matrix engine: a constant,
+            or a function of the band energy (eV -> fs, vectorised), e.g. electron-phonon rates.
+            Default: :math:`\gamma = \hbar/\tau` = ``eta``.
         coupling_options : dict, optional
             ``energies_ev`` (photon energies of the coupled solve, default ``[0, emax/2]``),
             ``eta_ev`` (default ``eta``), ``hubbard_u`` (``{species: U (Hartree)}``), ``grid``
@@ -3695,6 +3725,7 @@ class PAOFLOW:
         import numpy as np
 
         from .hamiltonian.bloch_derivatives import orbital_positions_from_data
+        from .response.density_matrix_response import channel_band_edges, density_matrix_spectra
         from .response.nonlinear_optics import (
             channel_electron_counts,
             nonlinear_optical_spectra,
@@ -3810,49 +3841,90 @@ class PAOFLOW:
                 )  # fmt: skip
                 if self.rank == 0 and attr.get('verbose', False):
                     print('Nonlinear optics: position dipoles (%s) in r and r_{;a}' % level)
+            # metals: the density-matrix engine (Fermi-surface terms) for the SHG and the photocurrent
+            edges = [
+                channel_band_edges(
+                    HRs,
+                    at,
+                    alat,
+                    positions,
+                    nelec_channel[ispin],
+                    spin_factor,
+                    ispin,
+                    hopping_cutoff,
+                )  # fmt: skip
+                for ispin in range(nspin)
+            ]
+            metallic = any(e['metallic'] for e in edges)
+            if fermi_surface not in ('auto', True, False):
+                raise ValueError("fermi_surface must be 'auto', True or False")
+            use_eom = metallic if fermi_surface == 'auto' else bool(fermi_surface)
+            mu = fermi_energy
+            if use_eom:
+                if molecule:
+                    raise ValueError('molecule=True is for insulators: set fermi_surface=False')
+                if metallic and mu is None:
+                    mu = 0.0  # PAOFLOW Hamiltonians are referred to the DFT Fermi level
+                if float(temperature) <= 0.0:
+                    raise ValueError(
+                        'the Fermi-surface terms need a smooth occupation: pass the electronic '
+                        'temperature (K), e.g. temperature=300'
+                    )
+                if self.rank == 0:
+                    tau_text = (
+                        'gamma = eta' if relaxation_time is None
+                        else ('tau(e)' if callable(relaxation_time)
+                              else 'tau = %g fs' % float(relaxation_time))
+                    )  # fmt: skip
+                    print(
+                        'Nonlinear optics: %s channel, density-matrix engine with the Fermi-surface '
+                        'terms (Fermi energy %.3f eV, %g K, %s)'
+                        % ('metallic' if metallic else 'insulating', 0.0 if mu is None else mu,
+                           float(temperature), tau_text)
+                    )  # fmt: skip
+            want_delta = tuple(w for w in want if not (use_eom and w == 'shg'))
             per_spin = []
             for ispin in range(nspin):
-                per_spin.append(
-                    nonlinear_optical_spectra(
-                        HRs,
-                        at,
-                        alat,
-                        volume,
-                        positions,
-                        nelec_channel[ispin],
-                        nk,
-                        energy,
-                        components=components,
-                        eta=eta,
-                        smearing=smearing,
-                        adaptive_smearing=adaptive_smearing,
-                        scissor=scissor,
-                        temperature=temperature,
-                        fermi_energy=fermi_energy,
-                        degeneracy_tol=degeneracy_tol,
-                        spin_factor=spin_factor,
-                        ispin=ispin,
-                        kblock=kblock,
-                        want=want,
-                        shg_bin=shg_bin,
-                        hopping_cutoff=hopping_cutoff,
-                        position_dipoles=dipoles,
-                        symmetry_ops_cryst=ops_cryst,
-                        comm=self.comm,
-                        progress=bool(attr.get('verbose', False)),
-                        shg_terms=bool(shg_terms),
+                common = dict(
+                    components=components, eta=eta, scissor=scissor, temperature=temperature,
+                    fermi_energy=mu, degeneracy_tol=degeneracy_tol, spin_factor=spin_factor,
+                    ispin=ispin, kblock=kblock, hopping_cutoff=hopping_cutoff,
+                    position_dipoles=dipoles, symmetry_ops_cryst=ops_cryst, comm=self.comm,
+                    progress=bool(attr.get('verbose', False)),
+                )  # fmt: skip
+                args = (HRs, at, alat, volume, positions, nelec_channel[ispin], nk, energy)
+                result = None
+                if want_delta:
+                    result = nonlinear_optical_spectra(
+                        *args, smearing=smearing, adaptive_smearing=adaptive_smearing, want=want_delta,
+                        shg_bin=shg_bin, shg_terms=bool(shg_terms), **common,
                     )  # fmt: skip
-                )
+                if use_eom:
+                    eom_kwargs = dict(
+                        common, relaxation_time=relaxation_time, adaptive_smearing=adaptive_smearing
+                    )
+                    if 'shg' in want:
+                        shg = density_matrix_spectra(*args, response='shg', **eom_kwargs)
+                        result = result if result is not None else dict(shg)
+                        result['shg'] = shg['shg']
+                        result['shg_terms'] = shg['channels']
+                    if 'shift' in want or 'injection' in want:
+                        dc = density_matrix_spectra(*args, response='dc', **eom_kwargs)
+                        result = result if result is not None else dict(dc)
+                        result['photocurrent'] = dc['dc']
+                        result['photocurrent_channels'] = dc['channels']
+                per_spin.append(result)
             total = dict(per_spin[0])
             if nspin == 2:
-                for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg'):
+                for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg', 'photocurrent'):
                     if key in total:
                         total[key] = per_spin[0][key] + per_spin[1][key]
-                if 'shg_terms' in total:
-                    total['shg_terms'] = {
-                        term: per_spin[0]['shg_terms'][term] + per_spin[1]['shg_terms'][term]
-                        for term in per_spin[0]['shg_terms']
-                    }
+                for key in ('shg_terms', 'photocurrent_channels'):
+                    if key in total:
+                        total[key] = {
+                            term: per_spin[0][key][term] + per_spin[1][key][term]
+                            for term in per_spin[0][key]
+                        }
                 for ispin, result in enumerate(per_spin):
                     write_nonlinear_outputs(
                         self.data_controller, result, slab, suffix='_%d' % ispin
@@ -3994,6 +4066,12 @@ class PAOFLOW:
                 'coupling': (coupling if molecule else None),
                 'complement_shift_ev': (complement_shift if molecule else None),
                 'shg_terms': bool(shg_terms and 'shg' in want),
+                'fermi_surface': bool(use_eom), 'metallic': bool(metallic),
+                'fermi_energy_ev': mu, 'temperature_k': float(temperature),
+                'relaxation_time_fs': (
+                    'callable' if callable(relaxation_time)
+                    else (None if relaxation_time is None else float(relaxation_time))
+                ),
             }  # fmt: skip
             if self.rank == 0 and molecule and 'beta_T_au' in total:
                 i0 = int(np.argmin(np.abs(energy)))
@@ -4014,9 +4092,15 @@ class PAOFLOW:
             if self.rank == 0:
                 sym = total.get('symmetry')
                 print(
-                    'Nonlinear optics: %d occupied bands, gap %.3f eV (direct %.3f eV), '
+                    'Nonlinear optics: %d occupied bands, %s, '
                     'scissor %.3f eV, %d k-points%s, %s; wrote %d files'
-                    % (total['nocc'], total['gap_ev'], total['direct_gap_ev'], scissor,
+                    % (total['nocc'],
+                       ('metallic: bands %d and %d overlap by %.3f eV' % (
+                           edges[0]['nocc'], edges[0]['nocc'] + 1,
+                           edges[0]['vbm'] - edges[0]['cbm'])
+                        if metallic else 'gap %.3f eV (direct %.3f eV)' % (
+                            total['gap_ev'], total['direct_gap_ev'])),
+                       scissor,
                        int(np.prod(nk)),
                        (' (%d irreducible, %d operations)' % (sym['k_irreducible'], sym['operations'])
                         if sym else ''),
@@ -4050,6 +4134,9 @@ class PAOFLOW:
         degeneracy_tol=1.0e-4,
         cache_gb=8.0,
         low_memory=False,
+        fermi_energy=None,
+        temperature=0.0,
+        relaxation_time=None,
     ):
         r"""Dielectric function and SHG of a crystal with local fields and exchange-correlation kernels.
 
@@ -4119,7 +4206,16 @@ class PAOFLOW:
             Without the internal projections (the periodic parts come from the PAO basis
             functions) or for an unknown kernel level.
         NotImplementedError
-            For spin-polarised or spin-orbit runs (one spin channel only).
+            For spin-polarised or spin-orbit runs (one spin channel only), and for the second
+            order of a metal.
+
+        Metals (bands at the band-index cut overlap): the occupations are Fermi-Dirac at
+        ``fermi_energy`` (default 0, the DFT Fermi level) and ``temperature`` (K, required), and the
+        intraband (Drude) density :math:`i f'\,\mathbf v\cdot\mathbf E/(\omega + i\gamma)` adds to
+        the response (its current to the macroscopic polarization, its density to the local
+        fields); :math:`\gamma = \hbar/` ``relaxation_time`` (fs; constant or a function of the
+        band energy), or ``eta``. ``kernels='all'`` means ``none``, ``hartree``, ``hartree+alda``
+        for a metal (the long-range kernels are for insulators); no static point.
 
         Notes
         -----
@@ -4171,14 +4267,35 @@ class PAOFLOW:
             comps = parse_components(components)
             dtype = np.complex64 if low_memory else np.complex128
             verbose = bool(attr.get('verbose', False)) and self.rank == 0
+            from .hamiltonian.bloch_derivatives import orbital_positions_from_data
+            from .response.density_matrix_response import channel_band_edges
+
+            metallic = channel_band_edges(
+                arrays['HRs'], np.asarray(arrays['a_vectors'], dtype=float), float(attr['alat']),
+                orbital_positions_from_data(self.data_controller), float(attr['nelec']), 2.0,
+            )['metallic']  # fmt: skip
+            mu = fermi_energy
+            if metallic:
+                mu = 0.0 if mu is None else mu
+                if kernels == 'all':
+                    levels = list(cc.CRYSTAL_KERNELS[:3])
+                if self.rank == 0:
+                    print(
+                        'Coupled optical response: metallic channel, Drude term at %.3f eV, %g K '
+                        '(levels %s)' % (mu, float(temperature), ', '.join(levels))
+                    )
+            grid = np.linspace(emin, emax, int(ne))
+            if metallic:
+                grid = grid[grid > 0.0]  # the Drude term has no static limit
             channel = cc.build_crystal_channel(
                 self.data_controller, tuple(int(n) for n in nk), scissor_ev=scissor,
                 position_dipoles=position_dipoles, degeneracy_tol=degeneracy_tol,
                 coeff_dtype=dtype, comm=self.comm, progress=verbose,
+                fermi_energy=mu, temperature=temperature, relaxation_time=relaxation_time,
             )  # fmt: skip
             results = cc.coupled_optical_spectra(
                 channel, levels,
-                dielectric_energies_ev=(np.linspace(emin, emax, int(ne)) if dielectric else None),
+                dielectric_energies_ev=(grid if dielectric else None),
                 shg_energies_ev=(list(shg_energies) if second_harmonic else None),
                 components=comps, directions=dirs, eta_ev=eta, lrc_alpha=lrc_alpha,
                 alpha_boot=bootstrap_alpha, cache_gb=cache_gb, cache_dtype=dtype, progress=verbose,
@@ -4189,6 +4306,12 @@ class PAOFLOW:
                 'scissor_ev': float(scissor), 'alpha_lrc': results['alpha_lrc'],
                 'alpha_boot': results['alpha_boot'], 'position_dipoles': position_dipoles,
                 'static_epsilon': dict(results['static_epsilon']),
+                'metallic': bool(metallic), 'fermi_energy_ev': mu,
+                'temperature_k': float(temperature),
+                'relaxation_time_fs': (
+                    'callable' if callable(relaxation_time)
+                    else (None if relaxation_time is None else float(relaxation_time))
+                ),
             }  # fmt: skip
             if self.rank == 0:
                 static = ', '.join(

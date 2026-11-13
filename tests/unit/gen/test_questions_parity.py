@@ -180,6 +180,14 @@ RUN_SCENARIOS = {
         'SHG photon energies': '',
         'Projected DOS': 'n',
     },
+    'metal_coupled': {  # 12 November 2026: Fermi-surface terms and the Drude channel
+        'Enter a comma': '12',
+        'metal or semimetal': 'y',
+        'electronic temperature': '500',
+        'intraband relaxation time': '15',
+        'coupled optical response': 'y',
+        'SHG photon energies': '',
+    },
     'optical_only': {'Enter a comma': '10', 'Smearing': 'None', 'double-grid': 'n'},
     'emissivity_window': {
         'Enter a comma': '11 2 5',

@@ -283,7 +283,7 @@ class PeriodicKernel:
 # --------------------------------------------------------------------------- channel
 @dataclass
 class CrystalChannel:
-    """Band-basis data of the local k-points of a dense grid (one spin channel).
+    r"""Band-basis data of the local k-points of a dense grid (one spin channel).
 
     Attributes
     ----------
@@ -293,7 +293,9 @@ class CrystalChannel:
         Columns, orbital basis.
     position : ndarray ``(nk, 3, n, n)``
         Interband position matrix (bohr, band basis).
-    occupations : ndarray ``(n,)``
+    occupations : ndarray ``(n,)`` or ``(nk, n)``
+        Spin factor times the occupation: by band index (insulators) or Fermi-Dirac per k-point
+        (metals, with ``occupation_derivative``).
     weights : ndarray ``(nk,)``
         k-weights (sum to 1 over the whole grid).
     coeff, mill : lists
@@ -303,6 +305,12 @@ class CrystalChannel:
     omega : float
     at_bohr : ndarray ``(3, 3)``
     comm : MPI communicator or None
+    occupation_derivative : ndarray ``(nk, n)`` or None
+        Metals: spin factor times :math:`df/d\epsilon` (Hartree^-1); switches the intraband (Drude)
+        channel on.
+    intraband_gamma : float, ndarray ``(nk, n)`` or None
+        Metals: intraband relaxation :math:`\gamma = \hbar/\tau` (Hartree), constant or per band;
+        ``None`` uses the interband ``eta`` of the solve.
     """
 
     energies: NDArray[np.float64]
@@ -325,6 +333,42 @@ class CrystalChannel:
     energies_bare: NDArray | None = field(default=None, repr=False)
     k_cryst: NDArray | None = field(default=None, repr=False)
     parts_at: object = field(default=None, repr=False)
+    occupation_derivative: NDArray | None = field(default=None, repr=False)
+    intraband_gamma: object = field(default=None, repr=False)
+
+    @property
+    def metallic(self) -> bool:
+        """Whether the channel has a Fermi surface (k-dependent occupations, Drude channel)."""
+        return self.occupation_derivative is not None
+
+    def occupations_at(self, ik: int) -> NDArray[np.float64]:
+        """Occupations ``(n,)`` of local k-point ``ik`` (spin factor included)."""
+        f = np.asarray(self.occupations)
+        return f[ik] if f.ndim == 2 else f
+
+    def intraband_density(
+        self, field_vector: NDArray, omega_ha: float, eta_ha: float
+    ) -> NDArray[np.complex128]:
+        r"""Drude density matrix :math:`i\,(f'\,\mathbf v_{\rm intra}\cdot\mathbf E)/(\omega + i\gamma)`.
+
+        Shape ``(nk, n, n)``.
+
+        The intraband (Fermi-surface) response of a metal to a macroscopic field ``field_vector``
+        (a.u.), in the covariant form inside degenerate clusters; zero for an insulator.
+        """
+        out = np.zeros((self.nk_local, self.n, self.n), dtype=complex)
+        if not self.metallic:
+            return out
+        fp = self.occupation_derivative
+        fp_pair = 0.5 * (fp[:, :, None] + fp[:, None, :])
+        gamma = eta_ha if self.intraband_gamma is None else self.intraband_gamma
+        gamma = np.asarray(gamma, dtype=float)
+        if gamma.ndim == 2:
+            gamma = 0.5 * (gamma[:, :, None] + gamma[:, None, :])
+        drive = np.einsum(
+            'a,kamn->kmn', np.asarray(field_vector, dtype=complex), self.velocity_intra
+        )
+        return 1j * fp_pair * drive / (float(omega_ha) + 1j * gamma)
 
     @property
     def nk_local(self) -> int:
@@ -359,8 +403,10 @@ class CrystalChannel:
 
     def coefficients(self, omega_ha: float, eta_ha: float) -> NDArray[np.complex128]:
         r""":math:`c_{nm}(\mathbf k) = (f_m - f_n)/(\omega - \epsilon_n + \epsilon_m + i\eta)`."""
-        e, f = self.energies, self.occupations
+        e, f = self.energies, np.asarray(self.occupations)
         d = float(omega_ha) - (e[:, :, None] - e[:, None, :]) + 1j * float(eta_ha)
+        if f.ndim == 2:  # metals: occupations per k-point
+            return (f[:, None, :] - f[:, :, None]) / d
         return (f[None, None, :] - f[None, :, None]) / d
 
     def allreduce(self, array: NDArray) -> NDArray:
@@ -377,35 +423,49 @@ class CrystalChannel:
         if self.n0 is not None:
             return self.n0
         n0 = np.zeros(int(np.prod(self.nr)))
-        occ = self.occupations > 0
         for ik in range(self.nk_local):
+            f = self.occupations_at(ik)
+            occ = f > 1.0e-12
             u = self.periodic_table(ik)  # (N_r, n)
             psi = u @ self.eigenvectors[ik][:, occ]  # (N_r, nocc)
-            n0 += self.weights[ik] * ((np.abs(psi) ** 2) @ self.occupations[occ])
+            n0 += self.weights[ik] * ((np.abs(psi) ** 2) @ f[occ])
         self.n0 = self.allreduce(n0)
         return self.n0
 
     def density_and_polarization(
-        self, dP_band: NDArray
+        self, dP_band: NDArray, omega_ha: float | None = None
     ) -> tuple[NDArray[np.complex128], NDArray[np.complex128]]:
-        """Induced density (flat, allreduced) and macroscopic polarization of ``dP_band`` ``(nk, n, n)``."""
+        """Induced density (flat, allreduced) and macroscopic polarization of ``dP_band`` ``(nk, n, n)``.
+
+        ``omega_ha`` is needed for a metal: the intraband part polarizes through its current.
+        """
         dn = np.zeros(int(np.prod(self.nr)), dtype=complex)
-        P = np.zeros(3, dtype=complex)
         for ik in range(self.nk_local):
             U = self.eigenvectors[ik]
             dP_orb = U @ dP_band[ik] @ U.conj().T
             u = self.periodic_table(ik)
             dn += self.weights[ik] * np.einsum('rn,rn->r', u, u.conj() @ dP_orb.T)
-            P -= self.weights[ik] * np.einsum('aij,ji->a', self.position[ik], dP_band[ik])
         self.allreduce(dn)
-        self.allreduce(P)
-        return dn, P / self.omega
+        return dn, self.polarization_of(dP_band, omega_ha)
 
-    def polarization_of(self, dP_band: NDArray) -> NDArray[np.complex128]:
-        """Macroscopic polarization of ``dP_band`` ``(nk, n, n)`` (allreduced), no density."""
+    def polarization_of(
+        self, dP_band: NDArray, omega_ha: float | None = None
+    ) -> NDArray[np.complex128]:
+        r"""Macroscopic polarization of ``dP_band`` ``(nk, n, n)`` (allreduced), no density.
+
+        Interband part :math:`-{\rm Tr}[r\,\delta P]`; for a metal the intraband part through the
+        current, :math:`J/(-i\omega)` with :math:`J^a = -{\rm Tr}[v^a_{\rm intra}\delta P]` (charge -1).
+        """
         P = np.zeros(3, dtype=complex)
-        for ik in range(self.nk_local):
-            P -= self.weights[ik] * np.einsum('aij,ji->a', self.position[ik], dP_band[ik])
+        if self.metallic:  # vectorised over k (insulators keep the accumulation below, bitwise)
+            if omega_ha is None or float(omega_ha) == 0.0:
+                raise ValueError('the polarization of a metal needs a finite frequency (Drude)')
+            P -= np.einsum('k,kaij,kji->a', self.weights, self.position, dP_band)
+            current = -np.einsum('k,kaij,kji->a', self.weights, self.velocity_intra, dP_band)
+            P += current / (-1j * float(omega_ha))
+        else:
+            for ik in range(self.nk_local):
+                P -= self.weights[ik] * np.einsum('aij,ji->a', self.position[ik], dP_band[ik])
         self.allreduce(P)
         return P / self.omega
 
@@ -498,11 +558,12 @@ def first_order_crystal(
     grid = kernel.grid_active
 
     def density_polarization(dP):
-        # the first-order density matrix has no diagonal (populations): Tr[r dP] is the full
-        # macroscopic polarization; the density is only needed by a grid kernel
+        # insulators: the first-order density matrix has no populations and Tr[r dP] is the full
+        # macroscopic polarization; metals add the intraband current (polarization_of). The density
+        # is only needed by a grid kernel
         if grid:
-            return ch.density_and_polarization(dP)
-        return np.zeros(nr_tot, dtype=complex), ch.polarization_of(dP)
+            return ch.density_and_polarization(dP, omega_ha)
+        return np.zeros(nr_tot, dtype=complex), ch.polarization_of(dP, omega_ha)
 
     def induced(X):
         dn, P = X[:nr_tot], X[nr_tot:]
@@ -514,14 +575,19 @@ def first_order_crystal(
                 V = V + kernel.lrc_alpha * np.einsum('a,aij->ij', P, ch.position[ik])
             return V
 
-        return respond(V_band)
+        dP = respond(V_band)
+        if ch.metallic and kernel.lrc_alpha:  # the long-range term acts as a macroscopic field
+            dP = dP + ch.intraband_density(kernel.lrc_alpha * P, omega_ha, eta_ha)
+        return dP
 
-    dP0 = respond(lambda ik: r_b[ik])
+    dP0 = c * r_b  # the bare field, all local k-points at once
+    if ch.metallic:  # a lattice-periodic induced potential (q = 0) moves no populations
+        dP0 = dP0 + ch.intraband_density(np.eye(3)[int(direction)], omega_ha, eta_ha)
     if kernel.label == 'none':
         return {
             'dP': dP0,
             'density': None,
-            'polarization': ch.polarization_of(dP0),
+            'polarization': ch.polarization_of(dP0, omega_ha),
             'iterations': 0,
         }
     dn0, P0 = density_polarization(dP0)
@@ -785,6 +851,8 @@ def _current_polarization(ch: CrystalChannel, dP: NDArray, w: float) -> NDArray[
     :func:`~PAOFLOW.response.nonlinear_optics.nonlinear_optical_spectra` (the charge enters as
     :math:`e^3` with :math:`e > 0`): the electronic polarization (charge -1) is multiplied by -1.
     """
+    if ch.metallic:
+        raise NotImplementedError('the coupled second-order response of metals is not implemented')
     e = ch.energies
     J = np.zeros(3, dtype=complex)
     for ik in range(ch.nk_local):
@@ -1001,6 +1069,18 @@ def coupled_optical_spectra(
     for level in levels:
         if level not in CRYSTAL_KERNELS:
             raise ValueError('unknown kernel level %r (choose from %s)' % (level, CRYSTAL_KERNELS))
+    if ch.metallic:
+        long_range = [level for level in levels if level in CRYSTAL_KERNELS[3:]]
+        if long_range:
+            raise ValueError(
+                'the long-range kernels (%s) model the excitonic tail of insulators; a metal '
+                'screens them: use none, hartree, hartree+alda' % ', '.join(long_range)
+            )
+        if shg_energies_ev is not None:
+            raise NotImplementedError(
+                'the coupled second-order response of metals is not implemented (use '
+                'nonlinear_optics, independent particles with the Fermi-surface terms)'
+            )
     comps = [tuple(int(x) for x in cmp) for cmp in components]
     directions = tuple(int(b) for b in directions)
     ckw = dict(tol=tol, cache_gb=cache_gb, cache_dtype=cache_dtype)
@@ -1125,6 +1205,9 @@ def channel_from_HRs(
     kblock: int = 64,
     comm=None,
     progress: bool = False,
+    fermi_energy: float | None = None,
+    temperature: float = 0.0,
+    relaxation_time=None,
 ) -> CrystalChannel:
     """Dense-grid channel from a real-space PAO Hamiltonian (the band geometry of the IPA driver).
 
@@ -1146,12 +1229,26 @@ def channel_from_HRs(
         Position-dipole operator (``K_cryst -> (nk, 3, nawf, nawf)``).
     comm : MPI communicator, optional
         k-points are split over its ranks.
+    fermi_energy : float, optional
+        Metals (bands ``nocc``, ``nocc + 1`` overlap): chemical potential (eV; 0 is the DFT Fermi
+        level of a PAOFLOW Hamiltonian). The occupations become Fermi-Dirac per k-point and the
+        intraband (Drude) channel is switched on; required for a metal.
+    temperature : float, optional
+        Electronic temperature (K) of a metal (> 0: the Drude weight is a Fermi-surface integral).
+    relaxation_time : float or callable, optional
+        Intraband :math:`\\tau` of a metal (fs), constant or a function of the band energy (eV -> fs);
+        ``None`` uses the ``eta`` of the solve.
 
     Returns
     -------
     CrystalChannel
         Without periodic parts (``coeff``/``mill`` empty, ``nr = (1, 1, 1)``): enough for the
         kernel-off responses and the tests; :func:`build_crystal_channel` adds them.
+
+    Raises
+    ------
+    ValueError
+        For a metal without ``fermi_energy`` or ``temperature``, or with a scissor.
     """
     from ..hamiltonian.bloch_derivatives import (
         bloch_terms_from_HRs,
@@ -1212,10 +1309,37 @@ def channel_from_HRs(
             )
     occupations = np.zeros(n)
     occupations[:nocc] = float(spin_factor)
-    cat = (
-        lambda arrs, shape, dtype=complex: np.concatenate(arrs)
-        if arrs
-        else np.zeros(shape, dtype=dtype)
+    if energies:
+        e_all = np.concatenate(bare) * HARTREE_EV
+        top, bottom = float(e_all[:, nocc - 1].max()), float(e_all[:, nocc].min())
+    else:
+        top, bottom = -np.inf, np.inf
+    if comm is not None:
+        from mpi4py import MPI
+
+        top, bottom = comm.allreduce(top, op=MPI.MAX), comm.allreduce(bottom, op=MPI.MIN)
+    fp = gamma = None
+    if bottom <= top:
+        if fermi_energy is None or float(temperature) <= 0.0:
+            raise ValueError(
+                'metallic channel (band %d reaches %.3f eV, band %d starts at %.3f eV): pass '
+                'fermi_energy (0.0 for PAOFLOW Hamiltonians) and an electronic temperature (K)'
+                % (nocc, top, nocc + 1, bottom)
+            )
+        if float(scissor_ev) != 0.0:
+            raise ValueError('a scissor needs a gap: the channel is metallic (set scissor=0)')
+        from .density_matrix_response import HBAR_EV_FS, fermi_dirac_derivatives
+
+        e_ev = (np.concatenate(bare) * HARTREE_EV) if bare else np.zeros((0, n))
+        f, df = fermi_dirac_derivatives(e_ev, float(fermi_energy), float(temperature))[:2]
+        occupations = float(spin_factor) * f
+        fp = float(spin_factor) * df * HARTREE_EV  # per Hartree
+        if callable(relaxation_time):
+            gamma = HBAR_EV_FS / np.asarray(relaxation_time(e_ev), dtype=float) / HARTREE_EV
+        elif relaxation_time is not None:
+            gamma = HBAR_EV_FS / float(relaxation_time) / HARTREE_EV
+    cat = lambda arrs, shape, dtype=complex: (
+        np.concatenate(arrs) if arrs else np.zeros(shape, dtype=dtype)
     )  # noqa: E731
     return CrystalChannel(
         energies=cat(energies, (0, n), float),
@@ -1235,6 +1359,8 @@ def channel_from_HRs(
         velocity_intra=cat(vintra, (0, 3, n, n)),
         energies_bare=cat(bare, (0, n), float),
         k_cryst=K[kstart:kstop],
+        occupation_derivative=fp,
+        intraband_gamma=gamma,
     )
 
 
@@ -1251,6 +1377,9 @@ def build_crystal_channel(
     comm=None,
     nelec: float | None = None,
     progress: bool = False,
+    fermi_energy: float | None = None,
+    temperature: float = 0.0,
+    relaxation_time=None,
 ) -> CrystalChannel:
     """Dense-grid channel of a PAOFLOW run: :func:`channel_from_HRs` plus the periodic parts.
 
@@ -1273,6 +1402,8 @@ def build_crystal_channel(
         k-points are split over its ranks.
     nelec : float, optional
         Electrons per cell (default ``attr['nelec']``).
+    fermi_energy, temperature, relaxation_time : optional
+        Metals: as :func:`channel_from_HRs` (the Drude channel).
     """
     from ..hamiltonian.bloch_derivatives import orbital_positions_from_data
     from ..utils.communication import load_balancing
@@ -1295,6 +1426,7 @@ def build_crystal_channel(
         float(attr['nelec'] if nelec is None else nelec), nk, scissor_ev=scissor_ev,
         spin_factor=spin_factor, dipoles=dipoles, degeneracy_tol=degeneracy_tol,
         hopping_cutoff=hopping_cutoff, kblock=kblock, comm=comm, progress=progress,
+        fermi_energy=fermi_energy, temperature=temperature, relaxation_time=relaxation_time,
     )  # fmt: skip
     K = _k_grid(tuple(int(x) for x in nk))
     size, rank = (1, 0) if comm is None else (comm.Get_size(), comm.Get_rank())

@@ -1581,6 +1581,7 @@ class GPAO:
         import numpy as np
 
         from .graphics.nonlinear_plots import plot_shg_terms as draw
+        from .response.density_matrix_response import CHANNELS
         from .response.nonlinear_optics import SHG_TERMS
 
         tail = '' if spin is None else '_%d' % int(spin)
@@ -1592,8 +1593,13 @@ class GPAO:
         try:
             energy, total_re = read('shgr')
             total = total_re + 1j * read('shgi')[1]
+            # insulators: the terms of the convergent form; metals: the density-matrix channels
+            first = os.path.join(
+                path, 'shgtr_%s_%s%s.dat' % (next(iter(SHG_TERMS)), component, tail)
+            )
+            names = SHG_TERMS if os.path.exists(first) else CHANNELS
             terms = {
-                name: read('shgtr_' + name)[1] + 1j * read('shgti_' + name)[1] for name in SHG_TERMS
+                name: read('shgtr_' + name)[1] + 1j * read('shgti_' + name)[1] for name in names
             }
         except OSError as err:
             raise FileNotFoundError(
@@ -1603,6 +1609,70 @@ class GPAO:
         draw(
             energy, total, terms, unit='pm$^2$/V' if two_d else 'pm/V', grouped=grouped,
             component=component, title=title, x_lim=x_lim, filename=filename,
+        )  # fmt: skip
+
+    def plot_photocurrent_channels(
+        self,
+        path: str = '.',
+        component: str = 'xyz',
+        spin: int | None = None,
+        two_d: bool = False,
+        relaxation: str | None = None,
+        title: str | None = None,
+        x_lim: tuple[float, float] | None = None,
+        filename: str | None = None,
+    ) -> None:
+        """Plot the zero-frequency photocurrent of a metal split by channel (``pcr_/pci_`` files).
+
+        Parameters
+        ----------
+        path : str, optional
+            Output directory of the run (``pcr_<abc>.dat``, ``pcr_<channel>_<abc>.dat``, ``pci_...``).
+        component : str, optional
+        spin : int, optional
+        two_d : bool, optional
+            Units of a 2D sheet.
+        relaxation : str, optional
+            Legend note (e.g. ``'τ = 20 fs'``).
+        title, x_lim, filename : optional
+
+        Returns
+        -------
+        None
+            Shows the figure (:func:`PAOFLOW.graphics.nonlinear_plots.plot_photocurrent_channels`).
+
+        Raises
+        ------
+        FileNotFoundError
+            When the run has no photocurrent files for the component.
+        """
+        import os
+
+        import numpy as np
+
+        from .graphics.nonlinear_plots import plot_photocurrent_channels as draw
+        from .response.density_matrix_response import CHANNELS
+
+        tail = '' if spin is None else '_%d' % int(spin)
+
+        def read(prefix: str) -> tuple:
+            data = np.loadtxt(os.path.join(path, '%s_%s%s.dat' % (prefix, component, tail)))
+            return data[:, 0], data[:, 1]
+
+        try:
+            energy, total_re = read('pcr')
+            total = total_re + 1j * read('pci')[1]
+            channels = {
+                name: read('pcr_' + name)[1] + 1j * read('pci_' + name)[1] for name in CHANNELS
+            }
+        except OSError as err:
+            raise FileNotFoundError(
+                'photocurrent files for %s not found in %s (run nonlinear_optics on a metal, or with '
+                'fermi_surface=True)' % (component, path)
+            ) from err
+        draw(
+            energy, total, channels, unit=r'nm $\mu$A/V$^2$' if two_d else r'$\mu$A/V$^2$',
+            component=component, relaxation=relaxation, title=title, x_lim=x_lim, filename=filename,
         )  # fmt: skip
 
     def plot_coupled_response(

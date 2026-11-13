@@ -109,13 +109,18 @@ band-convergence as in the plane-wave sum-rule route.
 |---|---|---|
 | shift current, $J^a = \sigma^{abc}E^b(\omega)E^c(-\omega)$ | $\sigma^{abc} = \frac{\pi e^3 g_s}{\hbar^2}\int[dk]\sum_{nm} f_{nm}\,\mathrm{Im}[r^b_{mn}r^c_{nm;a} + r^c_{mn}r^b_{nm;a}]\,\delta(\omega_{nm}-\omega)$ | `shift_abc.dat`, µA/V² |
 | magnetic shift current (T-odd), $J^a = \sigma_M^{abc}\mathrm{Im}[E^bE^{c*}]$ | $-\frac{\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{nm}\mathrm{Re}[r^b_{mn}r^c_{nm;a} - r^c_{mn}r^b_{nm;a}]\delta(\omega_{nm}-\omega)$ | `shiftm_abc.dat`, µA/V² |
-| circular injection, $dJ^a/dt = \eta_C^{abc}\mathrm{Im}[E^bE^{c*}]$ | $\frac{2\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{mn}\Delta^a_{mn}\mathrm{Im}[r^b_{mn}r^c_{nm}]\delta(\omega_{nm}-\omega)$ | `injectc_abc.dat`, A V⁻² s⁻¹ |
+| circular injection, $dJ^a/dt = \eta_C^{abc}\mathrm{Im}[E^bE^{c*}]$ | $-\frac{2\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{mn}\Delta^a_{mn}\mathrm{Im}[r^b_{mn}r^c_{nm}]\delta(\omega_{nm}-\omega)$ | `injectc_abc.dat`, A V⁻² s⁻¹ |
 | magnetic injection (T-odd), $dJ^a/dt = \eta_M^{abc}\mathrm{Re}[E^bE^{c*}]$ | $-\frac{2\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{mn}\Delta^a_{mn}\mathrm{Re}[r^b_{mn}r^c_{nm}]\delta(\omega_{nm}-\omega)$ | `injectm_abc.dat`, A V⁻² s⁻¹ |
 | SHG, $P^a(2\omega) = \epsilon_0\chi^{abc}E^bE^c$ | Chen *et al.* Eqs. (C1)–(C3): the three-band term $\chi_e$ and the mixed term $\chi_i$ including the T-odd $-\Delta^a_{mn}g^{bc}_{nm}/(2\omega_{mn}^2(\omega_{mn}-\omega))$ | `shgr/shgi/shga_abc.dat`, pm/V |
 
 The field convention is $E(t) = E(\omega)e^{-i\omega t} + E(-\omega)e^{i\omega t}$; for $b = c$ the
 shift current is Eq. (2) of Wang *et al.* and twice the $\sigma^{abb}$ of Sipe and Shkrebtii (2000),
-who write $J = 2\sigma EE^*$. The injection coefficients follow Eq. (9) of Chen *et al.*
+who write $J = 2\sigma EE^*$. Every response carries the charge as $e^3$ with $e > 0$ (the
+convention the molecule mode pins against a finite field, below); for electrons all signs flip.
+The circular injection had the electron sign until November 2026; the Fermi golden rule
+($dJ/dt = q\sum\Delta_{cv}\,2\pi|qE\cdot r_{cv}|^2\delta$ for the charge $q$) and the
+density-matrix engine (`density_matrix_response`, section "Metals") fixed it, and both now agree with
+all four formulas. The injection coefficients follow Eq. (9) of Chen *et al.*
 ($\eta_C \propto$ the two-band Berry curvature $\Omega^{bc}_{mn} = -2\mathrm{Im}[r^b_{mn}r^c_{nm}]$,
 $\eta_M \propto$ the quantum metric $g^{bc}_{mn} = \mathrm{Re}[r^b_{mn}r^c_{nm}]$). The SI prefactors
 per unit of the dimensionless k-sums are $\pi e^2/\hbar = 7.647\times10^{-4}$ A/V²,
@@ -565,6 +570,146 @@ parts lack the augmentation charge). GaAs at 32³ (the GaAs report, section 4): 
 bootstrap level, with E₁ and E₂ 0.1 and 0.3 eV too high at every level (rigid scissor). Tests:
 `test_coupled_optical_spectra_nested_levels_and_bootstrap`, `test_coupled_optical_spectra_second_order_and_errors`.
 
+## Metals: the density-matrix engine — `response/density_matrix_response.py`, 12 November 2026
+
+The convergent insulator form (Chen *et al.*) uses sum rules over filled bands; with a Fermi surface the
+occupations depend on k and the intraband position acts on them. `density_matrix_spectra` therefore solves the
+length-gauge equations of motion order by order without those rearrangements. With the perturbation
+$e\mathbf E\cdot\mathbf r$ and $\mathbf r = \mathbf r_i + \mathbf r_e$, $[r_e^c, O]_{nm} = i O_{nm;c}$,
+
+$$(\hbar\Omega + i\Gamma_{nm} - \varepsilon_{nm})\rho^{(N)}_{nm} = eE^c\big([r_i^c,\rho^{(N-1)}]_{nm} + i\rho^{(N-1)}_{nm;c}\big),\qquad \rho^{(0)}_{nm} = f_n\delta_{nm},$$
+
+$\Gamma = \eta$ between degenerate clusters (dephasing), $\Gamma = \gamma = \hbar/\tau$ inside them (intraband
+relaxation). First order: $\rho^{(1)}_{\rm inter} = -f_{nm}r^b_{nm}/(\omega - \varepsilon_{nm} + i\eta)$ and
+$\rho^{(1)}_{\rm intra} = i\,\partial_bf/(\omega + i\gamma)$, $\partial_b f = f'(\varepsilon)v^b_{\rm intra}$ (covariant).
+The current $J^a = e\,\mathrm{Tr}[v^a\rho^{(2)}]$ (charge $+e$, the module convention) is evaluated with the
+k-derivative moved onto the vertex,
+
+$$\sum_k\mathrm{Tr}[v^a\rho^{(2)}] = \sum_k\sum_{nm}\Big(A_{nm}[r_i^c,\rho^{(1)}]_{nm} - i(A_{;c})_{nm}\rho^{(1)}_{nm}\Big),\quad A_{nm} = v^a_{mn}g_{nm},\ g_{nm} = \frac{1}{\hbar\Omega - \varepsilon_{nm} + i\Gamma_{nm}},$$
+
+$(A_{;c})_{nm} = (v^a_{;c})_{mn}g_{nm} + v^a_{mn}(\Delta^c_{nm} - i\partial_c\Gamma_{nm})g_{nm}^2$, with
+$v^a_{;c} = i[v^c_{\rm intra}, r^a] + i\varepsilon'\circ r^a_{;c} + M^{ac}$ and the intra-cluster inverse mass
+$M^{ac} = (w^{ac} + [G^c, v^a])_{\rm intra}$, $G^c_{pq} = v^c_{pq}/\omega_{pq}$ (`band_curvature`). Why by parts: the
+direct form has the resonant double pole $1/(\omega - \varepsilon_{nm} + i\eta)^2$ and $f''$; on a uniform grid both
+converge slowly (the T-even shift current of strained gapped graphene was off by 10–40 % at 400², η = 0.02, and is
+within 1–3 % by parts). The double pole now sits on $g$, off resonance at zero frequency.
+
+**Channels** (by the first-order density they come from; they sum to the total):
+
+| channel | origin | zero-frequency limit |
+|---|---|---|
+| `fermi_sea_inter` | $\rho^{(1)}_{\rm inter}$ → interband elements of $\rho^{(2)}$ | shift current (+ the T-odd gyration), $\tau^0$ |
+| `fermi_sea_intra` | $\rho^{(1)}_{\rm inter}$ → populations | injection, $\tau\,(\eta_M\,\mathrm{Re} + \ldots)$, $\propto\tau$ |
+| `fermi_surface_mixed` | $\rho^{(1)}_{\rm intra}$ through $[r_i^c,\cdot]$ | Berry-curvature dipole $iD^{b,ac}/(\omega+i\gamma) + iD^{c,ab}/(-\omega+i\gamma)$, $\propto\tau$ |
+| `fermi_surface_drude` | $\rho^{(1)}_{\rm intra}$ through the intraband vertex | nonlinear Drude $2e^3\int f\,\partial_a\partial_b\partial_c\varepsilon/(\omega^2+\gamma^2)$, $\propto\tau^2$ |
+
+with $D^{b,ac} = \int[dk]\sum_n \partial_b f_n\,\Omega^{ac}_n$. **Outputs and conventions.** SHG:
+$\chi = P/(\epsilon_0E^2)$, $P = J/(-2i\omega)$, both field orders averaged. Photocurrent:
+$J^a = \sigma^{abc}E^b(\omega)E^c(-\omega)$, i.e. $J = \mathrm{Re}\,\sigma\,\mathrm{Re}[E^bE^{c*}] -
+\mathrm{Im}\,\sigma\,\mathrm{Im}[E^bE^{c*}]$; for an insulator $\mathrm{Re}\,\sigma_{\rm sea,inter} \to$ `shift`,
+$\sigma_{\rm sea,intra} \to \tau(\eta_M - i\eta_C)$. Without `relaxation_time`, $\gamma = \eta$ (one damping, as the
+insulator formulas). A callable τ(ε) (eV → fs) enters γ and, through central differences, $\partial_c\Gamma$.
+The Fermi-surface channels need a smooth occupation: Fermi–Dirac at `temperature` (they vanish with steps). Scissor:
+insulators only. `PAOFLOW.nonlinear_optics(fermi_surface='auto')` switches the engine on for a metallic channel
+(`channel_band_edges`: bands `nocc`, `nocc+1` overlap on the coarse grid, or a non-integer filling); there the SHG
+and `pcr_/pci_` come from it, and `shift_`/`inject*_` keep the δ-function formulas with metallic occupations
+(Pauli blocking). Insulators are unchanged with `'auto'`.
+
+**Zero-frequency populations: real and virtual** (12 November 2026; plan wiki `PAOFLOW_NLO_gyration_plan.md`).
+Summed over the two field orders, the populations driven by the interband first-order density are pure
+Lorentzians (the principal parts cancel exactly):
+
+$$\rho^{(2)}_{nn'} = -\sum_m f_{nm}\big[r^c_{nm}r^b_{mn'}K(\hbar\omega-\varepsilon_{mn}) + r^b_{nm}r^c_{mn'}K(\hbar\omega+\varepsilon_{mn})\big],\qquad K_{\rm relax}(x) = \frac{2\eta/\gamma}{x^2+\eta^2}.$$
+
+Near resonance $K_{\rm relax}$ is the golden rule times $\tau$ (injection); away from it, $2\eta/\gamma x^2$ is the
+off-resonant **dressing** of the Floquet state times $2\eta/\gamma$. The coherences carry an off-resonant
+principal-value term (mostly T-even; for two bands $\propto\sum_{\mathbf k}\partial_a\Omega^{bc}\,\mathcal P/(\omega-\omega_{cv})$)
+that the dressing cancels, after an integration by parts over k, only for $\gamma = 2\eta$, the value of adiabatic
+switching (second order grows as $e^{2\eta t}$). This is the exact statement that a clean insulator driven below its
+gap carries no DC current ($J_{\rm DC} = \sum_{\mathbf k}\partial_{\mathbf k}\varepsilon^F$ over full Floquet bands).
+Relaxing every population with $\gamma$ (the first implementation, `populations='relaxation'`) leaves a spurious
+current $D(\eta/\gamma - \tfrac12)$ that grows with τ in a clean metal. The default (`populations='hybrid'`) splits
+the kernel,
+
+$$K_{\rm hybrid}(x) = \frac{2\pi}{\gamma}\,\delta(x) + \mathrm{Re}\frac{1}{(x+i\eta)^2},$$
+
+real (absorbed) populations with the physical $\tau = \hbar/\gamma$ and a short-tailed Gaussian $\delta$ (width η, or
+the Yates widths of `adaptive_smearing`, the injection kernel of `nonlinear_optical_spectra`), virtual ones with the
+adiabatic weight $\mathrm{Re}[(x+i\eta)^{-2}] = (x^2-\eta^2)/(x^2+\eta^2)^2 \to 1/x^2$, which carries no δ weight. A
+Lorentzian δ would count its own $\eta/x^2$ tails twice. The pair formula with $K_{\rm relax}$ reproduces the
+commutator path to $10^{-15}$; SHG populations ($\hbar\Omega = 2\hbar\omega$) keep $1/(\hbar\Omega+i\gamma)$.
+
+**Damping and the clean limit (derivation and references, plan G1–G2).** With fields switched on adiabatically
+($\mathbf E \propto e^{\eta t}$) every first-order denominator carries $+i\eta$ and every second-order one $+2i\eta$,
+coherences and populations alike. In that scheme the principal-value term of the coherences and the virtual
+populations are one integration by parts apart: the virtual kernel is
+$\mathrm{Re}[(x+i\eta)^{-2}] = -\partial_x\mathrm{Re}[(x+i\eta)^{-1}]$, the derivative of the regularized principal
+value $\mathcal P_\eta(1/x)$ of the coherences, and $\partial_{k_a}$ of the detuning is the velocity difference, so
+$\sum_{\mathbf k}$ of the two cancels exactly for any η (no δ′ remainder: the regularization is common to both); what
+remains is the resonant part — shift, gyration, injection and magnetic injection, the four δ-function terms of
+`nonlinear_optical_spectra` — plus, in metals, the Fermi-surface channels. For two bands the circular coherence term
+is $\propto\sum_{\mathbf k}\partial_a\Omega^{bc}\,\mathcal P_\eta/(\omega-\omega_{cv})$ and the dressing term
+$\propto\sum_{\mathbf k}\Omega^{bc}\Delta^a_{cv}\,\mathrm{Re}[(\omega-\omega_{cv}+i\eta)^{-2}]$. Below the gap nothing is
+resonant and the DC current vanishes, the Floquet statement ($J_{\rm DC} = \sum_{\mathbf k}\partial_{\mathbf k}\varepsilon^F$
+over full bands; Belinicher *et al.*'s "no DC photocurrent in the transparent region in the steady state"). The
+`'hybrid'` populations keep this cancellation and replace only the resonant part's $1/2\eta$ by the physical τ.
+
+References built for it (tests and `Workspace/PAOFLOW/validation/nlo_metals/gyration/`):
+
+- **Velocity gauge (Kubo)**, `tests/unit/response/_velocity_gauge.py`: $H(\mathbf k+\boldsymbol\kappa)$, vertices
+  $h^a, h^{ab}, h^{abc}$ of the atomic gauge (Peierls is exact for the orbital-centre position operator),
+  $\kappa(\omega) = iE/(\omega+i\eta)$, second order at $\Omega + 2i\eta$, evaluated from the density-matrix expansion.
+  With the engine set to the same adiabatic prescription (`populations='relaxation'` with γ = 2η,
+  `coherence_damping=2`) the zero-frequency photocurrents of the strained Haldane model (shift, gyration, both
+  injections, below and above the gap) agree to $10^{-13}$–$10^{-14}$ on the same grid: exact gauge equivalence. The
+  SHG agrees once both are converged (the velocity gauge cancels $1/\omega^2$ terms only through k-space sum rules and
+  converges slowly: 28 % apart at 8³, $<10^{-4}$ from 16³ at 0.6 eV; 0.7 % at 32³ at the 2ω resonance, 1.2 eV).
+- **Real time** (`realtime_reference.py`): exact 2×2 propagation of every k under $H(\mathbf k+\boldsymbol\kappa(t))$, no
+  damping, sin² ramp, ±E₀ averaged (cancels the odd orders), helicity-odd and φ-odd combinations. Below the gap
+  (0.30 eV) the DC current goes to zero as the ramp becomes adiabatic; at $\hbar\omega$ = gap/2 the two-photon band edge
+  leaves non-perturbative transients. The gyration current at 350² is 0.268 / 0.0806 µA/V² at 1.0 / 1.4 eV, within 1–2.5 % of the converged `shiftm` (0.262 / 0.081, η = 5 meV, 2400²); the δ-function and engine values on the same 350² grid at η = 10 meV are under-resolved there (0.031 at 1.4 eV).
+
+The default `coherence_damping=1` damps the second-order coherences with η instead of 2η: an O(η²) change at zero
+frequency and an O(η) one in the imaginary part of the SHG, where the three conventions differ at finite η (engine
+with η or 2η, Kubo, and the convergent form of Chen *et al.*, which damps only its resonant denominators) and all
+converge as η → 0. The damping of the SHG populations (γ or 2η) changes the SHG by 0.1 %.
+
+**Metals: what the relaxation model decides.** In a metal the in-gap rectification is not fixed by the clean limit
+alone. Onishi, Watanabe, Morimoto and Nagaosa (PRB 106, 235110, 2022) show that the sub-gap photocurrent of P- and
+T-broken metals is finite when the relaxation rate goes to zero before the output frequency (the clean-limit
+perturbation theory, dressed bands with bare occupations) and vanishes in the steady state when scattering relaxes
+toward the dressed equilibrium (the Ward identity); Shi, Matsyshyn, Song and Sodemann (PRB 107, 125151, 2023) find
+finite in-gap rectification with Boltzmann relaxation toward the bare $f_0$, the Berry-dipole part being
+dissipationless. The engine relaxes real carriers toward the bare $f_0$ (Boltzmann, as Sodemann–Fu and Shi *et al.*)
+and lets the virtual dressing follow the field adiabatically; its T-odd Fermi-surface currents of metals inside the
+optical gap carry that model dependence.
+
+**Validation** (`tests/unit/response/test_density_matrix_response.py`, 11 tests, ~45 s; figures and numbers in
+`Workspace/PAOFLOW/validation/nlo_metals/REPORT.md`):
+
+| check | model | agreement |
+|---|---|---|
+| static χ⁽²⁾ vs the finite-field $\frac{1}{2\epsilon_0}\partial^2P/\partial E^2$ (charge $+e$) | molecule in a box, Γ | 2·10⁻³ (the Chen form too) |
+| SHG below the gap vs the Chen form | T-broken random hopping, 10³, η = 2 meV | 1 % of the tensor scale; Im differs by O(η/ω) ($P = J/(-2i\omega)$ vs $\omega+i\eta$) |
+| DC shift and injection | strained gapped graphene (T-even) 400², Haldane 200² | Re σ = `shift` 3 %; with τ = 300 fs ≠ ħ/η, −Im σ (all channels) = τη_C 0.5 %, Re σ_pop = τη_M 1 % (Gaussian δ) |
+| no DC current below the gap (Floquet) | strained Haldane, 0.46–0.70 eV | hybrid: ∝ η, independent of τ; relaxation: finite, ∝ 1/γ |
+| gyration current (T-odd circular) | strained Haldane, φ-odd part | `shiftm` to 0.5 % (800², 10 meV) |
+| quantized CPGE trace (de Juan *et al.*) | two-band Weyl model, 60³, adaptive widths | 0.995 / 0.999 at 0.5 / 0.7 eV (was 1.14 / 0.93 with the relaxation kernel) |
+| velocity-gauge Kubo, same adiabatic damping | strained Haldane, 150² and 300² | zero-frequency photocurrents to 10⁻¹³; SHG when converged (16³–32³) |
+| nonlinear Drude closed form | one T-broken band (odd 2nd harmonics) | 0.5 %, τ² |
+| Berry-curvature dipole | doped strained gapped graphene (T-even), 300² | 0.2 %, ∝ τ, Drude = 0 |
+| τ(ε) wiring, guards, orchestrator files and plots | | |
+
+The circular injection of `nonlinear_optical_spectra` had the electron sign; the Fermi golden rule and this engine
+fixed it (section *Conventions*). The first comparison of the gyration current set the interband channel alone
+against `shiftm` and found a mismatch: that channel also holds the T-even off-resonant term above, which only the full
+response (and the φ-odd combination) removes. **Open:** a velocity-gauge (Kubo) and a damping-free real-time
+reference (plan G2), the derivation in full (G1), and whether the SHG populations should also carry 2η (the
+O(η/ω) imaginary-part difference against the Chen form). **Cost:** every photon energy re-solves the k-block
+($O(n^3)$ products per component and field order); fine for DC spectra of tens of energies, a spectral (pole)
+representation is the next optimisation. Position dipoles enter through $r$, $r_{;a}$; the intra-cluster dipole
+connection is not in $M$ (matters only for degenerate clusters with dipoles).
+
 ## Not implemented (follow-ups)
 
 The $\mathbf G\mathbf G'$ body of the bootstrap kernel and frequency-dependent kernels; spin-orbit coupling and
@@ -580,3 +725,4 @@ the post-`eigh` algebra.
 - C. Aversa and J. E. Sipe, Phys. Rev. B **52**, 14636 (1995); S. N. Rashkeev, W. R. L. Lambrecht and B. Segall, Phys. Rev. B **57**, 3905 (1998); F. Nastos, B. Olejnik, K. Schwarz and J. E. Sipe, Phys. Rev. B **72**, 045223 (2005).
 - J. Ibañez-Azpiroz, S. S. Tsirkin and I. Souza, *Ab initio calculation of the shift photocurrent by Wannier interpolation*, Phys. Rev. B **97**, 245143 (2018).
 - B. M. Fregoso, T. Morimoto and J. E. Moore, Phys. Rev. B **96**, 075421 (2017); T. Rangel *et al.*, Phys. Rev. Lett. **119**, 067402 (2017).
+- Metals: I. Sodemann and L. Fu, Phys. Rev. Lett. **115**, 216806 (2015) (Berry-curvature dipole); F. de Juan, A. G. Grushin, T. Morimoto and J. E. Moore, Nat. Commun. **8**, 15995 (2017) (quantized CPGE); D. E. Parker, T. Morimoto, J. Orenstein and J. E. Moore, Phys. Rev. B **99**, 045121 (2019); D. J. Passos *et al.*, Phys. Rev. B **97**, 235446 (2018); H. Watanabe and Y. Yanase, Phys. Rev. X **11**, 011001 (2021); T. Holder, D. Kaplan and B. Yan, Phys. Rev. Research **2**, 033100 (2020).

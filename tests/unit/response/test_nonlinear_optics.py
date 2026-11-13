@@ -21,6 +21,7 @@ _spec.loader.exec_module(_models)
 honeycomb_model = _models.honeycomb_model
 random_hopping_model = _models.random_hopping_model
 rice_mele_chain = _models.rice_mele_chain
+weyl_model = _models.weyl_model
 
 
 def geometry_at(model, kpts, tol=1e-4):
@@ -95,7 +96,7 @@ def test_generalized_derivative_matches_covariant_finite_differences():
 
 
 def test_gauge_invariance_under_orbital_unitaries():
-    model = random_hopping_model(seed=6, time_reversal=False)
+    model = random_hopping_model(seed=4, time_reversal=False)  # gapped (1.5 eV): an insulator
     rng = np.random.default_rng(1)
     energy = np.linspace(0.5, 8.0, 31)
     base = spectra(model, (4, 4, 4), energy, components=['xyz', 'yyy', 'zxx'])
@@ -112,7 +113,7 @@ def test_gauge_invariance_under_orbital_unitaries():
     HRs = np.einsum('ij,jkabcs,lk->ilabcs', P, model.HRs, P.conj())
     rotated = nlo.nonlinear_optical_spectra(
         HRs, model.at, model.alat, model.volume, model.tau, model.nelec, (4, 4, 4), energy,
-        components=['xyz', 'yyy', 'zxx'], eta=0.05, kblock=64,
+        components=['xyz', 'yyy', 'zxx'], eta=0.05, kblock=64, degeneracy_tol=1e-4,
     )  # fmt: skip
     for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg'):
         scale = np.max(np.abs(base[key])) + 1e-30
@@ -637,7 +638,7 @@ def test_dipole_kernels_are_invariant_under_rotations_inside_exact_doublets():
 def test_spectra_with_dipoles_are_gauge_invariant_and_differ_from_the_tight_binding_ones():
     """The driver's dipole path (finite-difference gradient, gauge term) is invariant under a
     unitary mixing of the orbitals applied to the Hamiltonian and to the dipoles together."""
-    model = random_hopping_model(seed=6, time_reversal=False)
+    model = random_hopping_model(seed=4, time_reversal=False)  # gapped (1.5 eV): an insulator
     dipoles, _ = synthetic_dipoles(model, seed=12)
     energy = np.linspace(0.5, 8.0, 31)
     comps = ['xyz', 'yyy', 'zxx']
@@ -725,3 +726,78 @@ def test_orchestrator_writes_the_shg_terms_and_checks_the_coupled_inputs(tmp_pat
     assert pao.data_controller.data_dicts()[1]['nonlinear_optics']['shg_terms'] is True
     with pytest.raises(ValueError, match='internal projections'):
         pao.coupled_optical_response(nk=(2, 2, 1))
+
+
+def test_metallic_channels_need_energy_occupations():
+    """Band-index occupations are for insulators: a metal raises without a Fermi energy, runs with it."""
+    import warnings
+
+    from PAOFLOW.response import coupled_crystal as cc
+
+    model = random_hopping_model(seed=2, gap=False)  # bands 2 and 3 overlap by 1.3 eV
+    g = geometry_at(model, nlo._k_grid((6, 6, 6)))
+    nocc = model.nelec // 2
+    assert g.energies[:, nocc - 1].max() > g.energies[:, nocc].min()  # overlapping bands: a metal
+    mu = float(np.median(g.energies[:, nocc - 1 : nocc + 1]))
+    energy = np.linspace(0.2, 3.0, 8)
+    kwargs = dict(components=['xyz'], eta=0.1, want=('shg', 'injection'))
+    with pytest.raises(ValueError, match='metallic channel'):
+        spectra(model, (6, 6, 6), energy, **kwargs)
+    with pytest.raises(ValueError, match='scissor'):
+        spectra(model, (6, 6, 6), energy, fermi_energy=mu, temperature=300.0, scissor=0.5, **kwargs)
+    with pytest.warns(RuntimeWarning, match='step occupations'):
+        spectra(model, (6, 6, 6), energy, fermi_energy=mu, **kwargs)
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        res = spectra(model, (6, 6, 6), energy, fermi_energy=mu, temperature=300.0, **kwargs)
+    assert np.isfinite(res['shg']).all() and np.isfinite(res['injectc']).all()
+    # a non-integer filling is a metal: it needs the Fermi energy, and then runs
+    odd = random_hopping_model(seed=5, gap=True)
+    odd.nelec = 3
+    with pytest.raises(ValueError, match='not an integer'):
+        spectra(odd, (4, 4, 4), energy, **kwargs)
+    res = spectra(odd, (4, 4, 4), energy, fermi_energy=mu, temperature=300.0, **kwargs)
+    assert np.isfinite(res['shg']).all()
+    # the coupled crystal response of a metal needs the Fermi level and a temperature (Drude term)
+    with pytest.raises(ValueError, match='metallic channel'):
+        cc.channel_from_HRs(
+            model.HRs, model.at, model.alat, model.volume, model.tau, 4.0, (4, 4, 4)
+        )
+    metal = cc.channel_from_HRs(
+        model.HRs, model.at, model.alat, model.volume, model.tau, 4.0, (4, 4, 4),
+        fermi_energy=mu, temperature=300.0,
+    )  # fmt: skip
+    assert metal.metallic and metal.occupations.shape == (64, model.nawf)
+
+
+def test_quantized_circular_injection_of_a_weyl_node_with_pauli_blocking():
+    """Trace of the circular injection tensor = 2 pi e^3/h^2 x chirality (de Juan et al. 2017).
+
+    Metallic occupations at one node of the two-band Weyl model; the other node, 2b away in energy,
+    is Pauli-blocked for hw < 4b. Adaptive widths sample the resonant shell around the point node."""
+    from PAOFLOW.utils.constants import ELECTRON_CHARGE_SI
+
+    quantum = 2.0 * np.pi * ELECTRON_CHARGE_SI**3 / 6.62607015e-34**2  # A V^-2 s^-1
+    model = weyl_model(t=1.0, b=0.3)
+    energy = np.array([0.5, 0.7, 2.0])
+    perms = [
+        ((0, 1, 2), 1),
+        ((1, 2, 0), 1),
+        ((2, 0, 1), 1),
+        ((0, 2, 1), -1),
+        ((1, 0, 2), -1),
+        ((2, 1, 0), -1),
+    ]
+    traces = {}
+    for mu in (-0.3, 0.3):
+        res = nlo.nonlinear_optical_spectra(
+            model.HRs, model.at, model.alat, model.volume, model.tau, 1.0, (60, 60, 60), energy,
+            components=[p for p, _ in perms], eta=0.01, spin_factor=1.0, degeneracy_tol=1e-6,
+            want=('injection',), fermi_energy=mu, temperature=50.0, adaptive_smearing=1.0,
+        )  # fmt: skip
+        traces[mu] = sum(sign * res['injectc'][i] for i, (_, sign) in enumerate(perms)) / quantum
+    assert np.allclose(np.abs(traces[-0.3][:2]), 1.0, atol=0.02)  # one quantum in the Pauli window
+    assert np.allclose(
+        traces[0.3][:2], -traces[-0.3][:2], atol=1e-6
+    )  # the other node: opposite chirality
+    assert abs(traces[-0.3][2]) < 0.6  # above 4b both nodes contribute and the plateau is lost

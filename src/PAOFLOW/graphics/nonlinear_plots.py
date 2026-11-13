@@ -25,6 +25,8 @@ NONLINEAR_UNITS = {
     'injectc': (r'$\eta_C$', r'A V$^{-2}$ s$^{-1}$', r'nm A V$^{-2}$ s$^{-1}$'),
     'injectm': (r'$\eta_M$', r'A V$^{-2}$ s$^{-1}$', r'nm A V$^{-2}$ s$^{-1}$'),
     'shg': (r'$\chi^{(2)}$', 'pm/V', r'pm$^2$/V'),
+    'pcr': (r'Re $\sigma^{(2)}(0)$', r'$\mu$A/V$^2$', r'nm $\mu$A/V$^2$'),
+    'pci': (r'Im $\sigma^{(2)}(0)$', r'$\mu$A/V$^2$', r'nm $\mu$A/V$^2$'),
 }
 
 #: SHG term groups of plot_shg_terms (grouped=True): label -> member terms (SHG_TERMS names)
@@ -37,6 +39,18 @@ SHG_TERM_GROUPS = (
         ('intraband_w_derivative', 'intraband_w_velocity', 'intraband_w_todd'),
     ),
 )
+
+#: density-matrix channels (metals; PAOFLOW.response.density_matrix_response.CHANNELS) -> legend
+#: label of the SHG split and of the zero-frequency photocurrent (with its scaling in tau)
+CHANNEL_LABELS = {
+    'fermi_sea_inter': ('Fermi sea, interband', 'Fermi sea, interband (shift; τ⁰)'),
+    'fermi_sea_intra': ('Fermi sea, populations', 'Fermi sea, populations (injection; ∝ τ)'),
+    'fermi_surface_mixed': (
+        'Fermi surface, interband',
+        'Fermi surface, interband (Berry-curvature dipole; ∝ τ)',
+    ),
+    'fermi_surface_drude': ('Fermi surface, Drude', 'Fermi surface, Drude (∝ τ²)'),
+}
 
 #: kernel level -> (legend label, colour); the hues of the GaAs report figures
 LEVEL_STYLE = {
@@ -154,7 +168,8 @@ def plot_shg_terms(
         Fundamental photon energy (eV).
     total : ndarray, complex
     terms : dict
-        Term name of :data:`~PAOFLOW.response.nonlinear_optics.SHG_TERMS` -> complex values.
+        Term name of :data:`~PAOFLOW.response.nonlinear_optics.SHG_TERMS` -> complex values, or the
+        density-matrix channels of a metal (:data:`CHANNEL_LABELS`, always drawn one by one).
     unit : str, optional
     grouped : bool, optional
         Four curves (interband and intraband, resonant at ω or 2ω), as in the PAOFLOW reports;
@@ -170,13 +185,16 @@ def plot_shg_terms(
     """
     import matplotlib.pyplot as plt
 
-    if grouped:
+    if grouped and any(name in terms for _, names in SHG_TERM_GROUPS for name in names):
         series = [
             (label, sum(terms[name] for name in names if name in terms))
             for label, names in SHG_TERM_GROUPS
         ]
     else:
-        series = [(name.replace('_', ' '), values) for name, values in terms.items()]
+        series = [
+            (CHANNEL_LABELS.get(name, (name.replace('_', ' '),))[0], values)
+            for name, values in terms.items()
+        ]
     fig, axes = plt.subplots(2, 1, figsize=(7.2, 7.4), sharex=True)
     for ax, part, name in ((axes[0], np.real, 'Re'), (axes[1], np.imag, 'Im')):
         ax.axhline(0.0, color='#c3c2b7', lw=0.8)
@@ -188,6 +206,57 @@ def plot_shg_terms(
     axes[1].set_xlabel(r'fundamental photon energy $\hbar\omega$ (eV)')
     axes[1].set_xlim(*(x_lim or (energy.min(), energy.max())))
     axes[0].legend(frameon=False, fontsize=8)
+    _finish(fig, title, filename)
+
+
+def plot_photocurrent_channels(
+    energy: NDArray[np.float64],
+    total: NDArray[np.complex128],
+    channels: dict[str, NDArray[np.complex128]],
+    unit: str = r'$\mu$A/V$^2$',
+    component: str = 'xyz',
+    relaxation: str | None = None,
+    title: str | None = None,
+    x_lim: tuple[float, float] | None = None,
+    filename: str | None = None,
+) -> None:
+    r"""Zero-frequency photocurrent of a metal split by origin: linear (Re) and circular (Im) panels.
+
+    Parameters
+    ----------
+    energy : ndarray
+        Photon energy (eV).
+    total : ndarray, complex
+        :math:`\sigma^{abc}(0;\omega,-\omega)`; :math:`J = {\rm Re}\,\sigma\,{\rm Re}[E^bE^{c*}]
+        - {\rm Im}\,\sigma\,{\rm Im}[E^bE^{c*}]`.
+    channels : dict
+        Channel of :data:`CHANNEL_LABELS` -> complex values (they sum to ``total``).
+    unit : str, optional
+    component : str, optional
+    relaxation : str, optional
+        Legend note on the intraband relaxation (e.g. ``'τ = 20 fs'``).
+    title, x_lim, filename : optional
+
+    Returns
+    -------
+    None
+        Shows the figure.
+    """
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(2, 1, figsize=(7.2, 7.4), sharex=True)
+    panels = ((axes[0], np.real, 'Re', 'linear'), (axes[1], np.imag, 'Im', 'circular'))
+    for ax, part, name, polarisation in panels:
+        ax.axhline(0.0, color='#c3c2b7', lw=0.8)
+        for i, (channel, values) in enumerate(channels.items()):
+            label = CHANNEL_LABELS.get(channel, (None, channel.replace('_', ' ')))[1]
+            ax.plot(energy, part(values), color=SLOTS[i % len(SLOTS)], lw=1.4, label=label)
+        ax.plot(energy, part(total), color=INK, lw=2.0, label='total')
+        ax.set_ylabel(r'%s $\sigma_{%s}$ (%s), %s' % (name, component, unit, polarisation))
+        _style_axes(ax)
+    axes[1].set_xlabel(r'photon energy $\hbar\omega$ (eV)')
+    axes[1].set_xlim(*(x_lim or (energy.min(), energy.max())))
+    axes[0].legend(frameon=False, fontsize=8, title=relaxation, title_fontsize=8)
     _finish(fig, title, filename)
 
 
