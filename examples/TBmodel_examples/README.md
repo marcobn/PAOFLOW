@@ -4,9 +4,11 @@ Predefined hard-coded models
 cubium: tbmodel = {'label':'cubium', 't':?}
 cubium2: tbmodel = {'label':'cubium2', 't':?, 'Eg':?}
 graphene: tbmodel = {'label':'graphene', 'delta':?, 't':?}
-kane_mele: tbmodel = {'label':'kane_mele', 'v_par':?, 't':?, 'soc_par':?, 'r_par':?}
+kane_mele: tbmodel = {'label':'kane_mele', 't':?, 'soc_par':?, 'r_par':?, 'v_par':?, 'alat':?}
+           now kane_mele_model below: r_par and v_par (units of t) default 0, alat in angstrom (default 1)
 
-Predefined PythTB models (PythTB V2.0.0)
+Predefined PythTB models (PythTB V2.0.0; converted to hopping lists, so they obey the conventions of the optical
+responses: h(i -> j, R) at the HRs index -R, one centre per orbital, spin-orbitals in block order)
 cubium: tbmodel = {'label':'cubium_pythtb', 't':?}
 cubium2: tbmodel = {'label':'cubium2_pythtb', 't':?, 'Eg':?}
 ssh: tbmodel = {'label':'ssh_pythtb', 'v':?, 'w':?}
@@ -26,7 +28,15 @@ weyl:      tbmodel = {'label':'weyl', 't':?, 'b':?, 'alat':?}
            two Weyl nodes at energies +-b, one spinful orbital, one electron: quantized circular injection
 single_band: tbmodel = {'label':'single_band', 'hoppings':{(1,0,0):?, ...}, 'lattice_vectors':?, 'alat':?,
            'nelec':?, 'real_space_grid':?} one band + a decoupled empty band: Drude terms only
-The same models are Python functions (honeycomb_model, rice_mele_model, weyl_model, single_band_model in
-PAOFLOW.models.models) returning a HoppingModel; metals need nonlinear_optics(fermi_energy=..., temperature=...).
+tmd:       tbmodel = {'label':'tmd', 'material':'MoS2'|'WS2'|'MoSe2'|'WSe2'|'MoTe2'|'WTe2', 'functional':'GGA'|'LDA',
+           'soc':True|False|lambda, 'thickness':?} three-band d-orbital model of the MX2 monolayers (Liu et al.,
+           PRB 88, 085433 (2013)): D3h SHG and shift current, spin-valley locking with SOC
+kane_mele_model(t, soc, rashba, delta, nelec, alat): Kane-Mele model (spinful), QSH below delta = 3 sqrt(3) soc;
+           pass the HoppingModel itself: PAOFLOW(model=kane_mele_model(...)) (or the 'kane_mele' label above)
+The same models are Python functions (honeycomb_model, rice_mele_model, weyl_model, single_band_model, tmd_model,
+kane_mele_model in PAOFLOW.models.models) returning a HoppingModel, which PAOFLOW(model=...) also accepts; metals need
+nonlinear_optics(fermi_energy=..., temperature=...).
 
 Graphene_nonlinear/: shift current, injection currents and SHG of gapped graphene (tbmodel = {'label':'graphene', 'delta':1.0, 't':2.7}) with PAOFLOW.nonlinear_optics (docs/internals/nonlinear-optics.md).
+TMD_nonlinear/: shift current, injection currents and SHG of monolayer MoS2 from the three-band model with spin-orbit coupling.
+Kane_Mele_nonlinear/: shift current of the Kane-Mele model in the quantum-spin-Hall and trivial phases.

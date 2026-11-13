@@ -2189,7 +2189,7 @@ def ssh_pythtb(v, w):
     model = TBModel(lattice=lat, spinful=False)
 
     model.set_hop(v, 0, 1, [0])
-    model.set_hop(w, 1, 0, [0])
+    model.set_hop(w, 1, 0, [1])  # B of cell i to A of cell i + 1
 
     return model
 
@@ -2828,256 +2828,82 @@ def cubium2(data_controller, params):
     arry['atoms'] = ['Cu']
 
 
-def Kane_Mele(data_controller, params):
-    from ..utils.constants import ANGSTROM_AU
+def pythtb_to_hopping_model(my_model) -> HoppingModel:
+    r"""Hopping list of a PythTB model (``pythtb`` 2.x ``TBModel``) in PAOFLOW's conventions.
 
-    arry, attr = data_controller.data_dicts()
+    Parameters
+    ----------
+    my_model : pythtb.TBModel
+        Periodic in every direction of its lattice (finite directions are not supported).
 
-    attr['nk1'] = 3
-    attr['nk2'] = 3
-    attr['nk3'] = 1
+    Returns
+    -------
+    HoppingModel
+        Lattice vectors padded with unit vectors to 3D, ``alat = 1``; spinful models in the block
+        order (every orbital up, then every orbital down), each spin-orbital at its site;
+        ``nelec`` is ``None`` (PythTB models carry no filling); the grid holds the hoppings
+        (:math:`2\max|R| + 1` per axis).
 
-    attr['nawf'] = 4
-    attr['bnd'] = 4
-    attr['shift'] = np.inf
-    attr['Efermi'] = 0.0
-    attr['nspin'] = 1
-    attr['natoms'] = 2
-
-    arry['naw'] = [2, 2]
-
-    if 'alat' not in params:
-        alat = 1.0
-    else:
-        alat = params['alat']
-
-    attr['alat'] = alat * ANGSTROM_AU
-
-    t = params['t']
-    soc_par = params['soc_par']
-    if soc_par > 0.0:
-        attr['dftSO'] = True
-    r_par = params['r_par']
-    v_par = params['v_par']
-
-    arry['HRs'] = np.zeros(
-        (
-            attr['nawf'],
-            attr['nawf'],
-            attr['nk1'],
-            attr['nk2'],
-            attr['nk3'],
-            attr['nspin'],
-        ),
-        dtype=complex,
+    Notes
+    -----
+    PythTB's hopping ``(h, i, j, R)`` is :math:`\langle i, 0|H|j, \mathbf R\rangle`, the
+    ``(i, j, R, h)`` of :class:`HoppingModel`, which :func:`hoppings_to_HRs` stores at the
+    index :math:`-\mathbf R` that PAOFLOW's Fourier convention and the orbital centres need.
+    """
+    lattice = my_model._lattice
+    table = my_model._hoptable
+    ndim = int(table.dim_r)
+    norb = int(lattice._orb_vecs_cart.shape[0])
+    spinful = bool(my_model._spinful)
+    lattice_vectors = np.eye(3)
+    lattice_vectors[:ndim, :ndim] = lattice._lat_vectors
+    cartesian = np.zeros((norb, 3))
+    cartesian[:, :ndim] = lattice._orb_vecs_cart
+    sites = np.linalg.solve(lattice_vectors.T, cartesian.T).T
+    cells = np.zeros((len(table.amplitudes), 3), dtype=int)
+    cells[:, :ndim] = np.asarray(table.lattice_vecs, dtype=int).reshape(-1, ndim)
+    bonds = [
+        (int(i), int(j), cell, amplitude)
+        for i, j, cell, amplitude in zip(table.from_idx, table.to_idx, cells, table.amplitudes)
+    ]
+    hoppings = _hermitian_hoppings(
+        norb, list(enumerate(my_model._site_energies)), bonds, spinful=spinful
     )
-
-    # H00
-    arry['HRs'][0, 0, 0, 0, 0, 0] = t * v_par
-    arry['HRs'][1, 1, 0, 0, 0, 0] = t * v_par
-    arry['HRs'][2, 2, 0, 0, 0, 0] = -t * v_par
-    arry['HRs'][3, 3, 0, 0, 0, 0] = -t * v_par
-
-    # H00
-    arry['HRs'][0, 2, 0, 0, 0, 0] = t
-    arry['HRs'][1, 3, 0, 0, 0, 0] = t
-    arry['HRs'][2, 0, 0, 0, 0, 0] = t
-    arry['HRs'][3, 1, 0, 0, 0, 0] = t
-
-    # H10
-    arry['HRs'][2, 0, 1, 0, 0, 0] = t
-    arry['HRs'][3, 1, 1, 0, 0, 0] = t
-
-    arry['HRs'][0, 0, 1, 0, 0, 0] = -complex(0.0, soc_par)
-    arry['HRs'][1, 1, 1, 0, 0, 0] = complex(0.0, soc_par)
-    arry['HRs'][2, 2, 1, 0, 0, 0] = complex(0.0, soc_par)
-    arry['HRs'][3, 3, 1, 0, 0, 0] = -complex(0.0, soc_par)
-
-    ##H20
-    # arry['HRs'][:,:,2,0,0,0] = np.conj(arry['HRs'][:,:,1,0,0,0]).T
-
-    # H01
-    arry['HRs'][2, 0, 0, 1, 0, 0] = t
-    arry['HRs'][3, 1, 0, 1, 0, 0] = t
-
-    arry['HRs'][0, 0, 0, 1, 0, 0] = complex(0.0, soc_par)
-    arry['HRs'][1, 1, 0, 1, 0, 0] = -complex(0.0, soc_par)
-    arry['HRs'][2, 2, 0, 1, 0, 0] = -complex(0.0, soc_par)
-    arry['HRs'][3, 3, 0, 1, 0, 0] = complex(0.0, soc_par)
-
-    ##H02
-    # arry['HRs'][:,:,0,2,0,0] = np.conj(arry['HRs'][:,:,0,1,0,0]).T
-
-    # H21
-    arry['HRs'][0, 0, 2, 1, 0, 0] = -complex(0.0, soc_par)
-    arry['HRs'][1, 1, 2, 1, 0, 0] = complex(0.0, soc_par)
-    arry['HRs'][2, 2, 2, 1, 0, 0] = complex(0.0, soc_par)
-    arry['HRs'][3, 3, 2, 1, 0, 0] = -complex(0.0, soc_par)
-
-    ##H12
-    ##arry['HRs'][:,:,1,2,0,0] = np.conj(arry['HRs'][:,:,2,1,0,0]).T
-
-    r3h = np.sqrt(3.0) / 2.0
-
-    arry['HRs'][0, 3, 0, 0, 0, 0] += r_par * complex(
-        -r3h, 0.5
-    )  # 1j * r_par * (0.5 * 1 - r3h * -1j)
-    arry['HRs'][1, 2, 0, 0, 0, 0] += r_par * complex(r3h, 0.5)  # 1j * r_par * (0.5 * 1 - r3h * 1j)
-    arry['HRs'][3, 0, 0, 0, 0, 0] += r_par * complex(-r3h, -0.5)
-    arry['HRs'][2, 1, 0, 0, 0, 0] += r_par * complex(r3h, -0.5)
-
-    arry['HRs'][0, 3, 1, 0, 0, 0] += -r_par * complex(
-        r3h, 0.5
-    )  # -1j * r_par * (0.5 * 1 + r3h * -1j)
-    arry['HRs'][1, 2, 1, 0, 0, 0] += -r_par * complex(
-        -r3h, 0.5
-    )  # -1j * r_par * (0.5 * 1 + r3h * 1j)
-
-    arry['HRs'][0, 3, 0, 1, 0, 0] += complex(0.0, r_par)  # -1j * r_par * -1 * 1
-    arry['HRs'][1, 2, 0, 1, 0, 0] += complex(0.0, r_par)  # -1j * r_par * -1 * 1
-
-    # H02
-    arry['HRs'][:, :, 0, 2, 0, 0] = np.conj(arry['HRs'][:, :, 0, 1, 0, 0]).T
-    # H20
-    arry['HRs'][:, :, 2, 0, 0, 0] = np.conj(arry['HRs'][:, :, 1, 0, 0, 0]).T
-    # H12
-    arry['HRs'][:, :, 1, 2, 0, 0] = np.conj(arry['HRs'][:, :, 2, 1, 0, 0]).T
-
-    # Lattice Vectors
-    arry['a_vectors'] = np.zeros((3, 3), dtype=float)
-    arry['a_vectors'] = np.array([[1.0, 0, 0], [0.5, 3**0.5 / 2, 0], [0, 0, 10]])
-    arry['a_vectors'] = arry['a_vectors']
-
-    # Spin properties
-    arry['Sj'] = np.zeros((3, 4, 4), dtype=complex)
-
-    arry['Sj'][2, 0, 0] = 0.5
-    arry['Sj'][2, 1, 1] = -0.5
-    arry['Sj'][2, 2, 2] = 0.5
-    arry['Sj'][2, 3, 3] = -0.5
-
-    arry['Sj'][0, 0, 1] = 0.5
-    arry['Sj'][0, 1, 0] = 0.5
-    arry['Sj'][0, 2, 3] = 0.5
-    arry['Sj'][0, 3, 2] = 0.5
-
-    arry['Sj'][1, 0, 1] = -complex(0.0, 0.5)
-    arry['Sj'][1, 1, 0] = complex(0.0, 0.5)
-    arry['Sj'][1, 2, 3] = -complex(0.0, 0.5)
-    arry['Sj'][1, 3, 2] = complex(0.0, 0.5)
-    # Atomic coordinates
-    arry['tau'] = np.zeros((2, 3), dtype=float)
-    arry['tau'][0] = np.dot([1 / 3, 1 / 3, 0.0], arry['a_vectors'])
-    arry['tau'][1] = np.dot([2 / 3, 2 / 3, 0.0], arry['a_vectors'])
-
-    arry['Dnm'] = np.zeros((4, 4, 3), dtype=float)
-    # Reciprocal Lattice
-    arry['b_vectors'] = np.zeros((3, 3), dtype=float)
-    volume = np.dot(
-        np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :]),
-        arry['a_vectors'][2, :],
-    )
-    arry['b_vectors'][0, :] = (np.cross(arry['a_vectors'][1, :], arry['a_vectors'][2, :])) / volume
-    arry['b_vectors'][1, :] = (np.cross(arry['a_vectors'][2, :], arry['a_vectors'][0, :])) / volume
-    arry['b_vectors'][2, :] = (np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :])) / volume
-
-    attr['omega'] = alat**3 * arry['a_vectors'][0, :].dot(
-        np.cross(arry['a_vectors'][1, :], arry['a_vectors'][2, :])
-    )
-
-    arry['species'] = ['KM', 'KM']
+    grid = 2 * np.max(np.abs(cells), axis=0) + 1 if len(cells) else np.ones(3, dtype=int)
+    return HoppingModel(
+        'pythtb', hoppings, 2 * norb if spinful else norb, lattice_vectors, 1.0,
+        np.concatenate([sites, sites]) if spinful else sites, None,
+        tuple(int(n) for n in grid), spinful=spinful,
+    )  # fmt: skip
 
 
-def build_from_pythTB(data_controller, my_model):
-    # Basis ( 1up, 2up, 3up ... | 1dn, 2dn, 3dn ... )
-    from scipy import fftpack as FFT
+def build_from_pythTB(data_controller: DataController, my_model) -> None:
+    r"""Load a PythTB model into the DataController (:func:`pythtb_to_hopping_model`).
 
-    arry, attr = data_controller.data_dicts()
-    Lattice = my_model._lattice
-    hoptable = my_model._hoptable
-    site_energy = my_model._site_energies  # shape = norb*2*2
-    ndim = int(hoptable.dim_r)
-    norb = int(Lattice._orb_vecs_cart.shape[0])
+    Parameters
+    ----------
+    data_controller : DataController
+    my_model : pythtb.TBModel
 
-    spinful = my_model._spinful
-    attr['dftSO'] = spinful
-    attr['adhoc_SO'] = spinful
-    attr['do_spin_orbit'] = spinful
-    arry['naw'] = [int(spinful) + 1] * norb  # Number of orbitals on each atom
-    attr['norb'] = norb * 2 if spinful else norb
-    attr['nawf'] = attr['bnd'] = attr['nbnds'] = attr['natoms'] = attr['norb']
-    attr['nspin'] = 1
-    attr['Efermi'] = 0.0
-    attr['shift'] = np.inf
-    attr['alat'] = 1.0
-    attr['omega'] = Lattice._cell_vol
+    Returns
+    -------
+    None
+        What :func:`build_from_hoppings` sets (no ``nelec``), plus ``attributes['norb']`` and
+        ``arrays['Hks', 'Dnm']`` (FFT of ``HRs``; differences of the orbital centres).
 
-    arry['a_vectors'] = np.eye(3, 3)
-    arry['a_vectors'][:ndim, :ndim] = Lattice._lat_vectors
-    arry['b_vectors'] = np.eye(3, 3)
-    arry['b_vectors'][:ndim, :ndim] = Lattice._recip_lat
-    arry['b_vectors'] /= 2 * np.pi
-    tau = arry['tau'] = np.zeros((norb, 3))
-    arry['tau'][:, :ndim] = Lattice._orb_vecs_cart
-
-    from_idx = hoptable.from_idx
-    to_idx = hoptable.to_idx
-    dR = hoptable.lattice_vecs
-    dR3 = np.zeros((dR.shape[0], 3), dtype=int)
-    dR3[:, :ndim] = dR
-    hopping = hoptable.amplitudes
-    nks = np.max(np.abs(dR3), axis=0) * 2 + 1
-    attr['nk1'] = nks[0]
-    attr['nk2'] = nks[1]
-    attr['nk3'] = nks[2]
-    attr['nkpnts'] = nks[0] * nks[1] * nks[2]
-
-    HRs = np.zeros((attr['norb'], attr['norb'], nks[0], nks[1], nks[2], 1), dtype=complex)
-    if spinful:
-        for i, t in enumerate(hopping):
-            t_conj = np.conjugate(t)
-            HRs[from_idx[i], to_idx[i], dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t[0, 0]
-            HRs[from_idx[i] + norb, to_idx[i], dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t[1, 0]
-            HRs[from_idx[i], to_idx[i] + norb, dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t[0, 1]
-            HRs[from_idx[i] + norb, to_idx[i] + norb, dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t[1, 1]
-            HRs[to_idx[i], from_idx[i], -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0] = t_conj[0, 0]
-            HRs[to_idx[i], from_idx[i] + norb, -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0] = t_conj[1, 0]
-            HRs[to_idx[i] + norb, from_idx[i], -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0] = t_conj[0, 1]
-            HRs[
-                to_idx[i] + norb,
-                from_idx[i] + norb,
-                -dR3[i, 0],
-                -dR3[i, 1],
-                -dR3[i, 2],
-                0,
-            ] = t_conj[1, 1]
-        for i, e in enumerate(site_energy):
-            HRs[i, i, 0, 0, 0, 0] = e[0, 0]
-            HRs[i + norb, i, 0, 0, 0, 0] = e[1, 0]
-            HRs[i, i + norb, 0, 0, 0, 0] = e[0, 1]
-            HRs[i + norb, i + norb, 0, 0, 0, 0] = e[1, 1]
-    else:
-        for i, t in enumerate(hopping):
-            HRs[from_idx[i], to_idx[i], dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t
-            HRs[to_idx[i], from_idx[i], -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0] = np.conjugate(t)
-        for i, e in enumerate(site_energy):
-            HRs[i, i, 0, 0, 0, 0] = e
-
-    arry['HRs'] = HRs
-    arry['Hks'] = np.zeros_like(arry['HRs'])
-    arry['Hks'] = FFT.fftn(arry['HRs'], axes=[2, 3, 4])
-
-    temp = np.zeros((norb, norb, 3))
-    for n in range(norb):
-        for m in range(norb):
-            temp[n, m, :] = tau[n, :] - tau[m, :]
-    if spinful:
-        Dnm = np.zeros((2 * norb, 2 * norb, 3))
-        for i in range(3):
-            Dnm[:, :, i] = np.matlib.repmat(temp[:, :, i], 2, 2)
-    else:
-        Dnm = temp
-    arry['Dnm'] = Dnm
+    Notes
+    -----
+    Until 13 Nov 2026 the hoppings were stored at the index :math:`+\mathbf R` and spinful
+    models had the centres (A, A, B, B): band structures of time-reversal-odd models came out
+    at :math:`-\mathbf k` and the optical responses broke the point-group selection rules.
+    """
+    model = pythtb_to_hopping_model(my_model)
+    build_from_hoppings(data_controller, model)
+    arrays, attributes = data_controller.data_dicts()
+    attributes['norb'] = model.number_of_orbitals
+    arrays['Hks'] = np.fft.fftn(arrays['HRs'], axes=(2, 3, 4))
+    centres = np.asarray(arrays['tau'], dtype=float)
+    arrays['Dnm'] = centres[:, None, :] - centres[None, :, :]
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3147,13 +2973,15 @@ class HoppingModel:
         Lattice parameter (bohr).
     orbital_positions : ndarray ``(number_of_orbitals, 3)``
         Orbital centres, crystal coordinates.
-    nelec : float
-        Electrons per cell.
+    nelec : float or None
+        Electrons per cell; ``None`` leaves it to the caller (the PythTB models carry no filling).
     real_space_grid : tuple of 3 int
         Grid of the ``HRs`` array (:func:`hoppings_to_HRs`).
     spinful : bool
         The orbitals are spin-orbitals and every band holds one electron (PAOFLOW's ``dftSO``);
-        otherwise the bands are spin-degenerate and hold two.
+        otherwise the bands are spin-degenerate and hold two. Spin-orbitals are in PAOFLOW's block
+        order (every orbital spin up, then every orbital spin down), the basis of the ``Sj``
+        operators of :func:`build_from_hoppings`.
 
     Notes
     -----
@@ -3174,7 +3002,7 @@ class HoppingModel:
     lattice_vectors: NDArray[np.float64]
     alat: float
     orbital_positions: NDArray[np.float64]
-    nelec: float
+    nelec: float | None
     real_space_grid: tuple[int, int, int]
     spinful: bool = False
 
@@ -3426,16 +3254,298 @@ def single_band_model(
     )  # fmt: skip
 
 
+def _hermitian_hoppings(
+    number_of_orbitals: int,
+    onsite: Sequence[tuple[int, ArrayLike]],
+    bonds: Sequence[tuple[int, int, Sequence[int], ArrayLike]],
+    spinful: bool = False,
+) -> tuple:
+    r"""Hermitian hopping list of a :class:`HoppingModel` from on-site terms and one entry per bond.
+
+    Parameters
+    ----------
+    number_of_orbitals : int
+        Spatial orbitals per cell (twice as many spin-orbitals when ``spinful``).
+    onsite : sequence of ``(i, e)``
+        On-site energy of orbital ``i`` (eV): a number, or a Hermitian 2x2 spin matrix.
+    bonds : sequence of ``(i, j, R, h)``
+        Amplitude from orbital ``i`` in the home cell to orbital ``j`` in the cell ``R`` (eV): a
+        number, or a 2x2 spin matrix :math:`h_{ss'}` when ``spinful``. Give each bond once; the
+        partner ``(j, i, -R)`` with :math:`h^\dagger` is added here.
+    spinful : bool, optional
+        Spin-orbitals in the block order: orbital ``i`` with spin ``s`` (0 up, 1 down) is
+        ``i + s * number_of_orbitals``; a number is a spin-independent term.
+
+    Returns
+    -------
+    tuple of ``(i, j, R, h)``
+        Zero amplitudes are dropped.
+    """
+    n = int(number_of_orbitals)
+    spins = (0, 1) if spinful else (0,)
+
+    def spin_matrix(value: ArrayLike) -> NDArray[np.complex128]:
+        matrix = np.asarray(value, dtype=complex)
+        if matrix.ndim == 0:
+            return matrix * np.eye(len(spins))
+        return matrix.reshape(len(spins), len(spins))
+
+    entries = []
+    for i, energy in onsite:
+        matrix = spin_matrix(energy)
+        for s in spins:
+            for s2 in spins:
+                if matrix[s, s2] != 0:
+                    entries.append((int(i) + s * n, int(i) + s2 * n, (0, 0, 0), matrix[s, s2]))
+    for i, j, cell, amplitude in bonds:
+        matrix = spin_matrix(amplitude)
+        cell = tuple(int(c) for c in cell)
+        back = tuple(-c for c in cell)
+        for s in spins:
+            for s2 in spins:
+                if matrix[s, s2] != 0:
+                    entries.append((int(i) + s * n, int(j) + s2 * n, cell, matrix[s, s2]))
+                    entries.append((int(j) + s2 * n, int(i) + s * n, back, np.conj(matrix[s, s2])))
+    return tuple(entries)
+
+
+def kane_mele_model(
+    t: float = 1.0,
+    soc: float = 0.06,
+    rashba: float = 0.05,
+    delta: float = 0.2,
+    nelec: float = 2.0,
+    alat: float = 4.65,
+) -> HoppingModel:
+    r"""Kane-Mele model: spinful honeycomb lattice with intrinsic and Rashba spin-orbit coupling.
+
+    Parameters
+    ----------
+    t : float, optional
+        Nearest-neighbour hopping (eV).
+    soc : float, optional
+        Intrinsic spin-orbit coupling :math:`\lambda_{SO}` (eV), on the second neighbours.
+    rashba : float, optional
+        Rashba coupling :math:`\lambda_R` (eV), on the first neighbours: breaks the mirror
+        :math:`z \to -z` and :math:`S_z` conservation.
+    delta : float, optional
+        Staggered potential :math:`\lambda_v` (eV), :math:`\pm\lambda_v` on A and B: breaks
+        inversion. With ``rashba = 0`` the gap closes at :math:`\lambda_v = 3\sqrt{3}\,
+        \lambda_{SO}` (quantum spin Hall below, trivial above).
+    nelec : float, optional
+        Electrons per cell (spinful bands hold one: 2 fills the two lower bands).
+    alat : float, optional
+        Lattice parameter (bohr).
+
+    Returns
+    -------
+    HoppingModel
+        Four spin-orbitals (A up, B up | A down, B down) at :math:`(1/3, 1/3)` and
+        :math:`(2/3, 2/3)`, ``a_1 || x``, a 10 alat vacuum along ``z``; ``spinful``.
+
+    Notes
+    -----
+    .. math::
+
+        H = t\sum_{\langle ij\rangle} c_i^\dagger c_j
+        + i\lambda_{SO}\sum_{\langle\langle ij\rangle\rangle}\nu_{ij}\,c_i^\dagger s_z c_j
+        + i\lambda_R\sum_{\langle ij\rangle} c_i^\dagger(\mathbf s\times\hat{\mathbf d}_{ij})_z c_j
+        + \lambda_v\sum_i \xi_i\,c_i^\dagger c_i,
+
+    with :math:`\hat{\mathbf d}_{ij}` the unit vector from :math:`i` to :math:`j`,
+    :math:`\nu_{ij} = \pm 1` and :math:`\xi = \pm 1` on A and B (C. L. Kane and E. J. Mele,
+    Phys. Rev. Lett. 95, 226801 (2005)); the hoppings are those of :func:`kane_mele_pythtb`.
+    With ``rashba = 0`` the spectrum at K and K' is :math:`\pm(\lambda_v \pm 3\sqrt{3}\,
+    \lambda_{SO})`. Point group D3h (``rashba = 0``) or C3v: the in-plane second-order
+    responses obey :math:`\sigma^{yyy} = -\sigma^{yxx} = -\sigma^{xxy}`, :math:`\sigma^{xxx} =
+    0`. Time reversal holds, so the T-odd responses (magnetic injection, gyration) vanish.
+    """
+    root3 = np.sqrt(3.0)
+    sigma_x = np.array([[0, 1], [1, 0]], dtype=complex)
+    sigma_y = np.array([[0, -1j], [1j, 0]])
+    sigma_z = np.diag([1.0, -1.0]).astype(complex)
+    lattice_vectors = np.array([[1.0, 0.0, 0.0], [0.5, root3 / 2, 0.0], [0.0, 0.0, 10.0]])
+    sites = np.array([[1.0 / 3, 1.0 / 3, 0.0], [2.0 / 3, 2.0 / 3, 0.0]])
+    bonds = []
+    # first neighbours: B in the cells 0, -a2, -a1 of A; d = unit vector from A to B
+    for cell, (dx, dy) in (
+        ((0, 0, 0), (root3 / 2, 0.5)),
+        ((0, -1, 0), (0.0, -1.0)),
+        ((-1, 0, 0), (-root3 / 2, 0.5)),
+    ):
+        bonds.append((0, 1, cell, t * np.eye(2) + 1j * rashba * (dy * sigma_x - dx * sigma_y)))
+    # second neighbours: i lambda_SO nu_ij s_z, opposite signs on A and B
+    for cell, sign in (((0, 1, 0), 1), ((1, 0, 0), -1), ((1, -1, 0), 1)):
+        bonds.append((0, 0, cell, 1j * sign * soc * sigma_z))
+        bonds.append((1, 1, cell, -1j * sign * soc * sigma_z))
+    hoppings = _hermitian_hoppings(2, [(0, delta), (1, -delta)], bonds, spinful=True)
+    return HoppingModel(
+        'kane_mele', hoppings, 4, lattice_vectors, float(alat), np.concatenate([sites, sites]),
+        float(nelec), (6, 6, 1), spinful=True,
+    )  # fmt: skip
+
+
+#: Nearest-neighbour three-band parameters of G.-B. Liu et al., Phys. Rev. B 88, 085433 (2013),
+#: Table II (arXiv:1305.6089v4): ``(a [A], eps1, eps2, t0, t1, t2, t11, t12, t22)`` (eV).
+TMD_NEAREST_NEIGHBOUR = {
+    'GGA': {
+        'MoS2': (3.190, 1.046, 2.104, -0.184, 0.401, 0.507, 0.218, 0.338, 0.057),
+        'WS2': (3.191, 1.130, 2.275, -0.206, 0.567, 0.536, 0.286, 0.384, -0.061),
+        'MoSe2': (3.326, 0.919, 2.065, -0.188, 0.317, 0.456, 0.211, 0.290, 0.130),
+        'WSe2': (3.325, 0.943, 2.179, -0.207, 0.457, 0.486, 0.263, 0.329, 0.034),
+        'MoTe2': (3.557, 0.605, 1.972, -0.169, 0.228, 0.390, 0.207, 0.239, 0.252),
+        'WTe2': (3.560, 0.606, 2.102, -0.175, 0.342, 0.410, 0.233, 0.270, 0.190),
+    },
+    'LDA': {
+        'MoS2': (3.129, 1.238, 2.366, -0.218, 0.444, 0.533, 0.250, 0.360, 0.047),
+        'WS2': (3.132, 1.355, 2.569, -0.238, 0.626, 0.557, 0.324, 0.405, -0.076),
+        'MoSe2': (3.254, 1.001, 2.239, -0.222, 0.350, 0.488, 0.244, 0.314, 0.129),
+        'WSe2': (3.253, 1.124, 2.447, -0.242, 0.506, 0.514, 0.305, 0.353, 0.025),
+        'MoTe2': (3.472, 0.618, 2.126, -0.202, 0.254, 0.423, 0.241, 0.263, 0.269),
+        'WTe2': (3.476, 0.623, 2.251, -0.209, 0.388, 0.442, 0.272, 0.295, 0.200),
+    },
+}
+
+#: Spin-orbit parameter lambda (eV) of the same paper, Table IV (GGA).
+TMD_SPIN_ORBIT = {
+    'MoS2': 0.073,
+    'WS2': 0.211,
+    'MoSe2': 0.091,
+    'WSe2': 0.228,
+    'MoTe2': 0.107,
+    'WTe2': 0.237,
+}
+
+
+def tmd_model(
+    material: str = 'MoS2',
+    functional: str = 'GGA',
+    soc: bool | float = True,
+    thickness: float | None = None,
+) -> HoppingModel:
+    r"""Three-band model of a group-VIB transition-metal dichalcogenide monolayer (MX2).
+
+    Parameters
+    ----------
+    material : str, optional
+        ``'MoS2'``, ``'WS2'``, ``'MoSe2'``, ``'WSe2'``, ``'MoTe2'`` or ``'WTe2'``.
+    functional : str, optional
+        ``'GGA'`` or ``'LDA'``: the parameter set (:data:`TMD_NEAREST_NEIGHBOUR`).
+    soc : bool or float, optional
+        On-site spin-orbit coupling :math:`\lambda\,L_zS_z`: ``True`` takes :math:`\lambda`
+        from :data:`TMD_SPIN_ORBIT` (fitted to GGA, so ``functional='GGA'`` only), a number is
+        :math:`\lambda` in eV, ``False`` gives the spin-degenerate model.
+    thickness : float, optional
+        Height of the cell along ``z`` (angstrom), the layer thickness that turns sheet
+        responses into the per-volume ones PAOFLOW writes; default 10 alat.
+
+    Returns
+    -------
+    HoppingModel
+        The metal :math:`d_{z^2}, d_{xy}, d_{x^2-y^2}` orbitals at the origin (block-ordered
+        spin-orbitals with ``soc``), ``a_1 = a\hat x``, two electrons per cell (the valence
+        band filled).
+
+    Raises
+    ------
+    ValueError
+        For an unknown material or functional, or ``soc=True`` with the LDA set.
+
+    Notes
+    -----
+    Nearest-neighbour model of G.-B. Liu, W.-Y. Shan, Y. Yao, W. Yao and D. Xiao, Phys. Rev. B
+    88, 085433 (2013). The hopping to the neighbour :math:`\mathbf R_1 = a\hat x` is
+
+    .. math::
+
+        E(\mathbf R_1) = \begin{pmatrix} t_0 & t_1 & t_2\\ -t_1 & t_{11} & t_{12}\\
+        t_2 & -t_{12} & t_{22}\end{pmatrix},
+
+    those to the C3 images :math:`\mathbf R = C_3^n\mathbf R_1` are
+    :math:`D(-2\pi n/3)\,E(\mathbf R_1)\,D(-2\pi n/3)^T` (:math:`D(\theta)` rotates
+    :math:`(d_{xy}, d_{x^2-y^2})` by :math:`2\theta`), and :math:`E(-\mathbf R) =
+    E(\mathbf R)^T`; :math:`H(\mathbf k) = \sum_{\mathbf R}E(\mathbf R)\,e^{i\mathbf k\cdot
+    \mathbf R}` is the paper's closed form, Eqs. (4)-(11). The spin-orbit term is
+    :math:`(\lambda/2)\,L_z\otimes\sigma_z` with :math:`L_z = 2i` between :math:`d_{xy}` and
+    :math:`d_{x^2-y^2}` (Eqs. (25)-(27)); in this three-band model the valence splitting at K is
+    exactly :math:`2\lambda` and of opposite sign at K'. Direct gap at K (without SOC):
+    :math:`\varepsilon_1 - 3t_0 - [\varepsilon_2 - \tfrac32(t_{11} + t_{22}) -
+    3\sqrt3\,|t_{12}|]` (1.663 eV for GGA MoS2). Point group D3h with the mirror
+    :math:`x \to -x`: :math:`\sigma^{yyy} = -\sigma^{yxx} = -\sigma^{xxy}`, :math:`\sigma^{xxx} =
+    0`. All orbitals sit on the metal site, so the optical matrix elements are those of
+    :math:`\partial H/\partial\mathbf k` alone (no intra-atomic dipoles).
+    """
+    from ..utils.constants import ANGSTROM_AU
+
+    if functional not in TMD_NEAREST_NEIGHBOUR:
+        raise ValueError(f'functional must be one of {sorted(TMD_NEAREST_NEIGHBOUR)}')
+    table = TMD_NEAREST_NEIGHBOUR[functional]
+    if material not in table:
+        raise ValueError(f'material must be one of {sorted(table)}')
+    a, eps1, eps2, t0, t1, t2, t11, t12, t22 = table[material]
+    if soc is True:
+        if functional != 'GGA':
+            raise ValueError('the tabulated lambda is fitted to GGA: pass soc=<lambda in eV>')
+        coupling = TMD_SPIN_ORBIT[material]
+    else:
+        coupling = float(soc)
+    spinful = coupling != 0.0
+    hop_r1 = np.array([[t0, t1, t2], [-t1, t11, t12], [t2, -t12, t22]])
+    bonds = []
+    # R1 = a1, C3 R1 = -a1 + a2, C3^2 R1 = -a2
+    for n, cell in enumerate(((1, 0, 0), (-1, 1, 0), (0, -1, 0))):
+        angle = -4.0 * np.pi * n / 3.0  # D(-theta) rotates (d_xy, d_x2-y2) by -2 theta
+        c, s = np.cos(angle), np.sin(angle)
+        rotation = np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]])
+        hop = rotation @ hop_r1 @ rotation.T
+        bonds += [(mu, nu, cell, hop[mu, nu]) for mu in range(3) for nu in range(3)]
+    onsite = [(0, eps1), (1, eps2), (2, eps2)]
+    if spinful:
+        # (lambda / 2) L_z sigma_z, L_z = 2i between d_xy and d_x2-y2
+        bonds.append((1, 2, (0, 0, 0), 1j * coupling * np.diag([1.0, -1.0])))
+    hoppings = _hermitian_hoppings(3, onsite, bonds, spinful=spinful)
+    height = 10.0 if thickness is None else float(thickness) / a
+    lattice_vectors = np.array([[1.0, 0.0, 0.0], [0.5, np.sqrt(3) / 2, 0.0], [0.0, 0.0, height]])
+    norb = 6 if spinful else 3
+    return HoppingModel(
+        f'tmd_{material}', hoppings, norb, lattice_vectors, a * ANGSTROM_AU, np.zeros((norb, 3)),
+        2.0, (6, 6, 1), spinful=spinful,
+    )  # fmt: skip
+
+
+def _kane_mele_from_legacy(params: Mapping) -> HoppingModel:
+    """:func:`kane_mele_model` from the parameters of the ``'Kane_Mele'`` label.
+
+    ``t``, ``soc_par`` (:math:`\\lambda_{SO}`), ``r_par`` (:math:`\\lambda_R`, default 0),
+    ``v_par`` (:math:`\\lambda_v / t`, default 0) in eV, ``alat`` in angstrom (default 1); an
+    unknown key raises ``TypeError``.
+    """
+    from ..utils.constants import ANGSTROM_AU
+
+    unknown = set(params) - {'label', 't', 'soc_par', 'r_par', 'v_par', 'alat'}
+    if unknown:
+        raise TypeError(f'Kane_Mele: unknown parameters {sorted(unknown)}')
+    t = params['t']
+    return kane_mele_model(
+        t=t,
+        soc=params['soc_par'],
+        rashba=params.get('r_par', 0.0),
+        delta=t * params.get('v_par', 0.0),
+        alat=params.get('alat', 1.0) * ANGSTROM_AU,
+    )
+
+
 HOPPING_MODELS = {
     'HONEYCOMB': honeycomb_model,
     'RICE_MELE': rice_mele_model,
     'WEYL': weyl_model,
     'SINGLE_BAND': single_band_model,
+    'TMD': tmd_model,
 }
 
 
 def build_from_hoppings(data_controller: DataController, model: HoppingModel) -> None:
-    """Load a :class:`HoppingModel` into the DataController in place of a DFT calculation.
+    r"""Load a :class:`HoppingModel` into the DataController in place of a DFT calculation.
 
     Parameters
     ----------
@@ -3447,8 +3557,10 @@ def build_from_hoppings(data_controller: DataController, model: HoppingModel) ->
     None
         Sets ``arrays['HRs', 'a_vectors', 'b_vectors', 'tau', 'naw', 'atoms']`` and
         ``attributes['nawf', 'bnd', 'nbnds', 'natoms', 'nspin', 'alat', 'omega', 'nelec', 'Efermi',
-        'shift', 'dftSO', 'nk1', 'nk2', 'nk3', 'nkpnts']``; every orbital is its own site, so
-        ``tau`` holds the orbital centres (Cartesian, alat units).
+        'shift', 'dftSO', 'adhoc_SO', 'do_spin_orbit', 'nk1', 'nk2', 'nk3', 'nkpnts']``
+        (``nelec`` only when the model has one); every orbital is its own site, so ``tau`` holds
+        the orbital centres (Cartesian, alat units). Spinful models also get the spin operators
+        ``arrays['Sj']`` (:math:`\sigma/2` in the block order of :class:`HoppingModel`).
     """
     arrays, attributes = data_controller.data_dicts()
     lattice_vectors = np.asarray(model.lattice_vectors, dtype=float)
@@ -3464,10 +3576,19 @@ def build_from_hoppings(data_controller: DataController, model: HoppingModel) ->
     attributes['nspin'] = 1
     attributes['alat'] = float(model.alat)
     attributes['omega'] = model.volume
-    attributes['nelec'] = float(model.nelec)
+    if model.nelec is not None:
+        attributes['nelec'] = float(model.nelec)
     attributes['Efermi'] = 0.0
     attributes['shift'] = np.inf
-    attributes['dftSO'] = bool(model.spinful)
+    spinful = bool(model.spinful)
+    attributes['dftSO'] = attributes['adhoc_SO'] = attributes['do_spin_orbit'] = spinful
+    if spinful:
+        pauli = (
+            np.array([[0, 1], [1, 0]], dtype=complex),
+            np.array([[0, -1j], [1j, 0]]),
+            np.diag([1.0, -1.0]).astype(complex),
+        )
+        arrays['Sj'] = 0.5 * np.stack([np.kron(sigma, np.eye(norb // 2)) for sigma in pauli])
     attributes['nk1'], attributes['nk2'], attributes['nk3'] = grid
     attributes['nkpnts'] = int(np.prod(grid))
 
@@ -3480,9 +3601,12 @@ def build_TB_model(data_controller: DataController, params: dict) -> None:
     data_controller : DataController
     params : dict
         ``'label'`` (case-insensitive) and the parameters of the model. The hopping-list models
-        (``'honeycomb'``, ``'rice_mele'``, ``'weyl'``, ``'single_band'``) take the keyword
-        arguments of :func:`honeycomb_model`, :func:`rice_mele_model`, :func:`weyl_model` and
-        :func:`single_band_model` (``alat`` in bohr); an unknown key raises ``TypeError``.
+        (``'honeycomb'``, ``'rice_mele'``, ``'weyl'``, ``'single_band'``, ``'tmd'``) take the
+        keyword arguments of :func:`honeycomb_model`, :func:`rice_mele_model`,
+        :func:`weyl_model`, :func:`single_band_model` and :func:`tmd_model` (``alat`` in bohr);
+        ``'Kane_Mele'`` builds :func:`kane_mele_model` from ``t``, ``soc_par``, ``r_par``,
+        ``v_par`` (in units of ``t``) and ``alat`` (angstrom); an unknown key raises
+        ``TypeError``. The ``*_pythtb`` labels go through :func:`build_from_pythTB`.
 
     Returns
     -------
@@ -3524,7 +3648,7 @@ def build_TB_model(data_controller: DataController, params: dict) -> None:
         case 'CUBIUM2':
             cubium2(data_controller, params)
         case 'KANE_MELE':
-            Kane_Mele(data_controller, params)
+            build_from_hoppings(data_controller, _kane_mele_from_legacy(params))
         case 'SLATER_KOSTER':
             Slater_Koster(data_controller, params)
         case 'SK_EDTB':

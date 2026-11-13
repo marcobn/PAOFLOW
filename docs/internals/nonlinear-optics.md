@@ -705,6 +705,15 @@ two-band Weyl semimetal, the single bands) are library models, `PAOFLOW.models.m
 `rice_mele_model`, `weyl_model`, `single_band_model`, each a `HoppingModel`), also reachable as
 `PAOFLOW(model={'label': 'honeycomb', ...})`; the tests wrap them with exact atomic-gauge operators
 (`tests/unit/response/_nonlinear_models.py`). The random-hopping model and the molecule in a box stay test fixtures.
+Two insulating models join them: `kane_mele_model` (spinful honeycomb with staggered potential, intrinsic and
+Rashba spin-orbit coupling; the band-edge shift current changes sign at the quantum-spin-Hall / trivial transition
+λ_v = 3√3 λ_SO) and `tmd_model` (three-band d-orbital model of MoS₂, WS₂, MoSe₂, WSe₂, MoTe₂, WTe₂, G.-B. Liu
+et al., Phys. Rev. B 88, 085433 (2013), with on-site λ L_z S_z), label `'tmd'`. A `HoppingModel` can also be
+passed directly, `PAOFLOW(model=kane_mele_model(...))`. Every model reachable through `PAOFLOW(model=...)` stores
+h(i → j, **R**) at the `HRs` index −**R** with one centre per orbital and spin-orbitals in block order (all orbitals up,
+then all down). The PythTB route follows the same conventions since 13 Nov 2026: before, it stored +**R** and gave
+spinful models the centres (A, A, B, B), so its shift currents broke the point-group selection rules and
+time-reversal-odd PythTB bands came out at −**k**. The hard-coded `'Kane_Mele'` label is now `kane_mele_model`.
 
 The circular injection of `nonlinear_optical_spectra` had the electron sign; the Fermi golden rule and this engine
 fixed it (section *Conventions*). The first comparison of the gyration current set the interband channel alone

@@ -341,10 +341,12 @@ class DataController:
 
             # Read inputfile, if it exsts
             if model is not None:
-                if isinstance(model, dict):
-                    from .models.models import build_TB_model
+                from .models.models import HoppingModel, build_from_hoppings, build_TB_model
 
+                if isinstance(model, dict):
                     build_TB_model(self, model)
+                elif isinstance(model, HoppingModel):
+                    build_from_hoppings(self, model)
                 else:
                     print(
                         'Check! TB model finite (nonperiodic) in one or more dimensions not implemented'
