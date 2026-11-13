@@ -17,9 +17,9 @@ How-Tos assume you have already worked through [Tutorial 01](../tutorial01.ipynb
 
 {octicon}`stack;1.8em;sd-text-muted`
 
-**Building a sparse workflow**
+**Large supercells on the sparse backend**
 
-Run PAOFLOW on systems and grids too large for the dense pipeline to hold in memory.
+Switch a script to the sparse backend, choose the truncation of the Hamiltonian and the energy range of the solve, and check the result against the dense pipeline.
 :::
 
 :::{grid-item-card}
