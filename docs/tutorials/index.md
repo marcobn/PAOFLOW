@@ -57,9 +57,9 @@ How-Tos are shorter and more targeted than tutorials. Instead of teaching a work
 :link-type: doc
 :class-card: landing-card
 
-**Building a sparse workflow**
+**Large supercells on the sparse backend**
 
-Run PAOFLOW on systems and grids too large for the dense pipeline to hold in memory.
+Switch a script to the sparse backend, choose the truncation of the Hamiltonian and the energy range of the solve, and check the result against the dense pipeline.
 :::
 
 ::::

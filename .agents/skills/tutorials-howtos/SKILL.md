@@ -29,7 +29,7 @@ When a request fits neither type (a long derivation, a design note), say so: der
 4. **Write the page** from the template, in the style below.
 5. **Register it**: a grid card plus a toctree entry (see the templates).
 6. **Run the checks** at the end of this file and fix what they report. They are a floor, not the whole review.
-7. **Report** briefly: what you wrote, every place where code and textbook physics disagree, every number or reference you could not confirm, and every cell left for the user to run.
+7. **Report** briefly: what you wrote, every place where code and textbook physics disagree, every number or reference you could not confirm, and every cell left for the user to run, and every concept whose home page or internals page is missing (see "Say it once" and "Building the explanation").
 
 ## Running the code
 
@@ -48,6 +48,28 @@ The website is read as a whole, and repeated paragraphs make it long and hard to
 - The home of a method's parameters is its docstring (rendered under `docs/api/`). A page explains how to choose a parameter for this material and links to the API entry for the full list: ``{py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.bands` ``.
 - Links: `[Tutorial 01](../tutorial01.ipynb)`, `[internal basis](../internals/internal-basis.md)`, headings with `[text](page.md#heading-anchor)` (MyST anchors are on down to level 4).
 - A how-to does not repeat the workflow of its base example. It shows only what changes and links to the example.
+- A fact that holds for a method in general (a default, the files it writes, the energy range it is clipped to) has its home in the method's docstring or in the tutorial that introduces the method. Another page mentions it only when its situation changes what the reader should do, and then as a recommendation: what we do, followed by the reason in this situation, with a link to the home. A bare fact ("`do_pdos=False` turns them off") leaves the reader to work out why it is on this page. Write instead: "For a cell with many atoms we pass `do_pdos=False` to `dos()` unless the projected DOS is needed, because by default it writes one file per orbital, thousands of files for a large supercell."
+- A link that says "see X" must land on text that explains the concept. Open the target and check. If the home page does not explain it, the explanation goes on the home page: tell the developer, and do not define the concept on the linking page instead.
+
+## Building the explanation
+
+The page is read top to bottom by someone who has not seen the code. Three things decide whether it can be followed: the order in which concepts arrive, whether each new concept is explained enough to be used, and whether each statement is about the reader's calculation or about the implementation.
+
+**Order.** Each sentence must be understandable from what is above it. When a sentence needs a concept that a later section treats in full, give the concept a one-clause definition where it first appears and link forward for the detail: "the small hoppings are dropped at the end of `pao_hamiltonian()` (see [Truncating the Hamiltonian](#truncating-the-hamiltonian))". A forward link adds detail; it never supplies the meaning. If no one-clause definition is possible, reorder the sections. Keep the first mention short: a reader needs enough to follow the sentence, not the whole concept.
+
+**Constraints on the order of calls** are shown as code, with the call in its place in the script and a short comment, instead of a sentence listing what must come before and after.
+
+**New concepts.** A concept the page's workflow depends on gets a short paragraph the first time it appears: what happens, in which order, and how it differs from what the reader already knows (usually the dense pipeline of Tutorial 01). A concrete example or a schematic figure (see "Figures") does more than an abstract sentence. A method that behaves differently from its usual role, such as a call that computes nothing or a step that runs later than where it is written, is explained by why it behaves so and what that changes in the script. Every method, option and mechanism named anywhere on the page, the troubleshooting table included, is introduced in the body first.
+
+**Reasons and consequences in the reader's terms.** Give the reason for a setting and the consequence of a condition in terms of the calculation: run time, memory, the system size at which it fails, which results change and by how much, whether output files stay comparable between runs. Steps of the implementation ("the probe is skipped", "the margin is not added") are not reasons. "A pass that contains a Hall property solves the full spectrum" tells the reader nothing until it continues: "so each k-point needs a full $n_\mathrm{awf} \times n_\mathrm{awf}$ diagonalisation, and above `dense_n_max` orbitals the run stops with an error".
+
+**Software detail.** It stays on the page only when the reader can act on it: memory per MPI rank that decides how many ranks to start, a call that must precede another, a limitation that decides which route to take. Exception classes, internal function names and statements that only confirm default behaviour ("the k-points are divided among the ranks as usual") go. A limitation is stated by what it means for the calculation (which properties are unavailable, and how to compute them anyway); the literal error message belongs in the troubleshooting table.
+
+**Validation statements.** Agreement with another code path or a reference ("reproduces the dense DOS exactly") goes on the page only where it tells the reader what controls the error of their result or what a check should show, and then once, in the checking section. Benchmarks and error sweeps stay in the report to the developer.
+
+**Beyond the cases shown.** A page whose change affects many properties (a backend, a global flag) shows one or two and then tells the reader how to run any other: whether the call is unchanged, and where the list of supported methods is (the API page, or a table on the page).
+
+**Internals.** How the implementation works (solvers, data layout, parallel distribution) is explained in `docs/internals/<topic>.md`, not on the page. Where a mechanism has a consequence for the result or the cost, the page states the consequence and links to the internals page in one clause, so the reader knows why it matters. The "Where to go next" section links the internals page again for readers who want the mechanism. If no internals page exists, tell the developer instead of writing the mechanism into the tutorial or how-to.
 
 ## Describe the code as it is now
 
@@ -64,11 +86,17 @@ Write like a careful physicist writing a methods section that walks a colleague 
 
 **Voice.** Use the first person plural throughout: "We build the Hamiltonian from the projections", "We choose `nk=2000` so that the band crossings near $L$ are resolved." Do not switch to "you" or "one can" partway through. Use the imperative only in short instructions inside admonitions ("Download the dataset and set `savedir`").
 
+**Connectors.** When a sentence stands in a logical relation to the one before it, open it with a word that names the relation, so that the reader does not have to infer it: a solution to the problem just stated ("To avoid this", "Instead"), a consequence ("Therefore", "As a result", "so"), a cause ("because", "since"), a contrast ("However", "In contrast", "On the dense pipeline ..., whereas"), an example ("For example", "On Si"), or a condition ("When", "If"). Two short sentences in a cause-and-effect relation can also be joined into one with "because" or "so". A sentence that only continues a description or a sequence of steps needs no connector, and a connector must state the real relation: "however" before a sentence that does not contrast misleads the reader.
+
+Before: "Defect supercells, slabs, interfaces and heterostructures therefore exhaust the memory of a node. The sparse backend never forms these arrays."
+
+After: "Defect supercells, slabs, interfaces and heterostructures therefore exhaust the memory of a node. To avoid this, the sparse backend never forms these arrays."
+
 **Physics depth.** For each step, give the defining equation as the code evaluates it, then one to three sentences of intuition: what the quantity means for an electron in the crystal, and what we should see in the output. Name the approximations explicitly: constant relaxation time, rigid band, independent particle, PBE gap, no local-field effects, the projectability cutoff. A reader needs to know what a result is not valid for. Leave derivations out and link to a reference or an internals page for them. Quote experiment or literature values only when the citation is certain (authors, journal, volume, page, year); otherwise ask the user.
 
 **Numbers.** Give quantities with units and the precision the run supports ("indirect gap 0.61 eV", not "about 0.6"). Every number comes from the run or from a cited source.
 
-**Jargon.** Use a technical term only when the physics needs it and no plain phrase is as precise. Terms that every DFT user knows need no explanation: Kohn–Sham state, k-point, PBE, pseudopotential, Fermi level. Terms that are specific to PAOFLOW or to another field do. Examples are projectability, PAO shift, cell doubling, the energy window of the sparse backend, and Berry curvature in a transport page. Define such a term in the sentence where it first appears on the page, or link to its definition in Tutorial 01, the API page or a cited reference. Spell out each acronym at its first use on each page (PAO, PDOS, SHC, AHC, NEGF). Do not use in-house shorthand as nouns: code variable names standing for a concept ("the `nawf` grows"), developer labels ("the dense branch", "nev padding") or names of internal functions the reader never calls. Say what they mean ("the number of orbitals grows").
+**Jargon.** Use a technical term only when the physics needs it and no plain phrase is as precise. Terms that every DFT user knows need no explanation: Kohn–Sham state, k-point, PBE, pseudopotential, Fermi level. Terms that are specific to PAOFLOW or to another field do. Examples are projectability, PAO shift, cell doubling, the energy window of the sparse backend, and Berry curvature in a transport page. Define such a term in the sentence where it first appears on the page, or link to its definition in Tutorial 01, the API page or a cited reference. Spell out each acronym at its first use on each page (PAO, PDOS, SHC, AHC, NEGF). Do not use in-house shorthand as nouns: code variable names standing for a concept ("the `nawf` grows"), developer labels ("the dense branch", "nev padding", "the probe", "the engine") or names of internal functions the reader never calls. Say what they mean ("the number of orbitals grows"). When the page needs a name for a mechanism it uses repeatedly, define it once in plain terms ("one loop over all k-points of the mesh, which we call a pass") before using it.
 
 Avoiding jargon is not the same as simplifying the physics. Do not explain what the reader already knows (what a band structure or reciprocal space is). Do not use analogies that lose precision, and do not reassure ("don't worry", "it's simple", "just run"). Keep the equations, units and approximations. What changes is that every term on the page is one the reader knows or has just been given.
 
@@ -99,6 +127,8 @@ Avoiding jargon is not the same as simplifying the physics. Do not explain what 
 - In notebooks, a plotting cell carries the cell tag `hide-input`. The website then shows the figure with a "Show code cell source" toggle, and the downloaded notebook still holds the full code. Each plotting cell is standalone (it reads the output files of the run) so that it works in the downloaded notebook.
 - In how-tos, figures are PNGs in `docs/_static/images/howtos/<task>/`, produced by a script you ran, and embedded with `![alt text describing the physics](../../_static/images/howtos/<task>/<name>.png)`. Alt text states what the figure shows ("Si bands along L–Γ–X, PAO vs DFT").
 - After the figure, a few sentences tell the reader what to see in it, with numbers.
+- Plotting scripts are not kept in the repository. Instead, the sentences after a figure name the run it was made from: the dataset, the options that shape it (truncation, energy ranges, windows, k-mesh) and, where it is not obvious, the output file or log line each plotted quantity comes from. A later developer can then redraw the figure when the code changes, and the reader knows which calculation it shows.
+- A concept that is geometric or spatial (neighbour shells and a cutoff radius, an energy window on a band structure, a supercell built by doubling) gets a schematic figure where the prose would otherwise carry it alone. Draw it from real data where possible (the actual shells of the base example, its actual bands), with a script you ran and the palette above.
 
 ## Notation
 
@@ -113,6 +143,7 @@ Use these symbols, taken from Tutorial 01 and the sparse how-to. Add a symbol he
 | $S(\mathbf{k})$                                                                     | PAO overlap matrix                                         |
 | $H_{\alpha\beta}(\mathbf{R})$, $\tilde H(\mathbf{k})$                               | real-space PAO Hamiltonian and its Fourier interpolation   |
 | $N_k$                                                                               | number of k-points of the DFT grid                         |
+| $N_\mathrm{mesh}$                                                                   | number of k-points of the interpolated mesh                |
 | $n_\mathrm{awf}$                                                                    | number of PAOs in the cell (`nawf` in the code)            |
 | $E_F$                                                                               | Fermi energy; plots use $E - E_F$ unless stated            |
 | $\mathbf{v}_{n\mathbf{k}} = \hbar^{-1}\nabla_{\mathbf{k}}\varepsilon_{n\mathbf{k}}$ | band velocity                                              |
