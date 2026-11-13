@@ -57,18 +57,14 @@ def molecule_in_a_box():
 
 def one_band_metal():
     """A T-broken band (odd second harmonics) and a decoupled empty band: only the Drude term."""
-    hops = [(1, 1, (0, 0, 0), 12.0)]
-    for R, h in (
-        ((1, 0, 0), -1.0),
-        ((0, 1, 0), -0.8),
-        ((2, 0, 0), 0.25j),
-        ((1, 1, 0), 0.1 + 0.15j),
-        ((1, -1, 0), -0.1j),
-    ):
-        hops.append((0, 0, R, h))
-        hops.append((0, 0, tuple(-np.array(R)), np.conj(h)))
-    at = np.diag([1.0, 1.0, 10.0])
-    return _models.ExactModel(hops, 2, at, 5.0, np.zeros((2, 3)), (5, 5, 1), nelec=0.8), hops
+    band = {
+        (1, 0, 0): -1.0,
+        (0, 1, 0): -0.8,
+        (2, 0, 0): 0.25j,
+        (1, 1, 0): 0.1 + 0.15j,
+        (1, -1, 0): -0.1j,
+    }
+    return _models.single_band_model(band, np.diag([1.0, 1.0, 10.0]), 5.0, 0.8, (5, 5, 1))
 
 
 def k_grid_2d(n):

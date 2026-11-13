@@ -700,6 +700,12 @@ optical gap carry that model dependence.
 | Berry-curvature dipole | doped strained gapped graphene (T-even), 300² | 0.2 %, ∝ τ, Drude = 0 |
 | τ(ε) wiring, guards, orchestrator files and plots | | |
 
+The physical models of these tables (gapped and strained graphene, the Haldane model, the Rice–Mele chain, the
+two-band Weyl semimetal, the single bands) are library models, `PAOFLOW.models.models` (`honeycomb_model`,
+`rice_mele_model`, `weyl_model`, `single_band_model`, each a `HoppingModel`), also reachable as
+`PAOFLOW(model={'label': 'honeycomb', ...})`; the tests wrap them with exact atomic-gauge operators
+(`tests/unit/response/_nonlinear_models.py`). The random-hopping model and the molecule in a box stay test fixtures.
+
 The circular injection of `nonlinear_optical_spectra` had the electron sign; the Fermi golden rule and this engine
 fixed it (section *Conventions*). The first comparison of the gyration current set the interband channel alone
 against `shiftm` and found a mismatch: that channel also holds the T-even off-resonant term above, which only the full

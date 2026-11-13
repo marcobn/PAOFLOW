@@ -368,12 +368,8 @@ def test_metal_f_sum_rule_with_the_drude_channel():
 
 def test_drude_dielectric_function_of_one_band():
     """eps = 1 - w_p^2/(w (w + i gamma)), w_p^2 = (4 pi/Omega) g_s sum_k f d2 eps (one band)."""
-    models = _models()
-    hops = [(1, 1, (0, 0, 0), 12.0)]
-    for R, h in (((1, 0, 0), -1.0), ((0, 1, 0), -0.8), ((0, 0, 1), -0.5), ((1, 1, 0), 0.2)):
-        hops.append((0, 0, R, h))
-        hops.append((0, 0, tuple(-np.array(R)), np.conj(h)))
-    model = models.ExactModel(hops, 2, np.eye(3), 5.0, np.zeros((2, 3)), (5, 5, 5), nelec=0.8)
+    band = {(1, 0, 0): -1.0, (0, 1, 0): -0.8, (0, 0, 1): -0.5, (1, 1, 0): 0.2}
+    model, hops = _models().single_band_model(band, np.eye(3), 5.0, 0.8, (5, 5, 5))
     nk, mu, temperature, tau = (24, 24, 24), -0.5, 1500.0, 20.0
     ch = cc.channel_from_HRs(
         model.HRs, model.at, model.alat, model.volume, model.tau, 0.8, nk,

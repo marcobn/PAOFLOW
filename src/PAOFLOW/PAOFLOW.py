@@ -4270,9 +4270,10 @@ class PAOFLOW:
             from .hamiltonian.bloch_derivatives import orbital_positions_from_data
             from .response.density_matrix_response import channel_band_edges
 
+            spin_factor = 1.0 if attr.get('dftSO', False) else 2.0  # as build_crystal_channel
             metallic = channel_band_edges(
                 arrays['HRs'], np.asarray(arrays['a_vectors'], dtype=float), float(attr['alat']),
-                orbital_positions_from_data(self.data_controller), float(attr['nelec']), 2.0,
+                orbital_positions_from_data(self.data_controller), float(attr['nelec']), spin_factor,
             )['metallic']  # fmt: skip
             mu = fermi_energy
             if metallic:
