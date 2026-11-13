@@ -417,6 +417,35 @@ def supercell_x(model):
     return HRs, at, tau, 2 * model.nelec, 2.0 * model.volume
 
 
+def test_cluster_average_operator():
+    cluster = np.array([[0, 0, 1, 2, 2, 2]])
+    P = nlo.cluster_average_operator(cluster)[0]
+    assert np.allclose(P.sum(axis=1), 1.0) and np.allclose(P @ P, P)
+    assert P[2, 2] == 1.0 and P[0, 1] == 0.5 and P[3, 5] == pytest.approx(1 / 3) and P[0, 2] == 0.0
+
+
+def test_cluster_terms_keep_the_circular_injection_antisymmetric(monkeypatch):
+    """Split bands merged into clusters (wide tolerance): eta_C^{abc} = -eta_C^{acb} on the full grid, as the
+    trace over cluster pairs requires; with per-pair kernels (before 13 Nov 2026) it was not."""
+    model = random_hopping_model(seed=7, time_reversal=True)
+    nk, energy = (6, 6, 6), np.linspace(0.5, 9.0, 30)
+    options = {'components': ['xyz', 'xzy', 'yzx', 'yxz'], 'eta': 0.3, 'degeneracy_tol': 0.6,
+               'want': ('injection',)}  # fmt: skip
+    clusters = geometry_at(model, nlo._k_grid(nk), tol=0.6).cluster
+    assert (clusters[:, 1] == clusters[:, 0]).any()  # some valence pairs are merged ...
+    assert not (clusters[:, 2] == clusters[:, 1]).any()  # ... never across the gap
+    scale = natural_scale(model, nk, 'injectc')
+    res = spectra(model, nk, energy, **options)
+    for abc, acb in (('xyz', 'xzy'), ('yzx', 'yxz')):
+        total = res['injectc'][index(res, abc)] + res['injectc'][index(res, acb)]
+        assert np.abs(total).max() < 1e-10 * scale, abc
+    monkeypatch.setattr(nlo, 'cluster_average_operator', lambda c: np.broadcast_to(
+        np.eye(c.shape[1]), c.shape + (c.shape[1],)))  # fmt: skip
+    old = spectra(model, nk, energy, **options)
+    leak = old['injectc'][index(old, 'xyz')] + old['injectc'][index(old, 'xzy')]
+    assert np.abs(leak).max() > 1e-4 * scale  # the per-pair kernels break the antisymmetry
+
+
 def test_degenerate_clusters_are_transitive():
     e = np.array([[0.0, 0.5e-4, 1.0e-4, 1.5e-4, 1.0], [0.0, 2.0e-4, 1.0, 1.0 + 0.9e-4, 2.0]])
     assert nlo.degenerate_clusters(e, 1.0e-4).tolist() == [[0, 0, 0, 0, 1], [0, 1, 2, 2, 3]]

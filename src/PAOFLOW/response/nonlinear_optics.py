@@ -390,6 +390,25 @@ def delta_kernel(x: NDArray[np.float64], width, smearing: str = 'gauss') -> NDAr
 
 
 # --------------------------------------------------------------------------- kernels
+def cluster_average_operator(cluster: NDArray[np.int_]) -> NDArray[np.float64]:
+    r"""Averaging operator over the degenerate clusters of every k-point.
+
+    Parameters
+    ----------
+    cluster : ndarray ``(nb, n)``, int
+        Cluster index of every band (:func:`degenerate_clusters`).
+
+    Returns
+    -------
+    ndarray ``(nb, n, n)``
+        :math:`P_{nm} = 1/N_C` if bands n and m belong to the same cluster C of size
+        :math:`N_C`, else 0: ``P @ X @ P`` replaces every element of a pair matrix X by its mean
+        over the cluster pair (the identity on non-degenerate bands).
+    """
+    same = (cluster[:, :, None] == cluster[:, None, :]).astype(float)
+    return same / same.sum(axis=2, keepdims=True)
+
+
 def accumulate_shift_and_injection(
     geometry: BandGeometry,
     occupation: NDArray[np.float64],
@@ -413,6 +432,13 @@ def accumulate_shift_and_injection(
     energy_grid : ndarray ``(ne,)``
     widths : ndarray ``(nb, n, n)``
         Width of :math:`\\delta(\\omega'_{nm}-\\omega)` per pair (eV).
+
+    Notes
+    -----
+    Inside degenerate clusters the energies, occupations and widths are replaced by their means
+    over the cluster pair (:func:`cluster_average_operator`), so that the covariant cluster terms
+    are exact traces (13 Nov 2026: before, the forbidden circular injection of GaAs was 1e-3 of an
+    allowed scale with a 10 meV tolerance).
     components : sequence of ``(a, b, c)``
     smearing : {'gauss', 'lorentz'}
     out : dict
@@ -425,6 +451,13 @@ def accumulate_shift_and_injection(
         (the ranks sharing one k-block; their ``out`` are summed by the caller).
     """
     F = occupation[:, None, :] - occupation[:, :, None]  # f_m - f_n  (n: first band index)
+    # the covariant cluster terms are traces over cluster pairs: their member pairs must share one
+    # delta kernel and occupation factor (members differ by up to degeneracy_tol), else the
+    # b <-> c antisymmetry of the circular injection and the gauge invariance are lost
+    average = cluster_average_operator(geometry.cluster)
+    F = average @ F @ average
+    omega_scissored = average @ omega_scissored @ average
+    widths = average @ np.asarray(widths, dtype=float) @ average
     if k_weights is not None:
         F = F * np.asarray(k_weights, dtype=float)[:, None, None]
     # pairs far from the grid: negligible for Gaussians; Lorentzian tails (13 % of the weight beyond

@@ -161,6 +161,16 @@ leave the shift, injection and SHG weights of a k-point unchanged ($10^{-10}$), 
 x-supercell on a 4³ grid reproduces the primitive cell on an (8, 4, 4) grid, doublets included.
 GaAs (norm-conserving, k-resolved test at a Λ point): the SHG histograms went from 2.5 % / 18 %
 differences between symmetry-equivalent k to $10^{-10}$.
+**Cluster kernels of the δ-function terms (13 November 2026).** The covariant cluster terms of the shift and
+injection currents are traces over cluster pairs, so every member pair of a cluster pair must carry the same
+δ kernel and occupation factor. Members differ in energy by up to `degeneracy_tol` (10 meV against η = 50 meV), and
+the per-pair kernels broke the trace: the forbidden circular injection of GaAs (T_d is not gyrotropic) was
+$1.1$–$1.7\times10^7$ A V⁻² s⁻¹, 10⁻³ of an allowed scale, with and without spin–orbit. `accumulate_shift_and_injection`
+now replaces the transition energy, the occupation difference and the δ width of cluster pairs by their means over
+the cluster pair (`cluster_average_operator`, $P X P$; the identity on non-degenerate bands). GaAs 40³: circular
+injection 10⁻⁵ (zero), shift current changed by 3·10⁻⁴ (scalar) / 2.6 % (spin–orbit, more clusters) of its extremum,
+SHG untouched (histogram path). Test: `test_cluster_terms_keep_the_circular_injection_antisymmetric`
+($\eta_C^{abc} = -\eta_C^{acb}$ to 10⁻¹⁰ of the natural scale with a wide tolerance; the per-pair kernels fail it).
 
 **Position dipoles (since October 28 2026).** `position_dipoles=True` (or `'intra-atomic'`) goes
 beyond the tight-binding position operator: with the Löwdin dipoles $d(\mathbf k)$ of
