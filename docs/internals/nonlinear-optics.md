@@ -669,10 +669,19 @@ References built for it (tests and `Workspace/PAOFLOW/validation/nlo_metals/gyra
   (0.30 eV) the DC current goes to zero as the ramp becomes adiabatic; at $\hbar\omega$ = gap/2 the two-photon band edge
   leaves non-perturbative transients. The gyration current at 350² is 0.268 / 0.0806 µA/V² at 1.0 / 1.4 eV, within 1–2.5 % of the converged `shiftm` (0.262 / 0.081, η = 5 meV, 2400²); the δ-function and engine values on the same 350² grid at η = 10 meV are under-resolved there (0.031 at 1.4 eV).
 
-The default `coherence_damping=1` damps the second-order coherences with η instead of 2η: an O(η²) change at zero
-frequency and an O(η) one in the imaginary part of the SHG, where the three conventions differ at finite η (engine
-with η or 2η, Kubo, and the convergent form of Chen *et al.*, which damps only its resonant denominators) and all
-converge as η → 0. The damping of the SHG populations (γ or 2η) changes the SHG by 0.1 %.
+**`coherence_damping` (decided 13 November 2026: default 1, exposed in `PAOFLOW.nonlinear_optics`).** The
+second-order interband coherences of the engine are damped with `coherence_damping` × η. With 1 (default) every
+coherence has one dephasing rate η, so two-photon (2ω) resonances have width η, the convention of the insulator path
+(`shg_from_histograms`: $E_b - 2\omega - i\eta$) and of the convergent form of Chen *et al.*; with 2 (adiabatic
+switching, every second-order denominator $+2i\eta$) the engine equals the velocity-gauge Kubo response at any η,
+SHG included. The two agree as η → 0. At η = 50 meV (`Workspace/PAOFLOW/validation/nlo_metals/gyration/
+coherence_damping_study.py`): gapped graphene SHG within a few % away from resonances and ~27 % lower at the 2ω
+resonance with 2 (twice the linewidth); metals: DC above the interband threshold 1–2 %, the quantized circular
+photocurrent of the Weyl model < 1 %, the Pauli-blocked tails of doped graphene (small) 30–50 %, the low-energy SHG
+of the Weyl semimetal 35–94 % (all 2ω resonances of the cones). Default 1 keeps the switch between the insulator and
+metal paths (`fermi_surface='auto'`) continuous; use 2 to compare with Kubo or adiabatic theory, and report
+η-convergence for resonance-dominated features. The value is in `attr['nonlinear_optics']['coherence_damping']`
+(None on the insulator path). The damping of the SHG populations (γ or 2η) changes the SHG by 0.1 %.
 
 **Metals: what the relaxation model decides.** In a metal the in-gap rectification is not fixed by the clean limit
 alone. Onishi, Watanabe, Morimoto and Nagaosa (PRB 106, 235110, 2022) show that the sub-gap photocurrent of P- and
@@ -718,9 +727,9 @@ time-reversal-odd PythTB bands came out at −**k**. The hard-coded `'Kane_Mele'
 The circular injection of `nonlinear_optical_spectra` had the electron sign; the Fermi golden rule and this engine
 fixed it (section *Conventions*). The first comparison of the gyration current set the interband channel alone
 against `shiftm` and found a mismatch: that channel also holds the T-even off-resonant term above, which only the full
-response (and the φ-odd combination) removes. **Open:** a velocity-gauge (Kubo) and a damping-free real-time
-reference (plan G2), the derivation in full (G1), and whether the SHG populations should also carry 2η (the
-O(η/ω) imaginary-part difference against the Chen form). **Cost:** every photon energy re-solves the k-block
+response (and the φ-odd combination) removes. **Closed:** the velocity-gauge (Kubo) and damping-free real-time
+references (plan G2) and the full derivation (G1), 12 November; the coherence damping, 13 November (default η,
+option 2η, above). **Cost:** every photon energy re-solves the k-block
 ($O(n^3)$ products per component and field order); fine for DC spectra of tens of energies, a spectral (pole)
 representation is the next optimisation. Position dipoles enter through $r$, $r_{;a}$; the intra-cluster dipole
 connection is not in $M$ (matters only for degenerate clusters with dipoles).

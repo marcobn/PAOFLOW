@@ -159,7 +159,8 @@ the $j$ subspaces that sum to the identity; `Q_so` against the QE loop; the spin
 SnTe metric, skipped without `examples/qe_examples/example17/SnTe.save`).
 
 Not covered: VASP input (PAW projectors of the POTCAR are not read) and the PAW augmentation
-of the position dipoles with spin-orbit coupling (scalar-relativistic only).
+of the position dipoles with spin-orbit coupling (the dipoles themselves cover spin-orbit runs with
+norm-conserving pseudopotentials, `position-dipoles.md`).
 
 ## Files
 

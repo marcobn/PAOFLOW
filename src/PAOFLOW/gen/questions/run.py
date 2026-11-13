@@ -211,6 +211,18 @@ NONLINEAR_ITEMS = (
         section=NONLINEAR,
     ),
     Question(
+        'nlo_coherence_damping',
+        '    coherence damping in units of eta (1: one dephasing rate, 2: adiabatic / Kubo)',
+        kind='float',
+        default=1.0,
+        when=lambda a, c: bool(a.get('nlo_metal')),
+        label='Coherence damping (units of eta)',
+        help='Damping of the second-order interband coherences of the metal engine. 1: every '
+        'coherence decays at eta, two-photon resonances have width eta as for insulators; 2: '
+        'adiabatic switching, equal to the velocity-gauge Kubo response. They agree as eta -> 0.',
+        section=NONLINEAR,
+    ),
+    Question(
         'nlo_coupling',
         '  coupled response of the molecule (none, monopole, hartree, hartree+alda)',
         default='hartree+alda',
@@ -465,6 +477,7 @@ def assemble_nonlinear(cfg: dict, answers: Answers) -> dict:
     if cfg['nlo_metal']:
         cfg['nlo_temperature'] = answers['nlo_temperature']
         cfg['nlo_tau'] = answers['nlo_tau']
+        cfg['nlo_coherence_damping'] = answers['nlo_coherence_damping']
     if molecule:
         cfg['nlo_coupling'] = answers['nlo_coupling']
     cfg['nlo_coupled'] = bool(answers.get('nlo_coupled', False))

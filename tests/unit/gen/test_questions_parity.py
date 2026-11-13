@@ -185,6 +185,7 @@ RUN_SCENARIOS = {
         'metal or semimetal': 'y',
         'electronic temperature': '500',
         'intraband relaxation time': '15',
+        'coherence damping in units': '2',
         'coupled optical response': 'y',
         'SHG photon energies': '',
     },

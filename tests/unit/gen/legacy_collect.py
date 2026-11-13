@@ -184,6 +184,9 @@ def collect_nonlinear(cfg):
     if metal:
         cfg['nlo_temperature'] = ask_float('    electronic temperature (K)', 300.0)
         cfg['nlo_tau'] = ask_float('    intraband relaxation time tau (fs)', 20.0)
+        cfg['nlo_coherence_damping'] = ask_float(
+            '    coherence damping in units of eta (1: one dephasing rate, 2: adiabatic / Kubo)', 1.0
+        )
     if molecule:
         cfg['nlo_coupling'] = ask(
             '  coupled response of the molecule (none, monopole, hartree, hartree+alda)',

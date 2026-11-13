@@ -3542,6 +3542,7 @@ class PAOFLOW:
         shg_terms=False,
         fermi_surface='auto',
         relaxation_time=None,
+        coherence_damping=1.0,
     ):
         r"""Second-order optical responses: shift and injection currents, second-harmonic generation.
 
@@ -3715,6 +3716,14 @@ class PAOFLOW:
             Intraband relaxation time :math:`\tau` (fs) of the density-matrix engine: a constant,
             or a function of the band energy (eV -> fs, vectorised), e.g. electron-phonon rates.
             Default: :math:`\gamma = \hbar/\tau` = ``eta``.
+        coherence_damping : float, optional
+            Damping of the second-order interband coherences of the density-matrix engine, in units
+            of ``eta`` (metals, ``fermi_surface``). 1 (default): one dephasing rate ``eta`` for every
+            coherence, so two-photon (2ω) resonances have width ``eta`` as in the insulator path;
+            2: adiabatic switching (every second-order denominator carries :math:`2i\eta`), equal
+            to the velocity-gauge Kubo response at any ``eta``. The two agree as ``eta`` → 0; at
+            finite ``eta`` they differ only where the result is broadening-dominated (2ω
+            resonances, low-energy SHG of semimetals). Insulators (the δ-function path) ignore it.
         coupling_options : dict, optional
             ``energies_ev`` (photon energies of the coupled solve, default ``[0, emax/2]``),
             ``eta_ev`` (default ``eta``), ``hubbard_u`` (``{species: U (Hartree)}``), ``grid``
@@ -3901,7 +3910,10 @@ class PAOFLOW:
                     )  # fmt: skip
                 if use_eom:
                     eom_kwargs = dict(
-                        common, relaxation_time=relaxation_time, adaptive_smearing=adaptive_smearing
+                        common,
+                        relaxation_time=relaxation_time,
+                        adaptive_smearing=adaptive_smearing,
+                        coherence_damping=float(coherence_damping),
                     )
                     if 'shg' in want:
                         shg = density_matrix_spectra(*args, response='shg', **eom_kwargs)
@@ -4072,6 +4084,7 @@ class PAOFLOW:
                     'callable' if callable(relaxation_time)
                     else (None if relaxation_time is None else float(relaxation_time))
                 ),
+                'coherence_damping': (float(coherence_damping) if use_eom else None),
             }  # fmt: skip
             if self.rank == 0 and molecule and 'beta_T_au' in total:
                 i0 = int(np.argmin(np.abs(energy)))

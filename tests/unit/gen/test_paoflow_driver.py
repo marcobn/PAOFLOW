@@ -421,17 +421,19 @@ def test_collect_nonlinear_prompts(monkeypatch):
 def test_build_run_script_metal_block():
     cfg = _run_cfg(
         ibrav=2, is_2d=False, properties=['nonlinear'], nlo_metal=True, nlo_temperature=500.0,
-        nlo_tau=15.0, nlo_coupled=True, coupled_kernels=('none', 'hartree'),
+        nlo_tau=15.0, nlo_coherence_damping=2.0, nlo_coupled=True, coupled_kernels=('none', 'hartree'),
         coupled_shg_energies=[],
     )  # fmt: skip
     text = d.build_run_script(cfg)
     assert 'NLO_FERMI_SURFACE = True' in text and 'NLO_TEMPERATURE = 500.0' in text
-    assert 'NLO_TAU = 15.0' in text
+    assert 'NLO_TAU = 15.0' in text and 'NLO_COHERENCE_DAMPING = 2.0' in text
     block = text[text.index('def run_nonlinear():') :].split('def main')[0]
     assert 'fermi_surface=NLO_FERMI_SURFACE' in block
     assert block.count('temperature=NLO_TEMPERATURE, relaxation_time=NLO_TAU') == 2
+    assert block.count('coherence_damping=NLO_COHERENCE_DAMPING') == 1  # not the coupled response
     insulator = d.build_run_script(_run_cfg(ibrav=2, is_2d=False, properties=['nonlinear']))
     assert "NLO_FERMI_SURFACE = 'auto'" in insulator and 'NLO_TEMPERATURE = 0.0' in insulator
+    assert 'NLO_COHERENCE_DAMPING = 1.0' in insulator
     plot = d.build_plot_script(cfg)
     assert 'def plot_photocurrent_channels' in plot and 'def plot_shg_terms' in plot
 

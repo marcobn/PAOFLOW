@@ -524,12 +524,14 @@ def density_matrix_spectra(
     dict
         ``'energy_ev'``, ``'components'``, ``'response'`` and its key (``'shg'`` or ``'dc'``,
         ``(ncomp, ne)`` complex), ``'channels'`` (:data:`CHANNELS` -> ``(ncomp, ne)`` complex in the same
-        units, summing to the total), ``'metallic'``, ``'eta_ev'``, ``'relaxation_time'``, ``'nk'``.
+        units, summing to the total), ``'metallic'``, ``'eta_ev'``, ``'relaxation_time'``,
+        ``'coherence_damping'``, ``'nk'``.
 
     Raises
     ------
     ValueError
-        For a metallic channel without ``fermi_energy``, a scissor on a metal, or an unknown response.
+        For a metallic channel without ``fermi_energy``, a scissor on a metal, an unknown response,
+        or a non-positive ``coherence_damping``.
     """
     from ..hamiltonian.bloch_derivatives import (
         bloch_terms_from_HRs,
@@ -547,6 +549,8 @@ def density_matrix_spectra(
 
     if response not in ('shg', 'dc'):
         raise ValueError("response must be 'shg' or 'dc', got %r" % (response,))
+    if not float(coherence_damping) > 0.0:
+        raise ValueError('coherence_damping must be positive (1: eta, 2: adiabatic 2 eta)')
     rank, size = (0, 1) if comm is None else (comm.Get_rank(), comm.Get_size())
     comps = parse_components(components)
     energy_grid = np.asarray(energy_grid, dtype=float)
@@ -670,6 +674,7 @@ def density_matrix_spectra(
         'relaxation_time': relaxation_time,
         'populations': populations,
         'adaptive_smearing': adaptive_smearing,
+        'coherence_damping': float(coherence_damping),
         'nk': nk,
     }
 

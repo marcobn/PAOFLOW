@@ -932,6 +932,59 @@ def augmentation_kspace(
     return dS, dS_grad, dX
 
 
+def relativistic_dipoles(dipole: NDArray[np.complex128], pao_catalog) -> NDArray[np.complex128]:
+    r"""Scalar PAO dipoles (no orbital signs) in the relativistic :math:`(j, m_j)` basis of a spin-orbit run.
+
+    Parameters
+    ----------
+    dipole : ndarray ``(nk, 3, n, n)``
+        :math:`\mathbf d(\mathbf k)` of the scalar PAO orbitals, before :func:`tesseral_signs`.
+    pao_catalog : PAOCatalog
+
+    Returns
+    -------
+    ndarray ``(nk, 3, 2n, 2n)``
+        The spin-doubled operator rotated with
+        :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.scalar_to_jm_matrix` (the odd-``|m|`` sign is
+        inside the shell transform) and :math:`(-1)^l` per channel on both indices: the basis of
+        the relativistic ``HRs`` (``assign_jm`` order).
+    """
+    from .nonlocal_velocity import _pao_jm_channel_info, scalar_to_jm_matrix
+
+    n_rel = 2 * pao_catalog.total_nlm
+    parity = np.ones(n_rel)
+    for site in pao_catalog.sites:
+        for l_p, _col0, n_m, rel_col0 in _pao_jm_channel_info(site):
+            parity[rel_col0 : rel_col0 + 2 * n_m] = (-1.0) ** l_p
+    rotated = np.stack(
+        [scalar_to_jm_matrix(dipole[:, alpha], pao_catalog) for alpha in range(3)], axis=1
+    )
+    return rotated * parity[None, None, :, None] * parity[None, None, None, :]
+
+
+def _j_radial_mismatch(arrays: dict) -> tuple[float, str]:
+    """Largest 1 - <R_{l-1/2}|R_{l+1/2}> over the j-split shells of ``arrays['atomic_basis']``."""
+    groups: dict[tuple, list] = {}
+    for record in arrays.get('atomic_basis') or []:
+        if int(record.get('l', 0)) > 0:
+            groups.setdefault((record['atom'], record['label'], int(record['l'])), []).append(
+                record
+            )
+    worst, where = 0.0, ''
+    for key, records in groups.items():
+        first, last = records[0], records[-1]
+        if first['wfc'] is last['wfc'] or len(first['wfc']) != len(last['wfc']):
+            continue
+        r = np.asarray(first['r'], dtype=float)
+        a, b = np.asarray(first['wfc'], dtype=float), np.asarray(last['wfc'], dtype=float)
+        norm = np.sqrt(np.trapezoid(a * a, r) * np.trapezoid(b * b, r))
+        if norm > 0.0:
+            mismatch = 1.0 - abs(np.trapezoid(a * b, r)) / norm
+            if mismatch > worst:
+                worst, where = float(mismatch), f'{key[0]} {key[1]}'
+    return worst, where
+
+
 def position_dipole_operator(
     data_controller,
     bg: NDArray[np.float64],
@@ -974,7 +1027,8 @@ def position_dipole_operator(
     Raises
     ------
     NotImplementedError
-        For fully-relativistic runs (scalar-relativistic bases only).
+        For a fully relativistic run with ultrasoft / PAW species (the augmentation of the
+        dipoles has no spinor version).
 
     Notes
     -----
@@ -982,12 +1036,16 @@ def position_dipole_operator(
     ``[-0.5, 0.5)``), applies the Löwdin formula, symmetrises the result
     (:math:`(\mathbf d + \mathbf d^\dagger)/2` removes the quadrature noise) and restores
     PAOFLOW's tesseral signs on both orbital indices (:func:`tesseral_signs`).
+
+    Spin-orbit runs (13 Nov 2026): fully relativistic bases get the scalar operator rotated to the
+    :math:`(j, m_j)` basis (:func:`relativistic_dipoles`, as :func:`position_dipoles_on_grid`),
+    ad-hoc spin-orbit the spin-diagonal doubling. The radial functions are one per shell and
+    :math:`l`: with j-resolved tables both :math:`j = l \pm 1/2` use the :math:`j = l - 1/2` one,
+    exact when they coincide; the largest mismatch is printed when it exceeds :math:`10^{-3}`.
     """
     arrays, attributes = data_controller.data_dicts()
-    if bool(attributes.get('dftSO', False)):
-        raise NotImplementedError(
-            'position_dipole_operator supports scalar-relativistic runs only.'
-        )
+    spin_orbit = bool(attributes.get('dftSO', False))
+    fully_relativistic = spin_orbit and not bool(attributes.get('adhoc_SO', False))
     if level not in DIPOLE_LEVELS:
         raise ValueError(f'level must be one of {DIPOLE_LEVELS}, got {level!r}')
     pao_catalog = load_pao_orbitals(data_controller)
@@ -1003,6 +1061,18 @@ def position_dipole_operator(
         aug = build_projector_augmentation(
             data_controller, pao_catalog, q_max=q_max, n_q=n_q, pao_tol=pao_tol
         )
+    if fully_relativistic and aug is not None:
+        raise NotImplementedError(
+            'position dipoles with spin-orbit coupling: the ultrasoft / PAW augmentation has no '
+            'spinor version (norm-conserving pseudopotentials only)'
+        )
+    if fully_relativistic:
+        mismatch, shell = _j_radial_mismatch(arrays)
+        if mismatch > 1.0e-3 and _first_rank():
+            print(
+                'WARNING: position dipoles use one radial function per shell; the j = l -+ 1/2 '
+                f'tables of {shell} differ by 1 - overlap = {mismatch:.1e}'
+            )
 
     def dipoles(k_cryst: NDArray[np.float64]) -> NDArray[np.complex128]:
         folded = k_cryst - np.floor(k_cryst + 0.5)
@@ -1022,7 +1092,16 @@ def position_dipole_operator(
             on_site=on_site,
         )
         dipole = 0.5 * (dipole + np.conj(np.transpose(dipole, (0, 1, 3, 2))))
-        return dipole * sign_matrix
+        if fully_relativistic:
+            return relativistic_dipoles(dipole, pao_catalog)
+        dipole = dipole * sign_matrix
+        if spin_orbit:  # ad-hoc spin-orbit: [up; down] blocks
+            n = pao_catalog.total_nlm
+            doubled = np.zeros(dipole.shape[:2] + (2 * n, 2 * n), dtype=complex)
+            doubled[:, :, :n, :n] = dipole
+            doubled[:, :, n:, n:] = dipole
+            return doubled
+        return dipole
 
     return dipoles
 
@@ -1067,7 +1146,7 @@ def position_dipoles_on_grid(
     (global, or the rank's slice under MPI, as in
     :meth:`PAOFLOW.PAOFLOW.position_dipole_correction`).
     """
-    from .nonlocal_velocity import _kgrid_to_cart, _pao_jm_channel_info, scalar_to_jm_matrix
+    from .nonlocal_velocity import _kgrid_to_cart
 
     arrays, attributes = data_controller.data_dicts()
     if level not in DIPOLE_LEVELS:
@@ -1105,16 +1184,7 @@ def position_dipoles_on_grid(
     dipole = 0.5 * (dipole + np.conj(np.transpose(dipole, (0, 1, 3, 2))))
     fully_rel = bool(attributes.get('dftSO', False)) and not bool(attributes.get('adhoc_SO', False))
     if fully_rel:
-        # odd-|m| sign inside the shell transform; (-1)^l per channel on both indices
-        n_rel = 2 * pao_catalog.total_nlm
-        parity = np.ones(n_rel)
-        for site in pao_catalog.sites:
-            for l_p, _col0, n_m, rel_col0 in _pao_jm_channel_info(site):
-                parity[rel_col0 : rel_col0 + 2 * n_m] = (-1.0) ** l_p
-        rotated = np.stack(
-            [scalar_to_jm_matrix(dipole[:, alpha], pao_catalog) for alpha in range(3)], axis=1
-        )
-        return rotated * parity[None, None, :, None] * parity[None, None, None, :]
+        return relativistic_dipoles(dipole, pao_catalog)
     signs = pao_orbital_signs(pao_catalog)
     dipole = dipole * signs[None, None, :, None] * signs[None, None, None, :]
     if bool(attributes.get('dftSO', False)):  # ad-hoc spin-orbit: [up; down] blocks

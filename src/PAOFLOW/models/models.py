@@ -2889,7 +2889,7 @@ def build_from_pythTB(data_controller: DataController, my_model) -> None:
     -------
     None
         What :func:`build_from_hoppings` sets (no ``nelec``), plus ``attributes['norb']`` and
-        ``arrays['Hks', 'Dnm']`` (FFT of ``HRs``; differences of the orbital centres).
+        ``arrays['Hks']`` (FFT of ``HRs``).
 
     Notes
     -----
@@ -2902,8 +2902,6 @@ def build_from_pythTB(data_controller: DataController, my_model) -> None:
     arrays, attributes = data_controller.data_dicts()
     attributes['norb'] = model.number_of_orbitals
     arrays['Hks'] = np.fft.fftn(arrays['HRs'], axes=(2, 3, 4))
-    centres = np.asarray(arrays['tau'], dtype=float)
-    arrays['Dnm'] = centres[:, None, :] - centres[None, :, :]
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3513,6 +3511,111 @@ def tmd_model(
     )  # fmt: skip
 
 
+def parabolic_model(
+    n_bands: int = 2,
+    gap: float = 1.5,
+    t_c: float = 0.5,
+    t_sigma: float = 0.4,
+    t_pi: float = 0.1,
+    kane_p: float = 1.0,
+    asymmetry: float = 0.3,
+    phase: float = 0.0,
+    alat: float = 10.0,
+) -> HoppingModel:
+    r"""Parabolic-band semiconductor: one s conduction band and ``n_bands - 1`` p valence bands (1D, 2D, 3D).
+
+    Parameters
+    ----------
+    n_bands : {2, 3, 4}, optional
+        2: chain along ``x`` (s, p_x); 3: square lattice (s, p_x, p_y); 4: simple cubic (s, p_x, p_y,
+        p_z). The dimension is ``n_bands - 1``; 10 alat of vacuum along the other axes.
+    gap : float, optional
+        Energy of the s level above the p levels at Gamma before the inversion-breaking term (eV).
+    t_c : float, optional
+        Conduction hopping (eV): :math:`2t_c\sum_\alpha(1 - \cos k_\alpha a)`.
+    t_sigma, t_pi : float, optional
+        Valence hoppings along and across the p lobe (eV): light and heavy holes.
+    kane_p : float, optional
+        Interband (Kane) momentum coupling :math:`P` (eV): :math:`H_{s p_\alpha} = iP\sin k_\alpha a`.
+    asymmetry : float, optional
+        Inversion-breaking amplitude (eV). 2 and 3 bands: an on-site s-p mixing :math:`Q` along the
+        polar axis (``x`` for the chain, ``y`` on the square lattice); 4 bands: Kane's
+        :math:`B` term, :math:`H_{s p_x} \mathrel{+}= B\sin k_y a\sin k_z a` and cyclic (T_d).
+    phase : float, optional
+        Phase :math:`\phi` of the asymmetry term, :math:`Q e^{i\phi}` (or :math:`Be^{i\phi}`): 0 keeps
+        time reversal, :math:`\pi/2` breaks it and keeps the product PT.
+    alat : float, optional
+        Lattice parameter (bohr).
+
+    Returns
+    -------
+    HoppingModel
+        All orbitals at the origin (no intra-cell dipoles), the valence bands filled
+        (``nelec = 2 (n_bands - 1)``), spin-degenerate.
+
+    Raises
+    ------
+    ValueError
+        For ``n_bands`` other than 2, 3, 4.
+
+    Notes
+    -----
+    With :math:`d = ` ``n_bands - 1`` and :math:`c_\alpha = \cos k_\alpha a`, :math:`s_\alpha = \sin k_\alpha a`,
+
+    .. math::
+
+        H_{ss} = E_g + 2t_c\sum_{\alpha}(1 - c_\alpha),\quad
+        H_{p_\alpha p_\alpha} = -2t_\sigma(1 - c_\alpha) - 2t_\pi\sum_{\beta\neq\alpha}(1 - c_\beta),\quad
+        H_{s p_\alpha} = iP s_\alpha + A_\alpha,
+
+    with :math:`A = Qe^{i\phi}` on the polar axis (2, 3 bands) or :math:`A_x = Be^{i\phi}s_ys_z` and cyclic
+    (4 bands). Near Gamma the bands are parabolic, with the Kane masses (:math:`A = 0`)
+    :math:`\hbar^2/m_c = 2a^2(t_c + P^2/E_g)` for the conduction band, :math:`-2a^2(t_\sigma + P^2/E_g)` for
+    the light hole along its lobe and :math:`-2a^2 t_\pi` for the heavy holes across (E. O. Kane, J. Phys.
+    Chem. Solids 1, 249 (1957)). At Gamma the polar level pair is :math:`E_g/2 \pm
+    \sqrt{E_g^2/4 + |Q|^2}`. Symmetry: :math:`P` is odd under inversion and even under time reversal,
+    so :math:`A = 0` is centrosymmetric (every second-order response vanishes); :math:`\phi = 0` gives
+    a polar (2, 3 bands; point group :math:`C_{1v}` with the mirror :math:`x \to -x` in 2D) or
+    :math:`T_d` (4 bands) crystal with time reversal: shift current and circular injection, no T-odd
+    response. :math:`\phi = \pi/2` breaks P and T but keeps PT (a magnetoelectric toroidal order): the
+    linear shift current and the circular injection vanish and the magnetic injection and the
+    gyration current appear (H. Watanabe and Y. Yanase, Phys. Rev. X 11, 011001 (2021)); the bands
+    become asymmetric, :math:`\varepsilon(\mathbf k)\neq\varepsilon(-\mathbf k)`. With two bands the
+    three-band (virtual) SHG terms vanish identically.
+    """
+    if n_bands not in (2, 3, 4):
+        raise ValueError('n_bands must be 2, 3 or 4')
+    dim = n_bands - 1
+    unit = np.eye(3, dtype=int)
+    amplitude = complex(asymmetry) * np.exp(1j * phase)
+    onsite = [(0, gap + 2.0 * t_c * dim)]
+    bonds = []
+    for alpha in range(dim):
+        onsite.append((1 + alpha, -2.0 * (t_sigma + (dim - 1) * t_pi)))
+        step = tuple(unit[alpha])
+        bonds.append((0, 0, step, -t_c))
+        bonds.append((0, 1 + alpha, step, 0.5 * kane_p))
+        bonds.append((0, 1 + alpha, tuple(-unit[alpha]), -0.5 * kane_p))
+        for beta in range(dim):
+            bonds.append((1 + beta, 1 + beta, step, t_sigma if beta == alpha else t_pi))
+    if dim < 3:
+        bonds.append((0, dim, (0, 0, 0), amplitude))  # p_x (chain) or p_y (square lattice)
+    else:
+        # B sin(k_b a) sin(k_c a) = -B/4 sum_{s, s'} s s' exp(i(s k_b + s' k_c) a), (a, b, c) cyclic
+        for alpha, (b, c) in enumerate(((1, 2), (2, 0), (0, 1))):
+            for sb in (1, -1):
+                for sc in (1, -1):
+                    cell = tuple(sb * unit[b] + sc * unit[c])
+                    bonds.append((0, 1 + alpha, cell, -0.25 * sb * sc * amplitude))
+    hoppings = _hermitian_hoppings(n_bands, onsite, bonds)
+    lattice_vectors = np.diag([1.0 if axis < dim else 10.0 for axis in range(3)])
+    grid = tuple(4 if axis < dim else 1 for axis in range(3))
+    return HoppingModel(
+        f'parabolic_{n_bands}', hoppings, n_bands, lattice_vectors, float(alat),
+        np.zeros((n_bands, 3)), 2.0 * dim, grid,
+    )  # fmt: skip
+
+
 def _kane_mele_from_legacy(params: Mapping) -> HoppingModel:
     """:func:`kane_mele_model` from the parameters of the ``'Kane_Mele'`` label.
 
@@ -3541,6 +3644,7 @@ HOPPING_MODELS = {
     'WEYL': weyl_model,
     'SINGLE_BAND': single_band_model,
     'TMD': tmd_model,
+    'PARABOLIC': parabolic_model,
 }
 
 
@@ -3555,11 +3659,13 @@ def build_from_hoppings(data_controller: DataController, model: HoppingModel) ->
     Returns
     -------
     None
-        Sets ``arrays['HRs', 'a_vectors', 'b_vectors', 'tau', 'naw', 'atoms']`` and
+        Sets ``arrays['HRs', 'a_vectors', 'b_vectors', 'tau', 'Dnm', 'naw', 'atoms']`` and
         ``attributes['nawf', 'bnd', 'nbnds', 'natoms', 'nspin', 'alat', 'omega', 'nelec', 'Efermi',
         'shift', 'dftSO', 'adhoc_SO', 'do_spin_orbit', 'nk1', 'nk2', 'nk3', 'nkpnts']``
         (``nelec`` only when the model has one); every orbital is its own site, so ``tau`` holds
-        the orbital centres (Cartesian, alat units). Spinful models also get the spin operators
+        the orbital centres (Cartesian, alat units) and ``Dnm`` their differences
+        :math:`\tau_n - \tau_m` (Cartesian, bohr, as the QE route) used by
+        ``gradient_and_momenta``. Spinful models also get the spin operators
         ``arrays['Sj']`` (:math:`\sigma/2` in the block order of :class:`HoppingModel`).
     """
     arrays, attributes = data_controller.data_dicts()
@@ -3570,6 +3676,8 @@ def build_from_hoppings(data_controller: DataController, model: HoppingModel) ->
     arrays['a_vectors'] = lattice_vectors
     arrays['b_vectors'] = np.linalg.inv(lattice_vectors).T
     arrays['tau'] = np.asarray(model.orbital_positions, dtype=float) @ lattice_vectors
+    centres_bohr = float(model.alat) * arrays['tau']
+    arrays['Dnm'] = centres_bohr[:, None, :] - centres_bohr[None, :, :]
     arrays['naw'] = np.ones(norb, dtype=int)
     arrays['atoms'] = ['X'] * norb
     attributes['nawf'] = attributes['bnd'] = attributes['nbnds'] = attributes['natoms'] = norb
@@ -3601,9 +3709,10 @@ def build_TB_model(data_controller: DataController, params: dict) -> None:
     data_controller : DataController
     params : dict
         ``'label'`` (case-insensitive) and the parameters of the model. The hopping-list models
-        (``'honeycomb'``, ``'rice_mele'``, ``'weyl'``, ``'single_band'``, ``'tmd'``) take the
-        keyword arguments of :func:`honeycomb_model`, :func:`rice_mele_model`,
-        :func:`weyl_model`, :func:`single_band_model` and :func:`tmd_model` (``alat`` in bohr);
+        (``'honeycomb'``, ``'rice_mele'``, ``'weyl'``, ``'single_band'``, ``'tmd'``,
+        ``'parabolic'``) take the keyword arguments of :func:`honeycomb_model`,
+        :func:`rice_mele_model`, :func:`weyl_model`, :func:`single_band_model`, :func:`tmd_model` and
+        :func:`parabolic_model` (``alat`` in bohr);
         ``'Kane_Mele'`` builds :func:`kane_mele_model` from ``t``, ``soc_par``, ``r_par``,
         ``v_par`` (in units of ``t``) and ``alat`` (angstrom); an unknown key raises
         ``TypeError``. The ``*_pythtb`` labels go through :func:`build_from_pythTB`.

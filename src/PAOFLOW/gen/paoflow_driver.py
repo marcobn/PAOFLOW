@@ -532,6 +532,11 @@ def _nonlinear_constant_lines(cfg):
             cfg.get('nlo_temperature', 0.0) if cfg.get('nlo_metal') else 0.0
         ),
         'NLO_TAU = {}'.format(cfg.get('nlo_tau', 20.0) if cfg.get('nlo_metal') else None),
+        '# Second-order interband coherences of metals damped with NLO_COHERENCE_DAMPING x eta (1: one',
+        '# dephasing rate, the insulator convention; 2: adiabatic switching, = velocity-gauge Kubo).',
+        'NLO_COHERENCE_DAMPING = {}'.format(
+            cfg.get('nlo_coherence_damping', 1.0) if cfg.get('nlo_metal') else 1.0
+        ),
         '',
     ]
     if cfg.get('nlo_coupled'):
@@ -601,6 +606,7 @@ def _nonlinear_run_lines(cfg):
         '        coupling=(NLO_COUPLING if NLO_MOLECULE else None),',
         '        complement_shift=NLO_COMPLEMENT_SHIFT, fermi_surface=NLO_FERMI_SURFACE,',
         '        temperature=NLO_TEMPERATURE, relaxation_time=NLO_TAU,',
+        '        coherence_damping=NLO_COHERENCE_DAMPING,',
         '    )',
     ]
     if cfg.get('nlo_coupled'):

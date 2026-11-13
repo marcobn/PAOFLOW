@@ -355,6 +355,43 @@ def test_orchestrator_switches_to_the_density_matrix_engine_for_a_metal(tmp_path
     assert 'photocurrent' not in res and not attr['nonlinear_optics']['fermi_surface']
 
 
+def test_orchestrator_coherence_damping_reaches_the_engine(tmp_path):
+    """coherence_damping (1: eta, the default; 2: adiabatic) is passed to the engine and recorded."""
+    from PAOFLOW import PAOFLOW
+    from PAOFLOW.hamiltonian.bloch_derivatives import orbital_positions_from_data
+
+    pao = PAOFLOW.PAOFLOW(
+        model={'label': 'graphene', 't': 2.7, 'delta': 1.0}, outputdir=str(tmp_path / 'o'),
+        verbose=False,
+    )  # fmt: skip
+    options = {
+        'nk': (18, 18, 1), 'emin': 0.6, 'emax': 2.4, 'ne': 4, 'eta': 0.1, 'components': ['yyy'],
+        'nelec': 2.5, 'fermi_energy': 0.8, 'temperature': 600.0, 'relaxation_time': 25.0,
+        'symmetry': False,
+    }  # fmt: skip
+    one = pao.nonlinear_optics(**options)
+    arrays, attr = pao.data_controller.data_dicts()
+    assert attr['nonlinear_optics']['coherence_damping'] == 1.0
+    two = pao.nonlinear_optics(coherence_damping=2.0, **options)
+    assert attr['nonlinear_optics']['coherence_damping'] == 2.0
+    assert not np.allclose(one['shg'], two['shg'])
+    direct = dmr.density_matrix_spectra(
+        arrays['HRs'], arrays['a_vectors'], attr['alat'],
+        float(attr['omega']) if 'omega' in attr else attr['alat'] ** 3 * abs(np.linalg.det(arrays['a_vectors'])),
+        orbital_positions_from_data(pao.data_controller), 2.5, (18, 18, 1),
+        np.linspace(0.6, 2.4, 4), response='shg', components=['yyy'], eta=0.1, fermi_energy=0.8,
+        temperature=600.0, relaxation_time=25.0, coherence_damping=2.0,
+    )  # fmt: skip
+    assert direct['coherence_damping'] == 2.0
+    assert np.allclose(two['shg'], direct['shg'], rtol=1e-10, atol=0.0)
+    pao.nonlinear_optics(
+        nk=(18, 18, 1), emin=0.6, emax=2.4, ne=4, eta=0.1, components=['yyy'], nelec=2
+    )
+    assert attr['nonlinear_optics']['coherence_damping'] is None  # an insulator: the delta path
+    with pytest.raises(ValueError, match='coherence_damping'):
+        pao.nonlinear_optics(coherence_damping=0.0, **options)
+
+
 def test_velocity_gauge_kubo_reference_agrees_with_the_engine():
     """Peierls (velocity gauge) perturbation theory with adiabatic switching, a different gauge and code.
 

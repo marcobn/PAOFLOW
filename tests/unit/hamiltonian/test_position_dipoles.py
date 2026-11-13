@@ -302,6 +302,41 @@ def test_si_position_dipole_operator(si_data_controller):
     )  # s, p_z, p_x, p_y per site: (-1)^l (-1)^(odd m)
 
 
+def test_spin_orbit_position_dipole_operator_matches_the_grid_route(si_data_controller):
+    """Fully relativistic: the operator of the NLO path equals position_dipoles_on_grid (j, m_j); ad hoc:
+    spin-diagonal copies of the scalar operator."""
+    from PAOFLOW.hamiltonian.position_dipoles import position_dipoles_on_grid
+
+    dc, alat, a_vectors = si_data_controller
+    arrays, attributes = dc.data_dicts()
+    bg = np.linalg.inv(a_vectors).T
+    k_cryst = np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.25], [0.1, 0.2, 0.3]])
+    scalar = position_dipole_operator(dc, bg, alat, pao_tol=1e-2, n_q=300)(k_cryst)
+    attributes['dftSO'] = True
+    try:
+        arrays.pop('_PD_tables', None)
+        rel = position_dipole_operator(dc, bg, alat, pao_tol=1e-2, n_q=300)(k_cryst)
+        grid = position_dipoles_on_grid(dc, (k_cryst @ bg).T, pao_tol=1e-2, n_q=300)
+        attributes['adhoc_SO'] = True
+        adhoc = position_dipole_operator(dc, bg, alat, pao_tol=1e-2, n_q=300)(k_cryst)
+    finally:
+        attributes['dftSO'] = False
+        attributes.pop('adhoc_SO', None)
+        arrays.pop('_PD_tables', None)
+    assert rel.shape == (3, 3, 16, 16) and hermiticity_residual(rel) < 1e-12
+    np.testing.assert_allclose(rel, grid, atol=1e-10)
+    for k in range(3):
+        for alpha in range(3):
+            np.testing.assert_allclose(
+                np.sort(np.linalg.eigvalsh(rel[k, alpha])),
+                np.sort(np.repeat(np.linalg.eigvalsh(scalar[k, alpha]), 2)),
+                atol=1e-9,
+            )
+    np.testing.assert_allclose(adhoc[:, :, :8, :8], scalar, atol=1e-14)
+    np.testing.assert_allclose(adhoc[:, :, 8:, 8:], scalar, atol=1e-14)
+    assert np.abs(adhoc[:, :, :8, 8:]).max() == 0.0
+
+
 def test_inject_dipole_velocity_into_dHksp_is_minus_commutator():
     from PAOFLOW.hamiltonian.position_dipoles import inject_dipole_velocity_into_dHksp
 

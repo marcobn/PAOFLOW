@@ -259,3 +259,97 @@ def test_point_group_selection_rules_of_the_shift_current(model):
     assert scale > 0
     assert np.allclose(yxx, -yyy, atol=1e-10 * scale)
     assert np.allclose(xxx, 0.0, atol=1e-10 * scale)
+
+
+@pytest.mark.parametrize('n_bands', [2, 3, 4])
+def test_parabolic_gamma_levels_and_kane_masses(n_bands):
+    """Gamma: the polar pair E_g/2 +- sqrt(E_g^2/4 + Q^2) (2, 3 bands); Kane masses along x for A = 0."""
+    gap, t_c, t_sigma, t_pi, kane_p, q = 1.5, 0.5, 0.4, 0.1, 1.0, 0.3
+    model = models.parabolic_model(n_bands=n_bands, asymmetry=q)
+    levels = bands(model, np.zeros(3))[0]
+    pair = gap / 2 + np.array([-1.0, 1.0]) * np.sqrt(gap**2 / 4 + q**2)
+    if n_bands < 4:
+        expected = np.sort(np.concatenate([pair, np.zeros(n_bands - 2)]))
+    else:
+        expected = np.array([0.0, 0.0, 0.0, gap])  # Kane's B term vanishes at Gamma
+    assert np.allclose(levels, expected, atol=1e-12)
+
+    symmetric = models.parabolic_model(n_bands=n_bands, asymmetry=0.0)
+    step = 1e-3
+    energies = bands(symmetric, np.array([[-step, 0, 0], [0, 0, 0], [step, 0, 0]]))
+    curvature = (energies[0] + energies[2] - 2 * energies[1]) / (
+        2 * np.pi * step / symmetric.alat
+    ) ** 2
+    a2 = symmetric.alat**2
+    light, heavy = -2 * a2 * (t_sigma + kane_p**2 / gap), -2 * a2 * t_pi
+    expected = np.sort([2 * a2 * (t_c + kane_p**2 / gap), light] + [heavy] * (n_bands - 2))
+    assert np.allclose(curvature, expected, rtol=1e-4)  # O((k a)^2) finite-difference error
+
+
+def _photocurrents(model, nk, components):
+    return nlo.nonlinear_optical_spectra(
+        model.real_space_hamiltonian(),
+        model.lattice_vectors,
+        model.alat,
+        model.volume,
+        model.orbital_positions,
+        model.nelec,
+        nk,
+        np.array([1.9, 2.4]),
+        components=components,
+        eta=0.1,
+        degeneracy_tol=1e-4,
+        want=('shift', 'injection'),
+    )
+
+
+def test_parabolic_symmetry_classes():
+    """2D, mirror x -> -x: A = 0 kills everything; phase 0 (T) gives shift and circular injection
+    only, phase pi/2 (PT) the magnetic injection only (Watanabe and Yanase 2021)."""
+    comps = ['yyy', 'yxx', 'xxy', 'xxx']
+    responses = ('shift', 'shiftm', 'injectc', 'injectm')
+
+    def scales(**kwargs):
+        out = _photocurrents(models.parabolic_model(n_bands=3, **kwargs), (40, 40, 1), comps)
+        return {key: np.abs(out[key]).max() for key in responses}, out
+
+    centrosymmetric, _ = scales(asymmetry=0.0)
+    polar, out_t = scales(phase=0.0)
+    magnetic, _ = scales(phase=np.pi / 2)
+    assert max(centrosymmetric['shift'], centrosymmetric['shiftm']) < 1e-12 * polar['shift']
+    assert max(centrosymmetric['injectc'], centrosymmetric['injectm']) < 1e-12 * polar['injectc']
+    assert magnetic['injectc'] < 1e-12 * polar['injectc']
+    assert polar['shiftm'] < 1e-12 * polar['shift'] and polar['injectm'] < 1e-12 * polar['injectc']
+    assert (
+        magnetic['shift'] < 1e-12 * polar['shift'] and magnetic['injectm'] > 1e-3 * polar['injectc']
+    )
+    assert np.allclose(out_t['shift'][3], 0.0, atol=1e-12 * polar['shift'])  # xxx: mirror x -> -x
+    flipped = _photocurrents(models.parabolic_model(n_bands=3, asymmetry=-0.3), (40, 40, 1), comps)
+    assert np.allclose(flipped['shift'], -out_t['shift'], atol=1e-12 * polar['shift'])
+
+
+def test_parabolic_td_components():
+    """Four bands with Kane's B term (T_d): only the xyz-type components survive, all equal."""
+    model = models.parabolic_model(n_bands=4)
+    out = _photocurrents(model, (10, 10, 10), ['xyz', 'yzx', 'zxy', 'xxx', 'xyy', 'xxy'])
+    shift = out['shift']
+    scale = np.abs(shift[0]).max()
+    assert scale > 0
+    assert np.allclose(shift[1], shift[0], atol=1e-10 * scale)
+    assert np.allclose(shift[2], shift[0], atol=1e-10 * scale)
+    assert np.allclose(shift[3:], 0.0, atol=1e-10 * scale)
+
+
+def test_parabolic_label_and_bad_band_count(tmp_path):
+    pao = PAOFLOW.PAOFLOW(
+        model={'label': 'parabolic', 'n_bands': 3, 'phase': 0.5},
+        outputdir=str(tmp_path / 'out'),
+        verbose=False,
+    )
+    arrays, attributes = pao.data_controller.data_dicts()
+    reference = models.parabolic_model(n_bands=3, phase=0.5)
+    assert np.array_equal(arrays['HRs'], reference.real_space_hamiltonian())
+    assert attributes['nelec'] == 4.0
+    assert arrays['Dnm'].shape == (3, 3, 3)
+    with pytest.raises(ValueError):
+        models.parabolic_model(n_bands=5)
