@@ -140,9 +140,9 @@ def run_properties():
 
 
 def run_optical():
-    """Optical properties: extended basis + non-local velocity.
+    """Optical properties: extended basis + position dipoles in the velocity.
 
-    The dielectric tensor requires the non-local velocity correction,
+    The dielectric tensor needs the complete velocity operator (position dipoles),
     so it runs as a separate PAOFLOW instance on the extended basis.
     """
     p = PAOFLOW.PAOFLOW(
@@ -161,8 +161,9 @@ def run_optical():
         p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])
     p.pao_eigh()
 
-    # Non-local velocity is essential for the optical matrix elements.
-    p.gradient_and_momenta(nonlocal_velocity=True)
+    # Position dipoles of the PAO orbitals complete the velocity operator
+    # (the non-local term would double count: PAOFLOW docs, position-dipoles.md).
+    p.gradient_and_momenta(position_dipoles=True)
     p.adaptive_smearing()
     p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1)
 

@@ -66,6 +66,7 @@ release
 internal-basis
 acbn0
 nonlocal-velocity
+position-dipoles
 sk-edtb
 cli-generators
 

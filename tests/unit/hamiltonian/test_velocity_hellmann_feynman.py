@@ -1,9 +1,9 @@
 """Hellmann-Feynman & Hermiticity invariants for the PAOFLOW velocity operator.
 
 These checks pin down properties of ``pksp`` (the band-resolved momentum
-matrix elements built by ``do_momentum``) that **must** survive once the
-non-local pseudopotential velocity correction is later inserted between
-``gradient()`` and ``momenta()`` (see ``TODOs/nonlocal_velocity_correction.md``):
+matrix elements built by ``do_momentum``) that **must** survive the
+position-dipole term inserted between ``gradient()`` and ``momenta()``
+(``gradient_and_momenta(position_dipoles=True)``):
 
 * ``pksp`` is Hermitian in the band indices at every k-point;
 * the diagonal ``pksp[k, l, n, n]`` equals the band group velocity
