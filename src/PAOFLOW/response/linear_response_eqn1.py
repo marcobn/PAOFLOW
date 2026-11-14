@@ -7,6 +7,9 @@ import time
 from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI
 from ..utils.perturb_split import perturb_split
 from ..utils.communication import reduce_full
+from .kubo_bastin import BLOCK_ELEMENTS
+from .kubo_kernels import surface_kernel
+from .kubo_units import sheet_unit
 
 
 # bohr_to_m = 5.29177249e-11
@@ -130,30 +133,16 @@ def calc_chi1(data_controller=None, tensor=None):
     # Each MPI rank accumulates its own local k-points.
     # ------------------------------------------------------------
 
+    # sum_nm Re[O1_nm O2_mn] W_n W_m / pi with W = pi L: the Fermi-surface kernel pi sum Re P L L
     prop_aux = np.zeros((nene, nspin), dtype=float)
+    block = max(1, BLOCK_ELEMENTS // (nene * nbnd + nbnd * nbnd))
     for ispin in range(nspin):
-        for ik in range(nk):
-            E_k = arry['E_k'][ik, :, ispin]
-            # Lorentzian weights W[e,n]
-            W = gamma / (
-                (ene[:, None] - E_k[None, :]) ** 2 + gamma**2
-            )  ##shape of W = (len(ene), nbnd)
-            # ----------------------------------------------------
-            # Numerator matrix: A[n,m]
-            A = np.real(
-                oper_matrix1[ik, :, :, ispin] * oper_matrix2[ik, :, :, ispin].T
-            )  ##shape of A = (nbnd, nbnd)
-            # ----------------------------------------------------
-            # Calculate: response[e] = sum_nm W[e,n] A[n,m] W[e,m]
-            # First: Y = W @ A gives: Y[e,m] = sum_n W[e,n] A[n,m]; use dot product to sum over n
-            # Then: sum_m Y[e,m] W[e,m] gives the desired quadratic form. elementwise multiplication
-            # ----------------------------------------------------
-            Y = W @ A  ##shape of Y = (len(ene), nbnd)
-            my_response = np.real(np.sum(Y * W, axis=1))
-            # ----------------------------------------------------
-            # Accumulate this local k-point
-            # ----------------------------------------------------
-            prop_aux[:, ispin] += my_response
+        for start in range(0, nk, block):
+            ks = slice(start, min(start + block, nk))
+            pair = oper_matrix1[ks, :, :, ispin] * np.transpose(
+                oper_matrix2[ks, :, :, ispin], (0, 2, 1)
+            )
+            prop_aux[:, ispin] += surface_kernel(arry['E_k'][ks, :, ispin], pair, ene, gamma)[0]
 
     # ============================================================
     # MPI REDUCTION
@@ -171,11 +160,11 @@ def calc_chi1(data_controller=None, tensor=None):
     # ============================================================
     if rank == 0:
         if attr['response'] == 'shc':
-            prop_aux_full = prop_aux_full / attr['nkpnts'] * (attr['cgs_conv'] / np.pi) * (-1.0)
+            prop_aux_full = prop_aux_full / attr['nkpnts'] * attr['cgs_conv'] * (-1.0)
         elif attr['response'] == 'ree':
-            prop_aux_full = prop_aux_full / attr['nkpnts'] * (bohr_to_cm / np.pi) * (-1.0)
+            prop_aux_full = prop_aux_full / attr['nkpnts'] * bohr_to_cm * (-1.0)
         elif attr['response'] == 'cond':
-            prop_aux_full = prop_aux_full / attr['nkpnts'] * (attr['cgs_conv'] / np.pi)
+            prop_aux_full = prop_aux_full / attr['nkpnts'] * attr['cgs_conv']
 
     # ============================================================
     # Write output
@@ -193,6 +182,8 @@ def calc_chi1(data_controller=None, tensor=None):
         fname = f'Cond_{xzy[cpol]}{xzy[ipol]}.dat'
         unit1 = 'Energy [eV]'
         unit2 = 'Conductivity [S/cm]'
+    if attr['twoD']:
+        unit2 = sheet_unit(unit2)
 
     # data_controller.write_file_row_col(fname,ene,prop_aux_full)
     data_controller.write_file_row_col_units(fname, ene, prop_aux_full, unit1, unit2)
@@ -204,17 +195,8 @@ def calc_chi1(data_controller=None, tensor=None):
     prop_aux_full = None
 
 
-def spin_current(data_controller=None, tensor=None):
-    arry, attr = data_controller.data_dicts()
-    nk, nbnd, nspin = arry['E_k'].shape
-    spol, jspol, ipol = tensor
-    Sj = arry['Sj'][spol]
-    snktot, _, nawf, nawf, nspin = arry['dHksp'].shape
-    jdHksp = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
-    for ispin in range(nspin):
-        for ik in range(snktot):
-            jdHksp[ik, :, :, ispin] = 0.5 * (
-                np.dot(Sj, arry['dHksp'][ik, jspol, :, :, ispin])
-                + np.dot(arry['dHksp'][ik, jspol, :, :, ispin], Sj)
-            )
-    return jdHksp
+def spin_current(data_controller=None, tensor=None) -> np.ndarray:
+    """Spin current {S_spin, dH_current}/2 of ``tensor = (spin, current, ...)`` at every local k."""
+    from .do_Hall import do_spin_current as spin_current_operator
+
+    return spin_current_operator(data_controller, tensor[0], tensor[1])

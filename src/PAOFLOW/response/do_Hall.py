@@ -36,7 +36,8 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
           Fermi energy.
         - When ``do_ac``: ``ac_shcr_{...}.dat`` and ``ac_shci_{...}.dat``.
     """
-    from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
+    from ..utils.constants import LL
+    from .kubo_units import conductivity_conversion
     from ..utils.perturb_split import perturb_split
 
     arry, attr = data_controller.data_dicts()
@@ -90,12 +91,8 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
 
         jksp_is = pksp_j = None
 
+        cgs_conv = conductivity_conversion(data_controller, twoD)
         if rank == 0:
-            if twoD:
-                av0, av1 = arry['a_vectors'][0, :], arry['a_vectors'][1, :]
-                cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
-            else:
-                cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
             shc *= cgs_conv
 
         cart_indices = (str(LL[spol]), str(LL[ipol]), str(LL[jpol]))
@@ -178,7 +175,8 @@ def do_orbital_Hall(data_controller, twoD, do_ac, P):
           Fermi energy.
         - When ``do_ac``: ``ac_ohcr_{...}.dat`` and ``ac_ohci_{...}.dat``.
     """
-    from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
+    from ..utils.constants import LL
+    from .kubo_units import conductivity_conversion
     from ..utils.perturb_split import perturb_split
 
     arry, attr = data_controller.data_dicts()
@@ -188,11 +186,11 @@ def do_orbital_Hall(data_controller, twoD, do_ac, P):
     # -----------------------
     # Orbital Hall calculation
     # -----------------------
-    if attr['dftSO'] == False:
-        if rank == 0:
-            print('Relativistic calculation with SO required')
-            comm.Abort()
-        comm.Barrier()
+    # No spin-orbit requirement: the orbital Hall effect exists without it. ``Lj`` is built by
+    # PAOFLOW.orbital_operator in the spinor basis (dftSO or adhoc_SO) or, since 14 Nov 2026, in
+    # the scalar real-harmonic basis.
+    if 'Lj' not in arry:
+        raise KeyError('do_orbital_Hall needs the orbital operator Lj (PAOFLOW.orbital_operator)')
 
     if rank == 0 and attr['verbose']:
         print('Writing bxsf files for Orbital Berry Curvature')
@@ -224,12 +222,11 @@ def do_orbital_Hall(data_controller, twoD, do_ac, P):
         # ---------------------------------
         ene, ohc, Om_k = do_Berry_curvature(data_controller, jksp_is, pksp_j)
 
+        cgs_conv = conductivity_conversion(data_controller, twoD)
+        if not attr['dftSO'] and attr['nspin'] == 1:
+            # scalar basis: every band holds both spins (as in the Boltzmann routes)
+            cgs_conv *= 2.0
         if rank == 0:
-            if twoD:
-                av0, av1 = arry['a_vectors'][0, :], arry['a_vectors'][1, :]
-                cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
-            else:
-                cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
             ohc *= cgs_conv
 
         cart_indices = (str(LL[spol]), str(LL[ipol]), str(LL[jpol]))
@@ -279,7 +276,7 @@ def do_orbital_Hall(data_controller, twoD, do_ac, P):
             data_controller.write_file_row_col(fsigR, ene, sigxyr)
 
 
-def do_anomalous_Hall(data_controller, do_ac):
+def do_anomalous_Hall(data_controller, do_ac: bool, twoD: bool = False) -> None:
     """Compute the anomalous Hall conductivity and optionally the magneto-optical conductivity.
 
     Parameters
@@ -294,6 +291,9 @@ def do_anomalous_Hall(data_controller, do_ac):
     do_ac : bool
         If ``True``, also compute the MCD (magneto-circular dichroism)
         optical conductivity.
+    twoD : bool
+        Sheet conductivity in units of :math:`e^2/\\hbar` (area of the first two lattice
+        vectors) instead of S/cm. Default ``False``.
 
     Returns
     -------
@@ -305,7 +305,8 @@ def do_anomalous_Hall(data_controller, do_ac):
           Fermi energy.
         - When ``do_ac``: ``MCDr_{...}.dat`` and ``MCDi_{...}.dat``.
     """
-    from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
+    from ..utils.constants import LL
+    from .kubo_units import conductivity_conversion
     from ..utils.perturb_split import perturb_split
 
     arry, attr = data_controller.data_dicts()
@@ -344,8 +345,7 @@ def do_anomalous_Hall(data_controller, do_ac):
 
         ene, ahc, Om_k = do_Berry_curvature(data_controller, pksp_i, pksp_j)
 
-        if rank == 0:
-            cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
+        cgs_conv = conductivity_conversion(data_controller, twoD)
 
         cart_indices = (str(LL[ipol]), str(LL[jpol]))
 
@@ -429,6 +429,7 @@ def do_Berry_curvature(data_controller, jksp, pksp):
     # ----------------------
     from ..utils.communication import gather_full
     from ..utils.smearing import intgaussian, intmetpax
+    from .kubo_kernels import berry_curvature
 
     arrays, attributes = data_controller.data_dicts()
 
@@ -442,18 +443,15 @@ def do_Berry_curvature(data_controller, jksp, pksp):
     deltap = attributes['deltaH']
 
     for ik in range(snktot):
-        E_nm = (arrays['E_k'][ik, :, 0] - arrays['E_k'][ik, :, 0][:, None]) ** 2 + deltap**2
-        E_nm[np.where(E_nm < 1.0e-4)] = np.inf
-        Om_znkaux[ik] = -2.0 * np.sum(
-            np.imag(jksp[ik, :, :, 0] * pksp[ik, :, :, 0].T) / E_nm, axis=1
+        Om_znkaux[ik] = berry_curvature(
+            arrays['E_k'][ik, :, 0], jksp[ik, :, :, 0], pksp[ik, :, :, 0], deltap
         )
-    E_nm = None
 
+    emax = attributes['emaxH']
     if attributes['shift'] != 0.0:
-        attributes['emaxH'] = np.amin(np.array([attributes['shift'], attributes['emaxH']]))
-    ### Hardcoded 'de'
+        emax = min(attributes['shift'], emax)
     esize = attributes['esizeH']
-    ene = np.linspace(attributes['eminH'], attributes['emaxH'], esize)
+    ene = np.linspace(attributes['eminH'], emax, esize)
 
     Om_zkaux = np.zeros((snktot, esize), dtype=float)
 
@@ -534,11 +532,22 @@ def do_ac_conductivity(data_controller, jksp, pksp, ipol, jpol):
 
     emin = 0.0
     emax = attr['shift']
-    ### Hardcode 'de'
+    width_floor = 0.0
+    if not np.isfinite(emax):
+        # Tight-binding models have no projectability shift (shift = inf): the photon energies
+        # then span the band width, and the adaptive pair widths (zero for pairs with equal
+        # velocities) are floored at ``delta``. Until 14 Nov 2026 the grid was linspace(0, inf),
+        # i.e. NaN. DFT runs (finite shift) are unchanged.
+        e_top = comm.allreduce(float(np.max(arry['E_k'])), op=MPI.MAX)
+        e_bottom = comm.allreduce(float(np.min(arry['E_k'])), op=MPI.MIN)
+        emax = e_top - e_bottom
+        width_floor = attr['deltaH']
     esize = attr['esizeH']
     ene = np.linspace(emin, emax, esize)
 
-    sigxy_aux = smear_sigma_loop(data_controller, ene, jksp, pksp, ispin, ipol, jpol)
+    sigxy_aux = smear_sigma_loop(
+        data_controller, ene, jksp, pksp, ispin, ipol, jpol, width_floor=width_floor
+    )
 
     sigxy = np.zeros((esize), dtype=complex) if rank == 0 else None
     sigxyR = np.zeros((esize), dtype=float) if rank == 0 else None
@@ -559,7 +568,9 @@ def do_ac_conductivity(data_controller, jksp, pksp, ipol, jpol):
         return (None, None)
 
 
-def smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol):
+def smear_sigma_loop(
+    data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol, width_floor: float = 0.0
+) -> np.ndarray:
     """Evaluate the smeared off-diagonal conductivity sum for a single spin channel.
 
     Parameters
@@ -580,6 +591,8 @@ def smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol):
         Left polarisation index.
     jpol : int
         Right polarisation index.
+    width_floor : float
+        Lower bound of the adaptive pair widths ``deltakp2`` (eV); 0 keeps them as they are.
 
     Returns
     -------
@@ -619,15 +632,13 @@ def smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol):
 
     fn = None
 
+    widths = arry['deltakp2'][:, :nawf, :nawf, ispin]
+    if width_floor > 0.0:
+        widths = np.maximum(widths, width_floor)
     for e in range(esize):
         if attr['smearing'] != None:
             sigxy[e] = np.sum(
-                f_nm[:, :, :]
-                / (
-                    E_diff_nm[:, :, :]
-                    - (ene[e] + 1.0j * arry['deltakp2'][:, :nawf, :nawf, ispin]) ** 2
-                    + eps
-                )
+                f_nm[:, :, :] / (E_diff_nm[:, :, :] - (ene[e] + 1.0j * widths) ** 2 + eps)
             )
         else:
             sigxy[e] = np.sum(

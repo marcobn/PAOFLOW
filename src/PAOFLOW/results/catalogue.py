@@ -111,6 +111,23 @@ def _ac_hall(groups: dict) -> tuple[str, str, str]:
     return '%s Hall conductivity (AC, %s)' % (name, part), '%s σ(ω)' % part, ''
 
 
+#: Kubo-Bastin observables (``kubo_<observable>_<component>.dat``): (title, symbol, bulk unit).
+KUBO_OBSERVABLES = {
+    'charge_current': ('Conductivity (Kubo-Bastin)', 'σ', 'S/cm'),
+    'spin_current': ('Spin Hall conductivity (Kubo-Bastin)', 'σ^s', '(ħ/e) S/cm'),
+    'orbital_current': ('Orbital Hall conductivity (Kubo-Bastin)', 'σ^L', '(ħ/e) S/cm'),
+    'spin_density': ('Spin density response, Edelstein (Kubo-Bastin)', 'χ', 'ħ cm/V'),
+    'orbital_density': ('Orbital density response (Kubo-Bastin)', 'χ', 'ħ cm/V'),
+    'spin_torque': ('Spin-orbit torkance (Kubo-Bastin)', 'τ', 'e a0'),
+    'custom': ('Operator response (Kubo-Bastin)', 'χ', ''),
+}
+
+
+def _kubo(groups: dict) -> tuple[str, str, str]:
+    title, symbol, unit = KUBO_OBSERVABLES[groups['observable']]
+    return '%s, %s' % (title, groups['component']), symbol, unit
+
+
 def _velocity(groups: dict) -> tuple[str, str, str]:
     direction = 'xyz'[int(groups['direction'])] if groups.get('direction', '').isdigit() else ''
     return 'Band velocity v_%s' % direction, 'v_%s' % direction, 'a.u.'
@@ -316,6 +333,18 @@ KINDS: tuple[Kind, ...] = (
         y=('Ω', 'a.u.'),
         series=('spol', 'component'),
         gpao='plot_berry',
+    ),
+    Kind(
+        'kubo_response',
+        '{title}',
+        HALL,
+        r'kubo_(?P<observable>charge_current|spin_current|orbital_current|spin_density|'
+        r'orbital_density|spin_torque|custom)_(?P<component>[xyz_]+)\.dat',
+        'columns',
+        x=E,
+        zero='x',
+        describe=_kubo,
+        gpao='plot_kubo_response',
     ),
     Kind(
         'linear_response',

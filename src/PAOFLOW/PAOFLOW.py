@@ -1654,7 +1654,23 @@ class PAOFLOW:
                         spol, len(orb_list) : 2 * len(orb_list), len(orb_list) : 2 * len(orb_list)
                     ] = L
 
-            elif attr['adhoc_SO'] == False:
+            elif not attr['dftSO']:
+                # Scalar (no spin-orbit) basis: L in the real harmonics |l,m> of every shell
+                # (restored 14 Nov 2026; the orbital Hall effect needs no spin-orbit coupling).
+                self.data_controller.build_arrays_adhoc_soc()
+                orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
+                if len(orb_list) != attr['nawf']:
+                    raise ValueError(
+                        'orbital_operator: the shells of %s have no real-harmonic table '
+                        '(%d of %d orbitals labelled)'
+                        % (arrays['atoms'], len(orb_list), attr['nawf'])
+                    )
+                arrays['Lj'] = np.zeros((3, attr['nawf'], attr['nawf']), dtype=complex)
+                for spol in range(3):
+                    L, _ = build_L_from_orb(arrays['orb_atom'], spol)
+                    arrays['Lj'][spol] = L
+
+            else:
                 if 'Sj' not in arrays:
                     self.spin_operator(adhoc_SO=False)
                 # Compute Total Angular Momentum operators
@@ -1663,16 +1679,6 @@ class PAOFLOW:
                     Jj[spol, :, :] = j_matrix(self.data_controller, spol)
                 # Compute Orbital Angular Momentum operators L = J - S
                 arrays['Lj'] = Jj - arrays['Sj']
-
-            # elif attr['dftSO'] == False and attr['adhoc_SO'] == False:
-            #    self.data_controller.build_arrays_adhoc_soc()
-            #    # Compute Orbital Angular Momentum operators L in the basis of |l,m> (NO SOC)
-            #    orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
-            #    arrays['Lj'] = np.zeros((3,attr['nawf'],attr['nawf']), dtype=complex)
-            #
-            #    for spol in range(3):
-            #        L, _ = build_L_from_orb(arrays['orb_atom'], spol)
-            #        arrays['Lj'][spol, 0:len(orb_list), 0:len(orb_list)] = L
         except:
             self.report_exception('angular_momentum_operator')
             if attr['abort_on_exception']:
@@ -3088,19 +3094,22 @@ class PAOFLOW:
 
     def anomalous_Hall(
         self,
-        do_ac=False,
-        emin=-1.0,
-        emax=1.0,
-        fermi_up=1.0,
-        fermi_dw=-1.0,
-        ne=501,
-        delta=0.05,
-        a_tensor=None,
-    ):
+        do_ac: bool = False,
+        emin: float = -1.0,
+        emax: float = 1.0,
+        fermi_up: float = 1.0,
+        fermi_dw: float = -1.0,
+        ne: int = 501,
+        delta: float = 0.05,
+        a_tensor: list | np.ndarray | None = None,
+        twoD: bool = False,
+    ) -> None:
         """
         Calculate the Anomalous Hall Conductivity
 
         Arguments:
+            twoD (bool): True for the sheet conductivity in units of e^2/hbar (area of the first
+                two lattice vectors) instead of S/cm
             do_ac (bool): True to calculate the Magnetic Circular Dichroism
             emin (float): The minimum energy in the range
             emax (float): The maximum energy in the range
@@ -3133,7 +3142,7 @@ class PAOFLOW:
         attr['fermi_dw'] = fermi_dw
 
         try:
-            do_anomalous_Hall(self.data_controller, do_ac)
+            do_anomalous_Hall(self.data_controller, do_ac, twoD=twoD)
         except Exception as e:
             self.report_exception('anomalous_Hall')
             if attr['abort_on_exception']:
@@ -6741,63 +6750,94 @@ class PAOFLOW:
 
     def linear_response(
         self,
-        response='shc',
-        gamma=0.01,
-        twoD=False,
-        t_odd=False,
-        full_chi2=False,
-        intraband=False,
-        interband=False,
-        s_tensor=None,
-        a_tensor=None,
-        eminH=-1.0,
-        emaxH=1.0,
-        esize=200,
-    ):
-        """
-        Calculate various linear response tensors:
-            1. Spin Hall conductivity tensors
-            2. Rashba-Edelstein effect tensors
-            3. Charge conductivity tensors
-            4. Anomolous Hall effect tensors
-        All of above tensors can be computed for both magnetic(broken time-reversible symmetry) and nonmagnetic systems.
+        response: str = 'shc',
+        gamma: float = 0.01,
+        twoD: bool = False,
+        t_odd: bool = False,
+        full_chi2: bool = False,
+        intraband: bool = False,
+        interband: bool = False,
+        s_tensor: list | np.ndarray | None = None,
+        a_tensor: list | np.ndarray | None = None,
+        eminH: float = -1.0,
+        emaxH: float = 1.0,
+        esize: int = 200,
+        delta: float = 0.05,
+    ) -> None:
+        """Linear-response tensors of tutorial03 (Eqs. 1-5): spin Hall, Rashba-Edelstein, conductivity, AHC.
 
-        Arguments:
-            response (string) :
-                response to be calculated; Acceptable strings: 'shc', 'ahc', 'ree', 'cond'
-            gamma (float):
-                spectral broadening to be used
-            t_odd (boolean):
-                If True, tensor components that is odd under time-reversible symmetry will be calculated
-            full_chi2 (boolean):
-                If True, Gamma dependent Eqn. (2) will be used to compute the tensor. Refer tutorial03 for equation reference.
-            intraband (boolean) :
-                If True, only intraband contribution <nk|oper|nk> will be calculated
-            interband (boolean) :
-                If True, only interband contribution <nk|oper|mk> (for n not equal to m) will be calculated
-            s_tensor (nested list):
-                List of tensor elements to calculate for SHE
-                                  Ex: To calculate xxx and zxy use [[0,0,0],[2,0,1]])
-                                  first index = spin polarization
-                                  second index = spin current
-                                  third index = applied electric field
-            a_tensor (nested list):
-                List of tensor elements to calculate for REE/AHE/Conductivity
-                                  Ex: [[1,2],[0,1]]
-                                  firs index: direction of the response
-                                  second index: direction of of applied electric field
-            twoD (bool):
-                True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
-            eminH (float):
-                The minimum energy in the range
-            emaxH (float):
-                The maximum energy in the range
-            esize (int):
-                The number of energy increments
+        Every branch is a limit of the Kubo-Bastin formula; :meth:`kubo_response` evaluates that formula
+        in general (exact constant-broadening kernels, finite temperature, any operator). This method keeps
+        the numbers of the tutorial03 forms.
 
-        Returns:
-            None
+        Parameters
+        ----------
+        response : {'shc', 'ree', 'cond', 'ahc'}
+            Spin Hall conductivity, Rashba-Edelstein (spin density) response, charge conductivity or
+            anomalous Hall conductivity.
+        gamma : float
+            Constant broadening of the Lorentzian spectral functions (eV), Eqs. 1, 2, 4, 5.
+        twoD : bool
+            Sheet values in units of e^2/hbar (the area of the first two lattice vectors replaces the
+            volume); the file headers say so.
+        t_odd : bool
+            Compute the time-reversal-odd part (spin Hall: Fermi-surface Eq. 1; Rashba-Edelstein:
+            Fermi-sea Eq. 3, or Eq. 2 with ``full_chi2``).
+        full_chi2 : bool
+            Fermi-sea term with finite ``gamma`` (Eq. 2) instead of the Berry-curvature limit (Eq. 3).
+        intraband, interband : bool
+            Only the intraband (Eq. 4) or interband (Eq. 5) part of the Fermi-surface term.
+        s_tensor : array_like of int, shape ``(n, 3)``, optional
+            Spin Hall components ``(spin, current, field)``, e.g. ``[[2, 0, 1]]`` for
+            :math:`\\sigma^z_{xy}`. If omitted, the ``s_tensor`` of an earlier :meth:`spin_Hall` call
+            (stored there as ``(current, field, spin)``) is reordered and used.
+        a_tensor : array_like of int, shape ``(n, 2)``, optional
+            Components ``(response, field)`` for 'ree', 'cond' and 'ahc'. If omitted, the ``a_tensor``
+            of an earlier :meth:`anomalous_Hall` call is used.
+        eminH, emaxH : float
+            Chemical-potential window (eV); ``emaxH`` is capped at the projectability shift.
+        esize : int
+            Number of chemical potentials.
+        delta : float
+            Regulariser of the energy denominators of the Berry-curvature form (Eq. 3),
+            :math:`(\\varepsilon_n-\\varepsilon_m)^2 + \\delta^2` (eV). Before 14 Nov 2026 it was fixed
+            at 0.05.
+
+        Returns
+        -------
+        None
+            Writes ``SHC_*``, ``REE_*``, ``Cond_*`` or ``AHC_*`` files to the output directory and stores
+            the tensors (``shc_tensor``, ``ree_tensor``) and settings in the DataController.
+
+        Raises
+        ------
+        ValueError
+            Unknown ``response``, or no tensor given and none stored by an earlier call.
+
+        Notes
+        -----
+        Superseded by :meth:`kubo_response` (exact constant-broadening kernels for every term and
+        observable, finite temperature); a ``FutureWarning`` says so. Signs relative to
+        :meth:`kubo_response` (tests in ``tests/unit/response/test_kubo_bastin.py``):
+        - 'cond' (Eqs. 1, 4, 5) and 'shc' (Eqs. 1, 2, 3) agree. The SHC includes the electron charge, as in
+          Guo et al. 2008.
+        - 'ree' (Eqs. 1, 2, 3) is opposite: it takes ``dHksp``, which is :math:`-\\hbar v`, as the velocity.
+        - 'ahc' Eq. 3 (as :meth:`anomalous_Hall`), :math:`\\sum_n f_n\\Omega_n`, is opposite: it gives
+          :math:`\\sigma_{xy}` for the magnetic moment along the spin axis of the run, matching Yao et al. 2004
+          for Fe.
+        - Eq. 2 of 'ahc' (``full_chi2``) agrees with the computed state, so ``full_chi2`` flips the sign of
+          the AHC.
+        See ``docs/internals/kubo-bastin.md``.
         """
+        import warnings
+
+        if self.rank == 0:
+            warnings.warn(
+                'linear_response keeps the tutorial03 equations; kubo_response evaluates the full '
+                'Kubo-Bastin formula for every term and observable (see its sign notes)',
+                FutureWarning,
+                stacklevel=2,
+            )
         arry, attr = self.data_controller.data_dicts()
         attr['response'] = response
         attr['gamma'] = gamma
@@ -6809,16 +6849,25 @@ class PAOFLOW:
         attr['interband'] = interband
         attr['t_odd'] = t_odd
         attr['full_chi2'] = full_chi2
+        attr['lr_delta'] = delta
 
-        if s_tensor is not None:
-            arry['ree_tensor'] = a_tensor
-        else:
+        # Each tensor list falls back to the one stored by an earlier call (a_tensor of
+        # anomalous_Hall, s_tensor of spin_Hall) only when it is not given here. Until
+        # 14 Nov 2026 a_tensor was read only when s_tensor was also given.
+        if a_tensor is not None:
+            arry['ree_tensor'] = np.array(a_tensor)
+        elif response != 'shc':
+            if 'a_tensor' not in arry:
+                raise ValueError(f"linear_response(response='{response}') needs a_tensor")
             arry['ree_tensor'] = arry['a_tensor']
 
         if s_tensor is not None:
-            arry['shc_tensor'] = s_tensor
-        else:
-            arry['shc_tensor'] = arry['s_tensor']
+            arry['shc_tensor'] = np.array(s_tensor)
+        elif response == 'shc':
+            if 's_tensor' not in arry:
+                raise ValueError("linear_response(response='shc') needs s_tensor")
+            # spin_Hall stores (current, field, spin); this method reads (spin, current, field)
+            arry['shc_tensor'] = np.atleast_2d(arry['s_tensor'])[:, [2, 0, 1]]
 
         if response == 'shc' or response == 'ree':
             if 'Sj' not in arry:
@@ -6860,3 +6909,134 @@ class PAOFLOW:
         calc_chi(self.data_controller)
         self.report_module_time('Linear response completed')
         self.comm.Barrier()
+
+    def kubo_response(
+        self,
+        observable: str = 'charge_current',
+        components: list | tuple = ('xy',),
+        terms: list | tuple = ('total', 'surface', 'sea'),
+        eta: float = 0.01,
+        emin: float = -1.0,
+        emax: float = 1.0,
+        ne: int = 201,
+        temperature: float = 0.0,
+        regulariser: float = 0.0,
+        projection: list | None = None,
+        operator: np.ndarray | None = None,
+        twoD: bool = False,
+        write: bool = True,
+    ) -> dict:
+        """Linear response to an electric field from the Kubo-Bastin formula at constant broadening.
+
+        One formula for every observable and every term: conductivity, anomalous and spin/orbital
+        Hall conductivities, Rashba-Edelstein (spin/orbital density), spin-orbit torque, or a user
+        operator, as the full response or its Fermi-surface / Fermi-sea parts, at any temperature.
+
+        Parameters
+        ----------
+        observable : str
+            'charge_current', 'spin_current', 'orbital_current', 'spin_density', 'orbital_density',
+            'spin_torque' or 'custom' (see :mod:`PAOFLOW.response.kubo_operators`).
+        components : sequence
+            Components as letters or indices, the field direction last: ``'xy'`` (current x, field
+            y), ``'zxy'`` (spin z, current x, field y), ``'yx'`` (spin y, field x), ``'x'``
+            (custom operator, field x).
+        terms : sequence of str
+            Any of 'total', 'surface', 'sea', 'surface_intraband', 'surface_interband' (exact at
+            constant broadening) and 'intrinsic' (the clean limit of 'sea', i.e. the Berry-curvature
+            form with the run's smearing or Fermi-Dirac occupations).
+        eta : float
+            Constant broadening :math:`\\eta = \\hbar/2\\tau` (eV).
+        emin, emax : float
+            Chemical-potential window (eV); ``emax`` is capped at the projectability shift.
+        ne : int
+            Number of chemical potentials.
+        temperature : float
+            Electronic temperature (K).
+        regulariser : float
+            :math:`\\delta` of the 'intrinsic' energy denominators (eV); 0.05 reproduces the
+            ``do_Hall`` / tutorial03 Eq. 3 values (with the opposite sign, see Notes).
+        projection : list, optional
+            Orbital projection of the response operator, as ``shc_proj`` of :meth:`spin_Hall`.
+        operator : ndarray, shape ``(nawf, nawf)``, optional
+            The matrix of ``observable='custom'`` in the PAO basis.
+        twoD : bool
+            Sheet values (e^2/hbar) for the currents.
+        write : bool
+            Write ``kubo_<observable>_<component>.dat`` (mu and one column per term).
+
+        Returns
+        -------
+        dict
+            ``{component: {'mu': ..., term: ...}}`` on every rank, in the unit of the observable
+            (S/cm or e^2/hbar, (hbar/e) S/cm, hbar cm/V per cell, e a0 per cell).
+
+        Raises
+        ------
+        ValueError
+            Unknown observable, component or term, or a spin observable without a spinor basis.
+        KeyError
+            ``gradient_and_momenta`` has not run.
+
+        Notes
+        -----
+        :math:`\\chi_{AB}(\\mu) = -2\\int f\\,\\mathrm{Im\\,Tr}[A\\,\\partial_\\varepsilon G^R
+        \\hbar v_b\\,\\delta(\\varepsilon-H)]` per k-point, with :math:`G^R = (\\varepsilon - H +
+        i\\eta)^{-1}`, split exactly into the Fermi-surface and Fermi-sea terms of Bonbien and Manchon
+        and evaluated in closed form (:mod:`PAOFLOW.response.kubo_kernels`); finite temperatures
+        follow from the exact thermal convolution of the :math:`T = 0` response.
+
+        Sign: the Kubo-Bastin formula with :math:`\\hbar v = \\partial H/\\partial k` and the electron
+        charge :math:`q = -|e|` (:math:`q^2` for the charge current, :math:`q` for every other
+        observable), the conventions of Yao et al., PRL 92, 037204 (2004) and Guo et al., PRL 100,
+        096401 (2008). Conductivity, spin and orbital Hall values carry the sign of
+        :meth:`linear_response`, :meth:`spin_Hall` and :meth:`orbital_Hall`. Two older outputs differ.
+        The Rashba-Edelstein routes of :meth:`linear_response` are opposite, because they take
+        ``dHksp`` (:math:`-\\hbar v`) as the velocity. :meth:`anomalous_Hall` and tutorial03 Eq. 3 report
+        :math:`\\sigma_{xy}` for the magnetic moment along QE's magnetization axis, whereas this method
+        reports the computed state (QE's positive ``starting_magnetization`` puts the spins along +z, so
+        the moment points along -z). Details: ``docs/internals/kubo-bastin.md``.
+        """
+        from .projection.projection_operator import do_projection_operator, orbital_array
+        from .response.kubo_bastin import kubo_bastin_response, write_kubo_response
+        from .response.kubo_operators import OBSERVABLES
+
+        arrays, attr = self.data_controller.data_dicts()
+        if observable not in OBSERVABLES:
+            raise ValueError(
+                f'unknown observable {observable!r}; choose from {sorted(OBSERVABLES)}'
+            )
+        if 'dHksp' not in arrays:
+            raise KeyError('kubo_response needs the velocities: run gradient_and_momenta first')
+        base = OBSERVABLES[observable].base
+        if base == 'Sj' and 'Sj' not in arrays:
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+        if base == 'Lj' and 'Lj' not in arrays:
+            self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+        projector = None
+        if projection is not None:
+            if 'naw' not in arrays:
+                arrays['naw'] = orbital_array(self.data_controller)
+            projector = do_projection_operator(self.data_controller, np.array(projection))
+        if isinstance(components, str):
+            components = [components]
+        mu = np.linspace(emin, min(emax, attr['shift']), ne)
+
+        results = kubo_bastin_response(
+            self.data_controller,
+            observable,
+            components,
+            mu,
+            eta,
+            terms=terms,
+            temperature=temperature,
+            regulariser=regulariser,
+            projector=projector,
+            operator=operator,
+            two_dimensional=twoD,
+        )
+        if write:
+            header = f'eta = {eta} eV; T = {temperature} K; regulariser = {regulariser} eV'
+            write_kubo_response(self.data_controller, observable, results, twoD, header)
+        self.report_module_time('Kubo-Bastin response')
+        return results

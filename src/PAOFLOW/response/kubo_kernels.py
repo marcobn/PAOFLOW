@@ -1,0 +1,308 @@
+r"""Kubo-Bastin kernels of the linear response at constant broadening.
+
+Every linear response of PAOFLOW is a limit of the Kubo-Bastin formula. For the response of an
+observable :math:`A` to a field coupled through :math:`B` (the velocity for an electric field), with
+the band energies :math:`\varepsilon_n` and the matrix elements :math:`A_{nm}`, :math:`B_{mn}` at one
+k-point, the Bastin form with a constant broadening :math:`\eta` is
+
+.. math::
+
+    \chi_{AB}(\mu) = -2\int d\varepsilon\, f(\varepsilon)\,
+        \mathrm{Im}\,\mathrm{Tr}\big[A\,\partial_\varepsilon G^R(\varepsilon)\,B\,
+        \delta(\varepsilon - H)\big]
+    = \underbrace{\pi\sum_{nm}\mathrm{Re}P_{nm}\int(-f')L_nL_m}_{\text{surface}}
+    + \underbrace{2\sum_{nm}\mathrm{Im}P_{nm}\int f\,L_n\,
+        \mathrm{Re}\frac{1}{(\varepsilon-\varepsilon_m+i\eta)^2}}_{\text{sea}},
+
+with :math:`P_{nm} = A_{nm}B_{mn}`, :math:`G^R = (\varepsilon - H + i\eta)^{-1}` and the normalised
+Lorentzian :math:`L_n(\varepsilon) = (\eta/\pi)/((\varepsilon-\varepsilon_n)^2+\eta^2)`. The split is
+exact (Bonbien-Manchon "true" Fermi-surface and Fermi-sea terms): the symmetric part of
+:math:`P` gives only the surface term, the antisymmetric part only the sea term. Both are evaluated
+here in closed form at :math:`T = 0`; a finite temperature follows from the exact identity
+:math:`\chi(\mu, T) = \int d\mu'\,(-\partial_{\mu'}f)\,\chi(\mu', 0)` (:func:`thermal_average`),
+since the formula is linear in :math:`f`.
+
+Limits (tutorial03 equations): the surface term is Eq. 1 (exact at :math:`T = 0`), its diagonal
+part the intraband Eq. 4 before the :math:`\eta\to 0` limit, and the sea term tends to the
+Berry-curvature form :math:`2\sum_n f_n\sum_m \mathrm{Im}P_{nm}/\varepsilon_{nm}^2`, minus the
+:math:`\sum_n f_n\Omega_n` of Eq. 3 and of ``do_Hall``.
+
+References
+----------
+- A. Crépieux and P. Bruno, Phys. Rev. B 64, 014416 (2001).
+- V. Bonbien and A. Manchon, Phys. Rev. B 102, 085113 (2020).
+- O. Ly, J. Phys.: Condens. Matter 38, 435802 (2026).
+"""
+
+from __future__ import annotations
+
+import numpy as np
+from numpy.typing import NDArray
+
+#: Pairs closer than this fraction of the broadening use the series of the sea kernel.
+NEAR_DEGENERATE_FRACTION = 0.25
+_SERIES_TERMS = 30
+
+
+def lorentzian(energies: NDArray[np.float64], mu: NDArray[np.float64], eta: float) -> NDArray:
+    """Normalised Lorentzian spectral weight of every band at every chemical potential.
+
+    Parameters
+    ----------
+    energies : ndarray, shape ``(nb,)``
+        Band energies (eV).
+    mu : ndarray, shape ``(nmu,)``
+        Chemical potentials (eV).
+    eta : float
+        Broadening (eV).
+
+    Returns
+    -------
+    ndarray, shape ``(nmu, nb)``
+        :math:`L_n(\\mu) = (\\eta/\\pi)/((\\mu-\\varepsilon_n)^2+\\eta^2)` (1/eV).
+    """
+    return (eta / np.pi) / ((mu[:, None] - energies[None, :]) ** 2 + eta**2)
+
+
+def surface_kernel(
+    energies: NDArray[np.float64],
+    pair: NDArray[np.complex128],
+    mu: NDArray[np.float64],
+    eta: float,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Fermi-surface term at :math:`T = 0` and its intraband part, summed over k-points.
+
+    Parameters
+    ----------
+    energies : ndarray, shape ``(nb,)`` or ``(nk, nb)``
+        Band energies (eV) of one k-point or a block of k-points.
+    pair : ndarray, shape ``(nb, nb)`` or ``(nk, nb, nb)``, complex
+        :math:`P_{nm} = A_{nm}B_{mn}`.
+    mu : ndarray, shape ``(nmu,)``
+        Chemical potentials (eV).
+    eta : float
+        Broadening (eV).
+
+    Returns
+    -------
+    total : ndarray, shape ``(nmu,)``
+        :math:`\\pi\\sum_k\\sum_{nm}\\mathrm{Re}P_{nm}L_n(\\mu)L_m(\\mu)`.
+    intraband : ndarray, shape ``(nmu,)``
+        The :math:`n = m` part, :math:`\\pi\\sum_k\\sum_n P_{nn}L_n(\\mu)^2`.
+
+    Notes
+    -----
+    Exact for a constant broadening at :math:`T = 0`; tutorial03 Eq. 1 is the same expression.
+    """
+    energies = np.atleast_2d(energies)
+    real_pair = np.real(pair).reshape((-1,) + pair.shape[-2:])
+    weights = (eta / np.pi) / ((mu[None, :, None] - energies[:, None, :]) ** 2 + eta**2)
+    total = np.pi * np.einsum('ken,knm,kem->e', weights, real_pair, weights, optimize=True)
+    diagonal = np.diagonal(real_pair, axis1=1, axis2=2)
+    intraband = np.pi * np.einsum('ken,kn->e', weights**2, diagonal)
+    return total, intraband
+
+
+def sea_kernel(
+    energies: NDArray[np.float64],
+    pair: NDArray[np.complex128],
+    mu: NDArray[np.float64],
+    eta: float,
+) -> NDArray[np.float64]:
+    """Fermi-sea term at :math:`T = 0` in closed form, summed over k-points.
+
+    Parameters
+    ----------
+    energies : ndarray, shape ``(nb,)`` or ``(nk, nb)``
+        Band energies (eV) of one k-point or a block of k-points.
+    pair : ndarray, shape ``(nb, nb)`` or ``(nk, nb, nb)``, complex
+        :math:`P_{nm} = A_{nm}B_{mn}` (only the imaginary, antisymmetric part enters).
+    mu : ndarray, shape ``(nmu,)``
+        Chemical potentials (eV).
+    eta : float
+        Broadening (eV), > 0.
+
+    Returns
+    -------
+    ndarray, shape ``(nmu,)``
+        :math:`2\\sum_{nm}\\mathrm{Im}P_{nm}\\,S_{nm}(\\mu)` with
+        :math:`S_{nm}(\\mu) = \\int_{-\\infty}^{\\mu}L_n(\\varepsilon)\\,
+        \\mathrm{Re}(\\varepsilon-\\varepsilon_m+i\\eta)^{-2}\\,d\\varepsilon`.
+
+    Notes
+    -----
+    With :math:`s_n = \\varepsilon_n + i\\eta`, :math:`q_m = \\varepsilon_m - i\\eta` and partial
+    fractions,
+
+    .. math::
+
+        S_{nm} = \\frac{1}{2\\pi}\\mathrm{Im}\\big[I(s_n, q_m) + I(s_n, \\bar q_m)\\big],\\qquad
+        I(a, b) = \\int_{-\\infty}^{\\mu}\\frac{d\\varepsilon}{(\\varepsilon-a)(\\varepsilon-b)^2}
+        = \\frac{\\ell(a)-\\ell(b)}{(a-b)^2} + \\frac{1}{(a-b)(\\mu-b)},
+
+    :math:`\\ell(p) = \\log(\\mu-p) + i\\pi\\,\\mathrm{sgn}\\,\\mathrm{Im}\\,p`. The pair coefficients
+    depend on :math:`\\varepsilon_n-\\varepsilon_m` only and the :math:`\\mu` dependence on single
+    bands, so the cost is :math:`O(n_b^2 + n_b n_\\mu)` per k-point. For :math:`|\\varepsilon_n -
+    \\varepsilon_m| <` ``NEAR_DEGENERATE_FRACTION`` :math:`\\eta` the second integral uses the series
+    :math:`I(b+d, b) = -\\sum_{j\\ge0} d^j/((j+2)(\\mu-b)^{j+2})` (:math:`|\\mu - b|\\ge\\eta`).
+    As :math:`\\eta\\to0`, :math:`S_{nm}\\to\\theta(\\mu-\\varepsilon_n)/\\varepsilon_{nm}^2`.
+    """
+    energies = np.atleast_2d(energies)
+    imag_pair = np.imag(pair).reshape((-1,) + pair.shape[-2:])
+    nb = energies.shape[1]
+    difference = energies[:, :, None] - energies[:, None, :]  # e_n - e_m
+    off_diagonal = ~np.eye(nb, dtype=bool)[None]
+    # (s_n, q_m): a - b = e_nm + 2 i eta, never small
+    d_opposite = difference + 2j * eta
+    alpha_opposite = imag_pair / d_opposite**2
+    gamma_opposite = imag_pair / d_opposite
+    # (s_n, conj q_m): a - b = e_nm (real), series when small
+    near = (np.abs(difference) < NEAR_DEGENERATE_FRACTION * eta) & off_diagonal
+    far = ~near & off_diagonal
+    safe = np.where(far, difference, 1.0)
+    alpha_same = np.where(far, imag_pair / safe**2, 0.0)
+    gamma_same = np.where(far, imag_pair / safe, 0.0)
+
+    shift = mu[None, :, None] - energies[:, None, :]  # (nk, nmu, nb)
+    log_upper = np.log(shift - 1j * eta) + 1j * np.pi  # l(s_n) = l(conj q_n)
+    log_lower = np.log(shift + 1j * eta) - 1j * np.pi  # l(q_n)
+    inv_upper = 1.0 / (shift - 1j * eta)
+    inv_lower = 1.0 / (shift + 1j * eta)
+
+    total = (
+        np.einsum('ken,kn->e', log_upper, alpha_opposite.sum(axis=2) + alpha_same.sum(axis=2))
+        - np.einsum('ken,kn->e', log_lower, alpha_opposite.sum(axis=1))
+        - np.einsum('ken,kn->e', log_upper, alpha_same.sum(axis=1))
+        + np.einsum('ken,kn->e', inv_lower, gamma_opposite.sum(axis=1))
+        + np.einsum('ken,kn->e', inv_upper, gamma_same.sum(axis=1))
+    )
+    ks, rows, cols = np.nonzero(near & (imag_pair != 0.0))
+    if ks.size:
+        z = inv_upper[ks, :, cols]  # (npairs, nmu): 1/(mu - conj q_m)
+        d = difference[ks, rows, cols][:, None]
+        term = z**2
+        series = np.zeros_like(z)
+        for j in range(_SERIES_TERMS):
+            series += term / (j + 2)
+            term = term * d * z
+        total -= np.sum(imag_pair[ks, rows, cols][:, None] * series, axis=0)
+    return np.imag(total) / np.pi
+
+
+def berry_curvature(
+    energies: NDArray[np.float64],
+    response: NDArray[np.complex128],
+    field: NDArray[np.complex128],
+    regulariser: float,
+    cutoff: float = 1.0e-4,
+) -> NDArray[np.float64]:
+    """Band-resolved Berry-curvature-like quantity of PAOFLOW's Eq. 3 and ``do_Hall``, one k-point.
+
+    Parameters
+    ----------
+    energies : ndarray, shape ``(nb,)``
+        Band energies (eV).
+    response, field : ndarray, shape ``(nb, nb)``, complex
+        :math:`A_{nm}` and :math:`B_{nm}` in the band basis.
+    regulariser : float
+        :math:`\\delta` of the denominators (eV).
+    cutoff : float
+        Pairs with :math:`\\varepsilon_{nm}^2 + \\delta^2 <` ``cutoff`` (eV^2) are left out.
+
+    Returns
+    -------
+    ndarray, shape ``(nb,)``
+        :math:`\\Omega_n = -2\\sum_m\\mathrm{Im}[A_{nm}B_{mn}]/(\\varepsilon_{nm}^2+\\delta^2)`.
+
+    Notes
+    -----
+    :math:`\\sum_n f_n\\Omega_n` is minus the :math:`\\eta\\to0` limit of :func:`sea_kernel`.
+    """
+    denominator = (energies - energies[:, None]) ** 2 + regulariser**2
+    denominator[denominator < cutoff] = np.inf
+    return -2.0 * np.sum(np.imag(response * field.T) / denominator, axis=1)
+
+
+def fermi_dirac(energies: NDArray[np.float64], mu: NDArray[np.float64], kT: float) -> NDArray:
+    """Fermi-Dirac occupations, overflow-safe.
+
+    Parameters
+    ----------
+    energies : ndarray, shape ``(..., nb)``
+        Band energies (eV).
+    mu : ndarray, shape ``(nmu,)``
+        Chemical potentials (eV).
+    kT : float
+        Temperature (eV), > 0.
+
+    Returns
+    -------
+    ndarray, shape ``(nmu, ..., nb)``
+        :math:`f = 1/(e^{(\\varepsilon-\\mu)/kT}+1)`.
+    """
+    x = (energies[None, ...] - mu.reshape((-1,) + (1,) * energies.ndim)) / kT
+    return 0.5 * (1.0 - np.tanh(0.5 * x))
+
+
+def thermal_grid(
+    mu: NDArray[np.float64], eta: float, kT: float, cutoff: float = 36.0
+) -> NDArray[np.float64]:
+    """Fine chemical-potential grid for :func:`thermal_average`.
+
+    Parameters
+    ----------
+    mu : ndarray, shape ``(nmu,)``
+        Target chemical potentials (eV).
+    eta : float
+        Broadening (eV): the narrowest feature of the :math:`T = 0` response.
+    kT : float
+        Temperature (eV).
+    cutoff : float
+        Half-width of the thermal window in units of :math:`kT` (:math:`e^{-36}\\approx 2\\cdot10^{-16}`).
+
+    Returns
+    -------
+    ndarray
+        Uniform grid covering ``[min(mu) - cutoff kT, max(mu) + cutoff kT]`` with a spacing of at most
+        ``min(eta, kT) / 4``.
+    """
+    lower, upper = float(np.min(mu)) - cutoff * kT, float(np.max(mu)) + cutoff * kT
+    spacing = min(eta, kT) / 4.0
+    count = int(np.ceil((upper - lower) / spacing)) + 1
+    return np.linspace(lower, upper, count)
+
+
+def thermal_average(
+    fine_mu: NDArray[np.float64],
+    values: NDArray[np.float64],
+    mu: NDArray[np.float64],
+    kT: float,
+) -> NDArray[np.float64]:
+    """Finite-temperature response from the zero-temperature one.
+
+    Parameters
+    ----------
+    fine_mu : ndarray, shape ``(nfine,)``
+        Uniform grid of :func:`thermal_grid`.
+    values : ndarray, shape ``(nfine, ...)``
+        :math:`\\chi(\\mu', T = 0)` on ``fine_mu``.
+    mu : ndarray, shape ``(nmu,)``
+        Chemical potentials of the result (eV).
+    kT : float
+        Temperature (eV).
+
+    Returns
+    -------
+    ndarray, shape ``(nmu, ...)``
+        :math:`\\chi(\\mu, T) = \\int d\\mu'\\,(-\\partial_{\\mu'} f(\\mu'-\\mu))\\,\\chi(\\mu', 0)`,
+        trapezoidal rule.
+
+    Notes
+    -----
+    Exact identity for any term linear in the occupation: :math:`f_T(\\varepsilon-\\mu) =
+    \\int d\\mu'\\,\\theta(\\mu'-\\varepsilon)\\,(-\\partial_{\\mu'}f_T(\\mu'-\\mu))`.
+    """
+    x = (fine_mu[None, :] - mu[:, None]) / (2.0 * kT)
+    weights = (fine_mu[1] - fine_mu[0]) * 0.25 / (kT * np.cosh(np.clip(x, -350.0, 350.0)) ** 2)
+    weights[:, [0, -1]] *= 0.5  # trapezoid end points
+    return np.tensordot(weights, values, axes=(1, 0))

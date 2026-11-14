@@ -1254,6 +1254,7 @@ Two additions to the Results layer:
 
 **One linear-response (Kubo) property (14 November 2026, user request).** The property run and the TB-model run gain
 `linear_response`, defined at the question level only: the observable, the term (Fermi sea or surface), the variant,
-the components and Γ. The answers map onto the existing `spin_Hall` / `orbital_Hall` / `anomalous_Hall` /
-`linear_response` calls (`cli-generators.md`, workflow B). The Setup tab renders the questions by itself, and the help
-has one paragraph on them. The Results tab already knew every output file.
+the components and Γ. The answers first mapped onto the existing `spin_Hall` / `orbital_Hall` / `anomalous_Hall` /
+`linear_response` calls. Since the Kubo–Bastin campaign (same night) they map onto one `kubo_response` call: every
+observable and term, a temperature question, Results kind `kubo_response` (`cli-generators.md`, workflow B;
+`kubo-bastin.md`). The Setup tab renders the questions by itself, and the help has one paragraph on them.

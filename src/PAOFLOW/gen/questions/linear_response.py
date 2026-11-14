@@ -1,29 +1,29 @@
-"""Questions of the linear-response property: one Kubo hook for Hall, Edelstein and conductivity.
+"""Questions of the linear-response property: one Kubo-Bastin hook for every observable and term.
 
-The response of an observable A to an electric field E_j is the Kubo-Bastin tensor of the
-``linear_response`` tutorial (tutorial03), the sum of a Fermi-surface term (Eq. 1, proportional to
-the lifetime) and a Fermi-sea term (Eq. 2; Eq. 3 is its Γ → 0 limit, the Berry-curvature form).
-The questions ask for the observable, the term, its variant and the components. The script
-builder (:func:`PAOFLOW.gen.paoflow_driver._linear_response_lines`) maps the answers onto the
-PAOFLOW calls that compute that term today, without changing them:
+The response of an observable A to an electric field E_j is the Kubo-Bastin tensor at constant
+broadening Γ = ħ/2τ, the sum of a Fermi-surface term (∝ τ in clean metals) and a Fermi-sea term
+(its Γ → 0 limit is the Berry-curvature form). The questions ask for the observable, the term, its
+variant, the components, Γ and the temperature; the script builder
+(:func:`PAOFLOW.gen.paoflow_driver._linear_response_lines`) writes one
+:meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_response` call:
 
-=================  ===========================================  =================================================
-observable         Fermi sea (intrinsic)                        Fermi surface (∝ τ)
-=================  ===========================================  =================================================
-charge current     ``anomalous_Hall`` (spin-orbit runs) or      ``linear_response('cond')``: total (Eq. 1),
-                   ``linear_response('ahc')`` (Γ → 0, Eq. 3);   intraband (Eq. 4) or interband (Eq. 5)
-                   ``linear_response('ahc', full_chi2)`` (Eq. 2)
-spin current       ``spin_Hall`` (Γ → 0)                        ``linear_response('shc', t_odd)`` (Eq. 1)
-orbital current    ``orbital_Hall`` (Γ → 0)                     --
-spin density       ``linear_response('ree', t_odd)``:           ``linear_response('ree')``: total, intraband or
-                   Γ → 0 (Eq. 3) or finite Γ (Eq. 2)            interband
-=================  ===========================================  =================================================
+=================  ==========================================================================
+answer             ``terms`` of ``kubo_response``
+=================  ==========================================================================
+fermi_sea          ``intrinsic`` (Γ → 0, Berry curvature) or ``sea`` (finite Γ, exact)
+fermi_surface      ``surface`` (exact; tutorial03 Eq. 1), ``surface_intraband`` (Boltzmann-like)
+                   or ``surface_interband``
+both               ``total`` plus the chosen surface and sea variants
+total              ``total`` (the full Kubo-Bastin response)
+=================  ==========================================================================
 
-Variants that the library cannot run correctly yet are not offered:
-- the finite-Γ and split spin-current terms read the tensor list with another index order;
-- the orbital current has no Fermi-surface term.
-The time-reversal parity of the result is printed, not asked: a Fermi-sea spin-density response
-or a Fermi-surface spin-current response is T-odd and needs a magnetic system.
+Observables: charge current (conductivity, anomalous Hall), spin current (spin Hall), orbital current
+(orbital Hall), spin density (Rashba-Edelstein), orbital density (orbital Edelstein), spin torque
+(spin-orbit torkance). Until 14 November 2026 the answers were mapped onto ``spin_Hall``,
+``anomalous_Hall`` and the ``linear_response`` equations; the Kubo-Bastin kernel has every term for
+every observable, with the sign convention of the Kubo formula (``docs/internals/kubo-bastin.md``).
+The time-reversal parity of the result is printed, not asked: a Fermi-sea spin-density response or
+a Fermi-surface spin-current response is T-odd and needs a magnetic system.
 """
 
 from __future__ import annotations
@@ -38,32 +38,30 @@ LINEAR_RESPONSE = 'Linear response (Kubo)'
 OBSERVABLES: dict[str, tuple[str, bool, int]] = {
     'charge_current': ('charge current: conductivity, anomalous Hall', False, 2),
     'spin_current': ('spin current: spin Hall (spin-orbit runs)', True, 3),
-    'orbital_current': ('orbital current: orbital Hall (spin-orbit runs)', True, 3),
+    'orbital_current': ('orbital current: orbital Hall', False, 3),
     'spin_density': ('spin density: Rashba-Edelstein (spin-orbit runs)', True, 2),
+    'orbital_density': ('orbital density: orbital Edelstein', False, 2),
+    'spin_torque': ('spin torque: spin-orbit torkance (spin-orbit runs)', True, 2),
 }
 
-#: Terms available per observable.
-TERMS: dict[str, tuple[str, ...]] = {
-    'charge_current': ('fermi_sea', 'fermi_surface', 'both'),
-    'spin_current': ('fermi_sea', 'fermi_surface', 'both'),
-    'orbital_current': ('fermi_sea',),
-    'spin_density': ('fermi_sea', 'fermi_surface', 'both'),
-}
+#: Observables whose operator comes from the PAO shells (not offered for models).
+ORBITAL_OBSERVABLES = ('orbital_current', 'orbital_density')
 
-#: Fermi-sea variants per observable (``gamma_to_zero``: Eq. 3; ``finite_gamma``: Eq. 2).
-SEA_VARIANTS: dict[str, tuple[str, ...]] = {
-    'charge_current': ('gamma_to_zero', 'finite_gamma'),
-    'spin_current': ('gamma_to_zero',),
-    'orbital_current': ('gamma_to_zero',),
-    'spin_density': ('gamma_to_zero', 'finite_gamma'),
-}
+#: Terms (every observable has all of them).
+TERMS: tuple[str, ...] = ('fermi_sea', 'fermi_surface', 'both', 'total')
 
-#: Fermi-surface variants per observable (``total``: Eq. 1; ``intraband``: Eq. 4; ``interband``: Eq. 5).
-SURFACE_VARIANTS: dict[str, tuple[str, ...]] = {
-    'charge_current': ('total', 'intraband', 'interband'),
-    'spin_current': ('total',),
-    'orbital_current': (),
-    'spin_density': ('total', 'intraband', 'interband'),
+#: Fermi-sea variants (``gamma_to_zero``: Berry curvature; ``finite_gamma``: exact at Γ).
+SEA_VARIANTS: tuple[str, ...] = ('gamma_to_zero', 'finite_gamma')
+
+#: Fermi-surface variants.
+SURFACE_VARIANTS: tuple[str, ...] = ('total', 'intraband', 'interband')
+
+#: ``kubo_response`` term of each variant.
+SEA_TERM = {'gamma_to_zero': 'intrinsic', 'finite_gamma': 'sea'}
+SURFACE_TERM = {
+    'total': 'surface',
+    'intraband': 'surface_intraband',
+    'interband': 'surface_interband',
 }
 
 #: Default components: (polarization,) response, field.
@@ -72,18 +70,25 @@ DEFAULT_COMPONENTS = {
     'spin_current': 'zxy',
     'orbital_current': 'zxy',
     'spin_density': 'yx',
+    'orbital_density': 'yx',
+    'spin_torque': 'yx',
 }
 
 #: Time-reversal parity of each (observable, term): the Fermi-sea term of a T-odd observable and
-#: the Fermi-surface term of a T-even one are T-even (allowed in non-magnetic systems).
+#: the Fermi-surface term of a T-even one are T-odd (they need a magnetic system).
 PARITY = {
     ('charge_current', 'fermi_sea'): 'T-odd (anomalous Hall: magnetic systems)',
     ('charge_current', 'fermi_surface'): 'T-even (ordinary conductivity)',
     ('spin_current', 'fermi_sea'): 'T-even (intrinsic spin Hall)',
     ('spin_current', 'fermi_surface'): 'T-odd (magnetic spin Hall: magnetic systems)',
     ('orbital_current', 'fermi_sea'): 'T-even (intrinsic orbital Hall)',
+    ('orbital_current', 'fermi_surface'): 'T-odd (magnetic orbital Hall: magnetic systems)',
     ('spin_density', 'fermi_sea'): 'T-odd (magnetic Edelstein: magnetic systems)',
     ('spin_density', 'fermi_surface'): 'T-even (Rashba-Edelstein effect)',
+    ('orbital_density', 'fermi_sea'): 'T-odd (magnetic systems)',
+    ('orbital_density', 'fermi_surface'): 'T-even (orbital Edelstein effect)',
+    ('spin_torque', 'fermi_sea'): 'T-even (intrinsic, Berry-curvature torque)',
+    ('spin_torque', 'fermi_surface'): 'T-odd (∝ lifetime; field-like torque in magnets)',
 }
 
 
@@ -138,7 +143,7 @@ def linear_response_items(
     -------
     tuple of Question and Note
         Keys ``lr_observable``, ``lr_term``, ``lr_sea``, ``lr_surface``, ``lr_components``,
-        ``lr_gamma``.
+        ``lr_gamma``, ``lr_temperature``.
     """
 
     def observables(answers: Answers, context: Context) -> list[str]:
@@ -146,7 +151,7 @@ def linear_response_items(
         return [
             key
             for key, (_label, needs_so, _n) in OBSERVABLES.items()
-            if (allowed or not needs_so) and (orbital or key != 'orbital_current')
+            if (allowed or not needs_so) and (orbital or key not in ORBITAL_OBSERVABLES)
         ]
 
     def observable(answers: Answers) -> str:
@@ -159,7 +164,7 @@ def linear_response_items(
         key = observable(answers)
         terms = (
             ('fermi_sea', 'fermi_surface')
-            if answers.get('lr_term') == 'both'
+            if answers.get('lr_term') in ('both', 'total')
             else (answers.get('lr_term'),)
         )
         parities = [PARITY.get((key, t)) for t in terms if PARITY.get((key, t))]
@@ -187,29 +192,30 @@ def linear_response_items(
             when=lambda a, c: _wants(a),
             label='Observable',
             help='charge current: conductivity and anomalous Hall; spin current: spin Hall; '
-            'orbital current: orbital Hall; spin density: Rashba-Edelstein. The spin and orbital '
-            'observables need a spin-orbit (spinor) calculation.',
+            'orbital current: orbital Hall; spin density: Rashba-Edelstein; orbital density: '
+            'orbital Edelstein; spin torque: spin-orbit torkance. The spin observables need a '
+            'spin-orbit (spinor) calculation.',
             section=section,
         ),
         Question(
             'lr_term',
             'Term (fermi_sea: intrinsic, Berry-curvature-like; fermi_surface: proportional to the '
-            'lifetime; both)',
+            'lifetime; both: total and the two terms; total)',
             kind='choice',
-            choices=lambda a, c: list(TERMS[observable(a)]),
+            choices=lambda a, c: list(TERMS),
             default='fermi_sea',
             when=lambda a, c: _wants(a),
             label='Term',
-            help='Kubo-Bastin: Fermi-surface term (Eq. 1 of tutorial03) and Fermi-sea term (Eq. 2; '
-            'Eq. 3 is its Γ → 0 limit).',
+            help='Kubo-Bastin at constant broadening Γ: Fermi-surface and Fermi-sea terms '
+            '(Bonbien-Manchon), their sum, or the Γ → 0 Berry-curvature form of the sea term.',
             section=section,
         ),
         Note(describe, when=lambda a, c: _wants(a), section=section),
         Question(
             'lr_sea',
-            'Fermi-sea term (gamma_to_zero: Berry curvature, Eq. 3; finite_gamma: Eq. 2)',
+            'Fermi-sea term (gamma_to_zero: Berry curvature; finite_gamma: exact at Γ)',
             kind='choice',
-            choices=lambda a, c: list(SEA_VARIANTS[observable(a)]),
+            choices=lambda a, c: list(SEA_VARIANTS),
             default='gamma_to_zero',
             when=lambda a, c: _wants(a) and term_has(a, 'fermi_sea'),
             label='Fermi-sea variant',
@@ -218,9 +224,9 @@ def linear_response_items(
         ),
         Question(
             'lr_surface',
-            'Fermi-surface term (total: Eq. 1; intraband: Eq. 4, Boltzmann-like; interband: Eq. 5)',
+            'Fermi-surface term (total; intraband: Boltzmann-like; interband)',
             kind='choice',
-            choices=lambda a, c: list(SURFACE_VARIANTS[observable(a)]) or ['total'],
+            choices=lambda a, c: list(SURFACE_VARIANTS),
             default='total',
             when=lambda a, c: _wants(a) and term_has(a, 'fermi_surface'),
             label='Fermi-surface variant',
@@ -248,11 +254,23 @@ def linear_response_items(
             unit='eV',
             when=lambda a, c: _wants(a)
             and (
-                term_has(a, 'fermi_surface')
+                a.get('lr_term') == 'total'
+                or term_has(a, 'fermi_surface')
                 or (term_has(a, 'fermi_sea') and a.get('lr_sea') == 'finite_gamma')
             ),
-            doc='PAOFLOW.PAOFLOW.PAOFLOW.linear_response:gamma',
+            doc='PAOFLOW.PAOFLOW.PAOFLOW.kubo_response:eta',
             section=section,
+        ),
+        Question(
+            'lr_temperature',
+            'Electronic temperature of the response',
+            kind='float',
+            default=0.0,
+            unit='K',
+            when=lambda a, c: _wants(a),
+            doc='PAOFLOW.PAOFLOW.PAOFLOW.kubo_response:temperature',
+            section=section,
+            level='advanced',
         ),
     )
 
@@ -273,7 +291,8 @@ def assemble_linear_response(cfg: dict, answers: Answers, spinful: bool) -> dict
     -------
     dict
         ``cfg`` with ``lr_observable``, ``lr_term``, ``lr_sea``, ``lr_surface``,
-        ``lr_components`` (list of letter strings), ``lr_gamma`` and ``lr_spinful``.
+        ``lr_components`` (list of letter strings), ``lr_gamma``, ``lr_temperature`` and
+        ``lr_spinful``.
     """
     observable = answers.get('lr_observable', 'charge_current')
     term = answers.get('lr_term', 'fermi_sea')
@@ -283,12 +302,37 @@ def assemble_linear_response(cfg: dict, answers: Answers, spinful: bool) -> dict
     cfg['lr_surface'] = answers.get('lr_surface', 'total')
     cfg['lr_components'] = list(answers.get('lr_components') or [DEFAULT_COMPONENTS[observable]])
     cfg['lr_gamma'] = float(answers.get('lr_gamma', 0.01))
+    cfg['lr_temperature'] = float(answers.get('lr_temperature', 0.0))
     cfg['lr_spinful'] = bool(spinful)
     return cfg
 
 
+def kubo_terms(cfg: dict) -> tuple[str, ...]:
+    """``terms`` of :meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_response` for the answers.
+
+    Parameters
+    ----------
+    cfg : dict
+        Run configuration with ``lr_term``, ``lr_sea`` and ``lr_surface``.
+
+    Returns
+    -------
+    tuple of str
+    """
+    term = cfg['lr_term']
+    sea = SEA_TERM[cfg.get('lr_sea', 'gamma_to_zero')]
+    surface = SURFACE_TERM[cfg.get('lr_surface', 'total')]
+    if term == 'fermi_sea':
+        return (sea,)
+    if term == 'fermi_surface':
+        return (surface,)
+    if term == 'total':
+        return ('total',)
+    return tuple(dict.fromkeys(('total', surface, sea)))
+
+
 def linear_response_calls(cfg: dict) -> list[tuple[str, dict[str, Any], str]]:
-    """The PAOFLOW calls of the chosen term(s): ``(method, keyword arguments, comment)``.
+    """The PAOFLOW call of the chosen observable and terms: ``(method, keyword arguments, comment)``.
 
     Parameters
     ----------
@@ -298,79 +342,18 @@ def linear_response_calls(cfg: dict) -> list[tuple[str, dict[str, Any], str]]:
     Returns
     -------
     list of tuple
-        One entry per call. Component indices follow each method's convention: ``spin_Hall`` and
-        ``orbital_Hall`` take (current, field, polarization); ``linear_response`` takes
-        ``s_tensor`` as (polarization, current, field) and ``a_tensor`` as (response, field).
+        One :meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_response` call: components as letters (the field
+        direction last), the terms of :func:`kubo_terms`, Γ, the temperature and ``twoD``.
     """
-    axis = {'x': 0, 'y': 1, 'z': 2}
     observable = cfg['lr_observable']
-    term = cfg['lr_term']
-    components = [[axis[c] for c in comp] for comp in cfg['lr_components']]
-    two_d = bool(cfg.get('is_2d', False))
-    gamma = float(cfg['lr_gamma'])
-    terms = ('fermi_sea', 'fermi_surface') if term == 'both' else (term,)
-    calls = []
-
-    def kubo(response: str, comment: str, **flags: Any) -> tuple[str, dict, str]:
-        # linear_response reads a_tensor only when s_tensor is given: both are always passed.
-        if observable in ('spin_current', 'orbital_current'):
-            s_tensor = components
-            a_tensor = [comp[1:] for comp in components]
-        else:
-            a_tensor = components
-            s_tensor = [[2] + comp for comp in components]
-        kwargs = {'response': response, 'gamma': gamma, 'twoD': two_d, **flags,
-                  's_tensor': s_tensor, 'a_tensor': a_tensor}  # fmt: skip
-        return ('linear_response', kwargs, comment)
-
-    for part in terms:
-        if part == 'fermi_sea':
-            finite = cfg['lr_sea'] == 'finite_gamma'
-            if observable == 'charge_current':
-                if finite:
-                    calls.append(
-                        kubo('ahc', 'anomalous Hall, Fermi sea at finite Γ (Eq. 2)', full_chi2=True)
-                    )
-                elif cfg['lr_spinful']:
-                    calls.append(('anomalous_Hall', {'do_ac': True, 'a_tensor': components},
-                                  'anomalous Hall, Berry curvature (Eq. 3), with the magneto-optical MCD'))  # fmt: skip
-                else:
-                    calls.append(kubo('ahc', 'anomalous Hall, Berry curvature (Eq. 3)'))
-            elif observable == 'spin_current':
-                tensor = [[c[1], c[2], c[0]] for c in components]
-                calls.append(('spin_Hall', {'twoD': two_d, 's_tensor': tensor},
-                              'intrinsic spin Hall, spin Berry curvature (Eq. 3)'))  # fmt: skip
-            elif observable == 'orbital_current':
-                tensor = [[c[1], c[2], c[0]] for c in components]
-                calls.append(('orbital_Hall', {'twoD': two_d, 'o_tensor': tensor},
-                              'intrinsic orbital Hall, orbital Berry curvature (Eq. 3)'))  # fmt: skip
-            else:
-                label = 'finite Γ (Eq. 2)' if finite else 'Γ → 0 (Eq. 3)'
-                calls.append(kubo('ree', 'magnetic (T-odd) Edelstein, Fermi sea, %s' % label,
-                                  t_odd=True, full_chi2=finite))  # fmt: skip
-        else:
-            variant = cfg['lr_surface']
-            flags = {'intraband': True} if variant == 'intraband' else {}
-            flags.update({'interband': True} if variant == 'interband' else {})
-            equation = {'total': 'Eq. 1', 'intraband': 'Eq. 4', 'interband': 'Eq. 5'}[variant]
-            if observable == 'charge_current':
-                calls.append(
-                    kubo(
-                        'cond',
-                        'conductivity, Fermi surface, %s (%s)' % (variant, equation),
-                        **flags,
-                    )
-                )
-            elif observable == 'spin_current':
-                calls.append(
-                    kubo('shc', 'magnetic (T-odd) spin Hall, Fermi surface (Eq. 1)', t_odd=True)
-                )
-            elif observable == 'spin_density':
-                calls.append(
-                    kubo(
-                        'ree',
-                        'Rashba-Edelstein, Fermi surface, %s (%s)' % (variant, equation),
-                        **flags,
-                    )
-                )
-    return calls
+    terms = kubo_terms(cfg)
+    kwargs = {
+        'observable': observable,
+        'components': list(cfg['lr_components']),
+        'terms': terms,
+        'eta': float(cfg['lr_gamma']),
+        'temperature': float(cfg.get('lr_temperature', 0.0)),
+        'twoD': bool(cfg.get('is_2d', False)),
+    }
+    comment = 'Kubo-Bastin %s: %s' % (OBSERVABLES[observable][0], ', '.join(terms))
+    return [('kubo_response', kwargs, comment)]

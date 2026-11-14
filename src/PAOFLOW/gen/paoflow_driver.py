@@ -827,7 +827,7 @@ def build_run_script(cfg):
 
 
 def _linear_response_lines(cfg):
-    """PAOFLOW calls of the linear-response (Kubo) property, from the ``lr_*`` keys of ``cfg``.
+    """PAOFLOW call of the linear-response (Kubo-Bastin) property, from the ``lr_*`` keys of ``cfg``.
 
     Parameters
     ----------
@@ -837,29 +837,25 @@ def _linear_response_lines(cfg):
     Returns
     -------
     list of str
-        The lines of ``main.py``: one commented call per term, mapped by
-        :func:`PAOFLOW.gen.questions.linear_response.linear_response_calls` onto ``spin_Hall``,
-        ``orbital_Hall``, ``anomalous_Hall`` or ``linear_response``.
+        The lines of ``main.py``: one commented :meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_response` call
+        (:func:`PAOFLOW.gen.questions.linear_response.linear_response_calls`); it writes
+        ``kubo_<observable>_<component>.dat`` with one column per term.
     """
     from .questions.linear_response import OBSERVABLES, linear_response_calls
 
-    window = {
-        'linear_response': 'eminH=EMIN, emaxH=EMAX, esize=NE',
-    }
     lines = [
-        '    # Linear response (Kubo-Bastin, tutorial03): %s, components %s.'
+        '    # Linear response (Kubo-Bastin at constant broadening): %s, components %s.'
         % (OBSERVABLES[cfg['lr_observable']][0], ', '.join(cfg['lr_components'])),
     ]
     if cfg.get('is_2d'):
         lines.append(
-            '    # twoD=True: sheet values in units of e^2/hbar (2 pi sigma_xy is the Chern number);'
+            '    # twoD=True: sheet values in units of e^2/hbar; for an insulator 2 pi sigma_xy is'
         )
-        lines.append('    # the file headers still say S/cm.')
+        lines.append('    # the Chern number (twice it for spin-degenerate bands).')
     for method, kwargs, comment in linear_response_calls(cfg):
-        energy = window.get(method, 'emin=EMIN, emax=EMAX, ne=NE')
         arguments = ', '.join('%s=%r' % (key, value) for key, value in kwargs.items())
         lines.append('    # %s' % comment)
-        lines.append('    p.%s(%s, %s)' % (method, energy, arguments))
+        lines.append('    p.%s(emin=EMIN, emax=EMAX, ne=NE, %s)' % (method, arguments))
     return lines
 
 

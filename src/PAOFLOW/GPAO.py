@@ -494,6 +494,69 @@ class GPAO:
                 labels.append(tag)
             plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend)
 
+    def plot_kubo_response(
+        self,
+        fname: str,
+        terms: list | tuple | None = None,
+        title: str | None = None,
+        x_lim: tuple | None = None,
+        y_lim: tuple | None = None,
+        ax=None,
+        output: str | None = None,
+    ):
+        """Plot a ``kubo_<observable>_<component>.dat`` file of :meth:`PAOFLOW.kubo_response`.
+
+        Parameters
+        ----------
+        fname : str
+            File name (including relative path).
+        terms : sequence of str, optional
+            Columns to draw ('total', 'surface', 'sea', 'surface_intraband', 'surface_interband',
+            'intrinsic'); default all in the file.
+        title : str, optional
+            Plot title; default the observable and component of the header.
+        x_lim, y_lim : tuple, optional
+            Axis limits.
+        ax : matplotlib axis, optional
+            Draw into an existing axis.
+        output : str, optional
+            Save the figure to this file instead of showing it (own figure only).
+
+        Returns
+        -------
+        matplotlib axis
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        with open(fname) as f:
+            header = [line[1:].strip() for line in f if line.startswith('#')]
+        names = header[-1].split('  ')[1:]
+        description, _, unit = header[0].partition(', unit ')
+        data = np.atleast_2d(np.loadtxt(fname))
+        own_figure = ax is None
+        if own_figure:
+            fig, ax = plt.subplots(figsize=(5.0, 4.0), constrained_layout=True)
+        for column, name in enumerate(names, start=1):
+            if terms is None or name in terms:
+                ax.plot(data[:, 0], data[:, column], label=name)
+        ax.axvline(0.0, color='0.6', lw=0.6, ls='--')
+        ax.set_xlabel('Energy (eV)')
+        ax.set_ylabel(unit)
+        ax.set_title(description if title is None else title)
+        if x_lim is not None:
+            ax.set_xlim(*x_lim)
+        if y_lim is not None:
+            ax.set_ylim(*y_lim)
+        ax.legend(frameon=False)
+        if own_figure:
+            if output is None:
+                plt.show()
+            else:
+                fig.savefig(output, dpi=200)
+                plt.close(fig)
+        return ax
+
     def plot_ohc(
         self,
         fname,
