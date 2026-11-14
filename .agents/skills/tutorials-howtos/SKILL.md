@@ -122,6 +122,7 @@ Avoiding jargon is not the same as simplifying the physics. Do not explain what 
 
 ## Figures
 
+- Plot with GPAO (`from PAOFLOW import GPAO`) whenever it has a function for the quantity: bands, DOS and PDOS, conductivity, Seebeck coefficient, Berry curvature, Hall conductivities, dielectric and optical spectra, phonons and the electron–phonon outputs. The reader learns the plotting calls they will use on their own runs, and the parsing of PAOFLOW's output files stays in one place. Pass the palette below through the `col`/`cols` arguments, because the GPAO defaults are not in it. Write matplotlib code only for a quantity GPAO has no function for, and when a GPAO function lacks something the figure needs (an axis label, a color argument), fix it in `GPAO.py` instead of rewriting the plot by hand.
 - Colors: Deep Blue `#004488`, Vermillion `#D55E00` and Yellow-Amber `#FFC20A` first, then Okabe–Ito `#009E73`, `#56B4E9`, `#CC79A7`, `#000000`. Use `#8A6800` for amber text and spines. One color per physical series, kept the same across all panels and pages (for example, the PAO bands are always `#004488`, and DFT reference points are always `#D55E00`).
 - Axis labels carry the quantity and the unit: `$E - E_F$ (eV)`, `$\sigma_{xx}$ ($\Omega^{-1}\,\mathrm{m}^{-1}$)`. State the energy zero in the caption sentence that follows the figure.
 - In notebooks, a plotting cell carries the cell tag `hide-input`. The website then shows the figure with a "Show code cell source" toggle, and the downloaded notebook still holds the full code. Each plotting cell is standalone (it reads the output files of the run) so that it works in the downloaded notebook.
@@ -243,10 +244,12 @@ for name in sys.argv[1:]:
             for hexc in re.findall(r"#[0-9A-Fa-f]{6}\b", text):
                 if hexc.upper() not in PALETTE:
                     say("color", f"{hexc} is not in the palette")
-            if re.search(r"color\s*=\s*['\"](?!#)\w+['\"]|['\"]C\d['\"]", text):
+            if re.search(r"\bcol(or|s)?\s*=\s*['\"](?!#)\w+['\"]|['\"]C\d['\"]", text):
                 say("color", "named or cycle color in plot code; use palette hex codes")
+            if re.search(r"\.plot_\w+\(", text) and not re.search(r"\bcols?\s*=", text):
+                say("color", "GPAO call without col/cols falls back to non-palette defaults")
             if path.suffix == ".ipynb":
-                if re.search(r"plt\.|matplotlib", text) and "hide-input" not in tags:
+                if re.search(r"plt\.|matplotlib|GPAO", text) and "hide-input" not in tags:
                     say("hide-input", "plotting cell without the 'hide-input' tag")
                 if text.strip() and not has_out and not text.lstrip().startswith("#"):
                     say("no-output", f"code cell without stored output: {text.strip().splitlines()[0][:60]!r}")
