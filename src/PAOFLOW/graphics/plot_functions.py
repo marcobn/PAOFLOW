@@ -56,6 +56,9 @@ def plot_pdos(es, dos, title, x_lim, y_lim, vertical, cols, labels, legend):
 
     if cols is None or isinstance(cols, str):
         cols = [cols] * len(dos)
+    elif isinstance(cols[0], str):
+        if len(cols) != len(dos):
+            raise Exception('Must provide one color for each pdos file')
     else:
         cols = np.array(cols)
         cs = cols.shape

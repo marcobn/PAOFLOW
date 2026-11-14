@@ -5,7 +5,7 @@ A how-to is a Markdown page `docs/tutorials/howtos/<task>.md` that answers one p
 ## Structure
 
 1. **Title**: `# How to <verb> <object>` (for example "How to add spin–orbit coupling to a scalar-relativistic calculation").
-2. **Opening paragraph**: the question the page answers, the situation in which we need it, and the physical approximation it introduces, if any. The page is written for every system the task applies to. The system used to test it (the base example, a supercell chosen for the runs) is not its subject and appears only where a concrete example helps. Then a line of the form
+2. **Opening paragraph**: the question the page answers, the situation in which the reader needs it, and the physical approximation it introduces, if any. The page is written for every system the task applies to. The system used to test it (the base example, a supercell chosen for the runs) is not its subject and appears only where a concrete example helps. Then a line of the form
    `Base example: [examples/<family>/<name>/](https://github.com/marcobn/PAOFLOW/tree/master/examples/<family>/<name>)`
    (the checks look for `Base example:` and verify that the path exists).
 3. **The change**: one screen of code at most, showing only the lines that differ from the base example's `main.py`, with enough context to place them. Use a fenced `python` block. When the change is a single argument, show the call with that argument and nothing more.
@@ -19,7 +19,7 @@ Leave out any physics background beyond what is needed to choose the flags, and 
 
 ## Figures and output
 
-A how-to's code is not executed by the docs build. We run it as a script (the base example with the change applied) before publishing, and paste the relevant output as a fenced `text` block, trimmed to the lines the page discusses. Figures are PNGs from that run in `docs/_static/images/howtos/<task>/`, made with the palette in SKILL.md. The plotting script is not kept; the text after each figure names the run and the settings it was made from (see "Figures" in SKILL.md).
+A how-to's code is not executed by the docs build. Run it as a script (the base example with the change applied) before publishing, and paste the relevant output as a fenced `text` block, trimmed to the lines the page discusses. Figures are PNGs from that run in `docs/_static/images/howtos/<task>/`, made with the palette in SKILL.md. The plotting script is not kept; the text after each figure names the run and the settings it was made from (see "Figures" in SKILL.md).
 
 ## Registration
 
@@ -35,7 +35,7 @@ Add a grid card and a toctree entry to `docs/tutorials/howtos/index.md`:
 
 **<Title without "How to">**
 
-<One sentence: what we can do after reading the page.>
+<One sentence: what you can do after reading the page.>
 :::
 ```
 
@@ -51,9 +51,9 @@ Before:
 
 After:
 
-> `rcut` discards hoppings by bond length $|a_\mathrm{lat}\mathbf{R} + \boldsymbol{\tau}_\alpha - \boldsymbol{\tau}_\beta|$ (Bohr) instead of by amplitude. Where `hopping_threshold` removes couplings too weak to matter, `rcut` assumes the interaction is short-ranged, which is a statement about the material. We use it when the PAO Hamiltonian has long, weak tails that the threshold would keep.
+> `rcut` discards hoppings by bond length $|a_\mathrm{lat}\mathbf{R} + \boldsymbol{\tau}_\alpha - \boldsymbol{\tau}_\beta|$ (Bohr) instead of by amplitude. Where `hopping_threshold` removes couplings too weak to matter, `rcut` assumes the interaction is short-ranged, which is a statement about the material. Use it when the PAO Hamiltonian has long, weak tails that the threshold would keep.
 
-What changed. There is no bold for emphasis and no em dash. The contrast with the other flag is stated once, as a fact, and the last sentence tells us when to reach for the flag.
+What changed. There is no bold for emphasis and no em dash. The contrast with the other flag is stated once, as a fact, and the last sentence tells the reader when to reach for the flag.
 
 From the sparse how-to, the steps that change role on the sparse backend.
 
@@ -63,6 +63,6 @@ Before:
 
 After:
 
-> On the dense pipeline, `pao_eigh()` diagonalises $H(\mathbf{k})$ at every k-point and keeps all eigenvectors, $N_k\, n_\mathrm{awf}^2$ complex numbers, for the steps that follow. For a large cell that array does not fit in memory. The sparse backend therefore diagonalises one k-point at a time, computes there everything the properties of the script need (eigenvalues, band velocities, smearing widths, projections for the PDOS), and discards the eigenvectors before the next k-point. We call one such loop over the mesh a pass. It runs when a property needs it, not where the three calls are written: `pao_eigh()`, `gradient_and_momenta()` and `adaptive_smearing()` compute nothing themselves. They store their arguments for the pass, and a script that keeps the defaults can leave them out.
+> On the dense pipeline, `pao_eigh()` diagonalises $H(\mathbf{k})$ at every k-point and keeps all eigenvectors, $N_k\, n_\mathrm{awf}^2$ complex numbers, for the steps that follow. For a large cell that array does not fit in memory. The sparse backend therefore diagonalises one k-point at a time, computes there everything the properties of the script need (eigenvalues, band velocities, smearing widths, projections for the PDOS), and discards the eigenvectors before the next k-point. One such loop over the mesh is called a pass. It runs when a property needs it, not where the three calls are written: `pao_eigh()`, `gradient_and_momenta()` and `adaptive_smearing()` compute nothing themselves. They store their arguments for the pass, and a script that keeps the defaults can leave them out.
 
 What changed. The reader learns why the three calls behave differently, from the memory cost they already know on the dense pipeline. "Pass" is defined before it is used, and "only record their options" is replaced by what happens to the arguments and what that means for the script.

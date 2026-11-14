@@ -35,7 +35,7 @@ When a request fits neither type (a long derivation, a design note), say so: der
 
 The docs build does not execute notebooks (`nb_execution_mode = 'off'`), so whatever the committed notebook contains is what the website shows. A cell without stored output shows no figure on the website, and a wrong cell ships unnoticed.
 
-- **Data** comes from a GitHub release (`tutorial-assets-vN` or `integration-assets-vN`), never from a path inside the repository: the reader downloads the notebook alone. Confirm that the asset exists with `gh release view <tag>`, then name the tag and the file in the download tip. Code cells set `savedir` to the extracted directory next to the notebook (`savedir = 'silicon.save'`), never `../../examples/...` and never an absolute path.
+- **Data** comes from a GitHub release (`tutorial-assets-vN` or `integration-assets-vN`), never from a path inside the repository: the reader downloads the notebook alone. Confirm that the asset exists with `gh release view <tag>`, then name the tag and the file in the download tip. Code cells set `savedir` to the extracted directory next to the notebook (`savedir = 'silicon.save'`), never `../../examples/...` and never an absolute path. In a tutorial, the setup cell (see `references/tutorial.md`) also downloads and extracts the asset when `savedir` does not exist, so that the downloaded notebook runs as it is; a how-to names the asset in its tip and leaves the download to the reader.
 - **Cheap runs** (finish in about 10 minutes on the laptop): run them yourself with `/home/anooja/miniconda3/envs/paoflow/bin/python`. Execute a notebook in place with `/home/anooja/miniconda3/envs/paoflow/bin/jupyter execute --inplace <notebook>`, from a scratch copy whose working directory holds the extracted dataset, and then copy the executed notebook back. Run a how-to's code blocks as one script.
 - **Heavy runs** (larger grids, SOC supercells, anything that needs the cluster): time the first steps on a reduced grid to estimate the cost. Then hand the user the exact command to run, for example `jupyter execute --inplace tutorialNN.ipynb` in their cluster environment, or the how-to as a `main.py`, together with the output files you need back. Mark every number that is still missing as `{TODO: <quantity> from run}` in the text, and fill the numbers in only from the user's outputs.
 - An `Examples`-style snippet you have not run does not go on a page. If a run fails, report the failure; do not reword the page around it.
@@ -48,7 +48,7 @@ The website is read as a whole, and repeated paragraphs make it long and hard to
 - The home of a method's parameters is its docstring (rendered under `docs/api/`). A page explains how to choose a parameter for this material and links to the API entry for the full list: ``{py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.bands` ``.
 - Links: `[Tutorial 01](../tutorial01.ipynb)`, `[internal basis](../internals/internal-basis.md)`, headings with `[text](page.md#heading-anchor)` (MyST anchors are on down to level 4).
 - A how-to does not repeat the workflow of its base example. It shows only what changes and links to the example.
-- A fact that holds for a method in general (a default, the files it writes, the energy range it is clipped to) has its home in the method's docstring or in the tutorial that introduces the method. Another page mentions it only when its situation changes what the reader should do, and then as a recommendation: what we do, followed by the reason in this situation, with a link to the home. A bare fact ("`do_pdos=False` turns them off") leaves the reader to work out why it is on this page. Write instead: "For a cell with many atoms we pass `do_pdos=False` to `dos()` unless the projected DOS is needed, because by default it writes one file per orbital, thousands of files for a large supercell."
+- A fact that holds for a method in general (a default, the files it writes, the energy range it is clipped to) has its home in the method's docstring or in the tutorial that introduces the method. Another page mentions it only when its situation changes what the reader should do, and then as a recommendation: what to do, followed by the reason in this situation, with a link to the home. A bare fact ("`do_pdos=False` turns them off") leaves the reader to work out why it is on this page. Write instead: "For a cell with many atoms, pass `do_pdos=False` to `dos()` unless you need the projected DOS, because by default it writes one file per orbital, thousands of files for a large supercell."
 - A link that says "see X" must land on text that explains the concept. Open the target and check. If the home page does not explain it, the explanation goes on the home page: tell the developer, and do not define the concept on the linking page instead.
 
 ## Building the explanation
@@ -84,7 +84,7 @@ The reader has never seen earlier versions and was not part of the conversation 
 
 Write like a careful physicist writing a methods section that walks a colleague through the calculation: precise, plain, specific. Each sentence defines something, states a condition, tells the reader what to do, or tells them what to expect. Delete any sentence that does none of these.
 
-**Voice.** Use the first person plural throughout: "We build the Hamiltonian from the projections", "We choose `nk=2000` so that the band crossings near $L$ are resolved." Do not switch to "you" or "one can" partway through. Use the imperative only in short instructions inside admonitions ("Download the dataset and set `savedir`").
+**Voice.** Address the reader as "you" throughout: "You build the Hamiltonian from the projections", "Choose `nk=2000` so that the band crossings near $L$ are resolved." Use the imperative for instructions ("Download the dataset and set `savedir`"). Where the subject of a sentence is the code or the calculation, make it the subject: "`projectability()` keeps the states with $p_{n\mathbf{k}} > 0.95$". Do not switch to "we", "our", "let's" or "one can" partway through.
 
 **Connectors.** When a sentence stands in a logical relation to the one before it, open it with a word that names the relation, so that the reader does not have to infer it: a solution to the problem just stated ("To avoid this", "Instead"), a consequence ("Therefore", "As a result", "so"), a cause ("because", "since"), a contrast ("However", "In contrast", "On the dense pipeline ..., whereas"), an example ("For example", "On Si"), or a condition ("When", "If"). Two short sentences in a cause-and-effect relation can also be joined into one with "because" or "so". A sentence that only continues a description or a sequence of steps needs no connector, and a connector must state the real relation: "however" before a sentence that does not contrast misleads the reader.
 
@@ -92,11 +92,11 @@ Before: "Defect supercells, slabs, interfaces and heterostructures therefore exh
 
 After: "Defect supercells, slabs, interfaces and heterostructures therefore exhaust the memory of a node. To avoid this, the sparse backend never forms these arrays."
 
-**Physics depth.** For each step, give the defining equation as the code evaluates it, then one to three sentences of intuition: what the quantity means for an electron in the crystal, and what we should see in the output. Name the approximations explicitly: constant relaxation time, rigid band, independent particle, PBE gap, no local-field effects, the projectability cutoff. A reader needs to know what a result is not valid for. Leave derivations out and link to a reference or an internals page for them. Quote experiment or literature values only when the citation is certain (authors, journal, volume, page, year); otherwise ask the user.
+**Physics depth.** For each step, give the defining equation as the code evaluates it, then one to three sentences of intuition: what the quantity means for an electron in the crystal, and what the reader should see in the output. Name the approximations explicitly: constant relaxation time, rigid band, independent particle, PBE gap, no local-field effects, the projectability cutoff. A reader needs to know what a result is not valid for. Leave derivations out and link to a reference or an internals page for them. Quote experiment or literature values only when the citation is certain (authors, journal, volume, page, year); otherwise ask the user.
 
 **Numbers.** Give quantities with units and the precision the run supports ("indirect gap 0.61 eV", not "about 0.6"). Every number comes from the run or from a cited source.
 
-**Jargon.** Use a technical term only when the physics needs it and no plain phrase is as precise. Terms that every DFT user knows need no explanation: Kohn–Sham state, k-point, PBE, pseudopotential, Fermi level. Terms that are specific to PAOFLOW or to another field do. Examples are projectability, PAO shift, cell doubling, the energy window of the sparse backend, and Berry curvature in a transport page. Define such a term in the sentence where it first appears on the page, or link to its definition in Tutorial 01, the API page or a cited reference. Spell out each acronym at its first use on each page (PAO, PDOS, SHC, AHC, NEGF). Do not use in-house shorthand as nouns: code variable names standing for a concept ("the `nawf` grows"), developer labels ("the dense branch", "nev padding", "the probe", "the engine") or names of internal functions the reader never calls. Say what they mean ("the number of orbitals grows"). When the page needs a name for a mechanism it uses repeatedly, define it once in plain terms ("one loop over all k-points of the mesh, which we call a pass") before using it.
+**Jargon.** Use a technical term only when the physics needs it and no plain phrase is as precise. Terms that every DFT user knows need no explanation: Kohn–Sham state, k-point, PBE, pseudopotential, Fermi level. Terms that are specific to PAOFLOW or to another field do. Examples are projectability, PAO shift, cell doubling, the energy window of the sparse backend, and Berry curvature in a transport page. Define such a term in the sentence where it first appears on the page, or link to its definition in Tutorial 01, the API page or a cited reference. Spell out each acronym at its first use on each page (PAO, PDOS, SHC, AHC, NEGF). Do not use in-house shorthand as nouns: code variable names standing for a concept ("the `nawf` grows"), developer labels ("the dense branch", "nev padding", "the probe", "the engine") or names of internal functions the reader never calls. Say what they mean ("the number of orbitals grows"). When the page needs a name for a mechanism it uses repeatedly, define it once in plain terms ("one loop over all k-points of the mesh, called a pass") before using it.
 
 Avoiding jargon is not the same as simplifying the physics. Do not explain what the reader already knows (what a band structure or reciprocal space is). Do not use analogies that lose precision, and do not reassure ("don't worry", "it's simple", "just run"). Keep the equations, units and approximations. What changes is that every term on the page is one the reader knows or has just been given.
 
@@ -107,7 +107,7 @@ Avoiding jargon is not the same as simplifying the physics. Do not explain what 
 **Typography.**
 
 - No em dashes in prose. Use a comma, a colon, parentheses or a new sentence.
-- No bold for emphasis. Bold is reserved for short labels that open a line, such as `**Output:**` or `**What we compute**`.
+- No bold for emphasis. Bold is reserved for short labels that open a line, such as `**Output:**` or `**What you will compute**`.
 - No emojis, no exclamation marks.
 - Lists only for genuinely parallel items (output files, allowed values of a flag, prerequisites), with as many items as the content has. Explanations are prose.
 
@@ -118,7 +118,7 @@ Avoiding jargon is not the same as simplifying the physics. Do not explain what 
 - A closing paragraph or section that recaps the page. The last section adds information; "Where to go next" with links is allowed, a recap is not.
 - Restating the section heading as the first sentence of the section.
 - Marketing adjectives ("efficient", "fast", "flexible", "easy") without a number or a comparison behind them.
-- Hedging filler ("can be used to", "is designed to", "allows us to"). Say what it does.
+- Hedging filler ("can be used to", "is designed to", "allows you to"). Say what it does.
 
 ## Figures
 
@@ -234,8 +234,8 @@ for name in sys.argv[1:]:
                     say("bold", f"bold inside a sentence: {m.group()}")
             for m in GREEK.finditer(p):
                 say("greek", f"Unicode '{m.group()}' in prose; write it as LaTeX")
-            if re.search(r"\b(you|your)\b|\bone can\b", low):
-                say("voice", "'you'/'one can' in prose; use 'we' (imperative is fine in admonitions)")
+            if re.search(r"\b(we|our|ours|us|let's)\b|\bone can\b", low):
+                say("voice", "'we'/'our'/'one can' in prose; address the reader as 'you'")
             if "{todo" in low:
                 say("todo", "unfilled {TODO: ...} placeholder")
         else:
@@ -251,7 +251,8 @@ for name in sys.argv[1:]:
             if path.suffix == ".ipynb":
                 if re.search(r"plt\.|matplotlib|GPAO", text) and "hide-input" not in tags:
                     say("hide-input", "plotting cell without the 'hide-input' tag")
-                if text.strip() and not has_out and not text.lstrip().startswith("#"):
+                setup = re.search(r"^savedir\s*=", text, re.M)  # the setup cell has no output
+                if text.strip() and not has_out and not setup and not text.lstrip().startswith("#"):
                     say("no-output", f"code cell without stored output: {text.strip().splitlines()[0][:60]!r}")
     if path.parent.name == "howtos":
         idx = (path.parent / "index.md").read_text()
@@ -273,4 +274,4 @@ sys.exit(1 if problems else 0)
 EOF
 ````
 
-Some hits are false positives. A cell that only defines paths has no output, a quoted log line may contain "you", and "no longer" can be physics ("no longer projectable"). Do not write override lines for these: leave them and mention them in the report. Override lines are only for rules the developer chose to break.
+Some hits are false positives. A quoted log line may contain "we", and "no longer" can be physics ("no longer projectable"). Do not write override lines for these: leave them and mention them in the report. Override lines are only for rules the developer chose to break.

@@ -8,7 +8,7 @@ Base example: [examples/qe_examples/example01/](https://github.com/marcobn/PAOFL
 
 ## When to use the sparse backend
 
-We use the dense pipeline whenever it fits in memory, because it has every PAOFLOW method and needs no truncation. When it does not fit, we switch to the sparse backend. To decide in advance, we evaluate the estimate above: $16\, N_\mathrm{mesh}\, n_\mathrm{awf}^2$ bytes per array, and five such arrays. The switch changes little in the script, because most properties run on the sparse backend with the same call; the few that do not are listed in [Computing other properties](#computing-other-properties), together with the way to run them.
+Use the dense pipeline whenever it fits in memory, because it has every PAOFLOW method and needs no truncation. When it does not fit, switch to the sparse backend. To decide in advance, evaluate the estimate above: $16\, N_\mathrm{mesh}\, n_\mathrm{awf}^2$ bytes per array, and five such arrays. The switch changes little in the script, because most properties run on the sparse backend with the same call; the few that do not are listed in [Computing other properties](#computing-other-properties), together with the way to run them.
 
 ## Switching a script
 
@@ -34,11 +34,11 @@ The first three calls, `read_atomic_proj_QE()`, `projectability()` and `pao_hami
 
 ### Calls that compute nothing: `pao_eigh()`, `gradient_and_momenta()`, `adaptive_smearing()`
 
-On the dense pipeline, `pao_eigh()` diagonalises $\tilde H(\mathbf{k})$ at every k-point and keeps all the eigenvectors for the steps that follow. For a large cell, however, that array does not fit in memory. The sparse backend therefore diagonalises one k-point at a time, computes there everything the properties of the script need (eigenvalues, band velocities, adaptive smearing widths, projections for the projected density of states, PDOS), and discards the eigenvectors before the next k-point. We call one such loop over the whole k-mesh a pass. Since only the properties tell the pass what to compute, the pass runs when a property needs it, not where these three methods are called. As a result, `pao_eigh()`, `gradient_and_momenta()` and `adaptive_smearing()` compute nothing themselves: they store their arguments for the pass, so a script that keeps their defaults can leave them out, as the script above does.
+On the dense pipeline, `pao_eigh()` diagonalises $\tilde H(\mathbf{k})$ at every k-point and keeps all the eigenvectors for the steps that follow. For a large cell, however, that array does not fit in memory. The sparse backend therefore diagonalises one k-point at a time, computes there everything the properties of the script need (eigenvalues, band velocities, adaptive smearing widths, projections for the projected density of states, PDOS), and discards the eigenvectors before the next k-point. One such loop over the whole k-mesh is called a pass. Since only the properties tell the pass what to compute, the pass runs when a property needs it, not where these three methods are called. As a result, `pao_eigh()`, `gradient_and_momenta()` and `adaptive_smearing()` compute nothing themselves: they store their arguments for the pass, so a script that keeps their defaults can leave them out, as the script above does.
 
 ### Several properties in one pass
 
-On the dense pipeline, `pao_eigh()` stores the eigenvectors of every k-point, and each property reads them when it is called. On the sparse backend, in contrast, the eigenvectors of a k-point exist only while the pass is at that k-point. After the pass only the eigenvalues and band velocities stay in memory, because they are small arrays. A property that needs only these, such as `transport()` called after `dos()`, reuses them. A property that needs the eigenvectors themselves, such as `dielectric_tensor()`, which uses matrix elements between states, starts a second pass that diagonalises every k-point again. A second pass is expensive: on the Si example, a run with `dos()` followed by `dielectric_tensor()` takes 31 s with two passes. To avoid it, we call the properties inside a `fused()` block, and the same run then takes 22 s with one pass:
+On the dense pipeline, `pao_eigh()` stores the eigenvectors of every k-point, and each property reads them when it is called. On the sparse backend, in contrast, the eigenvectors of a k-point exist only while the pass is at that k-point. After the pass only the eigenvalues and band velocities stay in memory, because they are small arrays. A property that needs only these, such as `transport()` called after `dos()`, reuses them. A property that needs the eigenvectors themselves, such as `dielectric_tensor()`, which uses matrix elements between states, starts a second pass that diagonalises every k-point again. A second pass is expensive: on the Si example, a run with `dos()` followed by `dielectric_tensor()` takes 31 s with two passes. To avoid it, call the properties inside a `fused()` block, and the same run then takes 22 s with one pass:
 
 ```python
 with paoflow.sparse.fused():
@@ -54,7 +54,7 @@ The calls inside the block are collected, and one pass serves all of them when t
 
 ### Computing other properties
 
-Every property in the table below is computed with the same call as on the dense pipeline, with the arguments documented in its API entry, for example {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.anomalous_Hall`. We add the call inside the `fused()` block, so that it shares the pass with the other properties. In the table, a property marked "all states" sums over every pair of bands at each k-point, so its pass solves the full spectrum (see [Properties that need every state](#properties-that-need-every-state) for what that costs).
+Every property in the table below is computed with the same call as on the dense pipeline, with the arguments documented in its API entry, for example {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.anomalous_Hall`. Add the call inside the `fused()` block, so that it shares the pass with the other properties. In the table, a property marked "all states" sums over every pair of bands at each k-point, so its pass solves the full spectrum (see [Properties that need every state](#properties-that-need-every-state) for what that costs).
 
 | group                                         | methods                                                                                                                                        |
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -71,7 +71,7 @@ Non-linear optics, ARPES, the Weyl-point search, the mirror Chern number, the po
 
 ### Passing the truncated Hamiltonian to the dense pipeline
 
-The truncated hopping list is also a compact way to keep a PAO Hamiltonian. It holds only the hoppings that survive the truncation, so it is smaller than the dense $H(\mathbf{R})$: for the Si example, the dense $H(\mathbf{R})$ takes 9.0 MB, and the saved hopping list 1.8 MB with `bond_order=36`. Moreover, it carries everything the later steps need, so it replaces the DFT data and the first three steps of the workflow. We therefore build and truncate the Hamiltonian once, and compute properties from it on the dense pipeline whenever the cell fits in memory, either in the same run or in a later one.
+The truncated hopping list is also a compact way to keep a PAO Hamiltonian. It holds only the hoppings that survive the truncation, so it is smaller than the dense $H(\mathbf{R})$: for the Si example, the dense $H(\mathbf{R})$ takes 9.0 MB, and the saved hopping list 1.8 MB with `bond_order=36`. Moreover, it carries everything the later steps need, so it replaces the DFT data and the first three steps of the workflow. Therefore, build and truncate the Hamiltonian once, and compute properties from it on the dense pipeline whenever the cell fits in memory, either in the same run or in a later one.
 
 #### Creating the truncated Hamiltonian
 
@@ -105,7 +105,7 @@ The dense run itself keeps the full $H(\mathbf{R})$ and continues unchanged.
 
 #### In the same run: `to_dense()`
 
-To continue on the dense pipeline without a file, we call `to_dense()` in place of `save_sparse_hamiltonian()`. It converts the truncated hopping list of the DFT cell back into the dense $H(\mathbf{R})$, and every later call on the object runs on the dense pipeline. Because it converts the Hamiltonian of the DFT cell, it must come directly after `pao_hamiltonian()`, before any cell doubling, interpolation or band calculation:
+To continue on the dense pipeline without a file, call `to_dense()` in place of `save_sparse_hamiltonian()`. It converts the truncated hopping list of the DFT cell back into the dense $H(\mathbf{R})$, and every later call on the object runs on the dense pipeline. Because it converts the Hamiltonian of the DFT cell, it must come directly after `pao_hamiltonian()`, before any cell doubling, interpolation or band calculation:
 
 ```python
 paoflow.pao_hamiltonian()           # truncated with sparse_config
@@ -118,7 +118,7 @@ paoflow.adaptive_smearing()
 paoflow.dos(emin=-12.0, emax=2.2, ne=1000, do_pdos=False)
 ```
 
-The `do_pdos=False` in this example follows a recommendation for large cells: for a cell with many atoms we pass `do_pdos=False` to `dos()` unless the projected DOS is needed, because by default it writes one file per orbital, thousands of files for a large supercell.
+The `do_pdos=False` in this example follows a recommendation for large cells: for a cell with many atoms, pass `do_pdos=False` to `dos()` unless you need the projected DOS, because by default it writes one file per orbital, thousands of files for a large supercell.
 
 #### In a later run: `load_sparse_hamiltonian()`
 
@@ -154,11 +154,11 @@ $H(\mathbf{R})$ built from the projections is the exact discrete Fourier transfo
 
 ![Magnitude of every Si PAO hopping against bond length, on a log scale, with the bond-length cutoffs as vertical lines and the hopping thresholds as horizontal lines](../../_static/images/howtos/sparse-workflow/hoppings.png)
 
-The hoppings fall in vertical columns, one per neighbour shell (the set of bonds of one length; the ticks at the top mark them). The nearest-neighbour shell at 4.59 Bohr has hoppings up to 1.27 eV, and hoppings of $3\times10^{-3}$ eV remain beyond 30 Bohr. Within one shell the elements spread over several orders of magnitude, because each couples a different pair of orbitals. Accordingly, there are two ways to choose which hoppings go: a vertical line in this figure (by bond length) or a horizontal line (by size). Only the first respects the crystal symmetry, and it is the one we use. The figure is made from the full $H(\mathbf{R})$ of the Si example on its $12\times12\times12$ DFT grid, before any truncation; the vertical lines are the cutoffs of `bond_order=10` and `bond_order=36` and the longest cutoff the grid allows, and the horizontal lines the thresholds of $10^{-3}$ and $10^{-4}$ eV.
+The hoppings fall in vertical columns, one per neighbour shell (the set of bonds of one length; the ticks at the top mark them). The nearest-neighbour shell at 4.59 Bohr has hoppings up to 1.27 eV, and hoppings of $3\times10^{-3}$ eV remain beyond 30 Bohr. Within one shell the elements spread over several orders of magnitude, because each couples a different pair of orbitals. Accordingly, there are two ways to choose which hoppings go: a vertical line in this figure (by bond length) or a horizontal line (by size). Only the first respects the crystal symmetry, and it is the one to use. The figure is made from the full $H(\mathbf{R})$ of the Si example on its $12\times12\times12$ DFT grid, before any truncation; the vertical lines are the cutoffs of `bond_order=10` and `bond_order=36` and the longest cutoff the grid allows, and the horizontal lines the thresholds of $10^{-3}$ and $10^{-4}$ eV.
 
 ### Truncation by bond length
 
-A symmetry operation maps a bond only onto bonds of the same length. A cutoff on the bond length therefore keeps or drops whole shells, so the truncated Hamiltonian keeps the symmetry of the crystal, and the degeneracies it protects stay intact: on Si, every bond-length cutoff we tried leaves them split by less than 0.4 meV. This matters for every property that depends on those degeneracies, such as band crossings, topological invariants and tensor components that vanish by symmetry.
+A symmetry operation maps a bond only onto bonds of the same length. A cutoff on the bond length therefore keeps or drops whole shells, so the truncated Hamiltonian keeps the symmetry of the crystal, and the degeneracies it protects stay intact: on Si, every bond-length cutoff tested for this page leaves them split by less than 0.4 meV. This matters for every property that depends on those degeneracies, such as band crossings, topological invariants and tensor components that vanish by symmetry.
 
 ![Two close-ups of the doubly degenerate Si conduction-band pair along Gamma to L: with bond_order=36 the pair stays degenerate but shifts up, with a hopping threshold of 1e-3 eV it splits near L](../../_static/images/howtos/sparse-workflow/degeneracy.png)
 
@@ -166,7 +166,7 @@ The figure shows the doubly degenerate conduction-band pair of Si on the $\Gamma
 
 The price is accuracy, which depends on how fast the hoppings decay with distance. For a covalent semiconductor such as Si the decay is slow: the cutoff at the 36th shell (32.1 Bohr) still drops thousands of hoppings above $10^{-3}$ eV, and it moves the bands within 2 eV of the valence-band maximum by up to 93 meV.
 
-The cutoff also has an upper limit: it can only reach as far as the $\mathbf{R}$ grid represents bonds uniquely, 36.7 Bohr for the $12\times12\times12$ DFT grid of Si, the dotted line in the figure. Beyond that radius one grid value of $H(\mathbf{R})$ mixes bonds of different lengths, so a length has no meaning there, and a larger cutoff stops the run with an error that gives the limit. On the Si grid the longest allowed cutoff still moves the bands near the gap by up to 71 meV. To reach further, and with it an error of a few meV, we use a denser DFT k-grid, which extends the $\mathbf{R}$ grid. The cutoff is set in one of two ways.
+The cutoff also has an upper limit: it can only reach as far as the $\mathbf{R}$ grid represents bonds uniquely, 36.7 Bohr for the $12\times12\times12$ DFT grid of Si, the dotted line in the figure. Beyond that radius one grid value of $H(\mathbf{R})$ mixes bonds of different lengths, so a length has no meaning there, and a larger cutoff stops the run with an error that gives the limit. On the Si grid the longest allowed cutoff still moves the bands near the gap by up to 71 meV. To reach further, and with it an error of a few meV, use a denser DFT k-grid, which extends the $\mathbf{R}$ grid. The cutoff is set in one of two ways.
 
 #### `bond_order`: a number of neighbour shells
 
@@ -190,11 +190,11 @@ sparse_config={'rcut': 30.0}       # Bohr
 
 ### Choosing a truncation
 
-We choose the cutoff by convergence: we raise `bond_order` or `rcut` until the bands near the energies the property uses stop moving, within the limit set by the $\mathbf{R}$ grid. We judge the bands, not the DOS, because the integration over the Brillouin zone averages band shifts of opposite sign, so a DOS can look converged while individual bands have moved by a few hundred meV.
+Choose the cutoff by convergence: raise `bond_order` or `rcut` until the bands near the energies the property uses stop moving, within the limit set by the $\mathbf{R}$ grid. Judge the bands, not the DOS, because the integration over the Brillouin zone averages band shifts of opposite sign, so a DOS can look converged while individual bands have moved by a few hundred meV.
 
 ![Largest band shift within 2 eV of the Si valence-band maximum against bond_order on a log scale, falling from about 560 meV to 70 meV, with the two hopping thresholds as horizontal lines](../../_static/images/howtos/sparse-workflow/convergence.png)
 
-The figure shows this test for Si: the largest shift of the bands within 2 eV of the valence-band maximum, from runs of `bands()` on the Si example in which only `bond_order` changes, measured against the full Hamiltonian. The shift falls from 564 meV at `bond_order=5` to 70 meV at 44 and 47, but not steadily: `bond_order=33` gives 81 meV, while 36 and 40 give 93 and 97 meV. We therefore compare several cutoffs before we accept one, rather than stopping at the first that looks converged. The dashed lines mark the two hopping thresholds for comparison: on this grid $10^{-4}$ eV gives smaller shifts than any cutoff, at the price of split degeneracies.
+The figure shows this test for Si: the largest shift of the bands within 2 eV of the valence-band maximum, from runs of `bands()` on the Si example in which only `bond_order` changes, measured against the full Hamiltonian. The shift falls from 564 meV at `bond_order=5` to 70 meV at 44 and 47, but not steadily: `bond_order=33` gives 81 meV, while 36 and 40 give 93 and 97 meV. Therefore, compare several cutoffs before you accept one, rather than stopping at the first that looks converged. The dashed lines mark the two hopping thresholds for comparison: on this grid $10^{-4}$ eV gives smaller shifts than any cutoff, at the price of split degeneracies.
 
 `sparse.log` prints a bound on the largest eigenvalue shift the truncation can cause at any k-point. The bound follows from the Gershgorin theorem: the dropped part of $H(\mathbf{k})$ is Hermitian, so its spectral norm is bounded by its largest absolute row sum. The bound is rigorous but loose: on Si it is 4.11 eV for `bond_order=36`, where the largest shift of the lowest eight bands is 0.26 eV.
 
@@ -202,7 +202,7 @@ The figure shows this test for Si: the largest shift of the bands within 2 eV of
   max eigenvalue shift from truncation (eV)  4.11
 ```
 
-A small bound guarantees a small error; a large one means the error has to be measured. The truncation is applied once, in `pao_hamiltonian()`, so it is set in the constructor and fixed for the rest of the run. If `sparse_config` gives no truncation, the backend applies a threshold of $10^{-3}$ eV (see the next section), so we always give `bond_order` or `rcut`.
+A small bound guarantees a small error; a large one means the error has to be measured. The truncation is applied once, in `pao_hamiltonian()`, so it is set in the constructor and fixed for the rest of the run. If `sparse_config` gives no truncation, the backend applies a threshold of $10^{-3}$ eV (see the next section), so always give `bond_order` or `rcut`.
 
 ### `hopping_threshold`: a quick truncation for tests
 
@@ -212,7 +212,7 @@ sparse_config={'hopping_threshold': 1.0e-4}   # eV
 
 For a quick test of a workflow, a threshold on the size of the hoppings is easier to set than a truncation by bond length, because it needs no knowledge of the shells or of the limit of the $\mathbf{R}$ grid. Every element with $|H_{\alpha\beta}(\mathbf{R})|$ below the threshold is dropped. On Si, $10^{-4}$ eV moves the bands within 2 eV of the valence-band maximum by up to 11 meV, and the default $10^{-3}$ eV by up to 91 meV.
 
-However, a threshold cuts through the shells, and so it does not respect the crystal symmetry. The reason is that two bonds related by a symmetry operation connect orbitals that are rotated into each other, so the same coupling appears as elements of different size on the two bonds, and the threshold keeps a different set of elements on each. As a result, bands that the symmetry makes degenerate split, on Si by up to 3.9 meV at $10^{-4}$ eV and 11.9 meV at $10^{-3}$ eV. We therefore keep the threshold for tests and exploratory runs. It cannot be combined with `bond_order` or `rcut`.
+However, a threshold cuts through the shells, and so it does not respect the crystal symmetry. The reason is that two bonds related by a symmetry operation connect orbitals that are rotated into each other, so the same coupling appears as elements of different size on the two bonds, and the threshold keeps a different set of elements on each. As a result, bands that the symmetry makes degenerate split, on Si by up to 3.9 meV at $10^{-4}$ eV and 11.9 meV at $10^{-3}$ eV. Therefore, keep the threshold for tests and exploratory runs. It cannot be combined with `bond_order` or `rcut`.
 
 ## Which states are solved
 
@@ -225,7 +225,7 @@ The dense pipeline solves every band the PAO basis represents. The sparse backen
 | `fermi_surface`, `spin_texture`, `orbital_texture`               | `fermi_dw`, `fermi_up` | none                                           |
 | `dielectric_tensor`                                              | up to `emax`           | none                                           |
 
-The margins come from the physics of each property. With adaptive smearing ([Tutorial 01, section 7](../tutorial01.ipynb#7-momentum-matrix-elements-and-adaptive-smearing)) a state of width $\sigma_{n\mathbf{k}}$ still contributes to a spectrum about $4\sigma_{n\mathbf{k}}$ away from its energy. Likewise, the derivative of the Fermi function in the transport integrals reaches about $10\,k_BT$ from the chemical potential (0.26 eV at 300 K).
+The margins come from the physics of each property. With adaptive smearing ([Tutorial 01, section 6](../tutorial01.ipynb#6-band-velocities-and-adaptive-smearing)) a state of width $\sigma_{n\mathbf{k}}$ still contributes to a spectrum about $4\sigma_{n\mathbf{k}}$ away from its energy. Likewise, the derivative of the Fermi function in the transport integrals reaches about $10\,k_BT$ from the chemical potential (0.26 eV at 300 K).
 
 The largest adaptive width is not known before the pass. The backend therefore estimates it by diagonalising $\tilde H(\mathbf{k})$ in full at 16 sample k-points ($\Gamma$, the other zone corners and generic low-symmetry points), and counts at the same points how many bands lie below the top of the window. For the script above, `sparse.log` records:
 
@@ -247,13 +247,13 @@ Energies are relative to the valence-band maximum. Both panels come from runs of
 
 ### Properties that need every state
 
-The anomalous, spin and orbital Hall conductivities, the Berry curvature, `linear_response`, `effective_mass`, `site_projected_bands` and `transport(do_hall=True)` sum over pairs of bands that include every state. As a result, a pass that contains one of them solves the full spectrum at every k-point, for all the properties of the pass. Each k-point then needs a full diagonalisation of an $n_\mathrm{awf} \times n_\mathrm{awf}$ matrix, whose time grows as $n_\mathrm{awf}^3$. Because that matrix must fit in memory, these properties stop with an error above `dense_n_max` orbitals (default 4096), so we compute them on a smaller cell.
+The anomalous, spin and orbital Hall conductivities, the Berry curvature, `linear_response`, `effective_mass`, `site_projected_bands` and `transport(do_hall=True)` sum over pairs of bands that include every state. As a result, a pass that contains one of them solves the full spectrum at every k-point, for all the properties of the pass. Each k-point then needs a full diagonalisation of an $n_\mathrm{awf} \times n_\mathrm{awf}$ matrix, whose time grows as $n_\mathrm{awf}^3$. Because that matrix must fit in memory, these properties stop with an error above `dense_n_max` orbitals (default 4096), so compute them on a smaller cell.
 
 ### The upper limit set by the PAO shift
 
 `projectability()` places every Kohn–Sham state that the PAO basis does not represent (projectability below `pthr`) at one energy, the PAO shift, 7.16 eV above the valence-band maximum for Si. On the DFT k-grid these placeholder states sit exactly at the shift, but between grid points they spread around it, and they would appear as spurious bands. The backend therefore drops every state at or above the shift minus `shift_margin` (default 0.2 eV) at every k-point, real or placeholder, and writes the dropped states as `NaN` in band files. In the figure, the bands end at the dotted line. For the same reason, a property range that reaches above this limit is reduced to it.
 
-We raise `shift_margin` when the band plot shows flat or erratic bands just below the limit, which are placeholder states that spread further than 0.2 eV. We lower it when real bands close to the shift are needed, at the risk of keeping placeholder states.
+Raise `shift_margin` when the band plot shows flat or erratic bands just below the limit, which are placeholder states that spread further than 0.2 eV. Lower it when you need real bands close to the shift, at the risk of keeping placeholder states.
 
 ### `nev`: a fixed number of bands
 
@@ -261,7 +261,7 @@ We raise `shift_margin` when the band plot shows flat or erratic bands just belo
 sparse_config={'bond_order': 36, 'nev': 120}
 ```
 
-If we set `nev`, the sparse backend solves that many bands from the bottom at every k-point, instead of deriving the number from the property ranges of each pass as described [above](#which-states-are-solved). As a result, the 16 sample diagonalisations are skipped, and every pass solves the same number of bands. This makes `nev` useful on a cell with thousands of orbitals each sample diagonalisation is expensive, and above `dense_n_max` orbitals they cannot run at all: the backend then solves every state below the PAO shift, which is usually more than a k-point can afford.
+If you set `nev`, the sparse backend solves that many bands from the bottom at every k-point, instead of deriving the number from the property ranges of each pass as described [above](#which-states-are-solved). As a result, the 16 sample diagonalisations are skipped, and every pass solves the same number of bands. This makes `nev` useful on a cell with thousands of orbitals each sample diagonalisation is expensive, and above `dense_n_max` orbitals they cannot run at all: the backend then solves every state below the PAO shift, which is usually more than a k-point can afford.
 The fixed count has a cost: with `nev` no smearing margin is added. If `nev` is too small, states that the DOS or the transport integrals need near the top of their range are missing; the widths are still checked after the pass, and a warning reports it. `nev` also sets the bands of `bands()`, which has no energy range and otherwise solves every well-projected band.
 
 ### `interior_window`: only the states inside a window
@@ -299,7 +299,7 @@ sparse_config={'hk_solver': 'auto'}   # 'auto' | 'sparse' | 'dense'
 - `'sparse'` uses the iterative ARPACK solver, which applies $\tilde H(\mathbf{k})$ to vectors and never forms the matrix. Its cost grows with the number of states requested; once that is a sizeable part of the spectrum it is slower than a full diagonalisation and needs as much memory.
 - `'auto'`, the default, takes ARPACK when the requested states are less than `dense_ratio` of the spectrum (default 1/8) and LAPACK otherwise. A window from the bottom of the spectrum is almost always above that fraction, so in practice ARPACK runs under an interior window. The rule is given in {py:func}`~PAOFLOW.sparse.solver.select_hk_solver`.
 
-A full diagonalisation is allowed up to `dense_n_max` orbitals (default 4096, about 270 MB per matrix). Past that size, a solve that needs a large part of the spectrum stops with an error. The two ways out are fewer states per k-point (a narrower range, `nev` or `interior_window`), or a distributed eigensolver, which the backend does not provide. Because `'auto'` makes this choice for each pass, we leave `hk_solver` on `'auto'`, and set `'dense'` or `'sparse'` only to compare the two solvers on a small system.
+A full diagonalisation is allowed up to `dense_n_max` orbitals (default 4096, about 270 MB per matrix). Past that size, a solve that needs a large part of the spectrum stops with an error. The two ways out are fewer states per k-point (a narrower range, `nev` or `interior_window`), or a distributed eigensolver, which the backend does not provide. Because `'auto'` makes this choice for each pass, leave `hk_solver` on `'auto'`, and set `'dense'` or `'sparse'` only to compare the two solvers on a small system.
 
 ## Checking the result
 
