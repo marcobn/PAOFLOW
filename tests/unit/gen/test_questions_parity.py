@@ -21,6 +21,7 @@ from PAOFLOW.gen import sscha_driver as sd
 from PAOFLOW.gen import ep_model_driver as em
 from PAOFLOW.gen import tb_model_driver as tm
 from PAOFLOW.gen.questions import collect
+from PAOFLOW.gen.questions.linear_response import linear_response_calls
 
 SI_SCF = """&control
   calculation = 'scf'
@@ -509,6 +510,8 @@ def _builders(name: str) -> list:
             pd._band_path_constant_lines,
             pd._wants_explicit_band_path,
             pd._nonlinear_plot_entries,
+            pd._linear_response_lines,
+            linear_response_calls,
             *common,
         ],
         'acbn0': [pd.build_acbn0_script, pd.build_acbn0_plot_script, *common],
@@ -531,6 +534,8 @@ def _builders(name: str) -> list:
             pd._band_path_constant_lines,
             pd._wants_explicit_band_path,
             pd._nonlinear_plot_entries,
+            pd._linear_response_lines,
+            linear_response_calls,
         ],
         'ep_model': [em.build_ep_model_script],
     }[name]
@@ -540,7 +545,9 @@ def _builders(name: str) -> list:
 TB_MODEL_SCENARIOS = {
     'kane_mele_everything': {
         'Tight-binding model': 'kane_mele',
-        'Available properties': '1 2 3 4 5 6 7 8 9',
+        'Available properties': '1 2 3 4 5 6 7 8 9 10',
+        'Observable that responds': 'spin_density',
+        'Term (fermi_sea': 'both',
         'metal or semimetal': 'y',
     },
     'weyl_transport': {
@@ -575,8 +582,22 @@ ELPHON_NEW_SCENARIOS = {
     },
 }
 
+#: The linear-response (Kubo) property (14 November 2026), appended to the menu: coverage only.
+RUN_NEW_SCENARIOS = {
+    'linear_response': {
+        'Enter a comma': '13',
+        'Spin-orbit (noncollinear)': 'y',
+        'Observable that responds': 'spin_density',
+        'Term (fermi_sea': 'both',
+        'Fermi-sea term': 'finite_gamma',
+        'Fermi-surface term': 'intraband',
+        'Components (letters': 'yx, xy',
+        'Spectral broadening': '0.02',
+    },
+}
+
 SCENARIOS = {
-    'run': RUN_SCENARIOS,
+    'run': {**RUN_SCENARIOS, **RUN_NEW_SCENARIOS},
     'acbn0': ACBN0_SCENARIOS,
     'phonon': PHONON_SCENARIOS,
     'elphon': {**ELPHON_SCENARIOS, **ELPHON_NEW_SCENARIOS},

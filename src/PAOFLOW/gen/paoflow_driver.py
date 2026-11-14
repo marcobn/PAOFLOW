@@ -360,10 +360,18 @@ PROPERTY_MENU = [
     ('optical', 'Optical / dielectric tensor (separate extended-basis run)'),
     ('emissivity', 'Emissivity (Fresnel/Kirchhoff; implies the optical run)'),
     ('nonlinear', 'Non-linear optics (shift / injection currents, SHG) on the PAO Hamiltonian'),
+    ('linear_response', 'Linear response (Kubo): Hall, Edelstein, conductivity, any term'),
 ]
 SPIN_PROPERTIES = {'spin_texture', 'spin_Hall'}
 # Properties that read an explicit (emin, emax) energy window.
-ENERGY_WINDOW_PROPERTIES = {'dos', 'transport', 'spin_Hall', 'orbital_Hall', 'anomalous_Hall'}
+ENERGY_WINDOW_PROPERTIES = {
+    'dos',
+    'transport',
+    'spin_Hall',
+    'orbital_Hall',
+    'anomalous_Hall',
+    'linear_response',
+}
 
 
 def select_properties():
@@ -818,6 +826,43 @@ def build_run_script(cfg):
     return '\n'.join(lines)
 
 
+def _linear_response_lines(cfg):
+    """PAOFLOW calls of the linear-response (Kubo) property, from the ``lr_*`` keys of ``cfg``.
+
+    Parameters
+    ----------
+    cfg : dict
+        Run configuration (:func:`PAOFLOW.gen.questions.linear_response.assemble_linear_response`).
+
+    Returns
+    -------
+    list of str
+        The lines of ``main.py``: one commented call per term, mapped by
+        :func:`PAOFLOW.gen.questions.linear_response.linear_response_calls` onto ``spin_Hall``,
+        ``orbital_Hall``, ``anomalous_Hall`` or ``linear_response``.
+    """
+    from .questions.linear_response import OBSERVABLES, linear_response_calls
+
+    window = {
+        'linear_response': 'eminH=EMIN, emaxH=EMAX, esize=NE',
+    }
+    lines = [
+        '    # Linear response (Kubo-Bastin, tutorial03): %s, components %s.'
+        % (OBSERVABLES[cfg['lr_observable']][0], ', '.join(cfg['lr_components'])),
+    ]
+    if cfg.get('is_2d'):
+        lines.append(
+            '    # twoD=True: sheet values in units of e^2/hbar (2 pi sigma_xy is the Chern number);'
+        )
+        lines.append('    # the file headers still say S/cm.')
+    for method, kwargs, comment in linear_response_calls(cfg):
+        energy = window.get(method, 'emin=EMIN, emax=EMAX, ne=NE')
+        arguments = ', '.join('%s=%r' % (key, value) for key, value in kwargs.items())
+        lines.append('    # %s' % comment)
+        lines.append('    p.%s(%s, %s)' % (method, energy, arguments))
+    return lines
+
+
 def _emit_standard_properties(props, needs_spin, cfg):
     """Emit the ordered PAOFLOW calls for the chosen standard properties."""
     body = []
@@ -867,6 +912,8 @@ def _emit_standard_properties(props, needs_spin, cfg):
         body.append('    p.orbital_Hall(emin=EMIN, emax=EMAX, o_tensor=[[0, 1, 2]])')
     if 'anomalous_Hall' in selected:
         body.append('    p.anomalous_Hall(do_ac=True, emin=EMIN, emax=EMAX, a_tensor=[[0, 1]])')
+    if 'linear_response' in selected:
+        body.extend(_linear_response_lines(cfg))
     if 'transport' in selected:
         body.append('    p.transport(tmin=TMIN, tmax=TMAX, nt=NT, emin=EMIN, emax=EMAX,')
         body.append('                ne=NE, write_to_file=True)')

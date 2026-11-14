@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 
 from .model import Answers, Context, Note, Question, Workflow, optional_number
+from .linear_response import assemble_linear_response, linear_response_items
 from .run import COUPLED, NONLINEAR_ITEMS, assemble_nonlinear, point_row
 
 MODEL = 'Tight-binding model'
@@ -58,8 +59,11 @@ MODEL_PROPERTIES = (
     ('topology', 'Band topology (Berry, effective mass)'),
     ('optical', 'Optical / dielectric tensor'),
     ('nonlinear', 'Non-linear optics (shift / injection currents, SHG)'),
+    ('linear_response', 'Linear response (Kubo): Hall, Edelstein, conductivity, any term'),
 )
 SPIN_ONLY = {'spin_texture', 'spin_Hall', 'anomalous_Hall'}
+#: Properties that read the energy window (EMIN, EMAX, NE).
+WINDOW_PROPERTIES = {'dos', 'transport', 'spin_Hall', 'anomalous_Hall', 'linear_response'}
 THREE_D_ONLY = {'transport'}  # Boltzmann transport inverts the 3x3 conductivity tensor
 DENSE_GRID = {1: 400, 2: 96, 3: 32}
 NLO_GRID = {1: 2000, 2: 200, 3: 40}
@@ -289,6 +293,11 @@ def _properties(answers: Answers) -> list[str]:
     return answers.get('properties') or []
 
 
+def _spinful(answers: Answers, context: Context) -> bool:
+    model = _model_or_none(answers, context)
+    return bool(model is not None and model.spinful)
+
+
 def _property_choices(answers: Answers, context: Context) -> list[tuple[str, str]]:
     model = _model_or_none(answers, context)
     spinful = bool(model is not None and model.spinful)
@@ -472,9 +481,7 @@ TB_MODEL_ITEMS = (
     ),
     Note(
         '\nEnergy grid for DOS / transport / Hall properties (eV; the model sets its own zero).',
-        when=lambda a, c: bool(
-            set(_properties(a)) & {'dos', 'transport', 'spin_Hall', 'anomalous_Hall'}
-        ),
+        when=lambda a, c: bool(set(_properties(a)) & WINDOW_PROPERTIES),
         section=GRIDS,
     ),
     Question(
@@ -482,9 +489,7 @@ TB_MODEL_ITEMS = (
         '  EMIN',
         kind='float',
         default=lambda a, c: _energy_default(a, c, 0),
-        when=lambda a, c: bool(
-            set(_properties(a)) & {'dos', 'transport', 'spin_Hall', 'anomalous_Hall'}
-        ),
+        when=lambda a, c: bool(set(_properties(a)) & WINDOW_PROPERTIES),
         unit='eV',
         help='Default: below the lowest band of the model.',
         section=GRIDS,
@@ -494,9 +499,7 @@ TB_MODEL_ITEMS = (
         '  EMAX',
         kind='float',
         default=lambda a, c: _energy_default(a, c, 1),
-        when=lambda a, c: bool(
-            set(_properties(a)) & {'dos', 'transport', 'spin_Hall', 'anomalous_Hall'}
-        ),
+        when=lambda a, c: bool(set(_properties(a)) & WINDOW_PROPERTIES),
         unit='eV',
         help='Default: above the highest band of the model.',
         section=GRIDS,
@@ -506,9 +509,7 @@ TB_MODEL_ITEMS = (
         '  NE (number of energy points)',
         kind='int',
         default=1000,
-        when=lambda a, c: bool(
-            set(_properties(a)) & {'dos', 'transport', 'spin_Hall', 'anomalous_Hall'}
-        ),
+        when=lambda a, c: bool(set(_properties(a)) & WINDOW_PROPERTIES),
         section=GRIDS,
     ),
     Question(
@@ -529,6 +530,7 @@ TB_MODEL_ITEMS = (
         section=GRIDS,
     ),
     *_nonlinear_items(),
+    *linear_response_items(lambda a, c: _spinful(a, c), orbital=False),
     Question(
         'plot',
         'Also generate a plotting script (plot.py)?',
@@ -587,7 +589,7 @@ def assemble_tb_model(answers: Answers, context: Context) -> dict:
         rows = answers.get('high_sym') or points
         cfg['band_path'] = answers.get('band_path') or path
         cfg['high_sym'] = {row[0]: tuple(row[1:]) for row in rows}
-    energies = bool(set(props) & {'dos', 'transport', 'spin_Hall', 'anomalous_Hall'})
+    energies = bool(set(props) & WINDOW_PROPERTIES)
     cfg['emin'] = answers['emin'] if energies else _energy_default(answers, context, 0)
     cfg['emax'] = answers['emax'] if energies else _energy_default(answers, context, 1)
     cfg['ne'] = answers['ne'] if energies else 1000
@@ -597,6 +599,8 @@ def assemble_tb_model(answers: Answers, context: Context) -> dict:
         assemble_nonlinear(
             cfg, {**answers, 'nlo_molecule': False, 'nlo_dipoles': False, 'nlo_coupled': False}
         )
+    if 'linear_response' in props:
+        assemble_linear_response(cfg, answers, bool(model.spinful))
     cfg['plot'] = answers['plot']
     return cfg
 

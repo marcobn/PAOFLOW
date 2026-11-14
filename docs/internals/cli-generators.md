@@ -75,6 +75,34 @@ bin paths) are the defaults of `main.acbn0.py`; the launch variables below overr
 
 **Workflow B — Property runs:** Pick from band structure, DOS, transport, Fermi surface, spin texture, spin Hall conductivity, orbital Hall conductivity, anomalous Hall effects, topology, optical properties, and more. The generated `plot.py` includes only the visualization routines for the properties you chose.
 
+The property `linear_response` (appended last to the menu, 14 November 2026) is one Kubo hook for the linear
+responses. It is defined at the question level (`PAOFLOW.gen.questions.linear_response`) and maps the answers onto
+the existing PAOFLOW calls; the response library is unchanged.
+- **Questions:**
+  - the observable: charge current, spin current, orbital current (property runs only) or spin density. The spin
+    and orbital observables need a spin-orbit run.
+  - the term: Fermi sea (intrinsic), Fermi surface (∝ τ), or both;
+  - the variant, under *advanced*: Γ → 0 (Eq. 3) or finite Γ (Eq. 2) for the sea; total (Eq. 1), intraband (Eq. 4)
+    or interband (Eq. 5) for the surface. The equations are those of tutorial03.
+  - the components, as letters: polarization, current, field (e.g. `zxy`) for the currents, response and field
+    (e.g. `xy`) otherwise;
+  - Γ = ħ/2τ for the Γ-dependent terms.
+
+  A note prints the time-reversal parity of the chosen term(s).
+- **Mapping:**
+  - Fermi sea at Γ → 0: `spin_Hall`, `orbital_Hall`, `anomalous_Hall` (with the MCD) for spin-orbit runs, or
+    `linear_response('ahc')` without spin-orbit. The `do_Hall` and Eq. 3 routes agree to 1e-14 at the same
+    broadening.
+  - Every other term: `linear_response(...)` with `s_tensor` and `a_tensor` both passed (it reads `a_tensor` only
+    when `s_tensor` is given), each in its own index convention.
+- **Not offered** until the library is fixed: the finite-Γ and split spin-current terms, which read the shared
+  `s_tensor` list in another index order, and the Fermi-surface orbital current.
+- **2D:** `twoD` follows the 2D answer. Sheet values are in units of e²/ħ (2π σ_xy is the Chern number: −1.00 for
+  the Haldane model, `tests/unit/gen/test_linear_response_hook.py`), although the file headers say S/cm.
+- **Results:** the Results tab reads all the output files (`SHC|REE|AHC|Cond` with parity, `shc/ohc/ahcEf`,
+  `SCD/OCD/MCD`).
+- **TB models:** workflow G offers the same property; spinless models get the charge current only.
+
 The property `nonlinear` (non-linear optics) adds a separate `run_nonlinear()` to `main.py`: a PAOFLOW instance on the **extended** basis of the run's pseudopotentials (the BASIS_PS tables that `main.py` generates) that calls `nonlinear_optics(...)` right after `pao_hamiltonian()` (it needs `HRs`, so it never interpolates). Every option is an editable constant: `NLO_NK`, `NLO_EMIN/NLO_EMAX/NLO_NE`, `NLO_ETA`, `NLO_SCISSOR`, `NLO_COMPONENTS`, `NLO_RESPONSES` (shift, injection, shg), `NLO_DIPOLES` (default `True`, the validated setting; `False` with projwfc projections, which have no internal basis), `NLO_SYMMETRY`, `NLO_SHG_TERMS` (the SHG split into interband / intraband terms at ω and 2ω), `NLO_TWOD` and `NLO_SLAB_HEIGHT` (sheet units; on for 2D systems), `NLO_MOLECULE`, `NLO_COUPLING` and `NLO_COMPLEMENT_SHIFT` (molecules: Γ point, the coupled response of the molecule, default `hartree+alda`), and, for metals and semimetals (question *metal or semimetal*), `NLO_FERMI_SURFACE` (`True`, else `'auto'`, which detects a metallic channel), `NLO_TEMPERATURE` (K), `NLO_TAU` (intraband relaxation time, fs) and `NLO_COHERENCE_DAMPING` (second-order coherences damped with 1 × η, or 2 × η, the velocity-gauge Kubo limit). The metal engine also writes the zero-frequency photocurrent `pcr_/pci_<abc>.dat` (linear and circular polarisation) and its split by channel `pc{r,i}_<channel>_<abc>.dat`. For a metal the coupled kernels default to `none, hartree, hartree+alda` (no bootstrap). For 3D crystals with internal projections the prompts also offer the coupled optical response: `run_nonlinear()` then calls `coupled_optical_response(...)` with `COUPLED_NK`, `COUPLED_KERNELS`, `COUPLED_EMIN/EMAX/NE`, `COUPLED_SHG_ENERGIES` (empty skips the coupled SHG), `COUPLED_COMPONENTS`, `COUPLED_ETA` and `COUPLED_LRC_ALPHA`. The prompts (`collect_nonlinear`) ask for the system type (crystal, 2D from the common question, molecule), the photon window, the broadening, the scissor, the components, the responses, the dipoles, the SHG terms, the molecular coupling and the coupled-response block. `plot.py` gets "Shift current", "Injection current" and "SHG susceptibility" (`GPAO.plot_nonlinear`, units of the run, 3D or sheet), and when they apply "SHG by term" (`GPAO.plot_shg_terms`), "Photocurrent of a metal by channel" (`GPAO.plot_photocurrent_channels`), "Dielectric function at the kernel levels" and "SHG at the kernel levels" (`GPAO.plot_coupled_response`) and "Molecular hyperpolarizability" (`GPAO.plot_molecular_beta`). See [Non-linear optics](nonlinear-optics.md) and `examples/nlo_examples/`.
 
 **Workflow C — Harmonic phonons** (`main.phonon.py`): finite-displacement phonons via phonopy.

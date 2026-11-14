@@ -1251,3 +1251,9 @@ Two additions to the Results layer:
 - a kind `eliashberg_self_energy` for `self_energy_<T>K.dat`;
 - the columns loader drops the series of a column that holds only NaN (the hole mobilities of a run on the
   electrons alone) and says so in a note.
+
+**One linear-response (Kubo) property (14 November 2026, user request).** The property run and the TB-model run gain
+`linear_response`, defined at the question level only: the observable, the term (Fermi sea or surface), the variant,
+the components and Γ. The answers map onto the existing `spin_Hall` / `orbital_Hall` / `anomalous_Hall` /
+`linear_response` calls (`cli-generators.md`, workflow B). The Setup tab renders the questions by itself, and the help
+has one paragraph on them. The Results tab already knew every output file.

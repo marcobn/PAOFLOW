@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .common import COMMON_ITEMS, COMMON_OVERRIDES, assemble_common, from_save
+from .linear_response import assemble_linear_response, linear_response_items
 from .model import Answers, Context, Note, Question, Workflow, gated
 
 PROPERTIES = 'Properties'
@@ -436,6 +437,7 @@ RUN_ITEMS = (
         section=GRIDS,
     ),
     *gated(NONLINEAR_ITEMS, lambda a, c: 'nonlinear' in _properties(a)),
+    *linear_response_items(lambda a, c: bool(a.get('spin_orbit'))),
     Question(
         'plot',
         'Also generate a plotting script (plot.py)?',
@@ -557,6 +559,8 @@ def assemble_run_from_common(common: dict, answers: Answers) -> dict:
     cfg['nfft'] = answers['nfft'] if cfg['interpolate'] else 0
     if 'nonlinear' in props:
         assemble_nonlinear(cfg, answers)
+    if 'linear_response' in props:
+        assemble_linear_response(cfg, answers, bool(answers['spin_orbit']))
     cfg['plot'] = answers['plot']
     return cfg
 
