@@ -184,3 +184,15 @@ def test_eps_loop_electronic_temperature_matches_the_cold_limit_and_runs_hot():
     hot = eps_loop(dc, ene, 0, 0, 0)
     assert np.all(np.isfinite(hot[0])) and not np.allclose(hot[0], ref[0])
     assert not np.allclose(cold[0], hot[0])
+
+
+def test_eps_loop_electronic_temperature_ignores_the_weights_of_the_qe_grid():
+    """Ek lives on the uniform interpolated grid: the QE weights (another grid, here shorter) must not enter
+    (they made the MPI ranks > 0 fail on a mismatch and hang the job, 13 Nov 2026)."""
+    dc = _make_data(12, 8, insulator=False, seed=5)
+    dc._t['eps_temperature_k'] = 300.0
+    ene = np.linspace(0.05, 6.0, 30)
+    uniform = eps_loop(dc, ene, 0, 0, 0)
+    dc._a['kpnts_wght'] = np.full(5, 0.2)  # the weights of a 5-point irreducible wedge
+    wedge = eps_loop(dc, ene, 0, 0, 0)
+    assert np.allclose(wedge[0], uniform[0]) and np.allclose(wedge[1], uniform[1])

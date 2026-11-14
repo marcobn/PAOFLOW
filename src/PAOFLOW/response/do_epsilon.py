@@ -1105,10 +1105,11 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
     # (hot metals, thermal cells at the lattice temperature).
     temperature_k = attributes.get('eps_temperature_k')
     if temperature_k:
-        weights = arrays.get('kpnts_wght')
-        if weights is not None:
-            weights = np.asarray(weights, dtype=float)[: Ek.shape[0]]
-        w = np.ones(Ek.shape[0]) if weights is None else weights
+        # Ek lives on PAOFLOW's uniform (interpolated) grid, scattered over the ranks: unit weights.
+        # (``kpnts_wght`` are the weights of the QE grid, the irreducible wedge on ranks > 0 after the
+        # symmetry expansion: their length did not match and the job hung, 13 Nov 2026.)
+        weights = None
+        w = np.ones(Ek.shape[0])
         n_electrons = comm.allreduce(float(np.sum(w[:, None] * fn)), op=MPI.SUM)
         fn, fnF_t, mu = fermi_dirac_occupations(
             Ek, K_BOLTZMANN_EV * float(temperature_k), n_electrons, weights, spin_factor, comm
