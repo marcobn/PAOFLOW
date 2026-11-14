@@ -381,7 +381,7 @@ class GPAO:
         from .graphics.plot_functions import plot_tensor
         from .inputs.read_pao_output import read_transport_PAO
 
-        x_label = '$Energy (eV)$'
+        x_label = 'Energy (eV)'
         y_label = r'Conductivity $(\Omega\, m\, s)^{-1}$'
         enes, temps, tensors = read_transport_PAO(fname)
         for i, temp in enumerate(temps):
