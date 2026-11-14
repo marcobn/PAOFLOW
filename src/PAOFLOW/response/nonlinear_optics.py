@@ -65,6 +65,7 @@ from numpy.typing import NDArray
 
 from ..hamiltonian.bloch_derivatives import (
     bloch_terms_from_HRs,
+    hamiltonian_block,
     hamiltonian_derivatives_block,
     velocity_and_curvature_operators,
 )
@@ -940,9 +941,15 @@ def nonlinear_optical_spectra(
     if nocc < 1 or nocc >= n:
         raise ValueError('%d occupied bands of %d: check nelec and the spin factor' % (nocc, n))
     # band edges on the coarse grid (the histogram range and the default Fermi level)
+    # H alone, in blocks: the derivatives of the whole coarse grid at once took ~10 n^2 complex per k
+    # on every rank (7.6 GB for 108 spin-orbitals on a 16^3 grid; GaAs with SOC, 13 Nov 2026)
     coarse = _k_grid(np.asarray(HRs).shape[2:5])
-    H0, _, _ = hamiltonian_derivatives_block(terms, coarse)
-    e0 = np.linalg.eigvalsh(H0)
+    e0 = np.concatenate(
+        [
+            np.linalg.eigvalsh(hamiltonian_block(terms, coarse[b0 : b0 + 256]))
+            for b0 in range(0, coarse.shape[0], 256)
+        ]
+    )
     ops_cart = None
     if symmetry_ops_cryst is not None:
         ops_frac = np.asarray(symmetry_ops_cryst, dtype=float)
