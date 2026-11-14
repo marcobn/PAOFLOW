@@ -1078,3 +1078,32 @@ def test_property_run_from_a_tb_model(browser, studio, tmp_path):
     text = (work / 'main.py').read_text()
     assert 'kane_mele_model(**MODEL_PARAMETERS)' in text and 'p.spin_Hall(' in text
     assert _errors(browser) == []
+
+
+def test_electron_phonon_run_from_a_model_crystal(browser, studio, tmp_path):
+    """The model-crystal workflow: crystal parameters instead of a save, the zone of its lattice
+    drawn, main.ep_model.py written with the crystal function and the property steps."""
+    server, work = studio
+    _open(browser, server, 'setup')
+    browser.find_element(By.CSS_SELECTOR, '.workflow-item[data-name="ep_model"]').click()
+    _wait(lambda: browser.execute_script('return window.paoflowApp.setup.workflow') == 'ep_model')
+    browser.execute_script(
+        "const s = window.paoflowApp.setup; s.form.answers.ep_model = 'light_atom_metal';"
+        "s.form.answers.properties = ['bands', 'migdal_eliashberg']; s.scheduleResolve();"
+    )
+    labels = (
+        "return [...document.querySelectorAll('.field:not([hidden]) .name')]"
+        '.map((n) => n.textContent.trim()).join(",")'
+    )
+    _wait(lambda: 'mass_b' in browser.execute_script(labels).split(','))
+    _wait(
+        lambda: browser.find_elements(By.CSS_SELECTOR, '.bz-preview .main-svg, .bz-preview canvas')
+    )
+    caption = browser.find_element(By.CSS_SELECTOR, '.bz-caption').text
+    assert 'Brillouin zone' in caption
+    browser.find_element(By.XPATH, "//button[text()='Write files']").click()
+    _wait(lambda: (work / 'main.ep_model.py').exists())
+    text = (work / 'main.ep_model.py').read_text()
+    assert 'light_atom_metal_model(**MODEL_PARAMETERS)' in text
+    assert 'workflows.superconductivity(' in text and 'workflows.migdal_eliashberg(' in text
+    assert _errors(browser) == []

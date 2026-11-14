@@ -604,7 +604,7 @@ export class SetupView {
         band_path: item.value,
         points: value('high_sym') || [],
       };
-      if (this.workflow === 'tb_model') {
+      if (this.workflow === 'tb_model' || this.workflow === 'ep_model') {
         // The zone of the model's lattice: the server builds the model from the answers.
         request.workflow = this.workflow;
         request.answers = this.form.answers;

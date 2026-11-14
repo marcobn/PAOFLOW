@@ -1237,3 +1237,17 @@ Fixes found on the way:
   curvature.
 - `DataController` defaults `insulator` to False for models: the dielectric tensor needs it, and only the QE
   and VASP readers set it.
+
+**Electron–phonon runs from a model crystal (14 November 2026, user request).** New workflow `ep_model`, described
+in `cli-generators.md` (workflow H). It runs on the model engine of the electron–phonon lecture notes, now in the
+library as `PAOFLOW.models.electron_phonon`. On the Studio side:
+- it appears in the workflow list by itself;
+- an empty folder suggests it next to `tb_model`;
+- the band-path preview builds the crystal from the answers (`/api/gen/bandpath` with `workflow: 'ep_model'`;
+  `ElectronPhononModel.lattice_vectors` matches the `HoppingModel` attribute);
+- the Results tab reads its outputs with the elphon kinds of the catalogue.
+
+Two additions to the Results layer:
+- a kind `eliashberg_self_energy` for `self_energy_<T>K.dat`;
+- the columns loader drops the series of a column that holds only NaN (the hole mobilities of a run on the
+  electrons alone) and says so in a note.

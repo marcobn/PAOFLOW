@@ -235,7 +235,10 @@ def load_columns(ref: DatasetRef, root: str, options: dict) -> Dataset:
         _option(dataset, 'column', 'Column', names, chosen)
         columns = [names.index(chosen) + 1]
         dataset.notes.append('%d columns: pick one above.' % len(names))
+    empty = [names[column - 1] for column in columns if np.all(np.isnan(data[:, column]))]
     for index, column in enumerate(columns):
+        if names[column - 1] in empty:
+            continue  # a column the run left out (NaN), e.g. the holes of a model mobility
         dataset.series.append(
             Series(
                 names[column - 1],
@@ -245,6 +248,8 @@ def load_columns(ref: DatasetRef, root: str, options: dict) -> Dataset:
                 meta={'file': file},
             )
         )
+    if empty:
+        dataset.notes.append('Not computed (no values): %s.' % ', '.join(empty))
     if header:
         dataset.notes.append(' · '.join(header)[:400])
     if ref.kind == 'max_eigenvalue':

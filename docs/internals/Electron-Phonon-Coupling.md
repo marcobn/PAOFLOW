@@ -39,6 +39,7 @@ ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 - [Adaptive smearing of the deltas](#adaptive-smearing-of-the-deltas)
 - [Grid consistency rules](#grid-consistency-rules)
 - [The examples and the `paoflow-gen elphon` CLI workflow](#the-examples-and-the-paoflow-gen-elphon-cli-workflow)
+- [Model crystals (`PAOFLOW.models.electron_phonon`)](#model-crystals-paoflowmodelselectron_phonon)
 - [Validation](#validation)
 - [Practical notes and pitfalls](#practical-notes-and-pitfalls)
 - [API summary](#api-summary)
@@ -1474,6 +1475,43 @@ The `ahc` and `elphmat` ph.x sources are no longer offered by the generator (the
 code paths remain, see the coupling-source table above).
 
 ---
+
+## Model crystals (`PAOFLOW.models.electron_phonon`)
+
+The engines of this page also run on model crystals, which have no DFT and no interpolation (14 November 2026,
+from the electron–phonon lecture notes of the PAOFLOW wiki, `epc_tutorial`). An `ElectronPhononModel`
+(`models/electron_phonon/model.py`) holds:
+- tight-binding electrons whose Slater–Koster hoppings scale as $(d_0/d)^\eta$;
+- harmonic springs between the same atoms (longitudinal and transverse constants, acoustic sum rule built in);
+- the vertex of the same crystal, the two-centre derivative
+  $\langle i,\mathbf k+\mathbf q|\partial_{\mathbf q\kappa\beta}V|j,\mathbf k\rangle = \sum_{\mathbf d}\partial_\beta t_{ij}(\mathbf d)\,[\delta_{\kappa\kappa(j)}e^{i(\mathbf k+\mathbf q)\cdot\mathbf d} - \delta_{\kappa\kappa(i)}e^{i\mathbf k\cdot\mathbf d}]$.
+
+`crystals.py` builds the three model crystals of the notes:
+- `cubic_metal_model`: λ ≈ 0.76, T_c(ME) ≈ 10.7 K;
+- `light_atom_metal_model`: optical modes, λ ≈ 0.78, T_c ≈ 26.6 K;
+- `indirect_semiconductor_model`: 2–4 bands; it is `parabolic_model` in Slater–Koster form, with an indirect
+  gap.
+
+`properties.py` builds $g_{mn\nu}(\mathbf k,\mathbf q)$ on uniform grids and hands it to the production kernels:
+- `eliashberg_from_modes`;
+- `scattering_rate_kernel`;
+- `indirect_absorption_kernel`;
+- `state_widths`;
+- `irreducible_qmesh`.
+
+On the cubic metal the mode-resolved λ equals `lambda_q_dense_ws_fast` on the model's HRs and real-space vertex
+(unit test). `workflows.py` has one step per property and writes the files of the ab initio workflows; it is the
+`ep_model` workflow of `paoflow-gen` and Studio (`cli-generators.md`, workflow H).
+
+The models check textbook limits. Each holds with acoustic phonons and one isotropic valley:
+
+| quantity | expected | model |
+|---|---|---|
+| mass enhancement from Re Σ | equals λ | 0.763 for λ = 0.762 |
+| T_c | McMillan < Allen–Dynes < Migdal–Eliashberg | holds |
+| resistivity | ∝ T above the Debye scale | 28.3 μΩ cm at 300 K |
+| mobility exponent, 3D / 2D / 1D | −3/2 / −1 / −1/2 | −1.47 / −1.12 / −0.46 |
+| absorption onsets | E_g ∓ ħΩ | 0.936 and 1.064 eV for the 3D model |
 
 ## Validation
 

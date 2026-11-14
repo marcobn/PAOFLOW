@@ -102,7 +102,9 @@ Other options:
    angles and volume are listed below the view.
 2. **Workflow.** The workflows are those of `paoflow-gen`: property run, property run from a TB model (no DFT: the
    parameters of a tight-binding model of `PAOFLOW.models.models` instead of a save), ACBN0/eACBN0, harmonic
-   phonons (with Raman), electron–phonon system folder, SSCHA, quantum oscillations (pyskeaf, from the
+   phonons (with Raman), electron–phonon system folder, electron–phonon run from a model crystal (no DFT: λ, α²F,
+   T_c, resistivity and self-energy of a model metal, mobility and absorption of a model semiconductor, from
+   `PAOFLOW.models.electron_phonon`), SSCHA, quantum oscillations (pyskeaf, from the
    Fermi-surface BXSF files of a property run). Two tools sit next to them: a QE input from an AFLOW or C2DB entry
    (`paoflow-gen-qe`), and the pseudo-atom basis tables (`paoflow-genbasis-ps`).
 3. **Form.** These are the CLI questions, shown only when they apply. Defaults follow the earlier answers: the

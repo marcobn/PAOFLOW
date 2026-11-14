@@ -667,6 +667,17 @@ KINDS: tuple[Kind, ...] = (
         x=E,
     ),
     Kind(
+        'eliashberg_self_energy',
+        'Electron self-energy Σ(ω) of α²F',
+        ELPHON,
+        r'self_energy_(?P<temperature>[\d.]+)K\.dat',
+        'temperature_columns',
+        x=('ω − E_F', 'eV'),
+        y=('Σ', 'eV'),
+        series=('temperature',),
+        column_names=('Re Σ', 'Im Σ'),
+    ),
+    Kind(
         'coupling_path',
         'Coupling |g| along q',
         ELPHON,

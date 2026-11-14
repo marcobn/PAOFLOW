@@ -267,9 +267,10 @@ def detect(app: 'GuiApp', relative: str | None) -> dict:
     if not saves and not pw_inputs and not suggestions:
         suggestions.append(('qe_input', 'no QE run here: start from a database entry'))
         suggestions.append(('tb_model', 'or skip DFT: the properties of a tight-binding model'))
+        suggestions.append(('ep_model', 'or the electron–phonon coupling of a model crystal'))
     if not saves and not pw_inputs:
         warnings.append(
-            'No <prefix>.save and no pw.x input in this folder (a TB-model run needs neither).'
+            'No <prefix>.save and no pw.x input in this folder (the model runs need neither).'
         )
     if save_summary is not None:
         if save_summary['augmented']:

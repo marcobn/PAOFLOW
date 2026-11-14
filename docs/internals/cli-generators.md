@@ -148,6 +148,43 @@ instead. Slater–Koster models come later.
   and `NLO_NK` have 1 along the directions without hoppings. `plot.py` is the one of workflow B.
 - **Running:** `python main.py` or `mpirun -np N python main.py`. The plan has one MPI step plus the plot step.
 
+**Workflow H — Electron–phonon run from a model crystal** (`main.ep_model.py` and `plot.ep_model.py`,
+`PAOFLOW.gen.ep_model_driver`, questions in `PAOFLOW.gen.questions.ep_model`): the electron–phonon properties of a
+crystal of `PAOFLOW.models.electron_phonon` (14 November 2026). The crystal has tight-binding electrons whose
+Slater–Koster hoppings depend on the bond length and springs as force constants, so the vertex ∂H/∂u comes from
+the model itself; there is no DFT run, save or coupling source.
+- **Crystals** (`EP_MODELS`, the models of the electron–phonon lecture notes in the PAOFLOW wiki):
+  - `cubic_metal`: one s band, simple cubic;
+  - `light_atom_metal`: a heavy and a light atom, 2D or 3D, with optical phonons;
+  - `indirect_semiconductor`: s + p, 2 to 4 bands, 1D to 3D, gap from Γ to the zone edge.
+- **Parameters:** one question per keyword argument of the model function (signature and docstring), as in
+  workflow G. `SPECIAL_PARAMETERS` turns the number of bands and the dimension into choices. A note gives the
+  atoms, the dimension, the filling, metal or gap, and the phonon range (and warns of imaginary modes).
+- **Properties:** bands and phonons for every crystal; for a metal, the coupling (λ, α²F, T_c), the
+  Migdal–Eliashberg gap, the resistivity and the self-energy; for a semiconductor, the mobility and the
+  phonon-assisted absorption. The three that read `eliashberg.npz` add the coupling step.
+- **Defaults from the model:**
+  - the band path of workflow G;
+  - the coupling grids: 40/8 in 3D, 48/12 in 2D (NQ must divide NK);
+  - the mobility grid: 1200, 120 or 40 points;
+  - the absorption grid: 400, 60 or 28 points;
+  - the mobility carriers: electrons. The heavy holes of the 3D model take about 90 s at 40³.
+- **Output:** `main.ep_model.py` builds the crystal with its function and calls one step of
+  `PAOFLOW.models.electron_phonon.workflows` per property. The files have the formats of the ab initio
+  electron–phonon workflows, so the Results tab reads them:
+  - `bands_0.dat` with `kpath_points.txt`;
+  - `<model>_band.dat`, `_band.labels` and `_dos.dat`;
+  - `alpha2F.dat`, `alpha2F_tr.dat`, `eliashberg.npz` and `lambda_summary.dat`;
+  - `migdal_eliashberg/` in EPW formats;
+  - `resistivity.dat` with the Drude emissivity;
+  - `self_energy_<T>K.dat`;
+  - `mobility.dat` and `rates_<T>K.dat`;
+  - `epsilon2_indabs_<T>K.dat` and `alpha_<T>K.dat`.
+
+  `plot.ep_model.py` is the Results-layer plot script (`results_plot`): it saves the figures and the Runs tab
+  runs it.
+- **Running:** `python main.ep_model.py`, serial, in seconds to a minute on the defaults.
+
 **Plot scripts.** `outputs.PLOT_DEFAULTS` records which plot scripts each workflow writes by default:
 - the Property run, phonons and pyskeaf ask "Also generate a plotting script?" (default yes);
 - ACBN0 and the electron–phonon folder write theirs;

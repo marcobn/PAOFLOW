@@ -3314,7 +3314,7 @@ def main(argv: list[str] | None = None) -> int:
 
     workflow = ask_choice(
         'Which workflow?',
-        ['acbn0', 'run', 'tb_model', 'phonon', 'elphon', 'sscha', 'pyskeaf'],
+        ['acbn0', 'run', 'tb_model', 'phonon', 'elphon', 'ep_model', 'sscha', 'pyskeaf'],
         'run',
     )
 
@@ -3338,9 +3338,9 @@ def main(argv: list[str] | None = None) -> int:
         from .sscha_driver import collect_sscha
 
         cfg = collect_sscha(args, workdir)
-    elif workflow in ('pyskeaf', 'tb_model'):
-        # Quantum oscillations from the BXSF files of a Property run, or a property run on a
-        # tight-binding model: no QE save needed.
+    elif workflow in ('pyskeaf', 'tb_model', 'ep_model'):
+        # Quantum oscillations from the BXSF files of a Property run, a property run on a
+        # tight-binding model or the electron-phonon run of a model crystal: no QE save needed.
         from .questions import collect
 
         cfg = collect(workflow, args, workdir)

@@ -649,17 +649,20 @@ def register(app: 'GuiApp') -> None:
         except ValueError as exc:
             return json_response({'error': str(exc)})
         cell = None
-        if payload.get('workflow') == 'tb_model':
-            # A tight-binding model: the zone of its lattice, not of a save.
+        if payload.get('workflow') in ('tb_model', 'ep_model'):
+            # A tight-binding model or a model crystal: the zone of its lattice, not of a save.
             import numpy as np
 
-            from ..gen.questions import WORKFLOWS
+            from ..gen.questions import WORKFLOWS, ep_model, tb_model
             from ..gen.questions.model import Context
             from ..gen.questions.resolve import resolve_form
-            from ..gen.questions.tb_model import build_model
 
+            workflow = payload['workflow']
+            build_model = {'tb_model': tb_model.build_model, 'ep_model': ep_model.build_model}[
+                workflow
+            ]
             context = Context(workdir=str(workdir))
-            form = resolve_form(WORKFLOWS['tb_model'], payload.get('answers') or {}, context)
+            form = resolve_form(WORKFLOWS[workflow], payload.get('answers') or {}, context)
             try:
                 model = build_model(form.answers, context)
             except (ValueError, KeyError) as exc:

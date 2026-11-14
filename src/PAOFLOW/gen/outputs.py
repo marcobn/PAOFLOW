@@ -82,6 +82,7 @@ DRIVER_NAMES = {
     'sscha': 'main.sscha.py',
     'pyskeaf': 'main.pyskeaf.py',
     'tb_model': 'main.py',
+    'ep_model': 'main.ep_model.py',
 }
 
 #: Whether a workflow writes its plot scripts by default (``cfg['plot']`` decides otherwise): the
@@ -96,10 +97,11 @@ PLOT_DEFAULTS = {
     'sscha': False,
     'pyskeaf': True,
     'tb_model': True,
+    'ep_model': True,
 }
 
 #: Plot scripts that save their figures (no display): the Runs tab can run them.
-SAVING_PLOT_SCRIPTS = ('plot.sscha.py', 'plot.pyskeaf.py')
+SAVING_PLOT_SCRIPTS = ('plot.sscha.py', 'plot.pyskeaf.py', 'plot.ep_model.py')
 
 
 def workflow_outputs(
@@ -144,7 +146,8 @@ def workflow_outputs(
         files.append(
             GeneratedFile(plot_out or 'plot.acbn0.py', text=pd.build_acbn0_plot_script(cfg))
         )
-    elif name in ('sscha', 'pyskeaf') and wants_plot:
+    elif name in ('sscha', 'pyskeaf', 'ep_model') and wants_plot:
+        from .ep_model_driver import PLOT_KINDS
         from .results_plot import build_results_plot_script
 
         title, kinds, outputdir = {
@@ -152,6 +155,11 @@ def workflow_outputs(
             'pyskeaf': (
                 'quantum oscillations (pyskeaf)',
                 ('dhva',),
+                cfg.get('outputdir', 'output'),
+            ),
+            'ep_model': (
+                'electron-phonon properties of a model crystal',
+                PLOT_KINDS,
                 cfg.get('outputdir', 'output'),
             ),
         }[name]
@@ -194,6 +202,10 @@ def _driver_text(name: str, cfg: dict) -> str:
         from .tb_model_driver import build_tb_model_script
 
         return build_tb_model_script(cfg)
+    if name == 'ep_model':
+        from .ep_model_driver import build_ep_model_script
+
+        return build_ep_model_script(cfg)
     raise ValueError('unknown workflow %r' % name)
 
 
@@ -361,6 +373,14 @@ def run_plan(name: str, cfg: dict, files: list[GeneratedFile] | None = None) -> 
                 ('python', driver),
                 mpi=True,
                 note='no DFT run: the Hamiltonian is the tight-binding model',
+            )
+        )
+    elif name == 'ep_model':
+        steps.append(
+            RunStep(
+                'Electron-phonon properties of the model crystal',
+                ('python', driver),
+                note='no DFT run; serial (one core), seconds to a minute on the default grids',
             )
         )
     elif name == 'acbn0':

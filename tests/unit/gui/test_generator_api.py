@@ -31,6 +31,7 @@ def test_workflows_listed(client):
         'tb_model',
         'phonon',
         'elphon',
+        'ep_model',
         'sscha',
         'pyskeaf',
         'qe_input',
@@ -334,3 +335,36 @@ def test_tb_model_run_needs_no_save(client, gui_root):
     assert status == 200 and (gui_root / 'model' / 'main.py').is_file()
     assert 'kane_mele_model(**MODEL_PARAMETERS)' in (gui_root / 'model' / 'main.py').read_text()
     assert written['plan'][0]['argv'] == ['python', 'main.py']
+
+
+def test_ep_model_run_needs_no_save(client, gui_root):
+    """The electron-phonon run of a model crystal: suggested where there is no QE data, its band
+    path drawn in the zone of the crystal, and its serial driver written without a save."""
+    (gui_root / 'crystal').mkdir()
+    detection = client.get('/api/workspace/detect?path=crystal')[1]
+    assert 'ep_model' in [s['workflow'] for s in detection['suggestions']]
+    answers = {'ep_model': 'cubic_metal', 'properties': ['bands', 'migdal_eliashberg']}
+    status, preview, _ = client.post(
+        '/api/gen/bandpath',
+        {
+            'workdir': 'crystal',
+            'workflow': 'ep_model',
+            'answers': answers,
+            'band_path': 'gG-X-M-gG-R',
+            'points': [['gG', 0, 0, 0], ['X', 0, 0.5, 0], ['M', 0.5, 0.5, 0], ['R', 0.5, 0.5, 0.5]],
+        },
+    )
+    assert status == 200 and 'figure' in preview and preview['length'] > 0
+    status, body, _ = client.post(
+        '/api/gen/resolve', {'workflow': 'ep_model', 'workdir': 'crystal', 'answers': answers}
+    )
+    assert status == 200 and not body['errors']
+    assert [f['path'] for f in body['files']] == ['main.ep_model.py', 'plot.ep_model.py']
+    status, written, _ = client.post(
+        '/api/gen/write', {'workflow': 'ep_model', 'workdir': 'crystal', 'answers': answers}
+    )
+    driver = gui_root / 'crystal' / 'main.ep_model.py'
+    assert status == 200 and driver.is_file()
+    text = driver.read_text()
+    assert 'cubic_metal_model(**MODEL_PARAMETERS)' in text and 'workflows.migdal_eliashberg' in text
+    assert written['plan'][0]['argv'] == ['python', 'main.ep_model.py']

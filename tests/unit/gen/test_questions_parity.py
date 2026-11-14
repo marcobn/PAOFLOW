@@ -18,6 +18,7 @@ import pytest
 from PAOFLOW.gen import elphon_system as es
 from PAOFLOW.gen import paoflow_driver as pd
 from PAOFLOW.gen import sscha_driver as sd
+from PAOFLOW.gen import ep_model_driver as em
 from PAOFLOW.gen import tb_model_driver as tm
 from PAOFLOW.gen.questions import collect
 
@@ -479,6 +480,7 @@ BUILDER_ONLY_KEYS: dict[str, set[str]] = {
         'coupled_shg_energies',
         'nlo_coupling',
     },
+    'ep_model': set(),
 }
 
 
@@ -530,6 +532,7 @@ def _builders(name: str) -> list:
             pd._wants_explicit_band_path,
             pd._nonlinear_plot_entries,
         ],
+        'ep_model': [em.build_ep_model_script],
     }[name]
 
 
@@ -543,6 +546,21 @@ TB_MODEL_SCENARIOS = {
     'weyl_transport': {
         'Tight-binding model': 'weyl',
         'Available properties': '1 2 3 10',
+    },
+}
+
+#: The electron-phonon run of a model crystal (no frozen prompts, coverage only): a metal with
+#: every metal property, a semiconductor with the mobility and the absorption.
+EP_MODEL_SCENARIOS = {
+    'metal_everything': {
+        'Model crystal': 'cubic_metal',
+        'Available properties': '1 2 3 4 5 6',
+        'Migdal–Eliashberg temperatures': '2 6 10',
+    },
+    'semiconductor_everything': {
+        'Model crystal': 'indirect_semiconductor',
+        'n_bands': '3',
+        'Available properties': '1 2 3 4',
     },
 }
 
@@ -564,6 +582,7 @@ SCENARIOS = {
     'elphon': {**ELPHON_SCENARIOS, **ELPHON_NEW_SCENARIOS},
     'sscha': SSCHA_SCENARIOS,
     'tb_model': TB_MODEL_SCENARIOS,
+    'ep_model': EP_MODEL_SCENARIOS,
 }
 
 
