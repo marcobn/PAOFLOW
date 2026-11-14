@@ -128,6 +128,12 @@ def _kubo(groups: dict) -> tuple[str, str, str]:
     return '%s, %s' % (title, groups['component']), symbol, unit
 
 
+def _kubo_optical(groups: dict) -> tuple[str, str, str]:
+    title, symbol, unit = KUBO_OBSERVABLES[groups['observable']]
+    title = title.replace('(Kubo-Bastin)', '(Kubo-Greenwood, optical)')
+    return '%s, %s' % (title, groups['component']), symbol + '(ω)', unit
+
+
 def _velocity(groups: dict) -> tuple[str, str, str]:
     direction = 'xyz'[int(groups['direction'])] if groups.get('direction', '').isdigit() else ''
     return 'Band velocity v_%s' % direction, 'v_%s' % direction, 'a.u.'
@@ -333,6 +339,18 @@ KINDS: tuple[Kind, ...] = (
         y=('Ω', 'a.u.'),
         series=('spol', 'component'),
         gpao='plot_berry',
+    ),
+    Kind(
+        'kubo_optical',
+        '{title}',
+        HALL,
+        r'kubo_optical_(?P<observable>charge_current|spin_current|orbital_current|spin_density|'
+        r'orbital_density|spin_torque|custom)_(?P<component>[xyz_]+)\.dat',
+        'columns',
+        x=PHOTON,
+        describe=_kubo_optical,
+        gpao='plot_kubo_response',
+        priority=40,
     ),
     Kind(
         'kubo_response',

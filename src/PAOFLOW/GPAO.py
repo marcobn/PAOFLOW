@@ -504,15 +504,15 @@ class GPAO:
         ax=None,
         output: str | None = None,
     ):
-        """Plot a ``kubo_<observable>_<component>.dat`` file of :meth:`PAOFLOW.kubo_response`.
+        """Plot a ``kubo_*`` file of :meth:`PAOFLOW.kubo_response` or :meth:`PAOFLOW.kubo_optical_response`.
 
         Parameters
         ----------
         fname : str
             File name (including relative path).
         terms : sequence of str, optional
-            Columns to draw ('total', 'surface', 'sea', 'surface_intraband', 'surface_interband',
-            'intrinsic'); default all in the file.
+            Columns to draw, named as in the header ('total', 'surface', 'sea', ... for the static
+            response; 'Re total', 'Im interband', ... for the optical one); default all in the file.
         title : str, optional
             Plot title; default the observable and component of the header.
         x_lim, y_lim : tuple, optional
@@ -531,7 +531,8 @@ class GPAO:
 
         with open(fname) as f:
             header = [line[1:].strip() for line in f if line.startswith('#')]
-        names = header[-1].split('  ')[1:]
+        titles = header[-1].split('  ')
+        x_label, names = titles[0], titles[1:]
         description, _, unit = header[0].partition(', unit ')
         data = np.atleast_2d(np.loadtxt(fname))
         own_figure = ax is None
@@ -540,8 +541,11 @@ class GPAO:
         for column, name in enumerate(names, start=1):
             if terms is None or name in terms:
                 ax.plot(data[:, 0], data[:, column], label=name)
-        ax.axvline(0.0, color='0.6', lw=0.6, ls='--')
-        ax.set_xlabel('Energy (eV)')
+        if x_label.startswith('mu'):
+            ax.axvline(0.0, color='0.6', lw=0.6, ls='--')
+            ax.set_xlabel('Chemical potential (eV)')
+        else:
+            ax.set_xlabel('Photon energy (eV)')
         ax.set_ylabel(unit)
         ax.set_title(description if title is None else title)
         if x_lim is not None:

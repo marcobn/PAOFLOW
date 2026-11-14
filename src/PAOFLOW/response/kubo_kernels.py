@@ -306,3 +306,77 @@ def thermal_average(
     weights = (fine_mu[1] - fine_mu[0]) * 0.25 / (kT * np.cosh(np.clip(x, -350.0, 350.0)) ** 2)
     weights[:, [0, -1]] *= 0.5  # trapezoid end points
     return np.tensordot(weights, values, axes=(1, 0))
+
+
+def optical_kernel(
+    energies: NDArray[np.float64],
+    pair: NDArray[np.complex128],
+    occupations: NDArray[np.float64],
+    fermi_window: NDArray[np.float64],
+    omegas: NDArray[np.float64],
+    eta: float,
+    degenerate_threshold: float = 1.0e-4,
+) -> tuple[NDArray[np.complex128], NDArray[np.complex128]]:
+    """Frequency-dependent (Kubo-Greenwood) response, interband and intraband, summed over k-points.
+
+    Parameters
+    ----------
+    energies : ndarray, shape ``(nb,)`` or ``(nk, nb)``
+        Band energies (eV).
+    pair : ndarray, shape ``(nb, nb)`` or ``(nk, nb, nb)``, complex
+        :math:`P_{nm} = A_{nm}(\\\\hbar v_b)_{mn}`.
+    occupations : ndarray, shape like ``energies``
+        :math:`f_n` at the chemical potential.
+    fermi_window : ndarray, shape like ``energies``
+        :math:`-\\\\partial f/\\\\partial\\\\varepsilon` at :math:`\\\\varepsilon_n` (1/eV).
+    omegas : ndarray, shape ``(nw,)``
+        Photon energies :math:`\\\\hbar\\\\omega` (eV).
+    eta : float
+        Broadening (eV): :math:`\\\\eta` of the interband transitions, :math:`2\\\\eta = \\\\hbar/\\\\tau` of the
+        Drude term.
+    degenerate_threshold : float
+        Pairs with :math:`|\\\\varepsilon_m-\\\\varepsilon_n|` below it (eV) belong to the intraband term.
+
+    Returns
+    -------
+    interband, intraband : ndarray, shape ``(nw,)``, complex
+
+    Notes
+    -----
+    With :math:`\\\\varepsilon_{mn} = \\\\varepsilon_m - \\\\varepsilon_n` and the interband position
+    :math:`r^b_{mn} = -i(\\\\hbar v_b)_{mn}/\\\\varepsilon_{mn}` (length gauge),
+
+    .. math::
+
+        \\\\chi^{\\\\rm inter}(\\\\omega) = -i\\\\sum_{\\\\varepsilon_{mn}\\\\ne0}
+            \\\\frac{(f_n-f_m)\\\\,P_{nm}}{\\\\varepsilon_{mn}\\\\,(\\\\varepsilon_{mn}-\\\\hbar\\\\omega-i\\\\eta)},
+        \\\\qquad
+        \\\\chi^{\\\\rm intra}(\\\\omega) = \\\\frac{i}{\\\\hbar\\\\omega+2i\\\\eta}
+            \\\\sum_{\\\\varepsilon_{mn}=0}\\\\Big(-\\\\frac{\\\\partial f}{\\\\partial\\\\varepsilon}\\\\Big)_n P_{nm}.
+
+    At :math:`\\\\omega = 0` the antisymmetric part of the interband term tends (:math:`\\\\eta\\\\to0`) to
+    the Berry-curvature sea of :func:`berry_curvature` (:math:`-\\\\sum_n f_n\\\\Omega_n`) and the
+    intraband term is the Boltzmann (Drude) limit of the Fermi-surface term,
+    :math:`\\\\sum_n(-f'_n)P_{nn}/2\\\\eta`. The degenerate blocks enter the intraband term as a whole
+    (:math:`\\\\mathrm{Tr}_D\\\\,P`, gauge invariant). The Hall part of the interband term is
+    :math:`\\\\sum_{nm}(f_n-f_m)\\\\,\\\\mathrm{Im}P_{nm}/(\\\\varepsilon_{mn}^2-(\\\\hbar\\\\omega+i\\\\eta)^2)`
+    (Yao et al., PRL 92, 037204 (2004), Eq. 7).
+    """
+    energies = np.atleast_2d(energies)
+    pair = pair.reshape((-1,) + pair.shape[-2:])
+    occupations = np.atleast_2d(occupations)
+    fermi_window = np.atleast_2d(fermi_window)
+    difference = energies[:, None, :] - energies[:, :, None]  # [k, n, m] = e_m - e_n
+    degenerate = np.abs(difference) < degenerate_threshold
+    drude_weight = np.sum(np.where(degenerate, fermi_window[:, :, None] * pair, 0.0))
+    transitions = ~degenerate
+    weights = ((occupations[:, :, None] - occupations[:, None, :]) * pair)[transitions]
+    gaps = difference[transitions]
+    weights = weights / gaps
+    keep = weights != 0.0
+    weights, gaps = weights[keep], gaps[keep]
+    interband = np.empty(omegas.size, dtype=complex)
+    for i, omega in enumerate(omegas):
+        interband[i] = -1j * np.sum(weights / (gaps - omega - 1j * eta))
+    intraband = 1j * drude_weight / (omegas + 2j * eta)
+    return interband, intraband

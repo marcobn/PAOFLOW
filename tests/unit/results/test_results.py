@@ -63,6 +63,8 @@ def test_discovery_of_the_silicon_reference():
         ('Spin_Berry_z_xy.bxsf', '.', 'berry_bxsf'),
         ('kubo_charge_current_xy.dat', '.', 'kubo_response'),
         ('kubo_spin_current_z_xy.dat', '.', 'kubo_response'),
+        ('kubo_optical_charge_current_xy.dat', '.', 'kubo_optical'),
+        ('kubo_optical_spin_current_z_xy.dat', '.', 'kubo_optical'),
         ('AHC_xy.dat', '.', 'linear_response'),
         ('state.json', 'sscha_T300', 'sscha'),
         ('paoflow_outputs.json', '.', 'manifest'),

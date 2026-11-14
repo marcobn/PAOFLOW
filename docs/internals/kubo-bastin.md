@@ -1,14 +1,48 @@
-# Kubo–Bastin linear response (`kubo_response`)
+# Kubo–Bastin linear response (`kubo_response`, `kubo_optical_response`)
 
 PAOFLOW computes the conductivity, the anomalous, spin and orbital Hall conductivities, the
 Rashba–Edelstein response and the spin–orbit torque from one formula: the Kubo–Bastin response at
-constant broadening. Every older route (`anomalous_Hall`, `spin_Hall`, `orbital_Hall`, the tutorial03
-equations of `linear_response`) is a limit of it.
+constant broadening.
+- `kubo_response` gives the static response as a function of the chemical potential.
+- `kubo_optical_response` gives the frequency-dependent (Kubo–Greenwood) response.
 
-- Code: `response/kubo_kernels.py` (kernels), `response/kubo_operators.py` (observables, components,
-  units), `response/kubo_bastin.py` (k-loop, MPI reduction, writer), `PAOFLOW.kubo_response`.
-- Tests: `tests/unit/response/test_kubo_bastin.py`, `test_kubo_legacy_parity.py`,
+Every older route is a limit of it: `anomalous_Hall`, `spin_Hall`, `orbital_Hall`, and the tutorial03
+equations of `linear_response`.
+
+- Code:
+  - `response/kubo_kernels.py`: the kernels;
+  - `response/kubo_operators.py`: observables, components, units and the charge sign;
+  - `response/kubo_bastin.py`: the static k-loop, MPI reduction and writer;
+  - `response/kubo_optical.py`: the optical one;
+  - `PAOFLOW.kubo_response` and `PAOFLOW.kubo_optical_response`.
+- Tests: `tests/unit/response/test_kubo_bastin.py`, `test_kubo_optical.py`, `test_kubo_legacy_parity.py`,
   `test_linear_response_fixes.py`.
+
+## Convention (read this first)
+
+1. **Formula:** the Kubo formula for the response of an observable $A$ to an electric field, with
+   $\hbar v = \partial H/\partial k$ (PAOFLOW's `dHksp` is $-\partial H/\partial k$; the code takes care
+   of it).
+2. **Charge:** the carriers are electrons, $q = -|e|$.
+   - **Charge current:** $\sigma = q^2 K$, positive on the diagonal. Same sign as Yao et al., PRL 92,
+     037204 (2004).
+   - **Everything else** (spin and orbital currents and densities, spin torque, custom operators):
+     $\chi = (q/|e|)\,K = -K$. Same sign as Guo et al., PRL 100, 096401 (2008): Pt has a positive spin Hall
+     conductivity, +2012 (ħ/e) S/cm here, equal to `spin_Hall`.
+3. **Magnets:** the response is that of the spin configuration of the run. QE's positive
+   `starting_magnetization` puts the electron spins along +z, so the magnetic moment points along −z.
+   - Papers that quote the magnetization $M$ (Yao: "magnetization along [001]", experiments) mean the
+     moment. bcc Fe from QE with `starting_magnetization` > 0 therefore gives $\sigma_{xy} < 0$ (−1175 S/cm in
+     integration example04), which is Yao's +751 S/cm for the reversed moment.
+   - To compare directly, use a negative `starting_magnetization` or flip the sign of the T-odd outputs.
+4. **Older routes** (details in the table below):
+   - `anomalous_Hall`, its `MCD*` files and tutorial03 Eq. 3 give $\sigma_{xy}$ for the moment along the
+     run's spin axis, i.e. the opposite sign.
+   - The Rashba–Edelstein routes of `linear_response` take `dHksp` (= −ħv) as the velocity, also the
+     opposite sign.
+   - Conductivity, spin Hall and orbital Hall agree.
+
+Every `kubo_*` output file states this convention in its header.
 
 ## The formula
 
@@ -104,6 +138,44 @@ cause is the $e^{-ik\cdot R}$ convention of `HRs` together with the $+iR$ of `do
   products of two velocities do not see it.
 - The degenerate subspaces are rotated with the `dHksp`-signed operators, the gauge of the older routes.
   The intraband/interband split then matches them.
+
+## Frequency-dependent response (`kubo_optical_response`, `kubo_optical.py`)
+
+The Kubo–Greenwood response at photon energy $\hbar\omega$ and one chemical potential, for the same
+observables, components, units and charge sign:
+
+$$
+\chi_{AB}(\omega) = s_q\Big[-i\sum_{\varepsilon_{mn}\ne0}
+\frac{(f_n-f_m)\,A_{nm}(\hbar v_b)_{mn}}{\varepsilon_{mn}(\varepsilon_{mn}-\hbar\omega-i\eta)}
++ \frac{i}{\hbar\omega+2i\eta}\sum_{\varepsilon_{mn}=0}(-f'_n)\,A_{nm}(\hbar v_b)_{mn}\Big],
+\qquad \varepsilon_{mn} = \varepsilon_m-\varepsilon_n .
+$$
+
+- **The two terms:**
+  - **Interband (length gauge):** the transitions, with $r^b_{mn} = -i(\hbar v_b)_{mn}/\varepsilon_{mn}$.
+    $\mathrm{Re}\,\sigma_{aa}(\omega) \ge 0$ is the absorption. The Hall part is
+    $\sum_{nm}(f_n-f_m)\,\mathrm{Im}P_{nm}/(\varepsilon_{mn}^2-(\hbar\omega+i\eta)^2)$, Eq. 7 of Yao et al.
+  - **Intraband:** the Drude term of the bands at the Fermi level, with $\hbar/\tau = 2\eta$. Degenerate
+    blocks (bands closer than `degenerate_threshold`) enter as a whole.
+- **Occupations:** the run's smearing at $T = 0$ (adaptive Gaussian or Methfessel–Paxton; a step with a
+  Lorentzian window otherwise), Fermi–Dirac at $T > 0$.
+- **Output:** `kubo_optical_<observable>_<component>.dat` with ω and the Re/Im parts of `total`,
+  `interband` and `intraband`; Results kind `kubo_optical`; `GPAO.plot_kubo_response`.
+- **Limits (tests):**
+  - at ω → 0 and η → 0 the interband Hall part is the `intrinsic` term of `kubo_response` (Haldane:
+    $10^{-8}$, $2\pi\sigma_{xy} = 2.000$; Kane–Mele spin Hall: $10^{-6}$);
+  - the intraband term at ω = 0 is the Boltzmann conductivity of tutorial03 Eq. 4 ($10^{-10}$, after its
+    $10^{-4}$ regulariser is undone);
+  - the Drude form $\sigma(0)\,2\eta/(2\eta - i\hbar\omega)$ holds;
+  - the Hall part equals Yao's closed form ($10^{-12}$).
+- **DFT check (bcc Fe, example04 data, 24³, η = 0.1 eV;** `validation/kubo_bastin/fe_optical/` in the
+  workspace):
+  - Re σ_xy(ω) = −950, −283, −35, +127, +31 S/cm at 0, 1, 2, 3, 4 eV: the shape of Yao's Fig. 5 with the
+    opposite sign (moment convention, see above);
+  - correlation with the legacy `MCDr_xy` output: −0.965. The two differ in the broadening (constant η here,
+    adaptive pair widths there) and in the sign convention.
+- **Cost:** $O(n_k n_b^2 n_\omega)$, like `do_ac_conductivity`. The k-points are streamed in blocks and
+  reduced over MPI.
 
 ## Sign convention and the older routes
 
@@ -210,14 +282,19 @@ Compared with the exact constant-$\eta$ kernels here, on the magnetic Rashba gas
   | exact surface + sea | 0.51 s |
   | the same at 300 K (thermal grid) | 4.0 s |
 
-## Not done yet
+## Not done (and why)
 
-- The ω-dependent (Kubo–Greenwood) kernel. The optical Hall outputs (SCD/MCD/OCD) still come from
-  `do_ac_conductivity`. On models its frequency grid is now the band width and its pair widths are
-  floored at `delta`; it used to be NaN.
-- The Smrčka–Středa split and the overlap term (py4mulas has them, and they can serve as sum-rule checks).
-- Closed $\psi/\psi'$ forms for $T > 0$ (they would replace the thermal grid).
-- The sparse backend.
+- **The Smrčka–Středa split and the overlap term (Bonbien–Manchon): skipped.**
+  - Their totals are the same as `surface + sea`. The Smrčka–Středa terms mix Fermi-surface and Fermi-sea
+    pieces, and the overlap term measures that mixing.
+  - Their uses are sum-rule cross-checks and term-by-term comparison with papers that report the
+    Smrčka–Středa or Freimuth I(a)/I(b)/II components (spin–orbit torques). The Bonbien–Manchon split
+    implemented here is the physically clean one.
+  - py4mulas has all of them if such a comparison is ever needed.
+- **Closed ψ/ψ′ forms for $T > 0$:** they would replace the thermal grid of the static response.
+- **The sparse backend.**
+- **The exact constant-η Kubo–Bastin kernel at finite ω** (Lorentzian spectral functions instead of
+  broadened transitions): same closed-form machinery as the static sea term, and a higher cost.
 
 ## Library fixes of the campaign (14 Nov 2026)
 

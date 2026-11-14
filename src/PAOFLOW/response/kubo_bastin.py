@@ -57,6 +57,13 @@ K_BOLTZMANN_EV = 8.617333262e-5
 
 TERMS = ('total', 'surface', 'sea', 'surface_intraband', 'surface_interband', 'intrinsic')
 
+#: The sign convention, one header line of every kubo_* output file.
+CONVENTION = (
+    'sign: Kubo formula with the electron charge q = -|e| (q^2 for the charge current; q for all other '
+    'observables); magnets: the computed spin configuration (QE starting_magnetization > 0 = spins '
+    'along +z = moment along -z)'
+)
+
 #: Below kT = THERMAL_THRESHOLD * eta the exact terms are evaluated at T = 0.
 THERMAL_THRESHOLD = 0.01
 
@@ -267,7 +274,7 @@ def write_kubo_response(
         names.append(fname)
         if rank == 0:
             table = np.column_stack([data['mu']] + [data[t] for t in terms])
-            lines = [f'Kubo-Bastin {observable} {label}, unit {unit}']
+            lines = [f'Kubo-Bastin {observable} {label}, unit {unit}', CONVENTION]
             if header:
                 lines.append(header)
             lines.append('  '.join(['mu (eV)'] + terms))

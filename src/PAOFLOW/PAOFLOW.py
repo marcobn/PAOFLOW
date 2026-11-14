@@ -7040,3 +7040,142 @@ class PAOFLOW:
             write_kubo_response(self.data_controller, observable, results, twoD, header)
         self.report_module_time('Kubo-Bastin response')
         return results
+
+    def kubo_optical_response(
+        self,
+        observable: str = 'charge_current',
+        components: list | tuple = ('xx', 'xy'),
+        terms: list | tuple = ('total', 'interband', 'intraband'),
+        eta: float = 0.05,
+        omega_min: float = 0.0,
+        omega_max: float | None = None,
+        nomega: int = 501,
+        mu: float = 0.0,
+        temperature: float = 0.0,
+        degenerate_threshold: float = 1.0e-4,
+        projection: list | None = None,
+        operator: np.ndarray | None = None,
+        twoD: bool = False,
+        write: bool = True,
+    ) -> dict:
+        """Frequency-dependent (optical) linear response from the Kubo-Greenwood formula.
+
+        The optical counterpart of :meth:`kubo_response`, with the same observables, components, units
+        and sign convention: optical conductivity and Hall conductivity (magneto-optics), AC spin and
+        orbital Hall, AC Edelstein, spin-orbit torque, user operators.
+
+        Parameters
+        ----------
+        observable : str
+            As :meth:`kubo_response`.
+        components : sequence
+            As :meth:`kubo_response` (field direction last), e.g. ``['xx', 'xy']``.
+        terms : sequence of str
+            'total', 'interband' (transitions between bands) and 'intraband' (Drude term of the
+            bands at the Fermi level, :math:`\\hbar/\\tau = 2\\eta`).
+        eta : float
+            Broadening (eV) of the transitions; the Drude damping is :math:`2\\eta`.
+        omega_min, omega_max : float
+            Photon-energy window (eV). The default ``omega_max`` is the energy range of the bands
+            (capped at the projectability shift).
+        nomega : int
+            Number of photon energies.
+        mu : float
+            Chemical potential (eV, the energy zero of the run).
+        temperature : float
+            Electronic temperature (K); 0 uses the run's smearing for the occupations.
+        degenerate_threshold : float
+            Bands closer than this (eV) count as degenerate and enter the intraband term.
+        projection : list, optional
+            Orbital projection of the response operator, as ``shc_proj`` of :meth:`spin_Hall`.
+        operator : ndarray, shape ``(nawf, nawf)``, optional
+            The matrix of ``observable='custom'``.
+        twoD : bool
+            Sheet values (e^2/hbar) for the currents.
+        write : bool
+            Write ``kubo_optical_<observable>_<component>.dat`` (omega, Re and Im of every term).
+
+        Returns
+        -------
+        dict
+            ``{component: {'omega': ..., term: complex values}}`` on every rank.
+
+        Raises
+        ------
+        ValueError
+            Unknown observable, component or term, or a spin observable without a spinor basis.
+        KeyError
+            ``gradient_and_momenta`` has not run.
+
+        Notes
+        -----
+        .. math::
+
+            \\chi_{AB}(\\omega) = s_q\\Big[-i\\sum_{\\varepsilon_{mn}\\ne0}
+            \\frac{(f_n-f_m)A_{nm}(\\hbar v_b)_{mn}}{\\varepsilon_{mn}(\\varepsilon_{mn}-\\hbar\\omega-i\\eta)}
+            + \\frac{i}{\\hbar\\omega+2i\\eta}\\sum_{\\varepsilon_{mn}=0}(-f'_n)A_{nm}(\\hbar v_b)_{mn}\\Big],
+
+        :math:`\\varepsilon_{mn} = \\varepsilon_m-\\varepsilon_n`, summed over k-points with the unit
+        factor of the observable. :math:`\\mathrm{Re}\\,\\sigma_{aa}` is the absorptive part, and the
+        Hall part of the interband term is Eq. 7 of Yao et al., PRL 92, 037204 (2004). At
+        :math:`\\omega\\to0` the interband Hall part equals the ``intrinsic`` term of
+        :meth:`kubo_response` and the intraband part its Boltzmann limit.
+
+        Sign convention (as :meth:`kubo_response`): the Kubo formula with the electron charge
+        :math:`q = -|e|` (:math:`s_q = +1` for the charge current, :math:`-1` otherwise); a magnet's
+        response is that of the computed spin configuration (QE's positive ``starting_magnetization``
+        puts the spins along +z, the moment along -z). The magneto-optical outputs of
+        :meth:`anomalous_Hall` (``MCD*``) refer to the reversed moment.
+        """
+        from mpi4py import MPI
+
+        from .projection.projection_operator import do_projection_operator, orbital_array
+        from .response.kubo_operators import OBSERVABLES
+        from .response.kubo_optical import kubo_optical_response, write_kubo_optical_response
+
+        arrays, attr = self.data_controller.data_dicts()
+        if observable not in OBSERVABLES:
+            raise ValueError(
+                f'unknown observable {observable!r}; choose from {sorted(OBSERVABLES)}'
+            )
+        if 'dHksp' not in arrays:
+            raise KeyError(
+                'kubo_optical_response needs the velocities: run gradient_and_momenta first'
+            )
+        base = OBSERVABLES[observable].base
+        if base == 'Sj' and 'Sj' not in arrays:
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+        if base == 'Lj' and 'Lj' not in arrays:
+            self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+        projector = None
+        if projection is not None:
+            if 'naw' not in arrays:
+                arrays['naw'] = orbital_array(self.data_controller)
+            projector = do_projection_operator(self.data_controller, np.array(projection))
+        if isinstance(components, str):
+            components = [components]
+        if omega_max is None:
+            top = self.comm.allreduce(float(np.max(arrays['E_k'])), op=MPI.MAX)
+            bottom = self.comm.allreduce(float(np.min(arrays['E_k'])), op=MPI.MIN)
+            omega_max = min(top, attr['shift']) - bottom
+        omegas = np.linspace(omega_min, omega_max, nomega)
+
+        results = kubo_optical_response(
+            self.data_controller,
+            observable,
+            components,
+            omegas,
+            mu,
+            eta,
+            terms=terms,
+            temperature=temperature,
+            degenerate_threshold=degenerate_threshold,
+            projector=projector,
+            operator=operator,
+            two_dimensional=twoD,
+        )
+        if write:
+            header = f'eta = {eta} eV; mu = {mu} eV; T = {temperature} K'
+            write_kubo_optical_response(self.data_controller, observable, results, twoD, header)
+        self.report_module_time('Kubo-Greenwood optical response')
+        return results
