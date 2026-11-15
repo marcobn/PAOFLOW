@@ -5,24 +5,34 @@ on:
     types: [closed]
     branches: [master]
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 jobs:
   back-merge:
     if: github.event.pull_request.merged && (github.head_ref == 'hotfix' || startsWith(github.head_ref, 'hotfix/'))
     runs-on: ubuntu-latest
     steps:
-      - name: Open back-merge PR unless one is already open
+      - name: Open back-merge PR from a sync branch
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          if [ -n "$(gh pr list --base develop --head master --json number --jq '.[].number')" ]; then
-            echo "A master -> develop PR is already open; it now includes this hotfix."
+          branch="sync/hotfix-$PR_NUMBER"
+          existing_pr=$(gh pr list --base develop --head "$branch" --json number --jq '.[].number')
+          if [ -n "$existing_pr" ]; then
+            echo "Back-merge PR #$existing_pr is already open."
             exit 0
           fi
-          gh pr create --base develop --head master \
+          if ! gh api "repos/$GH_REPO/git/ref/heads/$branch" > /dev/null 2>&1; then
+            gh api "repos/$GH_REPO/git/refs" -f ref="refs/heads/$branch" -f sha="$MERGE_SHA"
+          fi
+          gh pr create --base develop --head "$branch" \
             --title "Merge master into develop (hotfix #$PR_NUMBER)" \
-            --body "Back-merge of hotfix #$PR_NUMBER. Use a merge commit, not squash, or the next develop -> master release will be blocked."
+            --body "Back-merge of hotfix #$PR_NUMBER.
+
+          If there are conflicts, resolve them on \`$branch\` (web editor, or locally: \`git checkout $branch && git merge origin/develop\`, then push).
+
+          Use a merge commit, not squash, or the next develop -> master release will be blocked."
 ...

@@ -71,7 +71,7 @@ Two consequences for ultrasoft / PAW runs:
 
 ## Which shells come from where: `projections(pseudo_orbitals='auto')`
 
-Since October 28 2026 the shells of a configuration are taken from two sources
+Since PAOFLOW 3.0.1 the shells of a configuration are taken from two sources
 (`projection/do_atwfc_proj.py::build_basis_from_sources`, records ordered atom by atom as
 `pao_sym` requires): the shells that the pseudopotential carries as pseudo-orbitals (`PP_PSWFC`,
 the pseudo-atom's own solutions, consistent with the augmented metric) from the UPF, the other
@@ -84,6 +84,10 @@ UPF basis already, nor with spin-orbit). On PAW GaAs (example10, 62 orbitals):
 
 | basis | bands above 0.95 | Ga 3d bands | sp valence | conduction 9–17 |
 |---|---|---|---|---|
+| all-electron tables only (`pseudo_orbitals=False`) | 12 | 0.86–0.90 | 0.98 | 0.98 → 0.92 |
+| UPF pseudo-orbitals + all-electron augmentation (`'auto'`) | 23 | 1.00 | 0.995 | 0.995 → 0.96 |
+
+## Spin-orbit coupling with ultrasoft / PAW: the spinor augmentation
 | all-electron tables only | 12 | 0.86–0.90 | 0.98 | 0.98 → 0.92 |
 | UPF pseudo-orbitals + all-electron augmentation (`'auto'`) | 23 | 1.00 | 0.995 | 0.995 → 0.96 |
 | `BASIS_PS` standard (generator, see below) | 14 | 1.00 | 0.99 | 0.98 → 0.72 |
