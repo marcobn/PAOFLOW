@@ -18,12 +18,15 @@ def do_double_grid(data_controller: DataController, interpolation: str = 'zero_p
         ``a_vectors`` for the Wigner-Seitz route.
         Required attributes: ``nawf``, ``nk1``, ``nk2``, ``nk3``, ``nspin``,
         ``nfft1``, ``nfft2``, ``nfft3``, ``npool``.
-    interpolation : {'zero_padding', 'wigner_seitz'}, optional
+    interpolation : {'zero_padding', 'wigner_seitz', 'wigner_seitz_pairs'}, optional
         How the real-space grid is mapped to lattice vectors before the forward FFT.
         ``'zero_padding'`` (default) pads the parallelepiped of grid vectors with zeros
         (:func:`zero_pad`); ``'wigner_seitz'`` places every grid vector at its shortest image in
-        the supercell lattice (:mod:`PAOFLOW.hamiltonian.wigner_seitz`). Both cost one FFT per
-        orbital pair and reproduce the DFT mesh exactly.
+        the supercell lattice (:mod:`PAOFLOW.hamiltonian.wigner_seitz`);
+        ``'wigner_seitz_pairs'`` chooses the image of every orbital pair by the length of its
+        bond (:func:`PAOFLOW.hamiltonian.wigner_seitz.wigner_seitz_pair_images`), which keeps the
+        space-group operations that move one atom onto another. All cost one FFT per orbital
+        pair and reproduce the DFT mesh exactly.
 
     Returns
     -------
@@ -42,7 +45,8 @@ def do_double_grid(data_controller: DataController, interpolation: str = 'zero_p
     ------
     ValueError
         For an unknown ``interpolation``, or (Wigner-Seitz) when the fine grid cannot hold every
-        image at its own lattice vector (the gradients would then belong to another interpolant).
+        image at its own lattice vector (the gradients would then belong to another interpolant),
+        or (pair-resolved) when the run has not one orbital centre per orbital.
 
     Notes
     -----
@@ -77,9 +81,11 @@ def do_double_grid(data_controller: DataController, interpolation: str = 'zero_p
 
     rank = MPI.COMM_WORLD.Get_rank()
 
-    if interpolation not in ('zero_padding', 'wigner_seitz'):
+    from .wigner_seitz import SUPPORTED_INTERPOLATIONS
+
+    if interpolation not in SUPPORTED_INTERPOLATIONS:
         raise ValueError(
-            "interpolation must be 'zero_padding' or 'wigner_seitz', got %r" % (interpolation,)
+            'interpolation must be one of %s, got %r' % (SUPPORTED_INTERPOLATIONS, interpolation)
         )
 
     arrays, attr = data_controller.data_dicts()
@@ -110,6 +116,36 @@ def do_double_grid(data_controller: DataController, interpolation: str = 'zero_p
         check_fine_grid_holds_images(images, (nk1p, nk2p, nk3p))
         placement = fine_grid_placement(images, (nk1p, nk2p, nk3p))
 
+    if interpolation == 'wigner_seitz_pairs':
+        from ..utils.communication import scatter_full_indices
+        from .wigner_seitz import (
+            check_fine_grid_holds_images,
+            fine_grid_placement,
+            orbital_centres_for_pairs,
+            wigner_seitz_fine_grid_array,
+            wigner_seitz_pair_images,
+        )
+
+        pair_images = wigner_seitz_pair_images(
+            (nk1, nk2, nk3),
+            np.asarray(arrays['a_vectors'], dtype=float),
+            orbital_centres_for_pairs(data_controller),
+        )
+        check_fine_grid_holds_images(pair_images.all_cells(), (nk1p, nk2p, nk3p))
+        n_sites = int(pair_images.weights.shape[1])
+        images_of_pair = {
+            (site_i, site_j): pair_images.images_of_pair(site_i, site_j)
+            for site_i in range(n_sites)
+            for site_j in range(n_sites)
+        }
+        placement_of_pair = {
+            pair: fine_grid_placement(images, (nk1p, nk2p, nk3p))
+            for pair, images in images_of_pair.items()
+        }
+        # each local row of the scattered HRs is the orbital pair divmod(global_row, nawf)
+        orbital_pair_rows = scatter_full_indices(attr['nawf'] ** 2, attr['npool'])
+        site_of_orbital = pair_images.site_of_orbital
+
     # Extended R to k (zero padding or Wigner-Seitz images)
     arrays['Hksp'] = np.empty((HRs.shape[0], nk1p, nk2p, nk3p, nspin), dtype=complex)
 
@@ -117,6 +153,12 @@ def do_double_grid(data_controller: DataController, interpolation: str = 'zero_p
         for n in range(HRs.shape[0]):
             if interpolation == 'wigner_seitz':
                 padded = wigner_seitz_fine_grid_array(HRs[n, :, :, :, ispin], images, placement)
+            elif interpolation == 'wigner_seitz_pairs':
+                orbital_i, orbital_j = divmod(int(orbital_pair_rows[n]), attr['nawf'])
+                pair = (int(site_of_orbital[orbital_i]), int(site_of_orbital[orbital_j]))
+                padded = wigner_seitz_fine_grid_array(
+                    HRs[n, :, :, :, ispin], images_of_pair[pair], placement_of_pair[pair]
+                )
             else:
                 padded = zero_pad(HRs[n, :, :, :, ispin], nk1, nk2, nk3, nfft1, nfft2, nfft3)
             arrays['Hksp'][n, :, :, :, ispin] = FFT.fftn(padded)

@@ -8,10 +8,13 @@ same `H(k)`. Off the mesh each grid index must first be given a lattice vector, 
 
 Since 15 November 2026 the two public interpolation steps take an `interpolation` argument:
 
-| method | default (unchanged) | new option |
+| method | default (unchanged) | new options |
 |---|---|---|
-| `bands(..., interpolation=...)` | `'fft_grid'`: the FFT grid as stored, `n_i in [-N_i/2, N_i/2)` (`band_loop_H`) | `'wigner_seitz'` |
-| `interpolated_hamiltonian(..., interpolation=...)` | `'zero_padding'`: the parallelepiped with the Nyquist planes split (`utils/zero_pad.py`) | `'wigner_seitz'` |
+| `bands(..., interpolation=...)` | `'fft_grid'`: the FFT grid as stored, `n_i in [-N_i/2, N_i/2)` (`band_loop_H`) | `'wigner_seitz'`, `'wigner_seitz_pairs'` |
+| `interpolated_hamiltonian(..., interpolation=...)` | `'zero_padding'`: the parallelepiped with the Nyquist planes split (`utils/zero_pad.py`) | `'wigner_seitz'`, `'wigner_seitz_pairs'` |
+
+`'wigner_seitz_pairs'` (added later on 15 November 2026) chooses the images orbital pair by orbital pair, by the
+length of the bond; see [Pair-resolved images](#pair-resolved-images).
 
 With `'wigner_seitz'` every grid index `m` goes to its shortest image `n = m + N s` (Cartesian length) in the
 supercell lattice. Images of equal length share the weight `1/deg`, as in Wannier interpolation and QE `wsweight`:
@@ -110,13 +113,56 @@ therefore not Hermitian, and `bands_calc` diagonalises its upper triangle (`eigh
 gives eigenvalues that differ by up to 92 meV on the Si path (extended basis, 12³ mesh). Both the zero padding and
 the Wigner-Seitz sum are exactly Hermitian.
 
+## Pair-resolved images
+
+`HRs[n]_ij` holds the hopping from orbital `i` in the home cell to orbital `j` in the cell `-n`. The bond it
+describes is `d = (-n + tau_j - tau_i) A`. The cell-based assignment picks the image of `n` by `|n A|` alone. With
+several atoms per cell, that choice ignores the atoms, and it breaks the space-group operations that move one atom
+onto another. In diamond these are the fourfold rotations and the {100} mirrors, which come with a fractional
+translation.
+
+`interpolation='wigner_seitz_pairs'` picks, for every pair of sites `(I, J)`, the images of shortest `|d|`. These
+are `wigner_seitz_images(..., separation_offset=(tau_J - tau_I) A)`, the criterion of wannier90 `use_ws_distance`,
+EPW `use_ws` and `elph_bloch._ws_lattice_pairs(sign=-1)`.
+
+`wigner_seitz_pair_images` stores the union of the cells with one weight per site pair. A path evaluation
+(`wigner_seitz_pair_hamiltonian_k`) is therefore one product of the phases with the pair-weighted hoppings. On the
+fine grid every orbital-pair row of the scattered `HRs` gets the images of its site pair, found through
+`scatter_full_indices`, so the route is one FFT per orbital pair, as before.
+
+The orbital centres come from `orbital_centres_for_pairs`:
+- a QE run after `projections` (`arrays['basis']`);
+- a model (`arrays['tau', 'naw']`).
+
+It raises when there is not one centre per orbital. That is the case after `doubling_Hamiltonian` and
+`adhoc_spin_orbit`, which do not update the stored centres.
+
+Si, standard basis, 12³ mesh, the same runs as above. The largest |E(Rk) − E(k)| is over 200 random k in the valence
+bands:
+
+| | path valence / bands 5–8 | C3 [111] | C4 z | mirror x |
+|---|---|---|---|---|
+| `wigner_seitz` | 30.1 / 91.0 meV | 2.3e-11 eV | 11 meV | 8.5 meV |
+| `wigner_seitz_pairs` | 32.7 / 91.5 meV | 2.1e-11 eV | 2.3e-11 eV | 1.0e-11 eV |
+
+The pair-resolved bands keep the full space group to machine precision; they are not more accurate on the path.
+Earlier checks on the extended basis gave 24.3 against 15.4 meV for the valence bands.
+
+Cost:
+- the pair route's union holds 2191 cells, against 1957 for the cell route;
+- `interpolated_hamiltonian` to 24³ takes 0.19 s, against 0.16 s for the cell route;
+- the fine grid must hold the slightly longer bond images: 7³ for an fcc 4³ mesh, and the check raises otherwise;
+- serial, `mpirun -np 3` and 2 pools give the same eigenvalues on the fine grid (1e-14 eV).
+
+The single-site case reduces to the cell-based route exactly (unit test).
+
 ## Not covered
 
 - The band paths of `do_berry_phase`, `do_topology`, `do_berry_curvature` and `do_eigh` keep their own FFT-grid sums.
-- The pair-resolved Wigner-Seitz cells (orbital centres, `bloch_terms_from_HRs(..., orbital_positions_cryst)`) are not
-  used. On Si they gave errors similar to the cell-based ones (standard: 32.7 against 30.1 meV; extended: 24.3
-  against 15.4 meV, valence).
+- `wigner_seitz_pairs` after `doubling_Hamiltonian` or `adhoc_spin_orbit` (no centre per orbital): use
+  `'wigner_seitz'`.
 - `elphon.elph_bloch._ws_lattice` with `span=2` returns non-shortest images for fcc/bcc meshes with one point
   along an axis (6×6×1); `span=4` fixes it. The new search is converged at `span=2`.
 
-Tests: `tests/unit/hamiltonian/test_wigner_seitz_interpolation.py` (27).
+Tests: `tests/unit/hamiltonian/test_wigner_seitz_interpolation.py` (38; 11 for the pair-resolved route, on a
+diamond-structure s model whose aliased `HRs` is exactly symmetric).

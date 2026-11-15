@@ -1089,11 +1089,16 @@ class PAOFLOW:
             Number of k-points along the path (high-symmetry points are currently included twice).
         write_QE_path : bool, optional
             If True generates the k-path in tpiba to run QE bands.
-        interpolation : {'fft_grid', 'wigner_seitz'}, optional
+        interpolation : {'fft_grid', 'wigner_seitz', 'wigner_seitz_pairs'}, optional
             Fourier sum of ``HRs`` off the DFT mesh. ``'fft_grid'`` (default) sums over the FFT grid
             as stored; ``'wigner_seitz'`` gives every grid vector its shortest image in the supercell
             lattice, as Wannier interpolation does, and is the more accurate when the real-space
-            Hamiltonian has not decayed at the edge of the supercell. Both reproduce the DFT mesh.
+            Hamiltonian has not decayed at the edge of the supercell. ``'wigner_seitz_pairs'``
+            chooses the image of every orbital pair by the length of its bond (wannier90
+            ``use_ws_distance``): with several atoms per cell the bands then keep the symmetry
+            operations that move one atom onto another. It needs one orbital centre per orbital
+            (QE runs after ``projections`` and models; not after ``doubling_Hamiltonian`` or
+            ``adhoc_spin_orbit``). All reproduce the DFT mesh.
 
         Returns
         -------
@@ -1789,7 +1794,7 @@ class PAOFLOW:
             keeping it roughly doubles the peak footprint of this step. Set False only when calling
             ``topology`` or ``berry_phase`` afterwards without an intervening ``pao_eigh`` (which
             frees it regardless).
-        interpolation : {'zero_padding', 'wigner_seitz'}, optional
+        interpolation : {'zero_padding', 'wigner_seitz', 'wigner_seitz_pairs'}, optional
             How the real-space grid of ``HRs`` is mapped to lattice vectors off the DFT mesh.
             ``'zero_padding'`` (default) keeps the parallelepiped of grid vectors and splits the
             Nyquist planes; ``'wigner_seitz'`` gives every grid vector its shortest image in the
@@ -1797,7 +1802,9 @@ class PAOFLOW:
             and cost one FFT per orbital pair; the Wigner-Seitz choice is the more accurate when
             ``HRs`` has not decayed at the edge of the supercell. It needs a grid that holds every
             image (about 1.5 times the DFT mesh for fcc and bcc lattices, twice the default) and
-            raises otherwise.
+            raises otherwise. ``'wigner_seitz_pairs'`` chooses the image of every orbital pair by the
+            length of its bond, which keeps the symmetry operations that move one atom onto another
+            (same cost; needs one orbital centre per orbital, see :meth:`bands`).
 
         Returns
         -------

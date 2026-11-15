@@ -27,12 +27,14 @@ def bands_calc(
         ``kq`` (shape ``(3, nkpi)``), ``R`` (shape ``(nrtot, 3)``), and ``a_vectors``
         for the Wigner-Seitz sum.
         Required attribute: ``npool``.
-    interpolation : {'fft_grid', 'wigner_seitz'}, optional
+    interpolation : {'fft_grid', 'wigner_seitz', 'wigner_seitz_pairs'}, optional
         Fourier sum of ``HRs`` off the DFT mesh. ``'fft_grid'`` (default) sums over the FFT grid
         as stored (:func:`band_loop_H`); ``'wigner_seitz'`` gives every grid vector its shortest
         image in the supercell lattice
-        (:func:`PAOFLOW.hamiltonian.wigner_seitz.wigner_seitz_hamiltonian_k`). Both reproduce the
-        DFT mesh exactly.
+        (:func:`PAOFLOW.hamiltonian.wigner_seitz.wigner_seitz_hamiltonian_k`);
+        ``'wigner_seitz_pairs'`` chooses the image of every orbital pair by the length of its
+        bond (:func:`PAOFLOW.hamiltonian.wigner_seitz.wigner_seitz_pair_hamiltonian_k`; needs the
+        orbital centres). All reproduce the DFT mesh exactly.
 
     Returns
     -------
@@ -64,11 +66,28 @@ def bands_calc(
         images = wigner_seitz_images((nk1, nk2, nk3), a_vectors)
         # kq is Cartesian in 2 pi / alat and a_vectors in alat: k_cryst_i = a_i . k
         Hks_aux = wigner_seitz_hamiltonian_k(arrays['HRs'], images, (a_vectors @ kq_aux).T)
+    elif interpolation == 'wigner_seitz_pairs':
+        from ..hamiltonian.wigner_seitz import (
+            orbital_centres_for_pairs,
+            wigner_seitz_pair_hamiltonian_k,
+            wigner_seitz_pair_images,
+        )
+
+        a_vectors = np.asarray(arrays['a_vectors'], dtype=float)
+        pair_images = wigner_seitz_pair_images(
+            (nk1, nk2, nk3), a_vectors, orbital_centres_for_pairs(data_controller)
+        )
+        Hks_aux = wigner_seitz_pair_hamiltonian_k(
+            arrays['HRs'], pair_images, (a_vectors @ kq_aux).T
+        )
     elif interpolation == 'fft_grid':
         Hks_aux = band_loop_H(data_controller, kq_aux)
     else:
+        from ..hamiltonian.wigner_seitz import SUPPORTED_BAND_INTERPOLATIONS
+
         raise ValueError(
-            "bands interpolation must be 'fft_grid' or 'wigner_seitz', got %r" % (interpolation,)
+            'bands interpolation must be one of %s, got %r'
+            % (SUPPORTED_BAND_INTERPOLATIONS, interpolation)
         )
 
     if np.iscomplex(arrays['kq']).any():
@@ -162,7 +181,7 @@ def do_bands(data_controller: DataController, interpolation: str = 'fft_grid') -
         ``b_vectors`` (shape ``(3, 3)``).
         Required attributes: ``alat``, ``npool``.  Either ``ibrav`` or a
         pre-loaded ``kq`` array must be present.
-    interpolation : {'fft_grid', 'wigner_seitz'}, optional
+    interpolation : {'fft_grid', 'wigner_seitz', 'wigner_seitz_pairs'}, optional
         Fourier sum of ``HRs`` along the path; see :func:`bands_calc`.
 
     Returns
