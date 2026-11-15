@@ -3,7 +3,7 @@ PAOFLOW can be called with PAOFLOW(model=tbmodel) where tbmodel is a dictionary 
 Predefined hard-coded models
 cubium: tbmodel = {'label':'cubium', 't':?}
 cubium2: tbmodel = {'label':'cubium2', 't':?, 'Eg':?}
-graphene: tbmodel = {'label':'graphene', 'delta':?, 't':?}
+graphene: tbmodel = {'label':'graphene', 't':?, 'delta':? (default 0), 'nelec':? (default 2)}
 kane_mele: tbmodel = {'label':'kane_mele', 't':?, 'soc_par':?, 'r_par':?, 'v_par':?, 'alat':?}
            now kane_mele_model below: r_par and v_par (units of t) default 0, alat in angstrom (default 1)
 
@@ -17,6 +17,8 @@ graphene: tbmodel = {'label':'graphene_pythtb', 'delta':?, 't':?}
 haldane: tbmodel = {'label':'haldane_pythtb', 'delta':?, 't1':?, 't2':?, 'phi':?}
 kane_mele: tbmodel = {'label':'kane_mele_pythtb', 'delta':?, 't':?, 'soc':?, 'rashba':?}
 fu_kane_mele: tbmodel = {'label':'fu_kane_mele_pythtb', 't':?, 'soc':?, 'dt':?}
+PythTB models carry no filling: add 'nelec' (electrons per cell) to any *_pythtb label.
+haldane_pythtb(delta, t1, t2, phi) = honeycomb_model(2 delta, t1, t2, -phi) (on-site +-delta, opposite chirality).
 See https://pythtb.readthedocs.io/en/latest/ or src/PAOFLOW/models/models.py for details
 
 Hopping-list models (the validation models of the optical responses; alat in bohr, energies in eV)

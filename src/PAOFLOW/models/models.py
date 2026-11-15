@@ -12,6 +12,7 @@ from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
     from ..DataController import DataController
+    from pythtb import TBModel
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Species-pair-keyed format normalizers (backwards compatible)
@@ -122,6 +123,24 @@ def _normalize_species_pair_gamma(gamma_spec):
             # Multi-species: return the full species-pair-keyed dict
             return gamma_spec
     return gamma_spec
+
+
+def _mirror_lattice_index(HRs: np.ndarray) -> np.ndarray:
+    r"""``HRs`` with its lattice index mirrored, ``n -> -n`` on the periodic grid.
+
+    Parameters
+    ----------
+    HRs : ndarray ``(nawf, nawf, n1, n2, n3, nspin)``
+
+    Returns
+    -------
+    ndarray
+        ``HRs[:, :, -n1, -n2, -n3, :]`` (indices modulo the grid). Turns the hoppings of the
+        Slater-Koster builders, filled at the index ``+R`` of the cell of the second orbital,
+        into PAOFLOW's convention :math:`H(\mathbf k)=\sum_{\mathbf n}e^{-2\pi i\mathbf k\cdot
+        \mathbf n}\,\mathrm{HRs}[\mathbf n]` (hopping at ``-R``), the one of the QE route.
+    """
+    return np.roll(np.asarray(HRs)[:, :, ::-1, ::-1, ::-1], 1, axis=(2, 3, 4))
 
 
 def Slater_Koster(data_controller, params):
@@ -310,7 +329,7 @@ def Slater_Koster(data_controller, params):
     attr['nawf'] = nawf
     attr['bnd'] = nawf
     attr['nbnds'] = nawf
-    attr['shift'] = 0
+    attr['shift'] = np.inf  # a model has no projectability shift: every band is physical
 
     # Cumulative orbital block start per atom (correct for heterogeneous norbitals)
     atom_block_start = np.zeros(natoms, dtype=int)
@@ -980,6 +999,9 @@ def Slater_Koster(data_controller, params):
             perm[new_abs] = old_abs
     arry['HRs'] = arry['HRs'][perm, :, :, :, :, :]
     arry['HRs'] = arry['HRs'][:, perm, :, :, :, :]
+    # PAOFLOW's convention (QE route, hopping lists, PythTB): H(k) = sum_n exp(-2 pi i k.n) HRs[n], so the
+    # hopping to the orbital at tau_B + R sits at the index n = -R. The loops above fill the index +R.
+    arry['HRs'] = _mirror_lattice_index(arry['HRs'])
 
     # Convert shells to dict keyed by species name for SOC compatibility
     shells_dict = {}
@@ -1238,7 +1260,7 @@ def SK_EDTB(data_controller, params):
     attr['nawf'] = nawf
     attr['bnd'] = nawf
     attr['nbnds'] = nawf
-    attr['shift'] = 0
+    attr['shift'] = np.inf  # a model has no projectability shift: every band is physical
 
     atom_block_start = np.zeros(natoms, dtype=int)
     for ia in range(1, natoms):
@@ -2101,6 +2123,9 @@ def SK_EDTB(data_controller, params):
             perm[new_abs] = old_abs
     arry['HRs'] = arry['HRs'][perm, :, :, :, :, :]
     arry['HRs'] = arry['HRs'][:, perm, :, :, :, :]
+    # PAOFLOW's convention (QE route, hopping lists, PythTB): H(k) = sum_n exp(-2 pi i k.n) HRs[n], so the
+    # hopping to the orbital at tau_B + R sits at the index n = -R. The loops above fill the index +R.
+    arry['HRs'] = _mirror_lattice_index(arry['HRs'])
 
     # Convert shells to dict keyed by species name for SOC compatibility
     shells_dict = {}
@@ -2156,9 +2181,7 @@ def cubium2_pythtb(t, Eg):
     return model
 
 
-def ssh_pythtb(v, w):
-    from pythtb import Lattice, TBModel
-
+def ssh_pythtb(v: float, w: float) -> 'TBModel':
     r"""Su-Schrieffer-Heeger (SSH) model.
 
     This function constructs the SSH model with the specified hopping parameters.
@@ -2173,15 +2196,23 @@ def ssh_pythtb(v, w):
     Parameters
     ----------
     v : float
-        The intercell hopping within the unit cell.
+        The intracell hopping, between A and B of the same cell (eV).
     w : float
-        The intracell hopping to neighboring unit cells.
+        The intercell hopping, from B to A of the next cell (eV).
 
     Returns
     -------
     TBModel
         The tight-binding model for the SSH lattice.
+
+    Notes
+    -----
+    The same chain as :func:`rice_mele_model` with :math:`t = (v + w)/2`, :math:`\delta t = (v - w)/2`
+    and :math:`\Delta = 0`. Exchanging :math:`v` and :math:`w` gives the same bands and the other Zak
+    phase.
     """
+    from pythtb import Lattice, TBModel
+
     lat_vecs = [[1]]
     orb_vecs = [[0], [1 / 2]]
     lat = Lattice(lat_vecs, orb_vecs, periodic_dirs=[0])
@@ -2194,9 +2225,7 @@ def ssh_pythtb(v, w):
     return model
 
 
-def checkerboard_pythtb(delta, t):
-    from pythtb import Lattice, TBModel
-
+def checkerboard_pythtb(delta: float, t: float) -> 'TBModel':
     r"""Checkerboard tight-binding model.
 
     .. versionadded:: 2.0.0
@@ -2234,6 +2263,7 @@ def checkerboard_pythtb(delta, t):
     TBModel
         An instance of the model.
     """
+    from pythtb import Lattice, TBModel
 
     lat_vecs = [[1, 0], [0, 1]]
     orb_vecs = [[0, 0], [1 / 2, 1 / 2]]
@@ -2252,9 +2282,7 @@ def checkerboard_pythtb(delta, t):
     return model
 
 
-def graphene_pythtb(delta: float, t: float):
-    from pythtb import Lattice, TBModel
-
+def graphene_pythtb(delta: float, t: float) -> 'TBModel':
     r"""Graphene tight-binding model.
 
     This function creates a graphene tight-binding model with the specified
@@ -2290,6 +2318,7 @@ def graphene_pythtb(delta: float, t: float):
     TBModel
         An instance of the model.
     """
+    from pythtb import Lattice, TBModel
 
     lat_vecs = [[1, 0], [1 / 2, np.sqrt(3) / 2]]
     orb_vecs = [[1 / 3, 1 / 3], [2 / 3, 2 / 3]]
@@ -2305,9 +2334,7 @@ def graphene_pythtb(delta: float, t: float):
     return model
 
 
-def haldane_pythtb(delta: float, t1: float, t2: float, phi: float = np.pi / 2):
-    from pythtb import Lattice, TBModel
-
+def haldane_pythtb(delta: float, t1: float, t2: float, phi: float = np.pi / 2) -> 'TBModel':
     r"""Haldane tight-binding model.
 
     This function creates a Haldane tight-binding model with the specified
@@ -2340,6 +2367,8 @@ def haldane_pythtb(delta: float, t1: float, t2: float, phi: float = np.pi / 2):
         Nearest neighbor hopping amplitude.
     t2 : float
         Next-nearest neighbor hopping amplitude. Peierls phase is included.
+    phi : float, optional
+        Phase of the next-nearest neighbor hopping :math:`t_2e^{i\phi}`.
 
     Returns
     -------
@@ -2348,9 +2377,12 @@ def haldane_pythtb(delta: float, t1: float, t2: float, phi: float = np.pi / 2):
 
     Notes
     -----
-    The Haldane model describes a two-dimensional topological insulator with a
-    non-trivial band structure. It is characterized by a finite Chern number
-    and exhibits edge states that are protected by time-reversal symmetry [haldane]_.
+    The Haldane model describes a two-dimensional Chern insulator: the complex second-neighbour
+    hoppings break time reversal, the Chern number is finite, and the chiral edge states are
+    protected by it (not by time reversal, which the model breaks) [haldane]_. The on-site energies
+    are :math:`\pm\Delta` (not :math:`\pm\Delta/2`) and the chirality of :math:`\phi` is the opposite
+    of :func:`honeycomb_model`: ``haldane_pythtb(delta, t1, t2, phi)`` has the bands of
+    ``honeycomb_model(delta=2 * delta, t=t1, t2=t2, phi=-phi)``.
 
     References
     ----------
@@ -2358,6 +2390,7 @@ def haldane_pythtb(delta: float, t1: float, t2: float, phi: float = np.pi / 2):
         O(3) Nonlinear :math:`\sigma` Model and the Quantum Hall Effect in Two Dimensions.
         *Physical Review Letters*, 61(20), 2015–2018.
     """
+    from pythtb import Lattice, TBModel
 
     lat_vecs = [[1, 0], [1 / 2, np.sqrt(3) / 2]]
     orb_vecs = [[1 / 3, 1 / 3], [2 / 3, 2 / 3]]
@@ -2378,9 +2411,7 @@ def haldane_pythtb(delta: float, t1: float, t2: float, phi: float = np.pi / 2):
     return model
 
 
-def kane_mele_pythtb(delta, t, soc, rashba):
-    from pythtb import Lattice, TBModel
-
+def kane_mele_pythtb(delta: float, t: float, soc: float, rashba: float) -> 'TBModel':
     r"""Kane-Mele tight-binding model.
 
     This function creates a Kane-Mele tight-binding model with the specified
@@ -2402,7 +2433,7 @@ def kane_mele_pythtb(delta, t, soc, rashba):
 
     .. math::
 
-        H = \Delta \sum_{i} c_i^\dagger c_i +
+        H = \Delta \sum_{i} \xi_i c_i^\dagger c_i +
         t \sum_{\langle i,j \rangle} ( c_i^\dagger c_j + h.c.) +
         \lambda_{SO} \sum_{\langle \langle i,j \rangle \rangle} ( c_i^\dagger \sigma_z c_j + \text{h.c.}) + \\
         \lambda_{R} \sum_{\langle i,j \rangle} ( c_i^\dagger \mathbf{\sigma} \times
@@ -2410,8 +2441,8 @@ def kane_mele_pythtb(delta, t, soc, rashba):
 
     Parameters
     ----------
-    onsite : float
-        On-site energy.
+    delta : float
+        Staggered on-site energy :math:`\pm\Delta` on the two sublattices (:math:`\xi_i = \pm1`).
     t : float, complex
         Hopping parameter.
     soc : float, complex
@@ -2426,6 +2457,9 @@ def kane_mele_pythtb(delta, t, soc, rashba):
 
     Notes
     -----
+    ``kane_mele_pythtb(delta, t, soc, rashba)`` has the bands of
+    ``kane_mele_model(t=t, soc=soc, rashba=rashba, delta=delta)``.
+
     The Kane-Mele model describes a two-dimensional topological insulator with spin-orbit coupling.
     It is defined on a honeycomb lattice and includes both intrinsic and Rashba spin-orbit coupling [kane-mele]_.
 
@@ -2433,6 +2467,7 @@ def kane_mele_pythtb(delta, t, soc, rashba):
     ----------
     .. [kane-mele] Kane, C. L., & Mele, E. J. (2005). Quantum Spin Hall Effect in Graphene. *Physical Review Letters*, 95(22), 226801.
     """
+    from pythtb import Lattice, TBModel
 
     # define lattice vectors
     lat_vecs = [[1, 0], [1 / 2, np.sqrt(3) / 2]]
@@ -2491,9 +2526,7 @@ def kane_mele_pythtb(delta, t, soc, rashba):
     return ret_model
 
 
-def fu_kane_mele_pythtb(t, soc, dt=[0, 0, 0, 0]):
-    from pythtb import Lattice, TBModel
-
+def fu_kane_mele_pythtb(t: float, soc: float, dt: Sequence[float] = (0, 0, 0, 0)) -> 'TBModel':
     r"""Fu-Kane-Mele tight-binding model.
 
     This function creates a Fu-Kane-Mele tight-binding model on a diamond
@@ -2569,6 +2602,7 @@ def fu_kane_mele_pythtb(t, soc, dt=[0, 0, 0, 0]):
     .. [1] \ L. Fu, C. L. Kane, and E. J. Mele, *Phys. Rev. Lett.*, **98**, 106803
         (2007).
     """
+    from pythtb import Lattice, TBModel
 
     lat_vecs = [[0, 1, 1], [1, 0, 1], [1, 1, 0]]
     orb_vecs = [[0, 0, 0], [0.25, 0.25, 0.25]]
@@ -2594,7 +2628,26 @@ def fu_kane_mele_pythtb(t, soc, dt=[0, 0, 0, 0]):
 # Predefined hard-coded models
 
 
-def graphene(data_controller, params):
+def graphene(data_controller: DataController, params: Mapping) -> None:
+    """Gapped graphene, the legacy ``'graphene'`` label (``honeycomb_model`` with ``t2 = 0`` gives the same bands).
+
+    Parameters
+    ----------
+    data_controller : DataController
+    params : mapping
+        ``t`` (nearest-neighbour hopping, eV) and optionally ``delta`` (sublattice potential,
+        :math:`\\pm\\Delta/2` on A and B, eV, default 0) and ``nelec`` (electrons per cell, default 2).
+
+    Returns
+    -------
+    None
+        Fills ``HRs`` (3x3x1 grid, PAOFLOW's convention: the hopping to the cell ``R`` at the index
+        ``-R``), ``a_vectors`` (``a_1 || x``, 10 alat of vacuum), ``b_vectors``, ``tau`` (A at
+        :math:`(\\frac13,\\frac13)`, B at :math:`(\\frac23,\\frac23)`, Cartesian alat), ``Dnm``, ``naw``,
+        ``atoms`` and the attributes ``nawf``, ``bnd``, ``nbnds``, ``nspin``, ``natoms``, ``alat``
+        (2.46 A), ``omega``, ``nelec``, ``Efermi`` (0), ``shift`` (inf), ``dftSO``, ``nk1..3``,
+        ``nkpnts``.
+    """
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
@@ -2624,8 +2677,9 @@ def graphene(data_controller, params):
     )
 
     # H00
-    arry['HRs'][0, 0, 0, 0, 0, 0] = params['delta'] / 2
-    arry['HRs'][1, 1, 0, 0, 0, 0] = -params['delta'] / 2
+    delta = float(params.get('delta', 0.0))
+    arry['HRs'][0, 0, 0, 0, 0, 0] = delta / 2
+    arry['HRs'][1, 1, 0, 0, 0, 0] = -delta / 2
 
     # H00
     arry['HRs'][0, 1, 0, 0, 0, 0] = params['t']
@@ -2674,8 +2728,35 @@ def graphene(data_controller, params):
 
     arry['atoms'] = ['C', 'C']
 
+    # The attributes every other builder sets (pao_eigh, gradient_and_momenta, dos need them).
+    attr['bnd'] = attr['nbnds'] = attr['nawf']
+    attr['nelec'] = float(params.get('nelec', 2.0))
+    attr['Efermi'] = 0.0
+    attr['shift'] = np.inf  # a model has no projectability shift: every band is physical
+    attr['dftSO'] = False
+    attr['nkpnts'] = attr['nk1'] * attr['nk2'] * attr['nk3']
+    attr['omega'] = attr['alat'] ** 3 * abs(volume)
+    centres = attr['alat'] * arry['tau']  # bohr
+    arry['Dnm'] = centres[:, None, :] - centres[None, :, :]
 
-def cubium(data_controller, params):
+
+def cubium(data_controller: DataController, params: Mapping) -> None:
+    """One ``s`` band on the simple-cubic lattice, the legacy ``'cubium'`` label.
+
+    Parameters
+    ----------
+    data_controller : DataController
+    params : mapping
+        ``t``: nearest-neighbour hopping (eV).
+
+    Returns
+    -------
+    None
+        Fills ``HRs`` (on-site :math:`-6t`, so :math:`\\varepsilon = -6t + 2t\\sum_\\alpha\\cos k_\\alpha a`
+        with its top at 0 for :math:`t > 0`), ``a_vectors``, ``b_vectors``, ``tau``, ``naw``, ``Dnm`` (zero:
+        one site), ``atoms`` and the attributes; ``alat`` = 1 A, ``nelec`` = 2 (a full band) and
+        ``Efermi`` = :math:`6t`, the shift already applied to the band, as ``Efermi`` of the QE route.
+    """
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
@@ -2688,7 +2769,7 @@ def cubium(data_controller, params):
     attr['nspin'] = 1
     attr['natoms'] = 1
     attr['bnd'] = 1
-    attr['shift'] = 0
+    attr['shift'] = np.inf  # a model has no projectability shift: every band is physical
     attr['dftSO'] = False
     attr['nkpnts'] = attr['nk1'] * attr['nk2'] * attr['nk3']
     attr['nbnds'] = 1
@@ -2748,9 +2829,26 @@ def cubium(data_controller, params):
     arry['b_vectors'][2, :] = (np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :])) / volume
 
     arry['atoms'] = ['Cu']
+    arry['naw'] = np.array([attr['nawf']])
+    arry['Dnm'] = np.zeros((attr['nawf'], attr['nawf'], 3))  # one site: no intra-cell position term
 
 
-def cubium2(data_controller, params):
+def cubium2(data_controller: DataController, params: Mapping) -> None:
+    """Two decoupled mirror bands on the simple-cubic lattice, the legacy ``'cubium2'`` label.
+
+    Parameters
+    ----------
+    data_controller : DataController
+    params : mapping
+        ``t`` (hopping, eV) and ``Eg`` (direct gap at Gamma, eV).
+
+    Returns
+    -------
+    None
+        Fills ``HRs`` (orbital 0: :math:`-E_g/2 - 6t + 2t\\sum\\cos`, orbital 1 its mirror image; never
+        coupled), ``a_vectors``, ``b_vectors``, ``tau``, ``naw``, ``Dnm`` (zero: one site), ``atoms`` and
+        the attributes; ``alat`` = 1 A, ``nelec`` = 2.
+    """
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
@@ -2763,7 +2861,7 @@ def cubium2(data_controller, params):
     attr['nspin'] = 1
     attr['natoms'] = 1
     attr['bnd'] = 2
-    attr['shift'] = 0
+    attr['shift'] = np.inf  # a model has no projectability shift: every band is physical
     attr['dftSO'] = False
     attr['nkpnts'] = attr['nk1'] * attr['nk2'] * attr['nk3']
     attr['nbnds'] = 2
@@ -2826,6 +2924,8 @@ def cubium2(data_controller, params):
     arry['b_vectors'][2, :] = (np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :])) / volume
 
     arry['atoms'] = ['Cu']
+    arry['naw'] = np.array([attr['nawf']])
+    arry['Dnm'] = np.zeros((attr['nawf'], attr['nawf'], 3))  # both orbitals on one site
 
 
 def pythtb_to_hopping_model(my_model) -> HoppingModel:
@@ -3715,7 +3815,8 @@ def build_TB_model(data_controller: DataController, params: dict) -> None:
         :func:`parabolic_model` (``alat`` in bohr);
         ``'Kane_Mele'`` builds :func:`kane_mele_model` from ``t``, ``soc_par``, ``r_par``,
         ``v_par`` (in units of ``t``) and ``alat`` (angstrom); an unknown key raises
-        ``TypeError``. The ``*_pythtb`` labels go through :func:`build_from_pythTB`.
+        ``TypeError``. The ``*_pythtb`` labels go through :func:`build_from_pythTB`; PythTB models
+        carry no filling, so these labels take an optional ``nelec`` (electrons per cell).
 
     Returns
     -------
@@ -3770,3 +3871,5 @@ def build_TB_model(data_controller: DataController, params: dict) -> None:
             import sys
 
             sys.exit()
+    if model_name.upper().endswith('_PYTHTB') and params.get('nelec') is not None:
+        data_controller.data_attributes['nelec'] = float(params['nelec'])

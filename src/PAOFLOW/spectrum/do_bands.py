@@ -98,10 +98,12 @@ def band_loop_H(data_controller, kq_aux):
     .. math::
 
         H(\\mathbf{k}) = \\sum_{\\mathbf{R}} H(\\mathbf{R})\\,
-            e^{2\\pi i \\mathbf{k} \\cdot \\mathbf{R}}
+            e^{-2\\pi i \\mathbf{k} \\cdot \\mathbf{R}}
 
     implemented as a tensor contraction between the flattened ``HRs`` and
-    the phase factors :math:`e^{2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}`.
+    the phase factors :math:`e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}`: PAOFLOW's convention
+    (``HRs = ifftn(Hks)`` on the QE route, the hopping to the cell ``R`` at the index
+    ``-R`` for the models), the one of the FFT grid and of ``do_gradient``.
     """
     arrays, _ = data_controller.data_dicts()
 
@@ -109,7 +111,9 @@ def band_loop_H(data_controller, kq_aux):
     nawf, _, nk1, nk2, nk3, nspin = arrays['HRs'].shape
 
     HRs = np.reshape(arrays['HRs'], (nawf, nawf, nk1 * nk2 * nk3, nspin), order='C')
-    kdot = np.tensordot(arrays['R'], 2.0j * np.pi * kq_aux, axes=([1], [0]))
+    # PAOFLOW's convention: HRs = ifftn(Hks), H(k) = sum_R HRs(R) e^{-2 pi i k.R} (until 15 Nov 2026 the
+    # sign was +, which evaluated H(-k): the same energies with time reversal, mirrored paths otherwise)
+    kdot = np.tensordot(arrays['R'], -2.0j * np.pi * kq_aux, axes=([1], [0]))
     np.exp(kdot, kdot)
     Haux = np.zeros((nawf, nawf, nksize, nspin), dtype=complex, order='C')
 

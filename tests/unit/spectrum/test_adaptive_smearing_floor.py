@@ -119,9 +119,24 @@ def test_floored_dos_counts_every_state():
     assert count == pytest.approx(nawf, abs=1e-6)
 
 
-def test_unfloored_dos_loses_the_flat_band():
+def test_unfloored_dos_counts_the_zero_width_states():
+    """Zero widths (the flat band, the extrema on the grid) take the energy-grid spacing in the DOS.
+
+    Until 15 Nov 2026 they gave NaN (0/0) or dropped out; ``resolvable_widths`` counts them once.
+    """
     dc, _ = _model()
     nawf = dc.data_dicts()[1]['nawf']
     do_adaptive_smearing(dc, 'gauss', None, max_width=0.5)
+    assert np.count_nonzero(dc.data_dicts()[0]['deltakp'] == 0.0) > 0
     dos, count = _adaptive_count(dc)
-    assert (not np.isfinite(dos).all()) or count < nawf - 0.5
+    assert np.isfinite(dos).all()
+    assert count == pytest.approx(nawf, abs=1e-3)
+
+
+def test_resolvable_widths_only_touches_numerical_zeros():
+    from PAOFLOW.spectrum.do_dos import ZERO_WIDTH, resolvable_widths
+
+    widths = np.array([0.0, 1e-12, 0.5 * ZERO_WIDTH, 2 * ZERO_WIDTH, 0.003, 0.2])
+    out = resolvable_widths(widths, 0.01)
+    assert np.allclose(out[:3], 0.01)
+    assert np.array_equal(out[3:], widths[3:])

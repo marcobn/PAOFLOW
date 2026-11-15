@@ -3,7 +3,7 @@
 Dense arrays appear here only as test-side references — the container under
 test never materializes them.  The references pin the exact conventions of
 the dense pipeline: ``fftn``/``ifftn`` duality for the mesh (sign = -1),
-``band_loop_H`` for the k-path (sign = +1, Cartesian k), and
+``band_loop_H`` for the k-path (sign = -1 since 15 Nov 2026, Cartesian k), and
 ``do_gradient``'s per-bond coefficient for dH/dk.
 """
 
@@ -119,7 +119,9 @@ def test_band_loop_H_parity_cartesian_grid_k():
 
     sph = SparseHamiltonian.from_data_controller(dc, threshold=0.0)
     for n in range(kq.shape[1]):
-        Hk = sph.assemble_hk(kq[:, n], sign=+1, cart=True).toarray()
+        Hk = sph.assemble_hk(
+            kq[:, n], sign=-1, cart=True
+        ).toarray()  # H(k): PAOFLOW's sign since 15 Nov 2026
         assert np.allclose(Hk, Haux[:, :, n, 0], atol=1e-12)
 
 

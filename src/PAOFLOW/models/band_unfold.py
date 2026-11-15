@@ -26,20 +26,23 @@ Real-space Hamiltonian conventions
 ----------------------------------
 The unfolding Fourier-transforms the real-space Hamiltonian with the Bloch
 phase :math:`e^{+2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}`, which presumes that
-``HRs[:, :, R]`` holds the hopping from an orbital in the home cell to an
-orbital at :math:`\\boldsymbol{\\tau}_B + \\mathbf{R}`.  Model Hamiltonians
-built by :mod:`PAOFLOW.models.models` (Slater--Koster, EDTB) follow this
-convention.  The projected DFT Hamiltonian of a PAOFLOW run does not: it is
-obtained as ``HRs = ifftn(Hks)``, so that :math:`H(\\mathbf{k}) = \\sum_R
-H(\\mathbf{R})\\, e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}` and the hopping is
-stored at :math:`-\\mathbf{R}`.  Band energies cannot tell the two apart
-(with time reversal they give :math:`H(\\mathbf{k})` and
-:math:`H(-\\mathbf{k})`), but the spectral weights can: the eigenvectors of
-:math:`H(-\\mathbf{k})` projected on the primitive-cell momentum
-:math:`\\mathbf{k}` select the folded branches of the mirror point.
-:func:`_extract_hamiltonian` therefore brings every Hamiltonian to the
-``+R`` convention before the transform, using the ``fourier_sign`` entry of
-a ``_paoflow`` dict when present and :func:`_detect_fourier_sign` otherwise.
+the grid vector ``R`` paired with ``HRs[:, :, n]`` points to the cell of the
+second orbital (hopping to :math:`\\boldsymbol{\\tau}_B + \\mathbf{R}`).  Every
+PAOFLOW Hamiltonian stores that hopping at the index :math:`-\\mathbf{R}`: the
+projected DFT Hamiltonian (``HRs = ifftn(Hks)``, so :math:`H(\\mathbf{k}) =
+\\sum_R H(\\mathbf{R})\\, e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}`), the
+hopping-list and PythTB models and, since 15 November 2026, the
+Slater--Koster and EDTB builders (which stored it at :math:`+\\mathbf{R}`
+before).  Band energies cannot tell the two conventions apart (with time
+reversal they give :math:`H(\\mathbf{k})` and :math:`H(-\\mathbf{k})`), but the
+spectral weights can: the eigenvectors of :math:`H(-\\mathbf{k})` projected
+on the primitive-cell momentum :math:`\\mathbf{k}` select the folded
+branches of the mirror point.  :func:`_extract_hamiltonian` therefore
+orients every grid before the transform: a model built through PAOFLOW
+(:func:`PAOFLOW.models._paoflow_runner.build_model_hamiltonian`) comes back
+with ``R = -R_n``, and a ``_paoflow`` dict is flipped according to its
+``fourier_sign`` entry (``-1`` from :func:`paoflow_to_model_dict`, for a DFT
+run or a model alike) or, without the entry, :func:`_detect_fourier_sign`.
 
 References
 ----------
@@ -708,9 +711,10 @@ def unfold_bands(
     vectors (``a_vectors``) must be given in Cartesian units of alat (the
     PAOFLOW / EDTB convention).  A model dict may come from
     ``EDTBModel.to_model_dict()`` (tight-binding route) or from
-    :func:`paoflow_to_model_dict` (projected DFT route); the two store the
-    real-space Hamiltonian in opposite Fourier conventions, which
-    :func:`_extract_hamiltonian` reconciles (see the module docstring).
+    :func:`paoflow_to_model_dict` (projected DFT route, or any PAOFLOW run);
+    :func:`_extract_hamiltonian` orients both grids for the transform (see
+    the module docstring), so the two routes give the same weights for the
+    same Hamiltonian.
 
     At every k-point along the path, the PC and SC Bloch Hamiltonians are
     built from the real-space Hamiltonians by Fourier transform,

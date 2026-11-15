@@ -461,7 +461,7 @@ def project_bulk_bands(
     # ── 5.  Extract bulk Hamiltonian ─────────────────────────────
     if verbose:
         print('\nBuilding bulk Hamiltonian...')
-    HRs, R, nawf, nspin, _ = _extract_hamiltonian(model_dict, '_surf_proj_tmp', verbose=False)
+    HRs, R, nawf, nspin, _ = _extract_hamiltonian(model_dict, verbose=False)
     nR = HRs.shape[2]
 
     if verbose:

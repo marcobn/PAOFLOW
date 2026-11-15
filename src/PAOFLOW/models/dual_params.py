@@ -715,6 +715,8 @@ def _build_dual_HRs(
     Returns
     -------
     HRs : ndarray, shape (nawf, nawf, nk1, nk2, nk3, 1)
+        In PAOFLOW's convention, :math:`H(\\mathbf k)=\\sum_{\\mathbf n}e^{-2\\pi i\\mathbf k\\cdot\\mathbf n}
+        \\,\\mathrm{HRs}[\\mathbf n]`: the hopping to the cell ``R`` is stored at the index ``-R``.
     metadata : dict
         Keys: nawf, natoms, tau, a_vectors, b_vectors, norbitals,
         atom_block_start, nk1, nk2, nk3, cutoffs, atoms, shells.
@@ -944,7 +946,11 @@ def _build_dual_HRs(
         'volume': vol,
     }
     print(f'  Built H(R): {nawf}x{nawf}, grid {nk1}x{nk2}x{nk3}, {n_bonds} bonds')
-    return HRs, metadata
+    from .models import _mirror_lattice_index
+
+    # PAOFLOW's convention (as SK_EDTB, into whose data controller these HRs go): the hopping to the
+    # cell R sits at the grid index -R; the loops above fill +R.
+    return _mirror_lattice_index(HRs), metadata
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -984,6 +990,7 @@ def _build_multi_HRs(
     Returns
     -------
     HRs : ndarray, complex, shape (nawf, nawf, nk1, nk2, nk3, 1)
+        In PAOFLOW's convention (the hopping to the cell ``R`` at the index ``-R``), as ``SK_EDTB``.
     metadata : dict
     """
     # ── Validate ──
@@ -1345,7 +1352,11 @@ def _build_multi_HRs(
         'unique_labels': unique_labels,
     }
     print(f'  Built H(R): {nawf}x{nawf}, grid {nk1}x{nk2}x{nk3}, {n_bonds} bonds')
-    return HRs, metadata
+    from .models import _mirror_lattice_index
+
+    # PAOFLOW's convention (as SK_EDTB, into whose data controller these HRs go): the hopping to the
+    # cell R sits at the grid index -R; the loops above fill +R.
+    return _mirror_lattice_index(HRs), metadata
 
 
 # ═══════════════════════════════════════════════════════════════

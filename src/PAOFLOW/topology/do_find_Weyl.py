@@ -79,13 +79,16 @@ def build_Hk(
     .. math::
 
         H(\\mathbf{k}) = \\sum_{\\mathbf{R}}
-                         H(\\mathbf{R})\\,e^{2\\pi i\\mathbf{k}\\cdot\\mathbf{R}}
+                         H(\\mathbf{R})\\,e^{-2\\pi i\\mathbf{k}\\cdot\\mathbf{R}}
+
+    (PAOFLOW's convention, ``HRs = ifftn(Hks)``; the sign was ``+`` until 15 November 2026,
+    which put the nodes of a crystal without P and T at :math:`-\\mathbf{k}`).
 
     The dot product :math:`\\mathbf{k}\\cdot\\mathbf{R}` is accumulated in
     real arithmetic before exponentiation, and the R-sum is a single
     ``ZGEMV`` call with no temporaries.
     """
-    phase = np.exp((2.0j * np.pi) * (R @ kq))
+    phase = np.exp((-2.0j * np.pi) * (R @ kq))
     return HRpack.dot(phase).reshape(nawf, nawf)
 
 
@@ -121,7 +124,7 @@ def build_Hk_batch(
     flops), so amortising that traffic over a block of k-points is much
     faster per point.
     """
-    phases = np.exp((2.0j * np.pi) * (kq @ R.T))
+    phases = np.exp((-2.0j * np.pi) * (kq @ R.T))
     return phases.dot(HRpack.T).reshape(-1, nawf, nawf)
 
 

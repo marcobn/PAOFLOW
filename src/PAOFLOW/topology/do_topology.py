@@ -409,7 +409,7 @@ def band_loop_H(HRaux, R, kq, nawf, nspin):
     .. math::
 
         H(\\mathbf{k}) = \\sum_{\\mathbf{R}}
-            H(\\mathbf{R})\\, e^{2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}
+            H(\\mathbf{R})\\, e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}
 
     via a tensor contraction between ``HRaux`` and the phase matrix.
     This is a local variant of the same function in ``do_bands.py``,
@@ -417,7 +417,7 @@ def band_loop_H(HRaux, R, kq, nawf, nspin):
     ``DataController`` instance.
     """
     kdot = np.zeros((kq.shape[1], R.shape[0]), dtype=complex, order='C')
-    kdot = np.tensordot(R, 2.0j * np.pi * kq, axes=([1], [0]))
+    kdot = np.tensordot(R, -2.0j * np.pi * kq, axes=([1], [0]))  # H(k), PAOFLOW's convention
     np.exp(kdot, kdot)
 
     Haux = np.zeros((nawf, nawf, kq.shape[1], nspin), dtype=complex, order='C')

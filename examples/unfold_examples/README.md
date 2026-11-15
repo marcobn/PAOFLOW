@@ -9,5 +9,6 @@ Examples for the band unfolding algorithm:
 DFT route: a projected PAOFLOW Hamiltonian is unfolded the same way, with the model dicts built by
 `PAOFLOW.models.band_unfold.paoflow_to_model_dict(paoflow.data_controller)` for the primitive cell and the
 supercell (both runs after `pao_hamiltonian()`, same pseudopotential and basis). The helper records the
-Fourier convention of the projected Hamiltonian (`fourier_sign = -1`), which differs from the model
-Hamiltonians' and which the spectral weights are sensitive to (see docs/internals/sk-edtb.md).
+Fourier convention of the projected Hamiltonian (`fourier_sign = -1`), which the spectral weights are
+sensitive to. Since 15 November 2026 the Slater-Koster and EDTB builders store their hoppings in the same
+convention as DFT, so a model and a DFT run can be mixed freely (see docs/internals/sk-edtb.md).

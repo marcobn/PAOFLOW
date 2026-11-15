@@ -188,7 +188,7 @@ def band_loop_H(HRaux, kq, R):
     for ik in range(nkpi):
         for ispin in range(nspin):
             auxh[:, :, ik, ispin] = np.sum(
-                HRaux[:, :, :, ispin] * np.exp(2.0j * np.pi * kq[ik, :].dot(R[:, :].T)), axis=2
+                HRaux[:, :, :, ispin] * np.exp(-2.0j * np.pi * kq[ik, :].dot(R[:, :].T)), axis=2
             )
 
     return auxh
@@ -218,7 +218,7 @@ def band_loop_S(SRaux, kq, R):
 
     for ik in range(nkpi):
         auxs[:, :, ik] = np.sum(
-            SRaux[:, :, :] * np.exp(2.0j * np.pi * kq[ik, :].dot(R[:, :].T)), axis=2
+            SRaux[:, :, :] * np.exp(-2.0j * np.pi * kq[ik, :].dot(R[:, :].T)), axis=2
         )
 
     return auxs

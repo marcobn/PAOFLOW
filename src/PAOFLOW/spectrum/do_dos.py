@@ -81,6 +81,38 @@ def do_dos(data_controller, emin, emax, ne, delta):
         # return dos if rank==0 else None
 
 
+#: Adaptive widths below this (eV) are numerically zero: the velocity vanishes by symmetry on the grid
+#: (band extrema and saddle points of a model, a decoupled band), and a Gaussian of zero width is 0/0.
+ZERO_WIDTH = 1.0e-6
+
+
+def resolvable_widths(widths: np.ndarray, spacing: float) -> np.ndarray:
+    """Adaptive widths with the numerically zero ones replaced by the energy-grid spacing.
+
+    Parameters
+    ----------
+    widths : ndarray
+        Yates widths ``deltakp`` (eV), any shape.
+    spacing : float
+        Spacing of the energy grid of the DOS (eV).
+
+    Returns
+    -------
+    ndarray
+        ``widths`` with every entry below :data:`ZERO_WIDTH` set to ``max(spacing, ZERO_WIDTH)``;
+        finite widths are unchanged.
+
+    Notes
+    -----
+    The width :math:`a\\,|\\nabla_{\\mathbf k}\\varepsilon|\\,\\delta k` vanishes where the velocity does,
+    exactly on the grid points of high symmetry of a tight-binding model and on flat bands. Those
+    states would otherwise give ``NaN`` (zero width) or a spike of height :math:`\\sim 1/\\eta` at one
+    energy; with the grid spacing each one counts once. Widths that are small but finite keep the
+    warning of :func:`do_dos_adaptive` and the ``min_width`` option of ``adaptive_smearing``.
+    """
+    return np.where(widths < ZERO_WIDTH, max(float(spacing), ZERO_WIDTH), widths)
+
+
 def do_dos_adaptive(data_controller, emin, emax, ne):
     """Compute the total density of states with adaptive smearing.
 
@@ -137,7 +169,7 @@ def do_dos_adaptive(data_controller, emin, emax, ne):
     spacing = ene[1] - ene[0] if ne > 1 else 0.0
     for ispin in range(attr['nspin']):
         E_k = arry['E_k'][:, :bnd, ispin].reshape(arry['E_k'].shape[0] * bnd)
-        delta = np.ravel(arry['deltakp'][:, :bnd, ispin], order='C')
+        delta = resolvable_widths(np.ravel(arry['deltakp'][:, :bnd, ispin], order='C'), spacing)
         narrow = int(np.count_nonzero(delta < spacing))
         if narrow and rank == 0:
             print(

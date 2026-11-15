@@ -453,7 +453,7 @@ def band_loop_H(data_controller, kq_aux):
     .. math::
 
         H(\\mathbf{k}) = \\sum_{\\mathbf{R}} H(\\mathbf{R})
-                         e^{2\\pi i \\mathbf{k} \\cdot \\mathbf{R}}
+                         e^{-2\\pi i \\mathbf{k} \\cdot \\mathbf{R}}
 
     using a single ``numpy.tensordot`` contraction over real-space lattice
     vectors ``R``.
@@ -477,7 +477,9 @@ def band_loop_H(data_controller, kq_aux):
     nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
 
     HRs = np.reshape(arry['HRs'], (nawf, nawf, nk1 * nk2 * nk3, nspin), order='C')
-    kdot = np.tensordot(arry['R'], 2.0j * np.pi * kq_aux, axes=([1], [0]))
+    kdot = np.tensordot(
+        arry['R'], -2.0j * np.pi * kq_aux, axes=([1], [0])
+    )  # H(k), PAOFLOW's convention
     np.exp(kdot, kdot)
     Haux = np.zeros((nawf, nawf, nksize, nspin), dtype=complex, order='C')
 

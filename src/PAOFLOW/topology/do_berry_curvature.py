@@ -181,7 +181,7 @@ def do_berry_curvature(data_controller):
 
 def band_loop_H(HRaux, R, kq, nawf, nspin):
     kdot = np.zeros((kq.shape[1], R.shape[0]), dtype=complex, order='C')
-    kdot = np.tensordot(R, 2.0j * np.pi * kq, axes=([1], [0]))
+    kdot = np.tensordot(R, -2.0j * np.pi * kq, axes=([1], [0]))  # H(k), PAOFLOW's convention
     np.exp(kdot, kdot)
 
     Haux = np.zeros((nawf, nawf, kq.shape[1], nspin), dtype=complex, order='C')

@@ -719,6 +719,19 @@ optical gap carry that model dependence.
 | Berry-curvature dipole | doped strained gapped graphene (T-even), 300² | 0.2 %, ∝ τ, Drude = 0 |
 | τ(ε) wiring, guards, orchestrator files and plots | | |
 
+**Reading the injection rate from the engine.** $-\mathrm{Im}\,\sigma/\tau$ of the `fermi_sea_intra` channel equals the
+injection rate (the δ-function `injectc`) only for $\omega\tau\gg1$. At finite τ the channel also holds the
+τ-independent virtual populations of the hybrid kernel. In a metal the Fermi-surface channels add τ-independent
+circular terms as well: the Berry-curvature dipole $\tau/(1-i\omega\tau)\to1/\omega$, which is even under time
+reversal and allowed. In the trace these terms appear divided by τ.
+
+- CoSi (80³, 10 K): the population channel gives 4.055 quanta at τ = 2000 fs, the δ-function value. At τ = 20 fs
+  (ωτ = 1.5–7.6) it gives 3.65.
+- Two-band Weyl model with its node at $E_F$: within 1 % at τ ≥ 200 fs, 6–8 % off at 20 fs, scaling as 1/τ.
+
+Use a long τ, or the δ-function path, for the rate. The time-odd Drude residual grows as τ², so at long τ it dominates
+the total circular current until k is converged (`validation/nlo_metals/CoSi/REPORT.md`, 15 Nov 2026).
+
 The physical models of these tables (gapped and strained graphene, the Haldane model, the Rice–Mele chain, the
 two-band Weyl semimetal, the single bands) are library models, `PAOFLOW.models.models` (`honeycomb_model`,
 `rice_mele_model`, `weyl_model`, `single_band_model`, each a `HoppingModel`), also reachable as

@@ -4,8 +4,8 @@ Mirrors ``spectrum.do_bands`` scaffolding exactly — same k-path generation
 (``kpnts_interpolation_mesh``, including the Angstrom/Bohr ``alat`` dance
 and the in-place rotation of ``kq`` to Cartesian by ``b_vectors``), same
 MPI k-scatter — but replaces the dense Fourier sum + ``eigh`` with the
-fixed-pattern sparse assembly (``sign=+1``, the band-path phase
-convention) and the iterative ``solve_lowest``, computing only the lowest
+fixed-pattern sparse assembly (``sign=-1``, PAOFLOW's convention, the one of
+the dense band path since 15 November 2026) and the iterative ``solve_lowest``, computing only the lowest
 ``nsel`` bands.  Eigenvectors are used solely to warm-start the next
 k-point and are never stored.
 
@@ -154,7 +154,7 @@ def do_bands_sparse(
         v0 = None
         k0 = None
         for ik in range(nk_local):
-            hk = sparse_h.assemble_hk(kq_aux[ik], ispin=ispin, sign=+1, cart=True)
+            hk = sparse_h.assemble_hk(kq_aux[ik], ispin=ispin, sign=-1, cart=True)
             if interior is None:
                 E, V = solve_lowest(hk, nsel, v0=v0, hk_solver=hk_solver)
                 E_k[ik, :, ispin] = E
