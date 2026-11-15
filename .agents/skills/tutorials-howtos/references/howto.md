@@ -23,23 +23,13 @@ A how-to's code is not executed by the docs build. Run it as a script (the base 
 
 ## Registration
 
-Add a grid card and a toctree entry to `docs/tutorials/howtos/index.md`:
+Add a list entry, a link whose text is the page title, and a toctree entry to `docs/tutorials/howtos/index.md`:
 
 ```markdown
-:::{grid-item-card}
-:link: <task>
-:link-type: doc
-:class-card: landing-card
-
-{octicon}`<icon>;1.8em;sd-text-muted`
-
-**<Title without "How to">**
-
-<One sentence: what you can do after reading the page.>
-:::
+- [How to <verb> <object>](<task>.md)
 ```
 
-and `<task>` under the page's `{toctree}`. The How-Tos grid on `docs/tutorials/index.md` lists featured how-tos only; add the card there too if the user asks.
+and `<task>` under the page's `{toctree}`. How-tos are not shown as grid cards. The How-Tos list on `docs/tutorials/index.md` holds featured how-tos only; add the entry there too (`howtos/<task>.md`) if the user asks.
 
 ## Before and after
 

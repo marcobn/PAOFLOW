@@ -27,7 +27,7 @@ When a request fits neither type (a long derivation, a design note), say so: der
 2. **Find the equation the code evaluates** for each step that gets an equation. Write it down from the source, signs, factors, unit conversions and normalisations included. If it differs from the textbook form, the page shows what the code does and you report the discrepancy to the user. Never write the textbook version silently, and never change the code to match the page.
 3. **Run the code** (see "Running the code"). Every number, table and figure on the page comes from that run.
 4. **Write the page** from the template, in the style below.
-5. **Register it**: a grid card plus a toctree entry (see the templates).
+5. **Register it**: a tutorial gets a grid card plus a toctree entry, a how-to a list entry (a link with its title) plus a toctree entry (see the templates).
 6. **Run the checks** at the end of this file and fix what they report. They are a floor, not the whole review.
 7. **Report** briefly: what you wrote, every place where code and textbook physics disagree, every number or reference you could not confirm, and every cell left for the user to run, and every concept whose home page or internals page is missing (see "Say it once" and "Building the explanation").
 
@@ -256,8 +256,8 @@ for name in sys.argv[1:]:
                     say("no-output", f"code cell without stored output: {text.strip().splitlines()[0][:60]!r}")
     if path.parent.name == "howtos":
         idx = (path.parent / "index.md").read_text()
-        if path.stem not in re.findall(r":link:\s*(\S+)", idx) or not re.search(rf"^{path.stem}$", idx, re.M):
-            say("registration", "missing grid card or toctree entry in docs/tutorials/howtos/index.md")
+        if not re.search(rf"^- \[.+\]\({path.stem}\.md\)$", idx, re.M) or not re.search(rf"^{path.stem}$", idx, re.M):
+            say("registration", "missing list entry or toctree entry in docs/tutorials/howtos/index.md")
         m = re.search(r"^Base examples?:(.*)$", allmd, re.M)
         paths = re.findall(r"(?<![/\w])examples/[\w./-]+", m.group(1)) if m else []
         if not paths:

@@ -6,47 +6,10 @@ How-Tos assume you have already worked through [Tutorial 01](../tutorial01.ipynb
 
 ---
 
-::::{grid} 1 2 2 2
-:gutter: 4
-:class-container: tutorials-grid
-
-:::{grid-item-card}
-:link: sparse-workflow
-:link-type: doc
-:class-card: landing-card
-
-{octicon}`stack;1.8em;sd-text-muted`
-
-**Large supercells on the sparse backend**
-
-Switch a script to the sparse backend, choose the truncation of the Hamiltonian and the energy range of the solve, and check the result against the dense pipeline.
-:::
-
-:::{grid-item-card}
-:link: qo_analysis
-:link-type: doc
-:class-card: landing-card
-
-{octicon}`pulse;1.8em;sd-text-muted`
-
-**Comparing pyskeaf orbits with quantum oscillations**
-
-Assign measured dHvA/SdH/torque frequencies to Fermi-surface sheets, with chance baselines, convergence and breakdown checks, and an agentic workflow.
-:::
-
-:::{grid-item-card}
-:link: plotting
-:link-type: doc
-:class-card: landing-card
-
-{octicon}`graph;1.8em;sd-text-muted`
-
-**Plotting PAOFLOW output with GPAO**
-
-Plot bands, DOS and PDOS, Berry curvature, spin Hall conductivity, transport tensors and Fermi surfaces from the files of a finished run.
-:::
-
-::::
+- [How to run large systems on the sparse backend](sparse-workflow.md)
+- [Agentic analysis of quantum oscillations (`PAOFLOW.agentic.qo_analysis`)](qo_analysis.md)
+- [How to plot PAOFLOW output with GPAO](plotting.md)
+- [How to run PAOFLOW on a tight-binding model](tight-binding-model.md)
 
 ```{toctree}
 :hidden:
@@ -55,4 +18,5 @@ Plot bands, DOS and PDOS, Berry curvature, spin Hall conductivity, transport ten
 sparse-workflow
 qo_analysis
 plotting
+tight-binding-model
 ```
