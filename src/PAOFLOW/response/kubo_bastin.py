@@ -98,13 +98,17 @@ def _occupation_sum(
     smearing = attr.get('smearing') if 'deltakp' in arry else None
     for ispin in range(omega.shape[2]):
         energies = arry['E_k'][:, :, ispin]
+        # an adaptive width of exactly zero (a band with zero velocity) would give 0/0
+        widths = arry['deltakp'][:, :, ispin] if smearing else None
+        if widths is not None:
+            widths = np.where(widths > 0.0, widths, 1.0e-8)
         for i, m in enumerate(mu):
             if kT > 0.0:
                 occupation = 0.5 * (1.0 - np.tanh(0.5 * (energies - m) / kT))
             elif smearing == 'gauss':
-                occupation = intgaussian(energies, m, arry['deltakp'][:, :, ispin])
+                occupation = intgaussian(energies, m, widths)
             elif smearing == 'm-p':
-                occupation = intmetpax(energies, m, arry['deltakp'][:, :, ispin])
+                occupation = intmetpax(energies, m, widths)
             else:
                 occupation = 0.5 * (1.0 - np.sign(energies - m))
             total[i] += np.sum(occupation * omega[:, :, ispin])

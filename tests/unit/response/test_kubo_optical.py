@@ -108,3 +108,27 @@ def test_output_file(tmp_path):
     with open(os.path.join(str(tmp_path), 'kubo_optical_charge_current_xy.dat')) as f:
         header = f.read(600)
     assert 'electron charge' in header and 'computed spin configuration' in header
+
+
+def test_flat_band_does_not_poison_the_occupations(tmp_path):
+    """A decoupled band with zero velocity has zero adaptive width; the Drude term must stay finite."""
+    from PAOFLOW import PAOFLOW
+    from PAOFLOW.models.models import single_band_model
+
+    model = single_band_model(
+        {(1, 0, 0): -1.0, (0, 1, 0): -1.0}, np.diag([1.0, 1.0, 10.0]), 6.0, 0.6, (3, 3, 1)
+    )
+    p = PAOFLOW.PAOFLOW(model=model, outputdir=str(tmp_path), smearing='gauss', verbose=False)
+    p.interpolated_hamiltonian(nfft1=48, nfft2=48, nfft3=1)
+    p.pao_eigh()
+    p.gradient_and_momenta()
+    p.adaptive_smearing()
+    assert np.min(p.data_controller.data_arrays['deltakp']) == 0.0  # the remote band
+    o = p.kubo_optical_response(
+        'charge_current', ['xx'], eta=0.05, omega_max=1.0, nomega=5, mu=-1.0, write=False
+    )
+    assert np.all(np.isfinite(o['xx']['total'])) and o['xx']['intraband'][0].real > 0
+    d = p.kubo_response(
+        'charge_current', ['xx'], terms=('intrinsic',), emin=-1.0, emax=-1.0, ne=1, write=False
+    )
+    assert np.all(np.isfinite(d['xx']['intrinsic']))

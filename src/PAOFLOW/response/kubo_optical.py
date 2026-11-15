@@ -44,6 +44,9 @@ if TYPE_CHECKING:
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
+#: Width (eV) that replaces an adaptive smearing width of exactly zero in the occupations.
+MIN_WIDTH = 1.0e-8
+
 OPTICAL_TERMS = ('total', 'interband', 'intraband')
 
 
@@ -78,6 +81,9 @@ def band_occupations(
         Same shape as ``energies``.
     """
     smearing = data_controller.data_attributes.get('smearing') if widths is not None else None
+    if widths is not None:
+        # a band with zero velocity (e.g. a flat or decoupled band) has zero adaptive width: 0/0 otherwise
+        widths = np.where(widths > 0.0, widths, MIN_WIDTH)
     if kT > 0.0:
         occupation = 0.5 * (1.0 - np.tanh(0.5 * (energies - mu) / kT))
         return occupation, occupation * (1.0 - occupation) / kT
