@@ -178,6 +178,38 @@ def charge_sign(observable: str) -> float:
     return 1.0 if observable == 'charge_current' else -1.0
 
 
+def physical_bands(data_controller: 'DataController', bands: int | None = None) -> int:
+    """Number of bands, from the lowest, that enter the band sums of the Kubo engines.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Reads ``E_k``, ``bnd`` and ``shift``.
+    bands : int, optional
+        Explicit number of bands; ``None`` selects the default.
+
+    Returns
+    -------
+    int
+        ``bands`` if given; otherwise, for a DFT run (finite projectability ``shift``), ``bnd``, the bands
+        below the shift; for a model (``shift = inf``), every band.
+
+    Notes
+    -----
+    The PAO Hamiltonian places the complement of the projected subspace at the energy ``shift``: the bands
+    above ``bnd`` are not physical states. Their interband matrix elements with the occupied bands are
+    artefacts. With them, the static dielectric constant of Si changes by 20 % and the spin Hall
+    conductivity of Pt by 2.5 % (November 2026). ``dielectric_tensor`` (``do_epsilon``) uses the same limit.
+    """
+    arry, attr = data_controller.data_dicts()
+    total = arry['E_k'].shape[1]
+    if bands is not None:
+        return max(1, min(int(bands), total))
+    if np.isfinite(attr.get('shift', np.inf)) and attr.get('bnd'):
+        return max(1, min(int(attr['bnd']), total))
+    return total
+
+
 def unit_factor(data_controller: 'DataController', observable: str, two_dimensional: bool) -> float:
     """Factor from the k-averaged kernel sum (eV, bohr) to the unit of :data:`OBSERVABLES`.
 

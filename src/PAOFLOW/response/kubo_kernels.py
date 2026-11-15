@@ -317,25 +317,25 @@ def optical_kernel(
     eta: float,
     degenerate_threshold: float = 1.0e-4,
 ) -> tuple[NDArray[np.complex128], NDArray[np.complex128]]:
-    """Frequency-dependent (Kubo-Greenwood) response, interband and intraband, summed over k-points.
+    r"""Frequency-dependent (Kubo-Greenwood) response, interband and intraband, summed over k-points.
 
     Parameters
     ----------
     energies : ndarray, shape ``(nb,)`` or ``(nk, nb)``
         Band energies (eV).
     pair : ndarray, shape ``(nb, nb)`` or ``(nk, nb, nb)``, complex
-        :math:`P_{nm} = A_{nm}(\\\\hbar v_b)_{mn}`.
+        :math:`P_{nm} = A_{nm}(\hbar v_b)_{mn}`.
     occupations : ndarray, shape like ``energies``
         :math:`f_n` at the chemical potential.
     fermi_window : ndarray, shape like ``energies``
-        :math:`-\\\\partial f/\\\\partial\\\\varepsilon` at :math:`\\\\varepsilon_n` (1/eV).
+        :math:`-\partial f/\partial\varepsilon` at :math:`\varepsilon_n` (1/eV).
     omegas : ndarray, shape ``(nw,)``
-        Photon energies :math:`\\\\hbar\\\\omega` (eV).
+        Photon energies :math:`\hbar\omega` (eV).
     eta : float
-        Broadening (eV): :math:`\\\\eta` of the interband transitions, :math:`2\\\\eta = \\\\hbar/\\\\tau` of the
-        Drude term.
+        Broadening (eV): the half-width :math:`\eta` of the interband transitions,
+        :math:`\gamma = 2\eta = \hbar/\tau` the damping of the oscillators and of the Drude term.
     degenerate_threshold : float
-        Pairs with :math:`|\\\\varepsilon_m-\\\\varepsilon_n|` below it (eV) belong to the intraband term.
+        Pairs with :math:`|\varepsilon_m-\varepsilon_n|` below it (eV) belong to the intraband term.
 
     Returns
     -------
@@ -343,24 +343,47 @@ def optical_kernel(
 
     Notes
     -----
-    With :math:`\\\\varepsilon_{mn} = \\\\varepsilon_m - \\\\varepsilon_n` and the interband position
-    :math:`r^b_{mn} = -i(\\\\hbar v_b)_{mn}/\\\\varepsilon_{mn}` (length gauge),
+    With :math:`\varepsilon_{mn} = \varepsilon_m - \varepsilon_n`, the interband position
+    :math:`r^b_{mn} = -i(\hbar v_b)_{mn}/\varepsilon_{mn}` (length gauge) and
+    :math:`D_{mn}(\omega) = \varepsilon_{mn}^2 - (\hbar\omega)^2 - i\gamma\hbar\omega`,
 
     .. math::
 
-        \\\\chi^{\\\\rm inter}(\\\\omega) = -i\\\\sum_{\\\\varepsilon_{mn}\\\\ne0}
-            \\\\frac{(f_n-f_m)\\\\,P_{nm}}{\\\\varepsilon_{mn}\\\\,(\\\\varepsilon_{mn}-\\\\hbar\\\\omega-i\\\\eta)},
-        \\\\qquad
-        \\\\chi^{\\\\rm intra}(\\\\omega) = \\\\frac{i}{\\\\hbar\\\\omega+2i\\\\eta}
-            \\\\sum_{\\\\varepsilon_{mn}=0}\\\\Big(-\\\\frac{\\\\partial f}{\\\\partial\\\\varepsilon}\\\\Big)_n P_{nm}.
+        \chi^{\rm inter}(\omega) = -i\sum_{\varepsilon_{mn}\ne0}
+            \frac{(f_n-f_m)\,P_{nm}\,(\varepsilon_{mn}+\hbar\omega)}{\varepsilon_{mn}\,D_{mn}(\omega)},
+        \qquad
+        \chi^{\rm intra}(\omega) = \frac{i}{\hbar\omega+i\gamma}
+            \sum_{\varepsilon_{mn}=0}\Big(-\frac{\partial f}{\partial\varepsilon}\Big)_n P_{nm}.
 
-    At :math:`\\\\omega = 0` the antisymmetric part of the interband term tends (:math:`\\\\eta\\\\to0`) to
-    the Berry-curvature sea of :func:`berry_curvature` (:math:`-\\\\sum_n f_n\\\\Omega_n`) and the
-    intraband term is the Boltzmann (Drude) limit of the Fermi-surface term,
-    :math:`\\\\sum_n(-f'_n)P_{nn}/2\\\\eta`. The degenerate blocks enter the intraband term as a whole
-    (:math:`\\\\mathrm{Tr}_D\\\\,P`, gauge invariant). The Hall part of the interband term is
-    :math:`\\\\sum_{nm}(f_n-f_m)\\\\,\\\\mathrm{Im}P_{nm}/(\\\\varepsilon_{mn}^2-(\\\\hbar\\\\omega+i\\\\eta)^2)`
-    (Yao et al., PRL 92, 037204 (2004), Eq. 7).
+    For Hermitian :math:`A` and :math:`B` (:math:`P_{mn} = P_{nm}^*`), the pairs
+    :math:`(n, m)` and :math:`(m, n)` together give
+
+    .. math::
+
+        -\frac{2i\,(f_n-f_m)\,\mathrm{Re}P_{nm}\,\hbar\omega}{\varepsilon_{mn}D_{mn}}
+        + \frac{2\,(f_n-f_m)\,\mathrm{Im}P_{nm}}{D_{mn}},
+
+    the damped (Lorentz) oscillator of each transition. This is the lineshape of epsilon.x and of
+    :func:`~PAOFLOW.response.do_epsilon.do_dielectric_tensor`, near resonance a Lorentzian of
+    half-width :math:`\gamma/2 = \eta`. The textbook substitution
+    :math:`\hbar\omega\to\hbar\omega+i\eta` in :math:`1/(\varepsilon_{mn}-\hbar\omega)` gives the same
+    resonances, but an insulator then conducts at :math:`\omega = 0`
+    (:math:`\mathrm{Re}\,\sigma_{aa}(0)\propto\eta`, a sub-gap :math:`\varepsilon_2\propto\eta/\omega`).
+    The oscillator form does not:
+
+    - :math:`\mathrm{Re}\,\sigma_{aa}\propto\omega^2` as :math:`\omega\to0`;
+    - at :math:`\omega = 0` the Hall part is :math:`\sum(f_n-f_m)\mathrm{Im}P_{nm}/\varepsilon_{mn}^2`,
+      the clean-limit Berry-curvature sea of :func:`berry_curvature` (the ``intrinsic`` term), at any
+      :math:`\eta`;
+    - as :math:`\varepsilon_{mn}\to0` (at :math:`\omega\ne0`) a transition becomes a Drude term with
+      the same damping :math:`\gamma`;
+    - the high-frequency tail, hence the f-sum rule, is that of the undamped response.
+
+    The degenerate blocks enter the intraband term as a whole (:math:`\mathrm{Tr}_D\,P`, gauge
+    invariant); at :math:`\omega = 0` it is the Boltzmann limit of the Fermi-surface term,
+    :math:`\sum_n(-f'_n)P_{nn}/2\eta`. The Hall part is Eq. 7 of Yao et al.,
+    PRL 92, 037204 (2004), with :math:`(\hbar\omega+i\eta)^2` replaced by
+    :math:`(\hbar\omega)^2 + i\gamma\hbar\omega`.
     """
     energies = np.atleast_2d(energies)
     pair = pair.reshape((-1,) + pair.shape[-2:])
@@ -375,8 +398,10 @@ def optical_kernel(
     weights = weights / gaps
     keep = weights != 0.0
     weights, gaps = weights[keep], gaps[keep]
+    damping = 2.0 * eta
     interband = np.empty(omegas.size, dtype=complex)
     for i, omega in enumerate(omegas):
-        interband[i] = -1j * np.sum(weights / (gaps - omega - 1j * eta))
-    intraband = 1j * drude_weight / (omegas + 2j * eta)
+        oscillator = gaps * gaps - omega * omega - 1j * damping * omega
+        interband[i] = -1j * np.sum(weights * (gaps + omega) / oscillator)
+    intraband = 1j * drude_weight / (omegas + 1j * damping)
     return interband, intraband

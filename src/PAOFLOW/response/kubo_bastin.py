@@ -43,6 +43,7 @@ from .kubo_operators import (
     band_matrices,
     component_label,
     parse_component,
+    physical_bands,
     unit_factor,
 )
 
@@ -97,9 +98,10 @@ def _occupation_sum(
     total = np.zeros(mu.size)
     smearing = attr.get('smearing') if 'deltakp' in arry else None
     for ispin in range(omega.shape[2]):
-        energies = arry['E_k'][:, :, ispin]
+        nb = omega.shape[1]
+        energies = arry['E_k'][:, :nb, ispin]
         # an adaptive width of exactly zero (a band with zero velocity) would give 0/0
-        widths = arry['deltakp'][:, :, ispin] if smearing else None
+        widths = arry['deltakp'][:, :nb, ispin] if smearing else None
         if widths is not None:
             widths = np.where(widths > 0.0, widths, 1.0e-8)
         for i, m in enumerate(mu):
@@ -127,6 +129,7 @@ def kubo_bastin_response(
     projector: NDArray[np.complex128] | None = None,
     operator: NDArray[np.complex128] | None = None,
     two_dimensional: bool = False,
+    bands: int | None = None,
 ) -> dict[str, dict[str, NDArray[np.float64]]]:
     """Kubo-Bastin response of ``observable`` to an electric field, every term and component.
 
@@ -157,6 +160,9 @@ def kubo_bastin_response(
         Matrix of ``observable='custom'``.
     two_dimensional : bool
         Sheet values (e^2/hbar) for the currents.
+    bands : int, optional
+        Number of bands in the sums (:func:`.kubo_operators.physical_bands`; default the bands below the
+        projectability shift of a DFT run, every band of a model).
 
     Returns
     -------
@@ -193,8 +199,8 @@ def kubo_bastin_response(
     for component in components:
         indices = parse_component(observable, component)
         local = {name: np.zeros(grid.size) for name in ('surface', 'intraband', 'sea')}
-        omega = np.zeros((nk_local, arry['E_k'].shape[1], nspin)) if 'intrinsic' in terms else None
-        nb = arry['E_k'].shape[1]
+        nb = physical_bands(data_controller, bands)
+        omega = np.zeros((nk_local, nb, nspin)) if 'intrinsic' in terms else None
         block = max(1, min(BLOCK_ELEMENTS // (grid.size * nb), BLOCK_ELEMENTS // (nb * nb)))
         for ispin in range(nspin):
             for start in range(0, nk_local, block):
@@ -204,13 +210,14 @@ def kubo_bastin_response(
                     response, field = band_matrices(
                         data_controller, observable, indices, ik, ispin, projector, operator
                     )
+                    response, field = response[:nb, :nb], field[:nb, :nb]
                     pairs[i] = response * field.T
                     if omega is not None:
                         omega[ik, :, ispin] = -kernels.berry_curvature(
-                            arry['E_k'][ik, :, ispin], response, field, regulariser, 1.0e-12
+                            arry['E_k'][ik, :nb, ispin], response, field, regulariser, 1.0e-12
                         )
                 if exact:
-                    energies = arry['E_k'][start : start + len(ks), :, ispin]
+                    energies = arry['E_k'][start : start + len(ks), :nb, ispin]
                     surface, intraband = kernels.surface_kernel(energies, pairs, grid, eta)
                     local['surface'] += surface
                     local['intraband'] += intraband

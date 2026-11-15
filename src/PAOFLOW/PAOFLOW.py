@@ -1920,7 +1920,12 @@ class PAOFLOW:
           (:meth:`position_dipole_correction`), the term that completes the
           commutator ``i[H, r]`` when the position operator is no longer reduced
           to the orbital centres.  ``None`` falls back to
-          ``attr['position_dipoles']`` (False if unset).
+          ``attr['position_dipoles']``; if that is unset, the dipoles are on for
+          internal projections of a QE run (:meth:`projections`, whose radial
+          tables they need) and off otherwise (projwfc, VASP, models).  When the
+          default turns them on and they cannot be built for the basis (e.g. a
+          doubled cell), a warning is printed and the run goes on without them;
+          ``True`` raises instead.
           position_dipole_level (str): ``'full'`` (Löwdin-orthogonalised basis)
           or ``'intra-atomic'`` (on-site blocks only).
           nonlocal_velocity, nonlocal_velocity_inject, nonlocal_velocity_sign:
@@ -2003,7 +2008,11 @@ class PAOFLOW:
                 '(docs/internals/position-dipoles.md).'
             )
         if position_dipoles is None:
-            dipoles_enabled = bool(attr.get('position_dipoles', False))
+            position_dipoles = attr.get('position_dipoles')
+        automatic = position_dipoles is None
+        if automatic:
+            # internal projections of a QE run: the PAO radial tables of the basis are at hand
+            dipoles_enabled = bool(arrays.get('atomic_basis')) and attr.get('dft', 'QE') == 'QE'
         else:
             dipoles_enabled = bool(position_dipoles)
         if dipoles_enabled:
@@ -2013,7 +2022,14 @@ class PAOFLOW:
                 nb = arrays['pksp'].shape[2]
                 bdiag = np.arange(nb)
                 arrays['velkp_bare'] = np.ascontiguousarray(arrays['pksp'][:, :, bdiag, bdiag, :])
-            self.position_dipole_correction(level=position_dipole_level)
+            applied = self.position_dipole_correction(
+                level=position_dipole_level, strict=not automatic
+            )
+            if automatic and applied and self.rank == 0 and attr.get('verbose'):
+                print(
+                    'Position dipoles added to the velocity (internal projections; '
+                    'gradient_and_momenta(position_dipoles=False) switches them off)'
+                )
 
         ### DEV: Proposed to remove this and calculate pksp or velkp when required
         # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
@@ -2028,7 +2044,8 @@ class PAOFLOW:
         n_q: int = 600,
         pao_tol: float = 1.0e-3,
         inject: bool = True,
-    ):
+        strict: bool = True,
+    ) -> bool:
         r"""Position dipoles of the PAO orbitals in the velocity operator.
 
         Builds :math:`\mathbf d(\mathbf k)` of the Löwdin-orthonormal PAO basis
@@ -2050,13 +2067,17 @@ class PAOFLOW:
             Radial-table parameters.
         inject : bool, optional
             ``False`` only builds the tables (``'_PD_tables'``) without touching ``dHksp``.
+        strict : bool, optional
+            ``True`` (default): a failure is reported and raised (``abort_on_exception``).
+            ``False`` (the automatic default of :meth:`gradient_and_momenta`): a failure on any
+            rank prints a warning and leaves ``dHksp`` unchanged on every rank.
 
         Returns
         -------
-        None
-            Modifies ``arrays['dHksp']`` in place; caches the tables under
-            ``'_PD_tables'`` / ``'_PD_on_site'`` and the PAO catalog under
-            ``'_NL_pao_catalog'``.
+        bool
+            Whether the dipoles were built (and injected). Modifies ``arrays['dHksp']`` in
+            place; caches the tables under ``'_PD_tables'`` / ``'_PD_on_site'`` and the PAO
+            catalog under ``'_NL_pao_catalog'``.
 
         Notes
         -----
@@ -2097,15 +2118,42 @@ class PAOFLOW:
                 local = np.ascontiguousarray(_build(kgrid[:, mine]))
             else:
                 local = _build(arry['kgrid'])
+            n = arry['dHksp'].shape[2]
+            if inject and local.shape[1:] != (3, n, n):
+                raise ValueError(
+                    'the dipoles of the PAO basis (%d orbitals) do not match dHksp (%d)'
+                    % (local.shape[-1], n)
+                )
 
+            failure = None
+        except Exception as e:
+            if strict:
+                self.report_exception('position_dipole_correction')
+                if attr.get('abort_on_exception', True):
+                    raise e
+                return False
+            failure = e
+        if not strict:
+            from mpi4py import MPI
+
+            if self.comm.allreduce(failure is not None, op=MPI.LOR):
+                if self.rank == 0:
+                    print(
+                        'Warning: position dipoles skipped (%s); the velocity keeps the '
+                        'orbital-centre approximation' % (failure or 'failed on another rank')
+                    )
+                return False
+        try:
             if inject:
                 inject_dipole_velocity_into_dHksp(arry['dHksp'], arry['E_k'], arry['v_k'], local)
         except Exception as e:
             self.report_exception('position_dipole_correction')
             if attr.get('abort_on_exception', True):
                 raise e
+            return False
 
         self.report_module_time('Position dipoles')
+        return True
 
     def adaptive_smearing(
         self,
@@ -6925,6 +6973,7 @@ class PAOFLOW:
         operator: np.ndarray | None = None,
         twoD: bool = False,
         write: bool = True,
+        bands: int | None = None,
     ) -> dict:
         """Linear response to an electric field from the Kubo-Bastin formula at constant broadening.
 
@@ -6964,6 +7013,11 @@ class PAOFLOW:
             Sheet values (e^2/hbar) for the currents.
         write : bool
             Write ``kubo_<observable>_<component>.dat`` (mu and one column per term).
+        bands : int, optional
+            Number of bands, from the lowest, in the band sums. Default: the bands below the
+            projectability shift of a DFT run (``bnd``; the bands above it are the shifted complement of
+            the projection, not physical states), every band of a model. ``dielectric_tensor`` uses the
+            same limit.
 
         Returns
         -------
@@ -7034,6 +7088,7 @@ class PAOFLOW:
             projector=projector,
             operator=operator,
             two_dimensional=twoD,
+            bands=bands,
         )
         if write:
             header = f'eta = {eta} eV; T = {temperature} K; regulariser = {regulariser} eV'
@@ -7057,6 +7112,7 @@ class PAOFLOW:
         operator: np.ndarray | None = None,
         twoD: bool = False,
         write: bool = True,
+        bands: int | None = None,
     ) -> dict:
         """Frequency-dependent (optical) linear response from the Kubo-Greenwood formula.
 
@@ -7074,7 +7130,8 @@ class PAOFLOW:
             'total', 'interband' (transitions between bands) and 'intraband' (Drude term of the
             bands at the Fermi level, :math:`\\hbar/\\tau = 2\\eta`).
         eta : float
-            Broadening (eV) of the transitions; the Drude damping is :math:`2\\eta`.
+            Broadening (eV): the half-width of the transitions; the damping of the oscillators and
+            of the Drude term is :math:`\\gamma = 2\\eta = \\hbar/\\tau`.
         omega_min, omega_max : float
             Photon-energy window (eV). The default ``omega_max`` is the energy range of the bands
             (capped at the projectability shift).
@@ -7094,6 +7151,9 @@ class PAOFLOW:
             Sheet values (e^2/hbar) for the currents.
         write : bool
             Write ``kubo_optical_<observable>_<component>.dat`` (omega, Re and Im of every term).
+        bands : int, optional
+            Number of bands in the sums, as in :meth:`kubo_response` (default the bands below the
+            projectability shift of a DFT run, every band of a model).
 
         Returns
         -------
@@ -7112,14 +7172,20 @@ class PAOFLOW:
         .. math::
 
             \\chi_{AB}(\\omega) = s_q\\Big[-i\\sum_{\\varepsilon_{mn}\\ne0}
-            \\frac{(f_n-f_m)A_{nm}(\\hbar v_b)_{mn}}{\\varepsilon_{mn}(\\varepsilon_{mn}-\\hbar\\omega-i\\eta)}
-            + \\frac{i}{\\hbar\\omega+2i\\eta}\\sum_{\\varepsilon_{mn}=0}(-f'_n)A_{nm}(\\hbar v_b)_{mn}\\Big],
+            \\frac{(f_n-f_m)A_{nm}(\\hbar v_b)_{mn}\\,(\\varepsilon_{mn}+\\hbar\\omega)}
+            {\\varepsilon_{mn}(\\varepsilon_{mn}^2-\\hbar^2\\omega^2-i\\gamma\\hbar\\omega)}
+            + \\frac{i}{\\hbar\\omega+i\\gamma}\\sum_{\\varepsilon_{mn}=0}(-f'_n)A_{nm}(\\hbar v_b)_{mn}\\Big],
 
-        :math:`\\varepsilon_{mn} = \\varepsilon_m-\\varepsilon_n`, summed over k-points with the unit
-        factor of the observable. :math:`\\mathrm{Re}\\,\\sigma_{aa}` is the absorptive part, and the
-        Hall part of the interband term is Eq. 7 of Yao et al., PRL 92, 037204 (2004). At
-        :math:`\\omega\\to0` the interband Hall part equals the ``intrinsic`` term of
-        :meth:`kubo_response` and the intraband part its Boltzmann limit.
+        :math:`\\varepsilon_{mn} = \\varepsilon_m-\\varepsilon_n`, :math:`\\gamma = 2\\eta`, summed over
+        k-points with the unit factor of the observable. Each transition is a damped (Lorentz)
+        oscillator, the lineshape of :meth:`dielectric_tensor` (``delta`` = :math:`2\\eta`) and
+        epsilon.x: no absorption below the gap of an insulator, and at :math:`\\omega = 0` the
+        interband Hall part equals the ``intrinsic`` term of :meth:`kubo_response` at any
+        :math:`\\eta`. :math:`\\mathrm{Re}\\,\\sigma_{aa}` is the absorptive part; the Hall part is
+        Eq. 7 of Yao et al., PRL 92, 037204 (2004), with the oscillator damping. The intraband part
+        at :math:`\\omega = 0` is the Boltzmann limit of :meth:`kubo_response`. With
+        :math:`\\varepsilon = 1 + i\\sigma/(\\varepsilon_0\\omega)` the charge-current response is the
+        dielectric tensor of :meth:`dielectric_tensor`, plus its antisymmetric (Hall, MCD) part.
 
         Sign convention (as :meth:`kubo_response`): the Kubo formula with the electron charge
         :math:`q = -|e|` (:math:`s_q = +1` for the charge current, :math:`-1` otherwise); a magnet's
@@ -7173,6 +7239,7 @@ class PAOFLOW:
             projector=projector,
             operator=operator,
             two_dimensional=twoD,
+            bands=bands,
         )
         if write:
             header = f'eta = {eta} eV; mu = {mu} eV; T = {temperature} K'

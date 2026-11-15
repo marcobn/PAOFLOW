@@ -230,3 +230,25 @@ def test_orbital_hall_without_spin_orbit_is_the_orbital_current_response(tmp_pat
     )  # fmt: skip
     assert np.abs(legacy).max() > 10.0
     assert _close(r['z_xy']['intrinsic'], legacy, rtol=1e-6)
+
+
+def test_band_sums_stop_at_the_projectability_shift(tmp_path):
+    """DFT runs: the bands above the projectability shift (the shifted complement of the projection) are
+    left out by default, as in dielectric_tensor; models (shift = inf) keep every band."""
+    p = kc.prepared('kane_mele', str(tmp_path))
+    attr = p.data_controller.data_attributes
+    kw = dict(terms=('total', 'intrinsic'), eta=0.05, emin=-0.5, emax=0.5, ne=5, write=False)
+    every = p.kubo_response('charge_current', ['xx'], **kw)['xx']
+    assert attr['bnd'] == attr['nawf'] and np.isinf(attr['shift'])
+    attr['shift'], attr['bnd'] = 2.5, 2  # as after a DFT projection with two bands below the shift
+    default = p.kubo_response('charge_current', ['xx'], **kw)['xx']
+    two = p.kubo_response('charge_current', ['xx'], bands=2, **kw)['xx']
+    four = p.kubo_response('charge_current', ['xx'], bands=4, **kw)['xx']
+    for t in kw['terms']:
+        assert np.allclose(default[t], two[t]) and np.allclose(four[t], every[t])
+    assert not np.allclose(default['total'], every['total'])
+    o2 = p.kubo_optical_response(
+        'charge_current', ['xx'], eta=0.05, omega_max=3.0, nomega=5, write=False
+    )['xx']
+    o4 = p.kubo_optical_response('charge_current', ['xx'], eta=0.05, omega_max=3.0, nomega=5, bands=4, write=False)['xx']  # fmt: skip
+    assert not np.allclose(o2['interband'], o4['interband'])

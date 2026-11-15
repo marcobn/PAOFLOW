@@ -88,7 +88,18 @@ radial functions are one per shell and l: with j-resolved tables both j = l ± �
 gives the largest 1 − overlap when it exceeds 1e-3; Ga/As 4P ≈ 3e-4, Ta 5P/6P ≈ 8e-3, Pb p tables of opposite sign).
 Fully relativistic ultrasoft / PAW species are refused (the augmentation of the dipoles has no spinor version).
 
-## The `dHksp` route (`gradient_and_momenta(position_dipoles=True)`)
+## The `dHksp` route (`gradient_and_momenta(position_dipoles=...)`)
+
+**Default (15 Nov 2026).** `position_dipoles=None` (the default) reads `attr['position_dipoles']`; when that
+is unset the dipoles are **on for internal projections of a QE run** (`projections()` stores
+`arrays['atomic_basis']`, the radial tables they need) and off for projwfc, VASP and models.
+`position_dipoles=False` switches them off. When the default turns them on but they cannot be built
+(a doubled cell, a fully relativistic US/PAW species), every rank leaves `dHksp` unchanged and rank 0
+prints a warning; an explicit `True` raises as before (`position_dipole_correction(strict=...)`). Group
+velocities, Boltzmann transport and adaptive smearing do not change (the term vanishes on the diagonal
+and in degenerate blocks; integration example10 is bit-identical). The optical and Hall responses do:
+the Si dielectric reference of integration example15 (AE BASIS 3S3P3D4S4P) went from ε₁(0) 17.38 to
+14.19, ε₂ peak 72.8 → 59.8, and the QE test-asset tarball was regenerated (sha a1cff50d).
 
 `PAOFLOW.position_dipole_correction()` builds d(k) on the FFT k-grid
 (`position_dipoles_on_grid`: scalar, ad-hoc spin-orbit and fully relativistic (j, m_j) bases,

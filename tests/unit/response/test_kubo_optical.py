@@ -1,7 +1,8 @@
 """Frequency-dependent Kubo-Greenwood response, PAOFLOW.kubo_optical_response (14 November 2026).
 
-- the kernel: its Hall part is the closed form of Yao et al. 2004, Eq. 7; its omega -> 0 limit is the
-  Berry-curvature sea; the absorptive part is positive;
+- the kernel: its Hall part is the closed form of Yao et al. 2004, Eq. 7, with the oscillator damping;
+  its omega -> 0 limit is the Berry-curvature sea at any eta; the absorptive part is positive and vanishes
+  as omega^2 in an insulator (no sub-gap tail); a vanishing gap turns a transition into a Drude term;
 - the static limits on models: interband Hall = the intrinsic term of kubo_response (Haldane Chern
   number), intraband = the Boltzmann (tutorial03 Eq. 4) conductivity;
 - the output file.
@@ -43,18 +44,48 @@ def test_hall_part_is_the_closed_form_of_yao():
     hall = 0.5 * (ab - ba)
     gap = energies[None, :] - energies[:, None]  # [n, m] = e_m - e_n
     df = f[:, None] - f[None, :]
+    off = gap != 0
     closed = [
-        np.sum(np.where(gap != 0, df * np.imag(pair_ab) / (gap**2 - (w + 1j * eta) ** 2), 0)) for w in omegas
-    ]  # fmt: skip
+        np.sum(df[off] * np.imag(pair_ab)[off] / (gap[off] ** 2 - w**2 - 2j * eta * w))
+        for w in omegas
+    ]
     assert np.allclose(hall, closed, rtol=1e-12, atol=1e-12)
 
 
 def test_static_limit_is_the_berry_curvature_sea():
+    """At omega = 0 the oscillator Hall part is the clean-limit sea for any broadening."""
     energies, a, b, f = _system()
-    inter, _ = kk.optical_kernel(energies, a * b.T, f, np.zeros_like(f), np.array([0.0]), 1e-7)
-    inter_ba, _ = kk.optical_kernel(energies, b * a.T, f, np.zeros_like(f), np.array([0.0]), 1e-7)
     omega = kk.berry_curvature(energies, a, b, 0.0, cutoff=1e-20)
-    assert 0.5 * (inter - inter_ba)[0].real == pytest.approx(-(f @ omega), rel=1e-6)
+    for eta in (1e-7, 0.05, 0.3):
+        inter, _ = kk.optical_kernel(energies, a * b.T, f, np.zeros_like(f), np.array([0.0]), eta)
+        inter_ba, _ = kk.optical_kernel(
+            energies, b * a.T, f, np.zeros_like(f), np.array([0.0]), eta
+        )
+        assert 0.5 * (inter - inter_ba)[0].real == pytest.approx(-(f @ omega), rel=1e-12)
+
+
+def test_insulator_does_not_absorb_below_the_gap():
+    """Re sigma_aa ~ omega^2 at omega -> 0 (the omega + i eta substitution gave Re sigma(0) ~ eta)."""
+    energies, a, _, f = _system()
+    omegas = np.array([0.0, 1e-3, 2e-3])
+    inter, _ = kk.optical_kernel(energies, a * a.T, f, np.zeros_like(f), omegas, 0.1)
+    assert abs(inter[0]) < 1e-12
+    assert inter.real[2] / inter.real[1] == pytest.approx(4.0, rel=1e-3)
+
+
+def test_closing_gap_turns_a_transition_into_a_drude_term():
+    """Two levels 2 delta apart, half filled at the Fermi level: as delta -> 0 the transition
+    tends to i (-f') P / (omega + 2 i eta) with (f_n - f_m) / (e_m - e_n) -> -f', at omega > 0 (at
+    omega = 0 exactly a finite gap does not conduct)."""
+    eta, omegas = 0.05, np.array([0.02, 0.1, 0.4])
+    pair = np.array([[0.0, 0.7], [0.7, 0.0]], dtype=complex)
+    width, delta = 0.02, 1e-6
+    energies = np.array([-delta, delta])
+    occupations = 0.5 * (1.0 - np.tanh(energies / (2 * width)))
+    window = occupations * (1 - occupations) / width
+    inter, _ = kk.optical_kernel(energies, pair, occupations, window, omegas, eta, 1e-9)
+    _, drude = kk.optical_kernel(energies, pair, occupations, window, omegas, eta, 1e-3)
+    assert np.allclose(inter, drude, rtol=1e-6)
 
 
 def test_absorption_is_positive():
@@ -71,6 +102,8 @@ def test_static_hall_conductivity_is_the_intrinsic_term():
     d = p.kubo_response('charge_current', ['xy'], terms=('intrinsic',), emin=0.0, emax=0.0, ne=1, twoD=True, write=False)  # fmt: skip
     assert o['xy']['interband'][0].real == pytest.approx(d['xy']['intrinsic'][0], rel=1e-8)
     assert 2 * np.pi * o['xy']['total'][0].real == pytest.approx(2.0, abs=5e-3)
+    broad = p.kubo_optical_response('charge_current', ['xy'], eta=0.1, omega_min=0.0, omega_max=6.0, nomega=31, twoD=True, write=False)  # fmt: skip
+    assert broad['xy']['interband'][0].real == pytest.approx(d['xy']['intrinsic'][0], rel=1e-8)
     assert np.all(o['xx']['interband'].real[1:] > 0.0)  # absorption
 
 

@@ -28,11 +28,12 @@ equations of `linear_response`.
      037204 (2004).
    - **Everything else** (spin and orbital currents and densities, spin torque, custom operators):
      $\chi = (q/|e|)\,K = -K$. Same sign as Guo et al., PRL 100, 096401 (2008): Pt has a positive spin Hall
-     conductivity, +2012 (ħ/e) S/cm here, equal to `spin_Hall`.
+     conductivity: +2063 (ħ/e) S/cm here, against +2012 from `spin_Hall`, which also sums the bands above the
+     projectability shift (see *Band sums* below).
 3. **Magnets:** the response is that of the spin configuration of the run. QE's positive
    `starting_magnetization` puts the electron spins along +z, so the magnetic moment points along −z.
    - Papers that quote the magnetization $M$ (Yao: "magnetization along [001]", experiments) mean the
-     moment. bcc Fe from QE with `starting_magnetization` > 0 therefore gives $\sigma_{xy} < 0$ (−1175 S/cm in
+     moment. bcc Fe from QE with `starting_magnetization` > 0 therefore gives $\sigma_{xy} < 0$ (−1171 S/cm in
      integration example04), which is Yao's +751 S/cm for the reversed moment.
    - To compare directly, use a negative `starting_magnetization` or flip the sign of the T-odd outputs.
 4. **Older routes** (details in the table below):
@@ -146,36 +147,94 @@ observables, components, units and charge sign:
 
 $$
 \chi_{AB}(\omega) = s_q\Big[-i\sum_{\varepsilon_{mn}\ne0}
-\frac{(f_n-f_m)\,A_{nm}(\hbar v_b)_{mn}}{\varepsilon_{mn}(\varepsilon_{mn}-\hbar\omega-i\eta)}
-+ \frac{i}{\hbar\omega+2i\eta}\sum_{\varepsilon_{mn}=0}(-f'_n)\,A_{nm}(\hbar v_b)_{mn}\Big],
-\qquad \varepsilon_{mn} = \varepsilon_m-\varepsilon_n .
+\frac{(f_n-f_m)\,A_{nm}(\hbar v_b)_{mn}\,(\varepsilon_{mn}+\hbar\omega)}
+{\varepsilon_{mn}\,(\varepsilon_{mn}^2-\hbar^2\omega^2-i\gamma\hbar\omega)}
++ \frac{i}{\hbar\omega+i\gamma}\sum_{\varepsilon_{mn}=0}(-f'_n)\,A_{nm}(\hbar v_b)_{mn}\Big],
+\qquad \varepsilon_{mn} = \varepsilon_m-\varepsilon_n,\quad \gamma = 2\eta = \hbar/\tau .
 $$
 
 - **The two terms:**
-  - **Interband (length gauge):** the transitions, with $r^b_{mn} = -i(\hbar v_b)_{mn}/\varepsilon_{mn}$.
-    $\mathrm{Re}\,\sigma_{aa}(\omega) \ge 0$ is the absorption. The Hall part is
-    $\sum_{nm}(f_n-f_m)\,\mathrm{Im}P_{nm}/(\varepsilon_{mn}^2-(\hbar\omega+i\eta)^2)$, Eq. 7 of Yao et al.
-  - **Intraband:** the Drude term of the bands at the Fermi level, with $\hbar/\tau = 2\eta$. Degenerate
+  - **Interband (length gauge, $r^b_{mn} = -i(\hbar v_b)_{mn}/\varepsilon_{mn}$):** every transition is
+    a damped (Lorentz) oscillator. The pairs $(n,m)$ and $(m,n)$ together give
+    $-2i(f_n-f_m)\,\mathrm{Re}P_{nm}\,\hbar\omega/(\varepsilon_{mn}D_{mn}) + 2(f_n-f_m)\,\mathrm{Im}P_{nm}/D_{mn}$,
+    with $D_{mn} = \varepsilon_{mn}^2-\hbar^2\omega^2-i\gamma\hbar\omega$. Near resonance this is a
+    Lorentzian of half-width η. $\mathrm{Re}\,\sigma_{aa}(\omega) \ge 0$ is the absorption; the Hall part
+    is Eq. 7 of Yao et al. with the oscillator damping.
+  - **Intraband:** the Drude term of the bands at the Fermi level, with the same damping γ. Degenerate
     blocks (bands closer than `degenerate_threshold`) enter as a whole.
+- **Why the oscillator and not ħω → ħω + iη (changed 15 Nov 2026).** The textbook substitution in
+  $1/(\varepsilon_{mn}-\hbar\omega)$ damps each interband coherence towards the unperturbed state. In a
+  static field this leaves a current through an insulator: Re σ_aa(0) ∝ η and a sub-gap ε₂ ∝ η/ω.
+  Si, η = 0.1 eV: ε₂ = 26.7 at 0.05 eV against 0.01 from `dielectric_tensor`. The oscillator form (epsilon.x,
+  `dielectric_tensor`) has the same resonances and high-frequency tail (hence the f-sum rule), and:
+  - Re σ_aa ∝ ω² at ω → 0, so an insulator does not absorb below its gap;
+  - at ω = 0 the Hall part is the clean-limit Berry-curvature sea, the `intrinsic` term, at any η;
+  - as the gap of a transition closes (at ω ≠ 0) it becomes a Drude term with the same γ.
 - **Occupations:** the run's smearing at $T = 0$ (adaptive Gaussian or Methfessel–Paxton; a step with a
   Lorentzian window otherwise), Fermi–Dirac at $T > 0$.
 - **Output:** `kubo_optical_<observable>_<component>.dat` with ω and the Re/Im parts of `total`,
   `interband` and `intraband`; Results kind `kubo_optical`; `GPAO.plot_kubo_response`.
-- **Limits (tests):**
-  - at ω → 0 and η → 0 the interband Hall part is the `intrinsic` term of `kubo_response` (Haldane:
-    $10^{-8}$, $2\pi\sigma_{xy} = 2.000$; Kane–Mele spin Hall: $10^{-6}$);
+- **Limits (tests, `test_kubo_optical.py`):**
+  - at ω = 0 the interband Hall part is the `intrinsic` term of `kubo_response` for any η (random
+    bands: $10^{-12}$ at η = 10⁻⁷, 0.05, 0.3 eV; Haldane: $10^{-8}$ at η = 10⁻⁵ and 0.1 eV,
+    $2\pi\sigma_{xy} = 2.000$);
+  - an insulator's Re σ_aa ∝ ω² as ω → 0;
+  - a closing gap turns a transition into the Drude term;
   - the intraband term at ω = 0 is the Boltzmann conductivity of tutorial03 Eq. 4 ($10^{-10}$, after its
-    $10^{-4}$ regulariser is undone);
-  - the Drude form $\sigma(0)\,2\eta/(2\eta - i\hbar\omega)$ holds;
-  - the Hall part equals Yao's closed form ($10^{-12}$).
+    $10^{-4}$ regulariser is undone); the Drude form $\sigma(0)\,\gamma/(\gamma - i\hbar\omega)$ holds;
+  - the Hall part equals the closed form above ($10^{-12}$).
 - **DFT check (bcc Fe, example04 data, 24³, η = 0.1 eV;** `validation/kubo_bastin/fe_optical/` in the
   workspace):
-  - Re σ_xy(ω) = −950, −283, −35, +127, +31 S/cm at 0, 1, 2, 3, 4 eV: the shape of Yao's Fig. 5 with the
-    opposite sign (moment convention, see above);
-  - correlation with the legacy `MCDr_xy` output: −0.965. The two differ in the broadening (constant η here,
+  - Re σ_xy(ω) = −1344, −276, −29, +131, +36 S/cm at 0, 1, 2, 3, 4 eV: the shape of Yao's Fig. 5 with the
+    opposite sign (moment convention, see above). At ω = 0 it is the dc intrinsic −1337 plus a 7 S/cm
+    Drude xy part;
+  - correlation with the legacy `MCDr_xy` output: −0.968. The two differ in the broadening (constant η here,
     adaptive pair widths there) and in the sign convention.
 - **Cost:** $O(n_k n_b^2 n_\omega)$, like `do_ac_conductivity`. The k-points are streamed in blocks and
   reduced over MPI.
+
+## Band sums stop at the projectability shift
+
+Both engines sum over the bands below the projectability shift (`attr['bnd']`) when the run has a
+finite `shift`; the keyword `bands=` overrides it. The bands above the shift are the shifted complement
+of the projection (`shift` in eV, `pao_hamiltonian`), not physical states: the transitions into them
+add spurious weight.
+- Si (projwfc, 24³): static ε₁ 17.19 over every band, 14.31 below the shift (`dielectric_tensor`, which
+  stops at `bnd`, gives 14.34).
+- Pt spin Hall: +2063 (ħ/e) S/cm below the shift, +2012 over every band (the value of `spin_Hall`,
+  which sums them all).
+- Fe anomalous Hall: −1171 S/cm below the shift, −1175.5 over every band (minus `anomalous_Hall`).
+- Models (`shift` infinite) sum over all bands, as before.
+
+## Comparison with `dielectric_tensor` and position dipoles
+
+The optical response of `charge_current` gives ε via $\varepsilon_{ab} = \delta_{ab} + i\sigma_{ab}/(\varepsilon_0\omega)$.
+`dielectric_tensor` (`do_epsilon`) computes the same transition dipoles from `pksp` (= `dHksp` in the
+eigenbasis), with the same oscillator lineshape, $(f_n-f_m)|p_{nm}|^2/\varepsilon_{mn}\cdot
+1/(\varepsilon_{mn}^2-\omega^2-i\delta\omega)$, and the same Drude weight. With `delta` = `intrasmear` = 2η
+the interband parts are identical. Si (projwfc, 24³, η = 0.1 eV) and GaAs (internal projections, 16³)
+agree to the printed digits: Si ε₁(0.05 eV) 14.3389 vs 14.3390, ε₂ peak 41.946 at 3.75 eV in both. The
+remaining differences:
+- **Intraband.** The same Drude form with damping $\hbar/\tau$ (= 2η = `intrasmear`), but different Fermi
+  windows: the Gaussian of the DFT `degauss` in `dielectric_tensor`, the run's (adaptive) smearing here.
+  Al (32³, adaptive): ε₂ within 0.4 % RMS; ε₁(0.05 eV) −3563 vs −3699 (3.7 %).
+- **Antisymmetric part.** `dielectric_tensor` keeps Re$(p_ap_b^*)$ only and has no Hall/MCD part;
+  `kubo_optical_response` gives the full tensor.
+- **Widths.** `dielectric_tensor` uses the adaptive pair widths when `adaptive_smearing` has run;
+  `kubo_optical_response` a constant η.
+- **Position dipoles.** In the Löwdin-orthogonalised PAO basis the velocity $i[H,r]/\hbar$ is
+  $\partial_kH + i[H,\tau] + i[H,d(k)]$: the k-derivative, the orbital centres τ (already in
+  `do_gradient`), and the position matrix of the orbitals about their centres, d(k).
+  `gradient_and_momenta` adds the last term to `dHksp` (levels `'full'` or `'intra-atomic'`), so both
+  engines and the older Hall routes use it. GaAs (16³, η = 0.1 eV): ε₁(0.05 eV) 16.24 → 15.69, ε₂ peak
+  30.60 → 29.58 (−3.4 %), the same in both engines. They are **on by default for internal projections**
+  of a QE run (since 15 Nov 2026), which have the PAO radial tables; off for projwfc, VASP and models.
+  `position_dipoles=False` switches them off. If the default cannot build them (e.g. a doubled cell),
+  the run warns and goes on without them; an explicit `True` raises. They vanish on the diagonal and in
+  degenerate blocks, so group velocities, transport and adaptive smearing do not change (integration
+  example10 is bit-identical); building them costs extra time (example10: 37 s of 80 s).
+- Workspace: `validation/kubo_bastin/optics_vs_epsilon/` (`compare.py`, cases si, al, gaas; the run with
+  the earlier ħω + iη lineshape in `before_oscillator/`).
 
 ## Sign convention and the older routes
 
@@ -189,8 +248,8 @@ $$
   hole case. The spin Hall conductivity of Pt is positive.
 
 **DFT checks (14 Nov 2026).**
-- **Pt.** `kubo_response` and `spin_Hall` both give +2012 (ħ/e) S/cm at $E_F$ (8³ nscf, 24³
-  interpolation), the sign of Guo.
+- **Pt.** `kubo_response` gives +2063 (ħ/e) S/cm at $E_F$ (8³ nscf, 24³ interpolation), the sign of Guo.
+  `spin_Hall` gives +2012; summed over the same bands as `spin_Hall`, `kubo_response` gives 2012.2 too.
   - The QE run with `nosym`/`noinv` (512 k-points from QE, no PAOFLOW unfolding) gives the same number to
     0.1 as the symmetry-reduced one.
   - QE writes $\langle\phi_i|\psi_n\rangle$ (`projwfc.f90`, `calbec(wfcatom, evc)`), and `build_Hks`
@@ -202,8 +261,8 @@ $$
   there.
   - The computed state is therefore the time-reverse of Yao's. His "magnetization along [001]" is the
     magnetic moment, which is antiparallel to the electron spin.
-  - `kubo_response` gives $\sigma_{xy} < 0$ for this state (−1175 S/cm in integration example04), the value
-    of Yao's +751 for the reversed moment.
+  - `kubo_response` gives $\sigma_{xy} < 0$ for this state (−1171 S/cm in integration example04; −1175.5 over every
+    band, minus `anomalous_Hall`), the value of Yao's +751 for the reversed moment.
   - To compare with Yao directly, run QE with the moment along +z, i.e. a negative `starting_magnetization`,
     or flip the sign of the T-odd output.
 

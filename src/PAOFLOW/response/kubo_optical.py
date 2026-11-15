@@ -6,13 +6,18 @@ Driver of :meth:`PAOFLOW.kubo_optical_response`: the Kubo-Greenwood response of 
 .. math::
 
     \chi_{AB}(\omega) = s_q\,\Big[-i\sum_{k}\sum_{\varepsilon_{mn}\ne0}
-        \frac{(f_n-f_m)\,A_{nm}(\hbar v_b)_{mn}}{\varepsilon_{mn}(\varepsilon_{mn}-\hbar\omega-i\eta)}
-        + \frac{i}{\hbar\omega+2i\eta}\sum_k\sum_{\varepsilon_{mn}=0}(-f'_n)\,A_{nm}(\hbar v_b)_{mn}\Big],
+        \frac{(f_n-f_m)\,A_{nm}(\hbar v_b)_{mn}\,(\varepsilon_{mn}+\hbar\omega)}
+        {\varepsilon_{mn}\,(\varepsilon_{mn}^2-\hbar^2\omega^2-i\gamma\hbar\omega)}
+        + \frac{i}{\hbar\omega+i\gamma}\sum_k\sum_{\varepsilon_{mn}=0}(-f'_n)\,A_{nm}(\hbar v_b)_{mn}\Big],
+    \qquad \gamma = 2\eta,
 
-interband transitions (length gauge) plus the Drude term of the degenerate blocks, with the unit
-factors and the charge sign :math:`s_q` of :func:`.kubo_operators.unit_factor` (the convention of
-:meth:`PAOFLOW.kubo_response`). At :math:`\omega\to0`, :math:`\eta\to0` the interband Hall part is the
-``intrinsic`` term and the intraband part the Boltzmann limit of ``surface_intraband``.
+interband transitions (length gauge, each a damped oscillator of half-width :math:`\eta`, the
+lineshape of epsilon.x and of :meth:`PAOFLOW.dielectric_tensor`) plus the Drude term of the
+degenerate blocks, with the unit factors and the charge sign :math:`s_q` of
+:func:`.kubo_operators.unit_factor` (the convention of :meth:`PAOFLOW.kubo_response`). At
+:math:`\omega = 0` the interband Hall part is the ``intrinsic`` term (at any :math:`\eta`), an
+insulator does not absorb, and the intraband part is the Boltzmann limit of ``surface_intraband``
+(:func:`.kubo_kernels.optical_kernel`).
 
 The k-points are streamed in blocks (band matrices from :func:`.kubo_operators.band_matrices`), the
 sums reduced over MPI at the end; memory is independent of the number of k-points.
@@ -35,6 +40,7 @@ from .kubo_operators import (
     band_matrices,
     component_label,
     parse_component,
+    physical_bands,
     unit_factor,
 )
 
@@ -108,6 +114,7 @@ def kubo_optical_response(
     projector: NDArray[np.complex128] | None = None,
     operator: NDArray[np.complex128] | None = None,
     two_dimensional: bool = False,
+    bands: int | None = None,
 ) -> dict[str, dict[str, NDArray]]:
     """Optical response of ``observable`` to an electric field, every term and component.
 
@@ -135,6 +142,9 @@ def kubo_optical_response(
         Orbital projector of the response operator; matrix of ``observable='custom'``.
     two_dimensional : bool
         Sheet values (e^2/hbar) for the currents.
+    bands : int, optional
+        Number of bands in the sums (:func:`.kubo_operators.physical_bands`; default the bands below the
+        projectability shift of a DFT run, every band of a model).
 
     Returns
     -------
@@ -157,7 +167,8 @@ def kubo_optical_response(
         raise ValueError(f'{observable} needs a spinor basis (spin-orbit or adhoc_SO)')
     omegas = np.asarray(omegas, dtype=float)
     kT = K_BOLTZMANN_EV * temperature
-    nk_local, nb, nspin = arry['E_k'].shape
+    nk_local, _, nspin = arry['E_k'].shape
+    nb = physical_bands(data_controller, bands)
     spin_multiplicity = 1.0 if (attr['dftSO'] or nspin == 2) else 2.0
     scale = spin_multiplicity * unit_factor(data_controller, observable, two_dimensional)
     scale /= float(attr['nkpnts'])
@@ -176,9 +187,9 @@ def kubo_optical_response(
                     response, field = band_matrices(
                         data_controller, observable, indices, ik, ispin, projector, operator
                     )
-                    pairs[i] = response * field.T
-                energies = arry['E_k'][start:stop, :, ispin]
-                widths = arry['deltakp'][start:stop, :, ispin] if 'deltakp' in arry else None
+                    pairs[i] = response[:nb, :nb] * field[:nb, :nb].T
+                energies = arry['E_k'][start:stop, :nb, ispin]
+                widths = arry['deltakp'][start:stop, :nb, ispin] if 'deltakp' in arry else None
                 occupation, window = band_occupations(
                     data_controller, energies, widths, mu, kT, eta
                 )
