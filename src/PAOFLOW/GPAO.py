@@ -302,7 +302,7 @@ class GPAO:
         es, dos = read_dos_PAO(fn_dos)
 
         plot_dos_beside_bands(
-            es, dos, bands, sym_points, band_label, title, x_lim, y_lim, col, dos_ticks
+            es, dos, bands, sym_points, title, band_label, x_lim, y_lim, col, dos_ticks
         )
 
     def plot_berry_under_bands(
@@ -453,23 +453,27 @@ class GPAO:
         y_lim=None,
         cols=None,
         legend=True,
+        label=None,
     ):
         """
-        Plot the Seebeck coefficient. If multiple Temperatures are computed the default behavior is to plot the full energy range for every temperature. If a conductivity vs temperature plot is desired, set vE to the energy at which conductivity should be collected for each temperature.
+        Plot the spin Hall conductivity against the Fermi energy.
 
         Arguments:
-          fname (str): File name (including relative path)
+          fname (str or list): File name (including relative path), or a list of files
+            plotted together with one legend entry each
           title (str): A title for the plot
           x_lim (tuple): Pair of axis limits (x_min, x_max)
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           cols (list): A list of 3-tuples (R,G,B), one for each tensor element.
+          label (str): y-axis label; the default is for a bulk calculation, (Ohm cm)^-1.
+            A twoD=True run writes the sheet conductivity in Ohm^-1.
         """
         import numpy as np
 
         from .inputs.read_pao_output import read_dos_PAO
 
         x_label = 'Energy (eV)'
-        y_label = r'$\sigma$ ($\Omega$cm)$^{-1}$'
+        y_label = r'$\sigma$ ($\Omega$cm)$^{-1}$' if label is None else label
 
         if isinstance(fname, str):
             from .graphics.plot_functions import plot_dos
