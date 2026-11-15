@@ -1074,12 +1074,16 @@ def plot_fermi_surface(
         Render window size in pixels.
     save : str, optional
         If given, render and save a PNG to this path instead of opening an
-        interactive window.  (VTK on macOS has no OSMesa off-screen backend, so
-        this still renders through a normal on-screen window.)
+        interactive window.  Off macOS the render is off-screen and needs no GUI
+        toolkit; VTK on macOS has no OSMesa off-screen backend, so there it still
+        renders through a normal on-screen window.
     """
     from mayavi import mlab
     from scipy.ndimage import map_coordinates
     from skimage import measure
+
+    if save is not None and sys.platform != 'darwin':
+        mlab.options.offscreen = True
 
     if bz not in ('ws', 'cell', 'none'):
         raise ValueError(f"bz must be 'ws', 'cell' or 'none', got {bz!r}")
