@@ -34,6 +34,18 @@ Switch a script to the sparse backend, choose the truncation of the Hamiltonian 
 Assign measured dHvA/SdH/torque frequencies to Fermi-surface sheets, with chance baselines, convergence and breakdown checks, and an agentic workflow.
 :::
 
+:::{grid-item-card}
+:link: plotting
+:link-type: doc
+:class-card: landing-card
+
+{octicon}`graph;1.8em;sd-text-muted`
+
+**Plotting PAOFLOW output with GPAO**
+
+Plot bands, DOS and PDOS, Berry curvature, spin Hall conductivity, transport tensors and Fermi surfaces from the files of a finished run.
+:::
+
 ::::
 
 ```{toctree}
@@ -42,4 +54,5 @@ Assign measured dHvA/SdH/torque frequencies to Fermi-surface sheets, with chance
 
 sparse-workflow
 qo_analysis
+plotting
 ```
