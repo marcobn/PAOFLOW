@@ -29,8 +29,15 @@ Docstrings should follow the style: concise summary, NumPy-style sections, expli
    - `Notes`
    - `Examples`
 
-3. **Do not rewrite existing docstrings unless behavior changed.**
-   Preserve existing docstring content during refactors and mechanical edits. Update a docstring only when the function signature, logic, accepted inputs, returned values, side effects, physics, or numerical algorithm has changed.
+3. **Do not rewrite existing docstrings unless behavior changed or the docstring is broken.**
+   Preserve existing docstring content during refactors and mechanical edits. Update a docstring when the function signature, logic, accepted inputs, returned values, side effects, physics, or numerical algorithm has changed.
+
+   A docstring is also rewritten, with no behavior change, when it is broken in one of these ways:
+   - It does not render in the API docs: it uses another layout (`Arguments:`, `Args:`, Google style), so Sphinx reports docutils errors on its `docs/api/autoapi/` page. Convert it to the NumPy sections below.
+   - It is wrong about the code: a summary that describes another function (copy-paste), a default that differs from the signature, or an argument described as working when the code ignores it.
+   - It is incomplete: arguments of the signature are missing from `Parameters`, or `Returns` is missing.
+
+   Read the code the function calls before writing, so that each entry states what the code does; an argument the code ignores is documented as "Not used". Keep the sentences that are correct. Only fix what is broken; do not reword correct text or add new explanations beyond the missing entries. List the rewritten functions and what was wrong in the final report, so it can go into the commit message.
 
 4. **Document side effects clearly.**
    Functions that mutate `DataController`, arrays, attributes, files, MPI state, or process control should say so in `Returns`.
