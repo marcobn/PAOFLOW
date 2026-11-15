@@ -20,14 +20,24 @@ All examples follow the same layout
 * Edit the constants block at the top of main.py to set paths and MPI options:
     PREFIX       -- QE calculation prefix (e.g. 'MgO')
     OUT          -- output directory for PAOFLOW dumps  (e.g. './tmp/')
-    MPI_QE       -- MPI launcher for pw.x / projwfc.x  (e.g. 'mpirun -np 8')
+    MPI_QE       -- MPI launcher for pw.x                (e.g. 'mpirun -np 8')
     MPI_PY       -- MPI launcher for PAOFLOW            (e.g. 'mpirun -np 1')
     MPI_HARTREE  -- MPI launcher for Coulomb integrals  (e.g. 'mpirun -np 8')
     QE_PATH      -- path to QE bin/  (leave empty if QE is on PATH)
     PY_PATH      -- path to the Python interpreter directory
 
-* Template files (prefix.scf.in, prefix.nscf.in, prefix.projwfc.in) and all
-  pseudopotentials must be present in the working directory before running.
+* The template prefix.scf.in and all pseudopotentials must be present in
+  the working directory before running.  The scf is run directly on the
+  k-grid and with the number of bands that the projection needs (K_POINTS
+  and nbnd in the template; symmetry is kept and PAOFLOW expands the
+  irreducible wedge), so no nscf step is required.  A prefix.nscf.in, if
+  present, is still honoured by the driver and run after each scf.
+
+* The Hubbard occupations are computed by PAOFLOW's internal projection on
+  the UPF pseudo-atomic orbitals (use_local_basis=True, configuration='minimal'
+  in every main.py): projwfc.x is never run and no prefix.projwfc.in is
+  needed.  Set use_local_basis=False and supply prefix.projwfc.in to use the
+  projwfc.x route instead.
 
 * Hubbard occupations and initial U/V values can be provided either in the QE
   input templates or via set_hubbard_parameters / set_intersite_pairs in

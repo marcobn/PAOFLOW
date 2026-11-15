@@ -1,0 +1,8 @@
+! Geometry stub for the SKEAF analysis template (Stage 1 reads CELL_PARAMETERS only).
+! QE ibrav=10 (F-centred orthorhombic) primitive vectors in units of alat = a;
+! b/a = 1.735603, c/a = 3.381302 (a < b < c, Setyawan-Curtarolo).
+! QE a(1), a(2), a(3) = S-C a2, a3, a1.
+CELL_PARAMETERS alat
+   0.500000   0.000000   1.690651
+   0.500000   0.867802   0.000000
+   0.000000   0.867802   1.690651

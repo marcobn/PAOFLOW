@@ -218,6 +218,7 @@ class DataController:
         verbose,
         restart,
         dft,
+        unfold_kpoints=False,
     ):
         """
         Initialize the DataController
@@ -233,6 +234,10 @@ class DataController:
             smearing (str): Smearing type (None, m-p, gauss)
             verbose (bool): False supresses debugging output
             restart (bool): True if the run is being restarted from a .json data dump.
+            dft (str): 'QE' or 'VASP'
+            unfold_kpoints (bool): If True the QE nscf holds the irreducible wedge of a Gamma-centred
+                automatic grid; its k-points, eigenvalues and wavefunctions are unfolded to the full
+                grid by symmetry (QE only)
         Returns:
             None
         """
@@ -309,6 +314,7 @@ class DataController:
             attr['bxsf_only'] = bxsf_only
             attr['save_overlaps'] = save_overlaps
             attr['acbn0'] = acbn0
+            attr['unfold_kpoints'] = bool(unfold_kpoints)
             attr['inputfile'], attr['outputdir'] = inputfile, outputdir
             attr['opath'] = join(workpath, outputdir)
             if model is None and not bxsf_only:
@@ -629,6 +635,19 @@ class DataController:
             from .inputs.read_QE_xml import parse_qe_data_file_schema
 
             parse_qe_data_file_schema(self, fpath + '/data-file-schema.xml')
+            if self.data_attributes.get('unfold_kpoints', False):
+                from .elphon.wavefunction_symmetry import expand_data_controller_kpoints
+
+                provider = expand_data_controller_kpoints(self)
+                if self.data_attributes.get('verbose', False):
+                    print(
+                        'Unfolded %d irreducible k-points to the full %s grid (%d points)'
+                        % (
+                            self.data_attributes['unfolded_from_irreducible'],
+                            provider.grid,
+                            provider.nk,
+                        )
+                    )
         elif exists(fpath + '/data-file.xml'):
             from .inputs.read_QE_xml import parse_qe_data_file
 
@@ -773,6 +792,19 @@ class DataController:
                         ]
                     )
                 )
+
+            if self.data_attributes['write_QE_bands'] == True:
+                with open(join(self.data_attributes['opath'], 'kpath.pwscf'), 'w') as f:
+                    f.write('K_POINTS tpiba\n')
+                    f.write(f'{kpnts.shape[1]}\n')
+                    f.write(
+                        ''.join(
+                            [
+                                '%s %s %s 1.0 \n' % (kpnts[0, i], kpnts[1, i], kpnts[2, i])
+                                for i in range(kpnts.shape[1])
+                            ]
+                        )
+                    )
         self.comm.Barrier()
 
     #  def write_xsf ( self, data, fname='rs_plot.xsf' ):

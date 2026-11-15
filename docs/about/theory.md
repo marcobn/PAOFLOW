@@ -52,13 +52,18 @@ From the interpolated PAO Hamiltonian, PAOFLOW evaluates derivatives and matrix 
 | Domain | What PAOFLOW computes |
 |---|---|
 | **Electronic structure** | Band structures, density of states (total & projected), Fermi surfaces |
-| **Optical & dielectric response** | Complex dielectric tensor ε(ω), optical conductivity, joint density of states; non-local velocity correction for norm-conserving pseudopotentials |
-| **Transport** | Electrical conductivity, Seebeck coefficient, electronic thermal conductivity (Boltzmann transport) |
+| **Optical & dielectric response** | Complex dielectric tensor ε(ω), optical conductivity, joint density of states; Löwdin position dipoles of the PAO basis in the velocity operator (beyond the tight-binding position operator); Drude and extended-Drude response and thermal emissivity of metals |
+| **Non-linear optics** | Shift current, injection currents and second-harmonic generation from the same Hamiltonian, with the covariant treatment of degenerate bands, the position dipoles and the point-group reduction of the k-grid |
+| **Transport** | Electrical conductivity, Seebeck coefficient, electronic thermal conductivity (Boltzmann transport); chemical potential versus temperature and doping; scattering channels (built-in relaxation-time models and electron-phonon rates) combined by Matthiessen's rule |
+| **Electron-phonon coupling** | Coarse vertex from the `ph.x` DFPT potentials (or EPW), interpolated on dense k and q grids in the PAO basis, with the long-range Fröhlich and quadrupole fields; Eliashberg function, λ, T_c, isotropic and anisotropic Migdal-Eliashberg gaps; phonon-assisted absorption and thermal emissivity; carrier mobility and metal resistivity; Fan-Migdal self-energies |
+| **ARPES** | Photoemission intensity of the PAO states (dipole matrix elements, plane-wave final state) and spectral functions with electron-phonon self-energies |
 | **Lattice dynamics & phonons** | Phonon dispersions, DOS and thermal properties ([phonopy](https://phonopy.github.io/phonopy/) finite-displacement); Born effective charges, ε∞ and LO–TO splitting; infrared (IR), non-resonant (Placzek) and resonant (Albrecht) Raman spectra; vibrational (ionic) dielectric ε(ω) and reststrahlen emissivity; quasi-harmonic approximation (thermal expansion, V(T), bulk modulus, C_p, thermodynamic and mode Grüneisen dispersion) |
 | **Topology** | Berry curvature, anomalous Hall conductivity, Z₂ invariants, topological surface states |
 | **Spin & magnetism** | Spin Hall conductivity, spin texture, non-collinear and fully-relativistic (SOC) Hamiltonians |
 | **Model Hamiltonians** | Slater–Koster tight-binding models, Kane–Mele, custom lattice models |
 | **ACBN0** | Self-consistent Hubbard U and U+V via the extended ACBN0 functional |
+| **PAO basis** | Internal projections without `projwfc.x`; basis presets, basis tables generated from the pseudopotentials, ultrasoft/PAW pseudopotentials projected in the augmented metric, with and without spin-orbit coupling |
+| **Band unfolding and sparse Hamiltonians** | Supercell band structures unfolded to the primitive cell; a sparse bond-list backend for the large doubled cells |
 | **pyskeaf** | Fermi surface extremal orbit analysis (de Haas–van Alphen, Shubnikov–de Haas) |
 | **Landauer transport** | Quantum transport via Green's function/Landauer–Büttiker formalism |
 | **Interoperability** | Quantum ESPRESSO and VASP DFT code integration - other codes are in the development pipline (we welcome contributions from developers!)|

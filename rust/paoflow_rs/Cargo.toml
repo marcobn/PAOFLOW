@@ -2,7 +2,7 @@
 name = "paoflow_rs"
 version = "0.1.0"
 edition = "2021"
-description = "Rust backend for PAOFLOW (ACBN0/eACBN0 two-electron Coulomb integrals)"
+description = "Rust backend for PAOFLOW (ACBN0 integrals, dielectric response, electron-phonon kernels)"
 license = "GPL-3.0-or-later"
 
 [lib]
@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 pyo3 = { version = "0.23", features = ["abi3-py310"] }
 numpy = "0.23"
 rayon = "1"
+num-complex = "0.4"
 
 [features]
 # maturin enables this so the cdylib links as a Python extension module.

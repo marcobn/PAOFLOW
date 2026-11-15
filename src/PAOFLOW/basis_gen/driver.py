@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import warnings
+
+import numpy as np
 from glob import glob
 
 from ..inputs.basis_presets import (
@@ -130,7 +132,14 @@ def generate_basis_for_pseudo(
                 (f'{label}.dat', _j_average(u_minus, u_plus, l), 0.5 * (e_minus + e_plus)),
             ]
         else:
-            r, u_, e_ = pseudize_shell(upf, n, l, r_box=r_box, n_points=n_points)
+            try:
+                r, u_, e_ = pseudize_shell(upf, n, l, r_box=r_box, n_points=n_points)
+            except ValueError as err:
+                warnings.warn(
+                    f'Skipping shell {label!r} for element {elem!r}: {err}', RuntimeWarning,
+                    stacklevel=2,
+                )  # fmt: skip
+                continue
             files = [(f'{label}.dat', u_, e_)]
 
         # Skip shells the pseudopotential froze into the core: an explicit
@@ -138,7 +147,7 @@ def generate_basis_for_pseudo(
         # PSWFC counterpart and cannot be bound, in which case the solver
         # returns a spurious diffuse box mode that corrupts the basis.
         rep_eps = files[0][2]
-        if is_frozen_core_shell(upf, n, l, rep_eps):
+        if not np.isnan(rep_eps) and is_frozen_core_shell(upf, n, l, rep_eps):
             warnings.warn(
                 f'Skipping shell {label!r} for element {elem!r}: it has no '
                 f'matching pseudo-atomic wavefunction and the radial solver '

@@ -43,7 +43,6 @@ while [[ $# -gt 0 ]]; do
             fi
             ;;
     esac
-    shift
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -64,7 +63,12 @@ if [[ ! -f "${QE_TEST_ASSET}" ]]; then
 fi
 
 echo "Generating QE SHA256SUMS..."
-sha256sum qe_test_assets.tar.gz > "${CHECKSUM_ASSET}"
+if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum qe_test_assets.tar.gz > "${CHECKSUM_ASSET}"
+else
+    # macOS ships shasum, not sha256sum
+    shasum -a 256 qe_test_assets.tar.gz > "${CHECKSUM_ASSET}"
+fi
 
 if ! gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
     echo "Creating release ${TAG}..."

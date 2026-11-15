@@ -1,11 +1,10 @@
-PAOFLOW Tutorial: ./PAOFLOW-tutorial/
+PAOFLOW examples, one folder per topic. Every folder has its own README with the
+inputs, the steps and, where a reference run exists, the numbers.
 
-- Jupyter Notebook containing a brief introduction to the PAOFLOW interface
+Quantum ESPRESSO examples: ./qe_examples/
 
-Qauntum ESPRESSO Examples: ./qe_examples/
-
-- example01 : Si with spd pseudpotential
-- example02 : Al with spd pseudpotential
+- example01 : Si with spd pseudopotential
+- example02 : Al with spd pseudopotential
 - example03 : Pt with lsda (nspin = 2)
 - example04 : Fe non collinear with spin orbit - Anomalous Hall conductivity
 - example05 : Pt non collinear with spin orbit - Spin Hall conductivity
@@ -15,31 +14,65 @@ Qauntum ESPRESSO Examples: ./qe_examples/
 - example09 : Weyl point search in MoP2
 - example10 : Transport in GaAs with temperature and energy dependent model for relaxation time
 - example11 : Calculating Rashba-Edelstein tensor elements in left handed elemental tellurium
-- example12 : Bi bilayer nanoribbon site projected band strcture
-- example13 : Bi bilayer Z2 calculation using Z2Pack inteface : SOC from QE and ad_hoc_SOC
+- example12 : Bi bilayer nanoribbon site projected band structure
+- example13 : Bi bilayer Z2 calculation using Z2Pack interface : SOC from QE and ad_hoc_SOC
 - example14 : Layer resolved Pt spin Hall conductivity
+- example15 : Si with a norm-conserving pseudopotential, internal projections and dielectric tensor
+- example16 : minimal vs standard vs extended basis presets of the internal projections
+- example17 : SnTe monolayer (PAW, fully relativistic) with the minimal internal projections in the augmented spinor metric; mirror Chern number
 
-VASP Examples: ./vasp_examples
+New-style property workflows: ./new_examples/
+
+- Driver and plotting scripts in the layout written by paoflow-gen (property workflows, ACBN0, band unfolding)
+
+VASP examples: ./vasp_examples/
 
 - example01 : Si
 - example02 : Pt (with SOC)
 - example03 : Fe (with SOC, FM)
 - example04 : MnF2 (nspin=2, collinear AFM)
-- example05 : Mn3Ir (with SOC, noncollinear 120$^\circ$ AFM)
+- example05 : Mn3Ir (with SOC, noncollinear 120 degree AFM)
 - example06 : FeRh (with SOC, FM) & (nspin = 2, FM)
 - example07 : CrI3 monolayer (nspin = 2, FM) & (with SOC, FM)
 
-ACBN0 Example: ./acbn0-example/
+Electron-phonon coupling: ./elphon/
 
-- ACBN0 routine for calculating Hubbard parameters in MgO, ZnO, MnO (antiferromagnetic).
+- One system folder each (system.py, qe/, phonons/, coupling/, superconductivity/, optics/,
+  transport/, arpes/): Si (phonon-assisted absorption, emissivity, mobility, ARPES), Pb
+  (Eliashberg function, Tc, Migdal-Eliashberg gap, resistivity, infrared optics, ARPES kink),
+  MgB2 (anisotropic two-gap Migdal-Eliashberg), SiC (polar crystal: Frohlich coupling,
+  quadrupoles, mobility). The same layout is written by `paoflow-gen elphon`.
 
-Tight Binding Models: ./TBmodel-examples/
+Non-linear optics: ./nlo_examples/
 
-- Several examples for constructing analytical Tight Binding model Hamiltonians
+- Shift current, injection currents and second-harmonic generation: gapped graphene
+  (tight-binding model), GaAs (PAW) and monolayer GeS; REPORT.md compares with the literature.
 
-Quantum Transport Examples: ./transport_examples/
+ACBN0 examples: ./acbn0_examples/
 
-- Examples for computing conductance and DOS using Green's function method
+- ACBN0 / eACBN0 Hubbard U and V in MgO, ZnO, MnO (antiferromagnetic) and others, with the
+  internal projections (no projwfc.x).
 
-  - example01 : Transmission through a bulk system (Al)
-  - example02 : Transmission through a left lead-conductor-right lead system (AlH)
+Tight-binding models: ./TBmodel_examples/
+
+- Analytical tight-binding model Hamiltonians (Kane-Mele, graphene, cubium, Slater-Koster)
+
+Band unfolding: ./unfold_examples/
+
+- Supercell band structures unfolded to the primitive cell (DFT-PAO and tight-binding)
+
+Quantum transport (Landauer-Buttiker): ./transport_examples/
+
+- example01 : Transmission through a bulk system (Al)
+- example02 : Transmission through a left lead-conductor-right lead system (AlH)
+
+Quantum oscillations: ./pyskeaf_examples/ and ./qo_analysis_examples/
+
+- Extremal Fermi-surface orbits with pyskeaf (de Haas-van Alphen frequencies and masses) and the
+  comparison of the computed frequencies with measured quantum oscillations
+
+Plotting: ./plot_examples/
+
+- Scripts that plot the outputs of the property workflows (bands, DOS, transport, optics, phonons)
+
+clean_runs.py removes the outputs of every example folder.

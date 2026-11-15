@@ -134,9 +134,17 @@ def do_dos_adaptive(data_controller, emin, emax, ne):
     if rank == 0 and attr['verbose']:
         print('Writing Adaptive DoS Files')
 
+    spacing = ene[1] - ene[0] if ne > 1 else 0.0
     for ispin in range(attr['nspin']):
         E_k = arry['E_k'][:, :bnd, ispin].reshape(arry['E_k'].shape[0] * bnd)
         delta = np.ravel(arry['deltakp'][:, :bnd, ispin], order='C')
+        narrow = int(np.count_nonzero(delta < spacing))
+        if narrow and rank == 0:
+            print(
+                'WARNING: %d of %d states have an adaptive width below the energy grid spacing '
+                '(%.2g eV) and are under-counted in the DOS: raise min_width in '
+                'adaptive_smearing() or ne' % (narrow, delta.size, spacing)
+            )
 
         dosaux = np.zeros((ne), dtype=float)
 

@@ -1,0 +1,8 @@
+# <Author et al., Journal Vol, page (year)>, <Fig./Table N>: <quantity, sample, method, definitions>.
+# <Provenance and method: measured | transcribed | vector-extracted | digitised (file, dpi, calibration residuals) | inverted (mu*)>.
+# <Assumptions (axis reading, label inference, sheet assignment) and the overlay check file>.
+dataset,quantity,x,x_unit,y,y_unit,temperature_k,conditions,provenance,source,locator,y_rel_uncertainty,note
+Author1965_Tc,tc,,,7.19,K,,method=resistive; definition=midpoint; sample=single crystal,transcribed,"Author et al., J. 1, 2 (1965)",Table I,0.01,handbook value
+Author1965_gap,gap,1.2,K,1.40,meV,,method=tunnelling; definition=edge; sample=film,digitised,"Author et al., J. 1, 2 (1965)",Fig. 2,0.03,marker centre
+Author1965_a2f,a2f,4.5,meV,0.55,1,,method=tunnelling_inversion; mu_star=0.12; lambda_quoted=1.55,digitised,"Author et al., J. 1, 2 (1965)",Fig. 3,0.05,curve trace
+Szabo2001_gap_pi,gap,4.2,K,2.3,meV,,method=point_contact; definition=peak; sheet=pi,transcribed,"Szabo et al., PRL 87, 137005 (2001)",text,0.1,quoted value

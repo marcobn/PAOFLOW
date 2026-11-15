@@ -162,13 +162,65 @@ def test_pt_uspp_lowest_state_overlaps_pswfc(pt_uspp, label, n, l):
 @pytest.mark.parametrize('label,n,l', [('4S', 4, 0), ('4P', 4, 1)])
 def test_as_paw_lowest_state_overlaps_pswfc(as_paw, label, n, l):
     """As PAW (no semi-core in occupied channels) yields a clean lowest state."""
-    r, u, _ = pseudize_shell(as_paw, n=n, l=l, n_points=1800)
+    r, u, _ = pseudize_shell(as_paw, n=n, l=l, n_points=1800, prefer_pswfc=False)
     dr = r[1] - r[0]
     u_ref = _pswfc_u(as_paw, label, r)
     u_ref = u_ref / np.sqrt(np.sum(u_ref * u_ref) * dr)
     ov = abs(np.sum(u_ref * u) * dr)
     # Relaxed tolerance: PAW box-confined frozen-rho solver is best-effort.
     assert ov > 0.80, f'As {label}: overlap = {ov:.3f}'
+
+
+_GA_PAW = _REPO_ROOT / 'examples/qe_examples/example10/Ga.pbe-dn-kjpaw_psl.1.0.0.UPF'
+
+
+@pytest.fixture(scope='module')
+def ga_paw():
+    if not _GA_PAW.exists():
+        pytest.skip(f'reference UPF not available: {_GA_PAW}')
+    return UPF(str(_GA_PAW))
+
+
+@pytest.mark.parametrize('label,n,l', [('3D', 3, 2), ('4S', 4, 0), ('4P', 4, 1)])
+def test_shells_with_a_pseudo_orbital_return_it(ga_paw, label, n, l):
+    """The stored pseudo-orbital is used as such (the solver's rank-0 states of the Ga PAW s and
+    d channels are ghosts at -4.8 and -3.4 Ha with no overlap with the pseudo-orbitals)."""
+    r, u, eps = pseudize_shell(ga_paw, n=n, l=l, n_points=1800)
+    assert np.isnan(eps)
+    dr = r[1] - r[0]
+    u_ref = _pswfc_u(ga_paw, label, r)
+    u_ref = u_ref / np.sqrt(np.sum(u_ref * u_ref) * dr)
+    assert abs(np.sum(u_ref * u) * dr) > 0.999
+
+
+def test_ghosts_and_pseudo_orbitals_are_excluded_from_the_augmentation_shells(ga_paw):
+    from PAOFLOW.basis_gen.radial import lowest_valence_n, select_physical_states
+
+    for l in (0, 2):
+        eps, U, r = solve_radial_channel(ga_paw, l, n_points=1800, n_states=6)
+        ranks = select_physical_states(ga_paw, l, None, eps, U, r)
+        assert 0 not in ranks  # the ghost
+        dr = r[1] - r[0]
+        for rank in ranks:  # physical states: plain and augmented norms comparable
+            assert np.sum(U[rank] ** 2) * dr < 3.0
+    # the first augmentation shells are bound-or-box states orthogonal to the pseudo-orbitals
+    r, u5s, _ = pseudize_shell(ga_paw, n=5, l=0, n_points=1800)
+    r, u4d, _ = pseudize_shell(ga_paw, n=4, l=2, n_points=1800)
+    dr = r[1] - r[0]
+    for u, label in ((u5s, '4S'), (u4d, '3D')):
+        u_ref = _pswfc_u(ga_paw, label, r)
+        assert abs(np.sum(u_ref * u) * dr) / np.sqrt(np.sum(u_ref**2) * dr) < 0.6
+    assert lowest_valence_n(ga_paw, 2) == 3  # core [Ar]: the 3d is in the valence
+
+
+def test_lowest_valence_n_follows_the_core(as_paw):
+    from PAOFLOW.basis_gen.radial import lowest_valence_n
+
+    # As PAW with Z_val = 5: core [Ar]3d10, so the lowest valence d shell is 4d
+    assert lowest_valence_n(as_paw, 2) == 4
+    assert lowest_valence_n(as_paw, 0) == 4 and lowest_valence_n(as_paw, 1) == 4
+    with pytest.raises(ValueError, match='below lowest'):
+        pseudize_shell(as_paw, n=3, l=2, n_points=600)
 
 
 # ---------------------------------------------------------------------------

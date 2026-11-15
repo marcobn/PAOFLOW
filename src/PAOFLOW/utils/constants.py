@@ -51,3 +51,8 @@ C = '\u00a9'
 CC = C.encode('utf8')
 
 LL = ['x', 'y', 'z']
+
+# SI constants of the non-linear optical responses (response/nonlinear_optics.py)
+EPSILON0_SI = 8.8541878128e-12  # F/m, vacuum permittivity
+ELECTRON_CHARGE_SI = 1.602176634e-19  # C
+HBAR_SI = 1.054571817e-34  # J s

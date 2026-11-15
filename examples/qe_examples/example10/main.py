@@ -6,8 +6,14 @@ from PAOFLOW.boltzmann.TauModel import TauModel
 
 def main():
 
+    # Optional adaptive smearing of the transport kernel (see the comment before the transport loop)
     adaptive_smearing = False
     # Start PAOFLOW, interpolate Hamiltonian, compute gradient an momenta
+    # smearing=None: the DOS of the doping step uses a fixed 0.01 eV Gaussian and the transport
+    # integrates the Fermi-Dirac derivative directly. The adaptive (Yates) widths a|v|dk of the
+    # dispersive bands are 0.3-0.7 eV on this mesh, and their tails fill the gap (5e-4 states/eV
+    # at mid-gap), far above the doping of 1.6e-5 electrons per cell that fixes the chemical
+    # potential; the floored adaptive DOS counts the electrons but cannot resolve the doping.
     paoflow = PAOFLOW.PAOFLOW(savedir='GaAs.save', smearing=None, npool=1, verbose=True)
     arry, attr = paoflow.data_controller.data_dicts()
     # Internal basis
@@ -28,7 +34,9 @@ def main():
 
     # Compute the chemical potential at specified doping concentration for various temperatures
     doping = -3.5e17
-    paoflow.doping(tmin=380, tmax=812, nt=28, emin=-36, emax=2, ne=5000, doping_conc=doping)
+    # The energy grid must resolve the 0.01 eV Gaussians of the DOS (spacing below delta/3) for the
+    # valence count to reach nelec: 8000 points over [-20, 2] eV, which holds every valence band.
+    paoflow.doping(tmin=380, tmax=812, nt=28, emin=-20, emax=2, ne=8000, doping_conc=doping)
 
     # Define the functional form for our 'custom' TauModel
     me = 9.10938e-31  # Electron Mass
@@ -77,6 +85,8 @@ def main():
         'ms': 0.7,
     }
 
+    # With adaptive_smearing = True the transport kernel becomes the adaptive Gaussian of each state
+    # convolved with the Fermi-Dirac derivative; the DOS of the doping step above is not affected.
     if adaptive_smearing:
         paoflow.adaptive_smearing()
 

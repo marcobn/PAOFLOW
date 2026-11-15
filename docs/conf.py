@@ -29,6 +29,8 @@ if DOCS_FAST:
 
 nb_execution_mode = 'off'
 
+# GitHub-style anchors (#section-title) for the headings of the Markdown pages
+myst_heading_anchors = 4
 myst_enable_extensions = [
     'amsmath',
     'dollarmath',
@@ -75,6 +77,7 @@ autoapi_dirs = [
 ]
 autoapi_ignore = [
     '*defs*',
+    '*PAOFLOW/qo_analysis*',  # back-compat shim of PAOFLOW.agentic.qo_analysis
 ]
 autoapi_root = 'api/autoapi'
 autoapi_add_toctree_entry = False

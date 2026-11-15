@@ -1,0 +1,45 @@
+GaAs: non-linear optics (shift current, injection currents, SHG)
+----------------------------------------------------------------
+
+Inputs: the QE scf/nscf of example10 (same GaAs.save; copy or link it here; no projwfc is needed,
+the PAO projections are computed internally from the wavefunctions):
+  ln -s ../../qe_examples/example10/GaAs.save GaAs.save)
+Run:    mpirun -np 8 python main.py
+
+main.py builds the PAO Hamiltonian (62 orbitals: the valence shells from the UPF pseudo-orbitals,
+the augmenting shells from the all-electron BASIS tables, the default for PAW inputs since October
+2026; 23 bands above 0.95) and calls
+PAOFLOW.nonlinear_optics(nk=(40,40,40), scissor=0.86, eta=0.05, components=['xyz', ...]),
+which writes output/{shift,shiftm,injectc,injectm}_<abc>.dat and shg{r,i,a}_<abc>.dat
+(photon energy in eV; uA/V^2, A V^-2 s^-1 and pm/V).
+
+Targets (see docs/internals/nonlinear-optics.md): |chi_xyz(w)| of Wang et al. 2017 Fig. 4
+(scissors curve), chi_xyz(0) ~ 1.5-2.5 x 10^2 pm/V (Rashkeev 1998, Nastos 2005), and the
+shift current sigma_xyz of Ibanez-Azpiroz et al. 2018.  chi_xyz = chi_yzx = chi_zxy by
+symmetry at every frequency, chi_xxx = 0; the shift and injection currents of a cubic
+T_d crystal vanish for the diagonal components and the T-odd files (shiftm, injectm) vanish.
+Converge nk (60^3 -> 100^3) and eta before quoting numbers.
+
+Reference runs (October 2026, scissor 0.86 eV, eta 0.05 eV, 62-orbital basis; 15 min at 40^3 and
+48 min at 60^3 on 8 ranks): |chi_xyz| = 110 pm/V at 0 eV (40^3 and 60^3), 341/337 pm/V at 1.5 eV,
+peak 610 (40^3) / 480 (60^3) pm/V near 2.6 eV, the resonance region being unconverged (literature
+with a scissor: chi_xyz(0) ~ 100-170 pm/V, peaks of 400-600 pm/V); the shift current sigma_xyz
+reaches -30 / -27 uA/V^2 at 3.9-4 eV. chi_yzx agreed with chi_xyz within 5 % (40^3) / 2-4 % (60^3)
+and the forbidden chi_xxx was 5-11 % of the peak at the resonance in the first runs: the internal
+projections of PAW pseudo-wavefunctions broke the point symmetry at a few k-points (a nosym nscf
+does not help). Fixed in October 2026 (augmented metric of the projections, see ../REPORT.md
+section 3.2): the Hamiltonian is now symmetric (interpolation spread 3e-3 meV between equivalent
+k-points instead of 5-25 meV), the shift current obeys the T_d relations to 1e-10; the
+projectability vector changed (12 instead of 18 bands above 0.95; use pthr = 0.90 to keep 21).
+Reference runs with the current code (PAW, augmented projections, valence shells from the UPF,
+23 bands above 0.95, 40^3 reduced to 3091 k-points by symmetry: 135 s on 8 ranks): |chi_xyz| =
+98 pm/V at 0 eV, 318 at 1.5 eV, peak 695 pm/V at 2.63 eV, sigma_xyz = -29 uA/V^2 at 3.9 eV; with
+position_dipoles=True (the PAW augmentation of the position operator included, 4 min): 193 pm/V,
+636, 874, -42 uA/V^2 (158, 559, 850, -38 without the augmentation). Every T_d relation holds to 1e-8
+of the peak (covariant kernels and symmetrised tensors, October 28 2026). With the PseudoDojo norm-conserving Ga/As set
+(PSEUDOS/nc-sr-05_pbe_standard_upf, 90 Ry, As 3d in valence; nelec 28) the same basis gives
+|chi_xyz(0)| = 103 pm/V, peak 492 pm/V at 2.54 eV, sigma_xyz -28 uA/V^2 at 3.9 eV at 40^3, and
+178 pm/V, 677 pm/V, -41 uA/V^2 with the position dipoles: the dipoles bring the static chi_xyz
+into the measured 166-180 pm/V (../REPORT.md section 3.2). The remaining 2-10 % difference between chi_xyz and
+chi_yzx (SHG only) is the gauge of exactly degenerate bands on the Lambda lines of the grid (the
+U(N)-covariant treatment of the phase-2 plan).

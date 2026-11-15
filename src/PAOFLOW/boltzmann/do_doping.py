@@ -158,6 +158,12 @@ def solve_for_mu(
         pos = dela.argmin()
         mu = ene[pos]
         center = False
+        if pos in (0, ene.size - 1):
+            print(
+                'WARNING: the chemical potential sits at the edge of the energy window '
+                '(%.3f eV, electron count off by %.3g): widen emin/emax or refine the DOS (ne)'
+                % (mu, dela[pos])
+            )
         ########################################
         # checking if dos is zero takes care not to include band gaps in the integral calculation
         #######################################

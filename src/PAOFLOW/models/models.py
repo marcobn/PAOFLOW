@@ -2618,17 +2618,23 @@ def graphene(data_controller, params):
     arry['HRs'][0, 1, 0, 0, 0, 0] = params['t']
     arry['HRs'][1, 0, 0, 0, 0, 0] = params['t']
 
-    # H10
-    arry['HRs'][1, 0, 1, 0, 0, 0] = params['t']
+    # Inter-cell nearest-neighbour hoppings.  PAOFLOW's convention is
+    # H(k) = sum_n exp(-2 pi i k.n) HRs[..., n], so HRs[i, j, n] couples orbital i in the
+    # home cell to orbital j in cell -n: with A at (1/3, 1/3) and B at (2/3, 2/3) the two
+    # other B -> A bonds reach A in the cells +a_1 and +a_2 (n = (-1, 0, 0), (0, -1, 0)),
+    # which keeps the real-space cells consistent with 'tau' (needed by the position
+    # operator of the non-linear optics; the band structure does not depend on it).
+    # H(-1,0,0) ~ index 2
+    arry['HRs'][1, 0, 2, 0, 0, 0] = params['t']
 
-    # H20
-    arry['HRs'][:, :, 2, 0, 0, 0] = np.conj(arry['HRs'][:, :, 1, 0, 0, 0]).T
+    # H(1,0,0) ~ index 1
+    arry['HRs'][:, :, 1, 0, 0, 0] = np.conj(arry['HRs'][:, :, 2, 0, 0, 0]).T
 
-    # H01
-    arry['HRs'][1, 0, 0, 1, 0, 0] = params['t']
+    # H(0,-1,0) ~ index 2
+    arry['HRs'][1, 0, 0, 2, 0, 0] = params['t']
 
-    # H02
-    arry['HRs'][:, :, 0, 2, 0, 0] = np.conj(arry['HRs'][:, :, 0, 1, 0, 0]).T
+    # H(0,1,0) ~ index 1
+    arry['HRs'][:, :, 0, 1, 0, 0] = np.conj(arry['HRs'][:, :, 0, 2, 0, 0]).T
 
     # Lattice Vectors
     arry['a_vectors'] = np.zeros((3, 3), dtype=float)

@@ -5,6 +5,7 @@
 PAOFLOW's velocity operator in the orthonormal PAO Bloch basis is the k-derivative of the
 Hamiltonian plus the inter-site term, `v = dH/dk + i[H, τ]`
 (the `Dnm` term of `hamiltonian/do_gradient`): the position
+(`elphon/elph_bloch.band_velocities`, the `Dnm` term of `hamiltonian/do_gradient`): the position
 operator is taken diagonal on the orbital centres τ_i. For orthonormal localised orbitals ω the
 exact tight-binding velocity has a third term,
 
@@ -43,6 +44,13 @@ Hooks: `gradient_and_momenta(position_dipoles=True, position_dipole_level='full'
 `attr['position_dipoles'] = True`; off by default, see the `dHksp` route below),
 `raman_spectrum(position_dipoles=True)` (default on) and the optical run emitted by `paoflow-gen`
 (`gradient_and_momenta(position_dipoles=True)`).
+| `position_dipole_operator` | data-controller-facing callable `K_cryst -> d(k)`, the `position_dipoles` input of `band_velocities` |
+
+Hooks: `band_velocities(..., position_dipoles=)`,
+`phonon_assisted_absorption_dense_q(..., position_dipoles=data_controller, position_dipole_level='full')`,
+the Si example flag `POSITION_DIPOLES` (`--position-dipoles`, `--position-dipole-level`).
+Off by default; `carrier_scattering` is unaffected (diagonal velocities). Scalar-relativistic
+bases only (`NotImplementedError` for `dftSO`).
 
 ## Conventions (measured, not assumed)
 

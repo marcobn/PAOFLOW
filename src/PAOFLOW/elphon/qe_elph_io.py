@@ -23,12 +23,21 @@ Three files are parsed:
 
 All frequencies are returned in THz for direct use by
 :func:`PAOFLOW.elphon.eph_kq.eliashberg_from_modes`.
+
+The EPW readers (:func:`read_epw_ukk`, :func:`read_epw_epb`) load the coarse
+Bloch-basis coupling that ``epw.x`` writes with ``epbwrite = .true.``;
+:func:`read_epw_a2f` reads EPW's own Eliashberg function for comparison.
 """
 
+from __future__ import annotations
+
+import glob
+import itertools
 import os
 import re
 
 import numpy as np
+from numpy.typing import NDArray
 
 # 1 Rydberg in eV.
 RY_TO_EV = 13.605693122994
@@ -529,3 +538,397 @@ def read_qe_ahc_gkk(ahc_dir, iq, nbnd, nmodes, nk, ahc_nbnd=None):
         'nmodes': int(nmodes),
         'nk': int(nk),
     }
+
+
+# --------------------------------------------------------------------------- #
+# EPW coarse Bloch-basis coupling (epbwrite)
+# --------------------------------------------------------------------------- #
+
+
+def _read_fortran_record(path: str) -> NDArray[np.uint8]:
+    """Read the first record of a sequential unformatted Fortran file as raw bytes.
+
+    Parameters
+    ----------
+    path : str
+        File written with ``FORM='unformatted'``, ``ACCESS='sequential'``.
+
+    Returns
+    -------
+    NDArray[np.uint8]
+        The record payload (markers stripped).
+
+    Notes
+    -----
+    Records larger than 2 GiB are split by gfortran into subrecords whose
+    leading 4-byte length marker is negative when another subrecord follows;
+    the payloads are concatenated here.  ``scipy.io.FortranFile`` does not
+    handle this layout.
+    """
+    chunks = []
+    with open(path, 'rb') as fh:
+        while True:
+            head = np.fromfile(fh, dtype=np.int32, count=1)
+            if head.size == 0:
+                raise ValueError('unexpected end of file in %s' % path)
+            length = abs(int(head[0]))
+            chunks.append(np.fromfile(fh, dtype=np.uint8, count=length))
+            tail = np.fromfile(fh, dtype=np.int32, count=1)
+            if tail.size == 0 or abs(int(tail[0])) != length:
+                raise ValueError('corrupt Fortran record markers in %s' % path)
+            if head[0] >= 0:
+                break
+    return np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+
+
+def read_epw_a2f(path: str) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Read an EPW ``<prefix>.a2f`` file (first phonon smearing).
+
+    The data block has ``omega (meV)`` followed by one ``a2F`` column per
+    smearing, or (isotropic Eliashberg runs) ``omega, a2F, lambda(omega)``.
+    Header and footer lines (integrated couplings, smearing list) are skipped:
+    only numeric rows with the most frequent column count are kept.
+
+    Returns
+    -------
+    omega_mev, a2f, lam_cum : ndarray
+        Frequencies (meV), ``a2F`` and the cumulative ``lambda(omega) = 2 int_0^omega
+        a2F/w dw`` (read from the file when it has three columns).
+    """
+    rows = []
+    with open(path) as fh:
+        for line in fh:
+            try:
+                rows.append([float(x) for x in line.split()])
+            except ValueError:
+                continue
+    counts = [len(r) for r in rows if len(r) >= 2]
+    if not counts:
+        raise ValueError('%s: no alpha^2F data' % path)
+    ncol = max(set(counts), key=counts.count)
+    data = np.array([r for r in rows if len(r) == ncol])
+    omega, a2f = data[:, 0], data[:, 1]
+    if ncol == 3:
+        return omega, a2f, data[:, 2]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        integrand = np.where(omega > 0, 2.0 * a2f / omega, 0.0)
+    lam = np.concatenate(
+        [[0.0], np.cumsum(0.5 * (integrand[1:] + integrand[:-1]) * np.diff(omega))]
+    )
+    return omega, a2f, lam
+
+
+def read_epw_ukk(path: str, nk: int) -> dict[str, object]:
+    """Read the band bookkeeping of an EPW ``prefix.ukk`` file.
+
+    Parameters
+    ----------
+    path : str
+        Path to ``prefix.ukk`` (formatted, written by EPW ``write_filukk``).
+    nk : int
+        Number of coarse k-points (the nscf grid).
+
+    Returns
+    -------
+    dict
+        ``nbndep`` (int), ``nbndskip`` (int), ``ibndkept`` (``(nbndep,)`` int,
+        0-based nscf band index of each band kept in the e-ph calculation),
+        ``u`` (``(nk, nbndep, nwann)`` complex Wannier rotations), ``lwin``
+        (``(nk, nbndep)`` bool, outer disentanglement window), ``exband``
+        (``(nbnd,)`` bool, bands excluded via ``bands_skipped``), ``nbnd``
+        and ``nwann``.
+
+    Raises
+    ------
+    ValueError
+        If the file is inconsistent with ``nk``.
+    """
+    with open(path) as fh:
+        lines = [ln.strip() for ln in fh if ln.strip()]
+    nbndep, nbndskip = (int(x) for x in lines[0].split()[:2])
+    ibndkept = np.array([int(lines[1 + i].split()[0]) for i in range(nbndep)]) - 1
+    pos = 1 + nbndep
+    u_vals = []
+    while pos < len(lines) and lines[pos].startswith('('):
+        re_part, im_part = lines[pos].strip('()').split(',')
+        u_vals.append(complex(_to_float(re_part), _to_float(im_part)))
+        pos += 1
+    if len(u_vals) % (nk * nbndep):
+        raise ValueError('%s: %d U elements not divisible by nk*nbndep' % (path, len(u_vals)))
+    nwann = len(u_vals) // (nk * nbndep)
+    flags = []
+    while pos < len(lines) and lines[pos] in ('T', 'F'):
+        flags.append(lines[pos] == 'T')
+        pos += 1
+    nbnd = len(flags) - nk * nbndep
+    if nbnd < nbndep:
+        raise ValueError('%s: inconsistent lwin/exband block for nk=%d' % (path, nk))
+    return {
+        'nbndep': nbndep,
+        'nbndskip': nbndskip,
+        'ibndkept': ibndkept,
+        'u': np.array(u_vals).reshape(nk, nbndep, nwann),
+        'lwin': np.array(flags[: nk * nbndep]).reshape(nk, nbndep),
+        'exband': np.array(flags[nk * nbndep :]),
+        'nbnd': nbnd,
+        'nwann': nwann,
+    }
+
+
+def _epb_record_nat(nbytes: int, nq: int, nbnd: int, nbndep: int, nks: int) -> int | None:
+    """Number of atoms for which an ``.epb`` record would have ``nbytes`` bytes, or ``None``.
+
+    Parameters
+    ----------
+    nbytes : int
+        Size of the record payload.
+    nq, nbnd, nbndep, nks : int
+        Coarse q-points, nscf bands, e-ph bands and k-points of the pool.
+
+    Returns
+    -------
+    int or None
+        The ``nat`` (1 to 200) that reproduces ``nbytes`` exactly.
+    """
+    for nat in range(1, 201):
+        nmodes = 3 * nat
+        size = (
+            4
+            + 8 * 3 * nq
+            + 8 * nbnd * nks
+            + 16 * nmodes * nmodes * nq
+            + 16 * nbndep * nbndep * nks * nmodes * nq
+            + 8 * 9 * nat
+            + 8 * 9
+        )
+        if size == nbytes:
+            return nat
+        if size > nbytes:
+            return None
+    return None
+
+
+def read_epw_epb(
+    epw_dir: str, prefix: str, nbnd: int, nk: int, nat: int, nbndep: int
+) -> dict[str, NDArray]:
+    """Read EPW's coarse Bloch-basis electron-phonon matrix elements (``epbwrite``).
+
+    ``epw.x`` with ``epbwrite = .true.`` writes one file per pool,
+    ``prefix.epb1 ... prefix.epbN``, each holding a single unformatted record
+    ``nqc, xqc, et, dynq, epmatq, zstar, epsi`` for that pool's block of
+    k-points.  The blocks are concatenated here in nscf k order.
+
+    Parameters
+    ----------
+    epw_dir : str
+        Directory with the ``prefix.epb*`` files (EPW ``outdir``).
+    prefix : str
+        Calculation prefix.
+    nbnd : int
+        Number of bands in the nscf run.
+    nk : int
+        Number of coarse k-points (full grid of the nscf run).
+    nat : int
+        Number of atoms.
+    nbndep : int
+        Number of bands kept in the e-ph calculation (``nbnd`` minus
+        ``exclude_bands``), e.g. :func:`read_epw_ukk` ``['nbndep']``.
+
+    Returns
+    -------
+    dict
+        ``xq_cart`` : ``(nq, 3)`` coarse q-points, Cartesian, ``2 pi/alat``
+        (EPW star order, the full coarse grid).
+        ``et_ry`` : ``(nk, nbnd)`` band energies (Ry, all bands, absolute).
+        ``dynq`` : ``(3 nat, 3 nat, nq)`` complex force-constant matrices
+        (Ry/bohr^2, not divided by the masses, acoustic sum rule applied).
+        ``epmatq`` : ``(nbndep, nbndep, nk, 3 nat, nq)`` complex,
+        ``<psi_{m,k+q}| dV/du_{c}(q) |psi_{n,k}>`` (Ry/bohr) in the Cartesian
+        displacement basis ``c = 3 * atom + direction``.
+        ``zstar`` : ``(nat, 3, 3)`` Born charges; ``epsi`` : ``(3, 3)``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no ``prefix.epb*`` file is found.
+    ValueError
+        If a record does not match the given dimensions.
+
+    Notes
+    -----
+    k-points are distributed over pools as in Quantum ESPRESSO: the first
+    ``nk mod npool`` pools hold one extra k-point.  Both ``psi_{k+q}`` and
+    ``psi_k`` are the nscf wavefunctions of the save directory, so the matrix
+    elements share the band gauge of PAO projections computed on that save.
+    """
+    paths = glob.glob(os.path.join(epw_dir, '%s.epb*' % prefix))
+    pools = sorted(
+        (int(m.group(1)), p) for p in paths if (m := re.search(r'\.epb(\d+)$', p)) is not None
+    )
+    if not pools:
+        raise FileNotFoundError('no %s.epb* files in %s' % (prefix, epw_dir))
+    if [i for i, _ in pools] != list(range(1, len(pools) + 1)):
+        raise ValueError('pool files %s.epb1..N are not contiguous in %s' % (prefix, epw_dir))
+    npool = len(pools)
+    base, extra = divmod(nk, npool)
+    nmodes = 3 * nat
+
+    epmatq = None
+    k0 = 0
+    for ipool, (_, path) in enumerate(pools):
+        nks = base + (1 if ipool < extra else 0)
+        raw = _read_fortran_record(path)
+        nq = int(np.frombuffer(raw, np.int32, 1, 0)[0])
+        sizes = [
+            ('nqc', np.int32, 1),
+            ('xqc', np.float64, 3 * nq),
+            ('et', np.float64, nbnd * nks),
+            ('dynq', np.complex128, nmodes * nmodes * nq),
+            ('epmatq', np.complex128, nbndep * nbndep * nks * nmodes * nq),
+            ('zstar', np.float64, 9 * nat),
+            ('epsi', np.float64, 9),
+        ]
+        expected = sum(np.dtype(dt).itemsize * n for _, dt, n in sizes)
+        if raw.size != expected:
+            hint = ''
+            matching = _epb_record_nat(raw.size, nq, nbnd, nbndep, nks)
+            if matching is not None and matching != nat:
+                hint = (
+                    '; the record matches nat=%d: masses_amu must give one mass per atom,'
+                    ' not per species (see PAOFLOW.elphon.elph_bloch.atom_masses)' % matching
+                )
+            raise ValueError(
+                '%s: record has %d bytes, expected %d for nbnd=%d, nbndep=%d, nks=%d, nat=%d, nq=%d%s'
+                % (path, raw.size, expected, nbnd, nbndep, nks, nat, nq, hint)
+            )
+        offset, block = 0, {}
+        for name, dt, n in sizes:
+            block[name] = np.frombuffer(raw, dt, n, offset)
+            offset += np.dtype(dt).itemsize * n
+        if epmatq is None:
+            epmatq = np.empty((nbndep, nbndep, nk, nmodes, nq), dtype=np.complex128)
+            et_ry = np.empty((nk, nbnd))
+            xq_cart = block['xqc'].reshape(nq, 3).copy()
+            dynq = block['dynq'].reshape(nmodes, nmodes, nq, order='F').copy()
+            zstar = np.moveaxis(block['zstar'].reshape(3, 3, nat, order='F'), 2, 0).copy()
+            epsi = block['epsi'].reshape(3, 3, order='F').copy()
+        epmatq[:, :, k0 : k0 + nks] = block['epmatq'].reshape(
+            nbndep, nbndep, nks, nmodes, nq, order='F'
+        )
+        et_ry[k0 : k0 + nks] = block['et'].reshape(nbnd, nks, order='F').T
+        k0 += nks
+    return {
+        'xq_cart': xq_cart,
+        'et_ry': et_ry,
+        'dynq': dynq,
+        'epmatq': epmatq,
+        'zstar': zstar,
+        'epsi': epsi,
+    }
+
+
+def write_epw_ukk(
+    path: str, nk: int, nbnd: int, ibndkept: NDArray[np.integer] | None = None
+) -> None:
+    """Write a ``prefix.ukk`` with identity rotations for :func:`read_epw_ukk` (dev / parity tool).
+
+    Parameters
+    ----------
+    path : str
+    nk : int
+        Number of coarse k-points.
+    nbnd : int
+        Bands of the nscf run.
+    ibndkept : ndarray of int, optional
+        0-based bands kept (default: all).  Only a contiguous block starting at the
+        lowest kept band is representable (EPW ``exclude_bands = 1:nbndskip``).
+    """
+    kept = np.arange(nbnd) if ibndkept is None else np.asarray(ibndkept, dtype=int)
+    nbndskip = int(kept.min())
+    nbndep = int(kept.size)
+    if not np.array_equal(kept, np.arange(nbndskip, nbndskip + nbndep)):
+        raise ValueError('only a contiguous block of kept bands can be written to .ukk')
+    lines = ['%12d%12d' % (nbndep, nbndskip)] + ['%12d' % (b + 1) for b in kept]
+    lines += [' (1.0000000000000000E+00,0.0000000000000000E+00)'] * (nk * nbndep)  # nwann = 1
+    lines += [' T'] * (nk * nbndep)  # lwin
+    lines += [' T' if b < nbndskip else ' F' for b in range(nbnd)]  # exband
+    lines += ['  0.0E+00  0.0E+00  0.0E+00']
+    with open(path, 'w') as fh:
+        fh.write('\n'.join(lines) + '\n')
+
+
+def write_epw_epb(
+    epw_dir: str,
+    prefix: str,
+    xq_cart: NDArray[np.float64],
+    et_ry: NDArray[np.float64],
+    dynq: NDArray[np.complex128],
+    epmatq: NDArray[np.complex128],
+    zstar: NDArray[np.float64],
+    epsi: NDArray[np.float64],
+    npool: int = 1,
+) -> list[str]:
+    """Write ``prefix.epb1..N`` in EPW's ``epbwrite`` layout (dev / parity tool).
+
+    Parameters
+    ----------
+    epw_dir : str
+    prefix : str
+    xq_cart : ndarray ``(nq, 3)``
+        Coarse q-points (Cartesian, ``2 pi / alat``).
+    et_ry : ndarray ``(nk, nbnd)``
+        Band energies (Ry).
+    dynq : ndarray ``(3 nat, 3 nat, nq)``
+    epmatq : ndarray ``(nbndep, nbndep, nk, 3 nat, nq)``
+        Matrix elements as returned by :func:`read_epw_epb`.
+    zstar : ndarray ``(nat, 3, 3)``
+    epsi : ndarray ``(3, 3)``
+    npool : int, optional
+        Number of pool files; the k-points are split as QE does.
+
+    Returns
+    -------
+    list of str
+        The files written.  Records above 2 GiB are split into gfortran subrecords.
+    """
+    xq_cart = np.asarray(xq_cart, dtype=float)
+    et_ry = np.asarray(et_ry, dtype=float)
+    epmatq = np.asarray(epmatq, dtype=np.complex128)
+    nq = xq_cart.shape[0]
+    nk = et_ry.shape[0]
+    base, extra = divmod(nk, npool)
+    paths = []
+    k0 = 0
+    for ip in range(npool):
+        nks = base + (1 if ip < extra else 0)
+        sl = slice(k0, k0 + nks)
+        parts = [
+            np.array([nq], np.int32),
+            xq_cart.ravel(),  # xqc(3, nq): Fortran order == C ravel of (nq, 3)
+            np.ascontiguousarray(et_ry[sl].T).ravel(order='F'),  # et(nbnd, nks)
+            np.asarray(dynq, np.complex128).ravel(order='F'),
+            np.ascontiguousarray(epmatq[:, :, sl]).ravel(order='F'),
+            np.ascontiguousarray(np.transpose(np.asarray(zstar, float), (1, 2, 0))).ravel(
+                order='F'
+            ),  # zstar(3,3,nat)
+            np.asarray(epsi, float).ravel(order='F'),
+        ]
+        payload = np.concatenate([p.view(np.uint8) for p in parts])
+        path = os.path.join(epw_dir, '%s.epb%d' % (prefix, ip + 1))
+        limit = 2**31 - 1
+        with open(path, 'wb') as fh:
+            if payload.size <= limit:
+                np.array([payload.size], np.int32).tofile(fh)
+                payload.tofile(fh)
+                np.array([payload.size], np.int32).tofile(fh)
+            else:
+                cuts = list(range(0, payload.size, limit)) + [payload.size]
+                for i, (a, b) in enumerate(itertools.pairwise(cuts)):
+                    n = b - a
+                    more = i < len(cuts) - 2
+                    np.array([-n if more else n], np.int32).tofile(fh)
+                    payload[a:b].tofile(fh)
+                    np.array([-n if i > 0 else n], np.int32).tofile(fh)
+        paths.append(path)
+        k0 += nks
+    return paths

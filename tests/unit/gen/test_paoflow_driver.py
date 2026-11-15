@@ -67,6 +67,22 @@ def test_run_script_3d_uses_default_path():
     assert "p.bands(ibrav=IBRAV, nk=NK, fname='bands')" in text
 
 
+def test_run_script_orbital_hall_main_and_plot():
+    """orbital_Hall is a selectable property: the run script calls it with the energy window and the
+    sigma^{L_z}_{xy} element, the plot script gets a menu entry reading the ohcEf files."""
+    cfg = _run_cfg(ibrav=2, is_2d=False, properties=['bands', 'spin_Hall', 'orbital_Hall'])
+    main = d.build_run_script(cfg)
+    compile(main, 'main.py', 'exec')
+    assert 'p.orbital_Hall(emin=EMIN, emax=EMAX, o_tensor=[[0, 1, 2]])' in main
+    assert 'EMIN, EMAX, NE = ' in main
+    plot = d.build_plot_script(cfg)
+    compile(plot, 'plot.py', 'exec')
+    assert 'def plot_orbital_hall' in plot and "_many('*.ohcEf*.dat')" in plot
+    assert 'pplt.plot_ohc(' in plot and 'Orbital Hall conductivity' in plot
+    assert ('orbital_Hall', 'Orbital Hall conductivity') in d.PROPERTY_MENU
+    assert 'orbital_Hall' in d.ENERGY_WINDOW_PROPERTIES
+
+
 def test_run_script_2d_unknown_ibrav_todo():
     text = d.build_run_script(_run_cfg(ibrav=3, is_2d=True))
     assert 'No built-in 2D path for ibrav=3' in text
@@ -307,52 +323,42 @@ def test_build_phonon_plot_script_includes_reststrahlen():
 
 
 # --------------------------------------------------------------------------- #
-# Electron-phonon (PAO route) workflow generation
+# Electron-phonon workflow (paoflow-gen elphon writes a system folder, see
+# test_elphon_system.py); only the EPW a2f reader used by its drivers is tested here.
 # --------------------------------------------------------------------------- #
-def _elphon_cfg(**kw):
-    cfg = dict(_COMMON)
-    cfg.update(
-        {
-            'prefix': 'lead',
-            'savedir': 'lead.save',
-            'source': 'ahc',
-            'coupling_dir': 'ahc_dir',
-            'kgrid': [9, 9, 9],
-            'qgrid': [3, 3, 3],
-            'nbnd': 22,
-            'masses_amu': [207.2],
-            'nelec': 14,
-            'nk_dense': 18,
-            'sigma_ry': 0.02,
-            'mu_star': 0.10,
-            'pthr': 0.90,
-            'q_weights': [],
-        }
+
+
+def test_read_epw_a2f_helper_parses_epw_format(tmp_path):
+    a2f = tmp_path / 'pb.a2f'
+    a2f.write_text(
+        ' w[meV] a2f and integrated 2*a2f/w for   10 smearing values\n'
+        '   0.5000000   0.1000000   0.0100000\n'
+        '   1.0000000   0.2000000   0.0500000\n'
+        ' Integrated el-ph coupling\n  #            1.1514582\n'
     )
-    cfg.update(kw)
-    return cfg
+    from PAOFLOW.elphon.qe_elph_io import read_epw_a2f
+
+    w, a2f_values, lam = read_epw_a2f(str(a2f))
+    assert list(w) == [0.5, 1.0] and list(a2f_values) == [0.1, 0.2] and lam[-1] == 0.05
 
 
-def test_build_elphon_script_compiles_and_wires_ahc():
-    text = d.build_elphon_script(_elphon_cfg())
-    compile(text, 'main.elphon.py', 'exec')  # must be valid Python
-    assert "SOURCE = 'ahc'" in text
-    assert 'KGRID = (9, 9, 9)' in text
-    assert 'QGRID = (3, 3, 3)' in text
-    assert 'MASSES_AMU = [207.2]' in text
-    assert 'NELEC = 14' in text
-    assert "COUPLING_DIR = os.path.join(HERE, 'ahc_dir')" in text
-    # the analyse phase calls the AO driver, and no tokens are left unsubstituted
-    assert 'eliashberg_from_qe_coupling(' in text
-    assert 'source=SOURCE,' in text
-    for tok in ('__SAVEDIR__', '__SOURCE__', '__KGRID__', '__MASSES__', '__QWEIGHTS__'):
-        assert tok not in text
-
-
-def test_build_elphon_script_elphmat_source():
-    text = d.build_elphon_script(
-        _elphon_cfg(source='elphmat', coupling_dir='elph_dir', q_weights=[1, 8, 6, 12])
-    )
-    assert "SOURCE = 'elphmat'" in text
-    assert "COUPLING_DIR = os.path.join(HERE, 'elph_dir')" in text
-    assert 'Q_WEIGHTS = [1.0, 8.0, 6.0, 12.0]' in text
+def test_build_run_script_nonlinear_optics_block():
+    cfg = _run_cfg(
+        ibrav=2, is_2d=False, properties=['bands', 'nonlinear'], nlo_nk=24, nlo_emax=3.5,
+        nlo_eta=0.04, nlo_scissor=0.86, nlo_components=['xyz'],
+    )  # fmt: skip
+    text = d.build_run_script(cfg)
+    assert 'def run_nonlinear():' in text and '    run_nonlinear()' in text
+    assert 'NLO_NK = (24, 24, 24)' in text and 'NLO_SCISSOR = 0.86' in text
+    assert "NLO_COMPONENTS = ['xyz']" in text
+    assert 'p.nonlinear_optics(nk=NLO_NK, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA,' in text
+    # the non-linear run has its own PAOFLOW instance and never interpolates (HRs must survive)
+    block = text[text.index('def run_nonlinear():') :].split('def main')[0]
+    assert 'p.interpolated_hamiltonian(' not in block
+    assert (
+        'nonlinear',
+        'Non-linear optics (shift / injection currents, SHG) on the PAO Hamiltonian',
+    ) in d.PROPERTY_MENU
+    plot = d.build_plot_script(cfg)
+    assert 'def plot_shg' in plot and "_many('shga_*.dat')" in plot
+    assert 'plot_shift_current' in plot and 'plot_injection_current' in plot

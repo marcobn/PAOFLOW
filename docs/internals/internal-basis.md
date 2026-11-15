@@ -88,6 +88,42 @@ UPF basis already, nor with spin-orbit). On PAW GaAs (example10, 62 orbitals):
 | UPF pseudo-orbitals + all-electron augmentation (`'auto'`) | 23 | 1.00 | 0.995 | 0.995 → 0.96 |
 
 ## Spin-orbit coupling with ultrasoft / PAW: the spinor augmentation
+| all-electron tables only | 12 | 0.86–0.90 | 0.98 | 0.98 → 0.92 |
+| UPF pseudo-orbitals + all-electron augmentation (`'auto'`) | 23 | 1.00 | 0.995 | 0.995 → 0.96 |
+| `BASIS_PS` standard (generator, see below) | 14 | 1.00 | 0.99 | 0.98 → 0.72 |
+| `BASIS_PS` extended (generator) | 17 | 1.00 | 0.99 | 0.99 → 0.89 |
+
+The all-electron polarisation shells are more complete than the box states of the generator,
+so the default route is the first; the GaAs example of `examples/nlo_examples` uses it with
+`pthr = 0.95`.
+
+## The generator with ultrasoft / PAW pseudopotentials
+
+`paoflow-genbasis-ps` (`basis_gen/`) solves the pseudo-atom in a box; for ultrasoft / PAW it
+is the generalized problem $H u = \varepsilon S u$. Its state selection by eigenvalue rank
+produced ghosts on PAW files: for the Ga PAW the rank-0 states of the s and d channels sit at
+−4.8 and −3.4 Ha with no overlap with the 4s and 3d pseudo-orbitals (the d ghost has a plain
+norm of 10.8 for an augmented norm of 1: $S$ is nearly singular there, $q_{dd} = -0.9$), and
+the written `BASIS_PS` tables projected the Ga 3d bands at 0.1. Since October 28 2026
+(`basis_gen/radial.py`):
+
+- a shell that the UPF carries as a pseudo-orbital is returned as stored (`prefer_pswfc=True`;
+  the solver can only be worse than the generator's own atomic SCF);
+- the other shells are selected by physics (`select_physical_states`): states confined to
+  the augmentation sphere (more than 85 % of their norm inside the largest projector radius)
+  or with a plain norm above three times the augmented one are ghosts, states that reproduce a
+  stored pseudo-orbital are that orbital; the requested shell is then the k-th remaining state
+  with k counted from one above the highest pseudo-orbital of the channel;
+- for a channel without pseudo-orbitals the first valence n follows the core of the
+  pseudopotential (`lowest_valence_n`: a noble-gas core plus the filled d / 4f shells of the
+  period; As with 5 valence electrons has the core [Ar]3d10, so its lowest d shell is 4d, which
+  the old atomic minimum called 3d and gave the one-node state for 4d).
+
+Norm-conserving tables are unchanged within 0.01 (GeS: same 26 bands above 0.95). Tests in
+`tests/unit/test_basis_gen_uspp_paw.py` (Ga PAW: pseudo-orbitals returned, ghosts excluded,
+core rule) and `tests/unit/projection/test_basis_from_sources.py`.
+
+### Spin-orbit coupling: the spinor augmentation
 
 With fully relativistic ultrasoft / PAW pseudopotentials (`lspinorb`, `npol = 2`) the charges
 are rotated into the spinor basis exactly as in QE's `init_us_1` (`qq_so`):

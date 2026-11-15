@@ -5,10 +5,18 @@ on:
     branches: [ develop, main ]
     paths:
       - 'rust/paoflow_rs/**'
+      - 'src/PAOFLOW/acbn0_native/**'
+      - 'src/PAOFLOW/epsilon_native/**'
+      - 'src/PAOFLOW/elphon_native/**'
+      - 'tests/unit/elphon/test_native_parity.py'
       - '.github/workflows/paoflow-rs.yml'
   pull_request:
     paths:
       - 'rust/paoflow_rs/**'
+      - 'src/PAOFLOW/acbn0_native/**'
+      - 'src/PAOFLOW/epsilon_native/**'
+      - 'src/PAOFLOW/elphon_native/**'
+      - 'tests/unit/elphon/test_native_parity.py'
       - '.github/workflows/paoflow-rs.yml'
   workflow_dispatch:
 
@@ -64,7 +72,7 @@ jobs:
         run: maturin develop --release
       - name: Python parity tests
         working-directory: .
-        run: python -m pytest tests/unit/acbn0 tests/unit/response -q
+        run: python -m pytest tests/unit/acbn0 tests/unit/response tests/unit/elphon/test_native_parity.py -q
 
   wheels:
     name: Build wheels (${{ matrix.os }})

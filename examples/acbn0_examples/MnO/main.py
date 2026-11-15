@@ -4,8 +4,8 @@ AFM-II rocksalt MnO requires two Mn sublattice species (MnA, MnB)
 so that QE can initialise opposite starting_magnetization values.
 Both sublattices receive the same self-consistent U.
 
-Note: MnO templates do not include a projwfc.in; run_bare_dft therefore
-only performs scf and nscf.
+The Hubbard occupations come from PAOFLOW's internal projection on the
+UPF pseudo-atomic orbitals, so no projwfc.in template is needed.
 """
 
 import shutil
@@ -44,15 +44,10 @@ def _shell(cmd, stdin=None, stdout=None):
 
 
 def run_bare_dft():
-    """Run pw.x scf+nscf on the unmodified templates.
-
-    MnO does not supply a projwfc.in template; projwfc is handled
-    internally by the ACBN0 driver during the self-consistent loop.
-    """
-    for c in ('scf', 'nscf'):
-        shutil.copy(f'{PREFIX}.{c}.in', f'{c}.in')
+    """Run pw.x scf on the unmodified template (the full k-grid and band count
+    are set in the scf input; no nscf, no projwfc.x)."""
+    shutil.copy(f'{PREFIX}.scf.in', 'scf.in')
     _shell(f'{MPI_QE} {QE_PATH}pw.x', stdin='scf.in', stdout='scf.out')
-    _shell(f'{MPI_QE} {QE_PATH}pw.x', stdin='nscf.in', stdout='nscf.out')
 
 
 # ---------------------------------------------------------------------- #
@@ -76,6 +71,11 @@ a = ACBN0(
     python_path=PY_PATH,
     outputdir=OUT,
     projection='ortho-atomic',
+    # Hubbard occupations from PAOFLOW's internal projection on the UPF
+    # pseudo-atomic orbitals ('minimal' basis): projwfc.x is never run and
+    # no <prefix>.projwfc.in template is needed.
+    use_local_basis=True,
+    configuration='minimal',
 )
 
 # Three equivalent ways to declare Hubbard-active orbitals:

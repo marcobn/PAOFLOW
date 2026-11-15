@@ -29,6 +29,9 @@ pytest -q tests/integration/transport
 
 # A specific integration example
 pytest -q tests/integration/transport -k example01
+
+# What CI runs: integration tests that take minutes on a 4-core runner are marked `slow`
+pytest -q tests/integration -m "integration and not slow"
 ```
 
 Drop the `-q` flag if you'd like more detailed output.

@@ -1,0 +1,67 @@
+{
+  "_comment": "Reference numbers of the NbSn2 example (SOC run unless stated), used by tests/integration/qo_analysis.",
+  "degenerate_groups": [
+    [
+      11,
+      12
+    ],
+    [
+      13,
+      14
+    ],
+    [
+      15,
+      16
+    ],
+    [
+      17,
+      18
+    ]
+  ],
+  "fermi_surface_pieces": {
+    "11,12": 13,
+    "13,14": 3,
+    "15,16": 39,
+    "17,18": 2
+  },
+  "digitised_peaks": 352,
+  "digitisation_median_abs_dev_pct": 0.3,
+  "sweep_rate_N50": 0.4375,
+  "sweep_rate_N100": 0.38125,
+  "soc_minus_sr_median_shift_pct": {
+    "6": -9.04,
+    "7": -0.24,
+    "8": -0.83,
+    "9": -1.59
+  },
+  "fermi_scan_pairs": 276,
+  "fermi_scan_median_ratio": 0.95,
+  "min_k_gap_invA": {
+    "11-13": 0.0044,
+    "11-15": 0.0371,
+    "13-15": 0.0097,
+    "15-17": 0.0069
+  },
+  "weak_combination_rate": 0.484375,
+  "weak_combination_harmonics": 24,
+  "combination_parents": {
+    "same sheet": 8,
+    "no contact": 4
+  },
+  "breakdown_network_reference_not_tested": {
+    "_comment": "breakdown_network(bands=[11,13,15,17], open_band=13), defaults; ~6 min on 24 cores",
+    "distinct_frequencies": 2643,
+    "robust": 757,
+    "robust_open_band7": 85,
+    "unexplained_significant_peaks": 90,
+    "matched": 13,
+    "chance_loguniform": [
+      0.12,
+      0.033
+    ],
+    "chance_shuffled": [
+      0.183,
+      0.027
+    ]
+  }
+}

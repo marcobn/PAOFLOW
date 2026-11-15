@@ -150,6 +150,7 @@ import numpy as np
 from scipy.optimize import least_squares
 
 from PAOFLOW.spectrum.kpnts_interpolation_mesh import get_path as _get_path
+from PAOFLOW.utils.parallel_resources import core_budget, resolve_n_jobs
 
 # ═══════════════════════════════════════════════════════════════
 #  1. Slater-Koster two-center integrals (standard √3 convention)
@@ -1019,6 +1020,8 @@ class SKFitter:
             Number of parallel workers for multi-start trials
             (default 1 = sequential).  Use ``-1`` for all available cores.
             Requires ``joblib`` when ``n_jobs != 1``.
+            Capped at this process' core budget, which under ``mpirun`` is its
+            share of the node (see :mod:`PAOFLOW.utils.parallel_resources`).
 
         Returns
         -------
@@ -1051,6 +1054,8 @@ class SKFitter:
             p_inits.append(p_init)
 
         # ── Run trials ──
+        # Keep workers within this process' core budget (MPI-aware).
+        n_jobs = resolve_n_jobs(n_jobs, n_trials)
         use_parallel = n_jobs != 1 and n_trials > 1
         common_kw = dict(
             alpha=alpha,
@@ -1674,6 +1679,8 @@ class SKFitterEDTB(SKFitter):
             Number of parallel workers for multi-start trials
             (default 1 = sequential).  Use ``-1`` for all available cores.
             Requires ``joblib`` when ``n_jobs != 1``.
+            Capped at this process' core budget, which under ``mpirun`` is its
+            share of the node (see :mod:`PAOFLOW.utils.parallel_resources`).
 
         Returns
         -------
@@ -1721,6 +1728,8 @@ class SKFitterEDTB(SKFitter):
             p_inits.append(p_init)
 
         # ── Run trials ──
+        # Keep workers within this process' core budget (MPI-aware).
+        n_jobs = resolve_n_jobs(n_jobs, n_trials)
         use_parallel = n_jobs != 1 and n_trials > 1
         common_kw = dict(
             alpha=alpha,
@@ -2238,7 +2247,7 @@ class MultiGeomEDTB:
         if self.n_geom >= 3:
             from concurrent.futures import ThreadPoolExecutor
 
-            with ThreadPoolExecutor(max_workers=self.n_geom) as pool:
+            with ThreadPoolExecutor(max_workers=min(self.n_geom, core_budget())) as pool:
                 futures = [
                     pool.submit(self._eval_single_geometry, ig, p) for ig in range(self.n_geom)
                 ]
@@ -2401,6 +2410,8 @@ class MultiGeomEDTB:
             Tikhonov regularization strength.
         n_jobs : int
             Parallel workers for multi-start trials (``-1`` = all cores).
+            Capped at this process' core budget, which under ``mpirun`` is its
+            share of the node (see :mod:`PAOFLOW.utils.parallel_resources`).
         fix_onsite : dict, optional
             Fix on-site energies to given values instead of fitting them.
             Dict mapping species name to an on-site dict, e.g.
@@ -2490,6 +2501,10 @@ class MultiGeomEDTB:
             p_inits.append(p_init)
 
         # ── Run trials ──
+        # Each trial runs up to ``geom_threads`` geometry threads; keep
+        # workers * threads within this process' core budget (MPI-aware).
+        geom_threads = min(self.n_geom, core_budget()) if self.n_geom >= 3 else 1
+        n_jobs = resolve_n_jobs(n_jobs, n_trials, threads_per_job=geom_threads)
         use_parallel = n_jobs != 1 and n_trials > 1
         common_kw = dict(
             alpha=alpha,
@@ -2501,19 +2516,8 @@ class MultiGeomEDTB:
         )
 
         if self.verbose:
-            import os as _os
-
-            n_cpu = _os.cpu_count() or 1
-            # Intra-trial threads: geometry-level ThreadPoolExecutor
-            # kicks in when n_geom >= 3
-            geom_threads = self.n_geom if self.n_geom >= 3 else 1
-            effective_jobs = (
-                min(n_jobs, n_trials)
-                if n_jobs > 0
-                else min(n_cpu, n_trials)
-                if n_jobs == -1
-                else n_trials
-            )
+            n_cpu = core_budget()
+            effective_jobs = n_jobs
             total_threads = effective_jobs * geom_threads
 
             print(f"\n{'=' * 65}")
@@ -2529,26 +2533,6 @@ class MultiGeomEDTB:
                 print(f'    Joblib worker processes       : {effective_jobs}')
                 print(f'    Geometry threads per process  : {geom_threads}')
                 print(f'    Total concurrent threads      : {total_threads}')
-                if total_threads > n_cpu:
-                    import warnings
-
-                    rec = max(1, n_cpu // geom_threads)
-                    msg = (
-                        f'Thread oversubscription detected: {total_threads} '
-                        f'threads on {n_cpu} cores. '
-                        f'Each trial spawns {geom_threads} geometry threads '
-                        f'(ThreadPoolExecutor for {self.n_geom} geometries), '
-                        f'and joblib adds {effective_jobs} worker processes on '
-                        f'top. This causes cores to context-switch and thrash '
-                        f'caches, often making the fit *slower* than sequential. '
-                        f'Recommended: n_jobs={rec} (= {n_cpu} cores / '
-                        f'{geom_threads} geometry threads), or n_jobs=1 for '
-                        f'sequential trials with per-trial progress output.'
-                    )
-                    warnings.warn(msg, stacklevel=2)
-                    print(f'    ⚠ Recommended n_jobs ≤ {rec}  (cores / geometry_threads)')
-                else:
-                    print('    ✓ Good: threads ≤ cores, no oversubscription')
 
         if use_parallel:
             import os
@@ -3347,7 +3331,7 @@ class MultiGeomEDTB_DD:
         if self.n_geom >= 3:
             from concurrent.futures import ThreadPoolExecutor
 
-            with ThreadPoolExecutor(max_workers=self.n_geom) as pool:
+            with ThreadPoolExecutor(max_workers=min(self.n_geom, core_budget())) as pool:
                 futures = [
                     pool.submit(self._eval_single_geometry, ig, p) for ig in range(self.n_geom)
                 ]
@@ -3440,6 +3424,8 @@ class MultiGeomEDTB_DD:
         n_jobs : int
             Parallel workers for multi-start trials (``-1`` = all cores).
             Requires ``joblib`` when ``n_jobs != 1``.
+            Capped at this process' core budget, which under ``mpirun`` is its
+            share of the node (see :mod:`PAOFLOW.utils.parallel_resources`).
 
         Returns
         -------
@@ -3485,6 +3471,10 @@ class MultiGeomEDTB_DD:
             p_inits.append(pi)
 
         # ── Run trials ──
+        # Each trial runs up to ``geom_threads`` geometry threads; keep
+        # workers * threads within this process' core budget (MPI-aware).
+        geom_threads = min(self.n_geom, core_budget()) if self.n_geom >= 3 else 1
+        n_jobs = resolve_n_jobs(n_jobs, n_trials, threads_per_job=geom_threads)
         use_parallel = n_jobs != 1 and n_trials > 1
         common_kw = dict(
             alpha=alpha,
@@ -3496,17 +3486,8 @@ class MultiGeomEDTB_DD:
         )
 
         if self.verbose:
-            import os as _os
-
-            n_cpu = _os.cpu_count() or 1
-            geom_threads = self.n_geom if self.n_geom >= 3 else 1
-            effective_jobs = (
-                min(n_jobs, n_trials)
-                if n_jobs > 0
-                else min(n_cpu, n_trials)
-                if n_jobs == -1
-                else n_trials
-            )
+            n_cpu = core_budget()
+            effective_jobs = n_jobs
             total_threads = effective_jobs * geom_threads
 
             print(f"\n{'=' * 65}")
@@ -3519,26 +3500,6 @@ class MultiGeomEDTB_DD:
                 print(f'    Joblib worker processes       : {effective_jobs}')
                 print(f'    Geometry threads per process  : {geom_threads}')
                 print(f'    Total concurrent threads      : {total_threads}')
-                if total_threads > n_cpu:
-                    import warnings
-
-                    rec = max(1, n_cpu // geom_threads)
-                    msg = (
-                        f'Thread oversubscription detected: {total_threads} '
-                        f'threads on {n_cpu} cores. '
-                        f'Each trial spawns {geom_threads} geometry threads '
-                        f'(ThreadPoolExecutor for {self.n_geom} geometries), '
-                        f'and joblib adds {effective_jobs} worker processes on '
-                        f'top. This causes cores to context-switch and thrash '
-                        f'caches, often making the fit *slower* than sequential. '
-                        f'Recommended: n_jobs={rec} (= {n_cpu} cores / '
-                        f'{geom_threads} geometry threads), or n_jobs=1 for '
-                        f'sequential trials with per-trial progress output.'
-                    )
-                    warnings.warn(msg, stacklevel=2)
-                    print(f'    \u26a0 Recommended n_jobs \u2264 {rec}  (cores / geometry_threads)')
-                else:
-                    print('    \u2713 Good: threads \u2264 cores, no oversubscription')
 
         if use_parallel:
             import os

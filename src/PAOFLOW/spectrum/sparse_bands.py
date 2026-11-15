@@ -20,6 +20,8 @@ from scipy.sparse.linalg import ArpackNoConvergence, eigsh
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
 
+from PAOFLOW.utils.parallel_resources import core_budget, resolve_n_jobs
+
 try:
     from joblib import Parallel, delayed
 
@@ -1117,6 +1119,8 @@ class SparseEDTB:
             Number of parallel workers for k-point loop.
             1 = serial (default).  -1 = all available cores.
             Requires joblib; falls back to serial if unavailable.
+            Capped at this process' core budget (its share of the node
+            under ``mpirun``; see :mod:`PAOFLOW.utils.parallel_resources`).
         backend : str
             joblib backend for the k-point loop.  Default 'loky' (separate
             processes).  ARPACK's shift-invert solve runs a Python-level
@@ -1152,9 +1156,8 @@ class SparseEDTB:
         # (each LU creates GB-scale fill-in).  Better to run fewer workers
         # and let BLAS/SuperLU use wider vectors internally.
         if _use_parallel and n_workers == -1:
-            import multiprocessing
-
-            n_cpus = multiprocessing.cpu_count()
+            # This process' share of the node (divided among MPI ranks).
+            n_cpus = core_budget()
             if self.nawf > 20_000:
                 # Very large: serial is fastest (let BLAS use all cores)
                 n_workers = 1
@@ -1173,6 +1176,10 @@ class SparseEDTB:
                         f'workers (of {n_cpus} cores)'
                     )
             # else: small system — keep n_workers=-1 (all cores)
+
+        if _use_parallel:
+            n_workers = resolve_n_jobs(n_workers, nk_actual)
+            _use_parallel = n_workers != 1
 
         if _use_parallel:
             if self.verbose:

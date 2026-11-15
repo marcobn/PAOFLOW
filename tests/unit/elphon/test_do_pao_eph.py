@@ -240,7 +240,127 @@ def test_vertex_pao_R_vectorized_matches_loop():
     for k in range(nk):
         i1, i2, i3 = kidx[k]
         gk[:, :, :, i1, i2, i3] = np.einsum(
-            'mi,mnc,nj->ijc', A[:, :, ikq[k]].conj(), d[k], A[:, :, k]
+            'mi,mnc,nj->ijc', A[:, :, ikq[k]], d[k], A[:, :, k].conj()
         )
     gR_ref = np.fft.fftn(gk, axes=(3, 4, 5)) / (ng[0] * ng[1] * ng[2])
     np.testing.assert_allclose(gR, gR_ref, rtol=1e-12, atol=1e-12)
+
+
+def test_vertex_pao_R_recovers_pao_operator_independent_of_band_phases():
+    """``A_{ni} = <phi_i|psi_n>``: the vertex must return the PAO operator, for any band gauge.
+
+    Bands are a complete orthonormal set in the PAO space (``nbnd == nawf``),
+    so ``d = <psi_{k+q}| G |psi_k>`` built from a known PAO operator ``G(k)``
+    must rotate back to exactly ``G(k)``, whatever phases the bands carry.
+    """
+    from PAOFLOW.elphon.elph_bloch import vertex_pao_R
+
+    rng = np.random.default_rng(7)
+    ng = (2, 2, 1)
+    nk = 4
+    nawf = nbnd = 3
+    ncart = 2
+    ax = [np.arange(n) / n for n in ng]
+    kcry = np.stack(np.meshgrid(*ax, indexing='ij'), axis=-1).reshape(-1, 3)
+    kidx = np.round(kcry * np.array(ng)).astype(int) % np.array(ng)
+    ikq = np.array([1, 0, 3, 2])  # q = (1/2, 0, 0) on the 2x2x1 grid
+
+    # Columns of V_k are the PAO coefficients <phi_i|psi_nk>, so A[:, :, k] = V_k^T.
+    V = np.stack([_random_unitary(nawf, seed=10 + k) for k in range(nk)], axis=-1)
+    G = rng.standard_normal((nk, nawf, nawf, ncart)) + 1j * rng.standard_normal(
+        (nk, nawf, nawf, ncart)
+    )
+    G_grid = np.zeros((nawf, nawf, ncart) + ng, dtype=complex)
+    for k in range(nk):
+        G_grid[:, :, :, kidx[k, 0], kidx[k, 1], kidx[k, 2]] = G[k]
+    G_R = np.fft.fftn(G_grid, axes=(3, 4, 5)) / nk
+
+    for gauge_seed in (0, 1):
+        phases = np.exp(2j * np.pi * np.random.default_rng(gauge_seed).random((nbnd, nk)))
+        Vg = V * phases[None, :, :]  # same states, different band phases
+        A = np.transpose(Vg, (1, 0, 2))  # (nbnd, nawf, nk)
+        d = np.stack(
+            [
+                np.einsum('im,ijc,jn->mnc', Vg[:, :, ikq[k]].conj(), G[k], Vg[:, :, k])
+                for k in range(nk)
+            ]
+        )  # d_{mn,c}(k) = <psi_{m,k+q}| G_c(k) |psi_{nk}>
+        gR = vertex_pao_R(d, A, ikq, kidx, ng)
+        np.testing.assert_allclose(gR, G_R, rtol=1e-12, atol=1e-12)
+
+
+def test_dense_electrons_follow_paoflow_fourier_convention():
+    """PAOFLOW builds HRs = ifftn(Hks); the dense cache must return H(k), not H(-k).
+
+    H(k) is random and Hermitian but not time-reversal symmetric, so the
+    eigenvalues at -k differ from those at k and a sign error is detected.
+    """
+    from PAOFLOW.elphon.elph_bloch import RY_TO_EV, precompute_dense_electrons
+
+    rng = np.random.default_rng(41)
+    n, nawf = 3, 2
+    a = rng.standard_normal((n, n, n, nawf, nawf)) + 1j * rng.standard_normal((n, n, n, nawf, nawf))
+    Hk = a + np.conj(np.swapaxes(a, -1, -2))  # Hermitian at every k, no k <-> -k relation
+    Hks = np.moveaxis(Hk, (3, 4), (0, 1))  # (nawf, nawf, n, n, n)
+    HRs = np.fft.ifftn(Hks, axes=(2, 3, 4))[..., None]  # PAOFLOW convention
+
+    el = precompute_dense_electrons(HRs, np.eye(3), n, np.array([0.1]), None, (n, n, n))
+
+    labels = np.round(el['K'] * n).astype(int) % n
+    expected = np.array([np.linalg.eigvalsh(Hk[i, j, l]) for i, j, l in labels]) / RY_TO_EV
+    np.testing.assert_allclose(el['E'], expected, atol=1e-10)
+
+
+def test_atom_masses_expands_species_to_atoms() -> None:
+    from PAOFLOW.elphon.elph_bloch import atom_masses
+
+    masses = atom_masses([24.305, 10.811], ['Mg', 'B'], ['Mg', 'B', 'B'])
+    np.testing.assert_array_equal(masses, [24.305, 10.811, 10.811])
+    with pytest.raises(ValueError, match='one mass per species'):
+        atom_masses([24.305, 10.811, 10.811], ['Mg', 'B'], ['Mg', 'B', 'B'])
+    with pytest.raises(ValueError, match='unknown species'):
+        atom_masses([24.305], ['Mg'], ['Mg', 'B'])
+
+
+def test_ws_lattice_pairs_reduces_to_single_site_and_conserves_weight() -> None:
+    from PAOFLOW.elphon.elph_bloch import _ws_lattice, _ws_lattice_pairs
+
+    at = np.array([[1.0, 0.0, 0.0], [-0.5, np.sqrt(3) / 2, 0.0], [0.0, 0.0, 1.14]])
+    ng = (3, 3, 2)
+    # One site: the pair construction is the single-site one.
+    single, weights_single, _ = _ws_lattice(ng, at)
+    cells, weights, midx = _ws_lattice_pairs(ng, at, np.zeros((2, 3)), sign=1)
+    order_single = np.lexsort(single.T)
+    order_pairs = np.lexsort(cells.T)
+    np.testing.assert_array_equal(cells[order_pairs], single[order_single])
+    np.testing.assert_allclose(weights[order_pairs, 0, 1], weights_single[order_single])
+    np.testing.assert_array_equal(midx, cells % np.array(ng))
+    # Two sites (MgB2-like B positions): every pair covers the supercell once.
+    positions = np.array([[0.0, 0.0, 0.0], [1 / 3, 2 / 3, 0.5], [2 / 3, 1 / 3, 0.5]])
+    for sign in (1, -1):
+        cells, weights, _ = _ws_lattice_pairs(ng, at, positions, sign)
+        np.testing.assert_allclose(weights.sum(axis=0), np.prod(ng))
+        # The weights of (i, j) and (j, i) are mirror images: cell n <-> -n.
+        mirrored = {tuple(c): k for k, c in enumerate(cells)}
+        for k, cell in enumerate(cells):
+            np.testing.assert_allclose(weights[k, 0, 1], weights[mirrored[tuple(-cell)], 1, 0])
+
+
+def test_check_long_range_terms_refuses_polar_and_warns_for_insulators() -> None:
+    import warnings
+
+    from PAOFLOW.elphon.do_pao_eph import check_long_range_terms
+
+    zero_z, zero_eps = np.zeros((2, 3, 3)), np.zeros((3, 3))
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        check_long_range_terms(zero_z, zero_eps)  # metal: silent
+    polar_z = np.zeros((2, 3, 3))
+    polar_z[0], polar_z[1] = 2.1 * np.eye(3), -2.1 * np.eye(3)  # GaAs-like
+    with pytest.raises(NotImplementedError, match='Polar material'):
+        check_long_range_terms(polar_z, 10.9 * np.eye(3))
+    with pytest.warns(UserWarning, match='Polar material'):
+        check_long_range_terms(polar_z, 10.9 * np.eye(3), allow_missing_long_range=True)
+    # Si: Z* is DFPT noise, the dielectric tensor is present -> quadrupole warning.
+    with pytest.warns(UserWarning, match='quadrupole'):
+        check_long_range_terms(0.02 * np.ones((2, 3, 3)), 12.9 * np.eye(3))

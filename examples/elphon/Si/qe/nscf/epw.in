@@ -1,0 +1,17 @@
+&inputepw
+  prefix      = 'Si2'
+  outdir      = './'
+  dvscf_dir   = '../phonon/save'
+  amass(1)    = 28.085000
+  elph        = .true.
+  epbwrite    = .true.
+  epbread     = .false.
+  epwwrite    = .true.
+  epwread     = .false.
+  wannierize  = .false.
+  nbndsub     = 21
+  nk1 = 6, nk2 = 6, nk3 = 6
+  nq1 = 3, nq2 = 3, nq3 = 3
+  nkf1 = 1, nkf2 = 1, nkf3 = 1
+  nqf1 = 1, nqf2 = 1, nqf3 = 1
+/

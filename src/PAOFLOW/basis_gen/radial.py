@@ -221,6 +221,107 @@ def solve_radial_channel(
     return eps, U, r
 
 
+def _pswfc_channel_states(upf, l, j, r_uni):
+    """The UPF PSWFC of the ``(l, j)`` channel on ``r_uni`` (plain-normalised), with their ``n``."""
+    j_used = _default_j(upf, l, j)
+    out = []
+    for i, c in enumerate(upf.pswfc):
+        label = c['label'].upper()
+        if len(label) < 2 or label[1] not in 'SPDF' or 'SPDF'.index(label[1]) != l:
+            continue
+        if j_used is not None and i < len(getattr(upf, 'jchia', [])):
+            if abs(float(upf.jchia[i]) - j_used) > 1e-6:
+                continue
+        u = _interp_to_uniform(upf.r, c['wfc'], r_uni)
+        dr = r_uni[1] - r_uni[0]
+        norm = np.sqrt(np.sum(u * u) * dr)
+        if norm > 0.0:
+            u = u / norm
+        out.append((int(label[0]), u))
+    return out
+
+
+def _augmented_overlap_operator(upf, l, j, r_uni):
+    """``S = 1 + dr A Q A^T`` of the channel on the uniform mesh, or ``None`` without augmentation."""
+    pidx = _select_projectors(upf, l, _default_j(upf, l, j))
+    qqq = getattr(upf, 'qqq', None)
+    if not pidx or qqq is None:
+        return None
+    Q = qqq[np.ix_(pidx, pidx)]
+    if not np.any(Q):
+        return None
+    dr = r_uni[1] - r_uni[0]
+    A = np.zeros((r_uni.size, len(pidx)))
+    for col, ip in enumerate(pidx):
+        b = upf.beta[ip]
+        A[:, col] = _interp_to_uniform(upf.r, b['wfc'], r_uni, cutoff_index=b.get('cutoff_index'))
+    return np.eye(r_uni.size) + dr * (A @ Q @ A.T)
+
+
+def select_physical_states(
+    upf, l, j, eps_all, U, r_uni, ghost_norm_ratio=3.0, ghost_sphere_weight=0.85, pswfc_overlap=0.5
+):
+    """Indices of the solver states that are neither ghosts nor the stored pseudo-orbitals.
+
+    Parameters
+    ----------
+    upf : UPF
+    l, j : channel
+    eps_all, U, r_uni : output of :func:`solve_radial_channel` (``U`` rows ``S``-normalised).
+    ghost_norm_ratio : float, optional
+        A state whose plain norm exceeds this multiple of its augmented norm lives where ``S``
+        is nearly singular: a ghost of the generalized problem (Ga PAW, d channel: ratio 10.8
+        for the spurious state at -3.4 Ha, 1.0 for physical ones).
+    ghost_sphere_weight : float, optional
+        A state with more than this fraction of its plain norm inside the largest projector
+        radius of the channel is confined to the augmentation sphere (Ga PAW, s channel: the
+        spurious state at -4.8 Ha); the polarisation shells the solver has to provide are
+        diffuse. Not applied to channels without projectors.
+    pswfc_overlap : float, optional
+        States whose augmented overlap with a stored pseudo-orbital of the channel exceeds it
+        are that orbital (or a ghost mixing with it) and are excluded: the pseudo-orbital itself
+        is used for the shell it belongs to.
+
+    Returns
+    -------
+    list of int
+        Solver ranks of the remaining states, in order of increasing energy.
+    """
+    dr = r_uni[1] - r_uni[0]
+    S = _augmented_overlap_operator(upf, l, j, r_uni)
+    refs = [u for _, u in _pswfc_channel_states(upf, l, j, r_uni)]
+    pidx = _select_projectors(upf, l, _default_j(upf, l, j))
+    r_cut = 0.0
+    for ip in pidx:
+        b = upf.beta[ip]
+        if b.get('cutoff_radius') is not None:
+            r_cut = max(r_cut, float(b['cutoff_radius']))
+        elif b.get('cutoff_index'):
+            r_cut = max(r_cut, float(upf.r[min(int(b['cutoff_index']), upf.r.size) - 1]))
+    inside = r_uni <= r_cut
+    keep = []
+    for rank in range(U.shape[0]):
+        u = U[rank]
+        plain = float(np.sum(u * u)) * dr
+        if S is not None:
+            s_norm = float(u @ S @ u) * dr
+            if plain > ghost_norm_ratio * s_norm:
+                continue
+        if r_cut > 0.0 and float(np.sum(u[inside] ** 2)) * dr > ghost_sphere_weight * plain:
+            continue
+        bad = False
+        for ref in refs:
+            su = (S @ ref) * dr if S is not None else ref * dr
+            ref_norm = float(ref @ su) if S is not None else float(np.sum(ref * ref)) * dr
+            ov = abs(float(u @ su)) / np.sqrt(max(ref_norm, 1e-30))
+            if ov > pswfc_overlap:
+                bad = True
+                break
+        if not bad:
+            keep.append(rank)
+    return keep
+
+
 def pseudize_shell(
     upf,
     n: int,
@@ -228,56 +329,61 @@ def pseudize_shell(
     j: float | None = None,
     r_box: float | None = None,
     n_points: int = 2000,
+    prefer_pswfc: bool = True,
 ):
     """Return the (n, l[, j]) radial function on a uniform mesh.
 
-    Pseudopotentials do not bind the core states, so the principal
-    quantum number cannot be identified with ``node_count + l + 1``
-    (the all-electron rule).  Instead the requested state is selected
-    as the ``(n - n_lowest)``-th eigenstate of the radial pseudo-atom
-    Hamiltonian for this ``(l, j)`` channel, where ``n_lowest`` is
+    Shells that the pseudopotential carries as pseudo-orbitals (``PP_PSWFC``) are returned as
+    stored (interpolated, plain-normalised): they are the pseudo-atom's own solutions, generated
+    with the pseudopotential and the full atomic SCF, and the only functions consistent with the
+    augmented metric of ultrasoft / PAW pseudopotentials. ``prefer_pswfc=False`` restores the
+    radial solver for them (the behaviour before October 2026, useful to test the solver).
 
-    * the smallest principal quantum number among the UPF PSWFC entries
-      with matching ``(l, j)``, if any are present, or
-    * the atomic-physics minimum ``n`` for that ``l``
-      (``S->1, P->2, D->3, F->4``) otherwise (augmentation channels
-      that have no PSWFC counterpart).
+    The other shells (polarisation and radial-doubling shells of the presets) are eigenstates
+    of the frozen-density pseudo-atom Hamiltonian in a box (:func:`solve_radial_channel`),
+    selected by physics rather than by rank: ghosts of the generalized augmented problem and
+    the states that reproduce a stored pseudo-orbital are discarded
+    (:func:`select_physical_states`), then the requested shell is the ``k``-th remaining state
+    with ``k = n - n_first`` and ``n_first`` the principal quantum number of the first shell the
+    solver has to provide, i.e. one above the highest pseudo-orbital of the channel, or, for a
+    channel without pseudo-orbitals, the lowest valence ``n`` of that ``l`` given the core of
+    the pseudopotential (:func:`lowest_valence_n`; Si ``3D``, As ``4D``).
 
-    For Pt ONCV-fr ``(l=0)`` PSWFC = ``5S, 6S`` => ``n_lowest = 5``,
-    so ``pseudize_shell(upf, 5, 0)`` picks rank 0, ``(6, 0)`` rank 1,
-    and ``(7, 0)`` rank 2.  For Si ONCV ``(l=2)`` (no PSWFC D entry)
-    ``n_lowest = 3``, so ``(3, 2)`` picks rank 0.
-
-    .. note::
-
-       For PAW pseudopotentials with deep projector subspaces (e.g. an
-       extra semi-core projector at a given ``l``) the lowest-rank
-       eigenstate of the generalized augmented problem can be a
-       *spurious* deep "ghost" state at one or two Hartree below the
-       physical valence level.  The rank heuristic above does not
-       distinguish ghosts from physical states; affected channels
-       should be inspected by the caller (overlap with the stored
-       PSWFC is a reliable filter).
+    Returns
+    -------
+    r : ndarray
+        Uniform mesh (bohr).
+    u : ndarray
+        ``u(r) = r R(r)``.
+    eps : float
+        Solver eigenvalue (Hartree), ``nan`` for a stored pseudo-orbital.
     """
-    n_lowest = _lowest_n_for_channel(upf, l, j)
-    target = n - n_lowest
+    r_box_used = float(min(upf.r[-1], 10.0)) if r_box is None else float(r_box)
+    if prefer_pswfc and _has_pswfc_label(upf, n, l, j):
+        r = np.linspace(0.0, r_box_used, n_points + 1)[1:-1]
+        return r, _pswfc_on_uniform(upf, n, l, j, r), float('nan')
+    if prefer_pswfc:
+        pswfc_n = [m for m, _ in _pswfc_channel_states(upf, l, j, np.array([0.0, 1.0]))]
+        n_first = max(pswfc_n) + 1 if pswfc_n else lowest_valence_n(upf, l)
+    else:
+        n_first = _lowest_n_for_channel(upf, l, j)
+    target = n - n_first
     if target < 0:
         raise ValueError(
-            f'Requested (n, l) = ({n}, {l}) below lowest pseudo-atom level (n_lowest = {n_lowest}).'
+            f'Requested (n, l) = ({n}, {l}) below lowest pseudo-atom level (n_first = {n_first}).'
         )
     eps_all, U, r = solve_radial_channel(
-        upf, l, j=j, r_box=r_box, n_points=n_points, n_states=max(6, target + 3)
+        upf, l, j=j, r_box=r_box, n_points=n_points, n_states=max(8, target + 5)
     )
+    if prefer_pswfc:
+        ranks = select_physical_states(upf, l, j, eps_all, U, r)
+        if target >= len(ranks):
+            raise ValueError(
+                f'Requested (n, l) = ({n}, {l}): only {len(ranks)} physical states found'
+            )
+        rank = ranks[target]
+        return r, U[rank], float(eps_all[rank])
     eps = float(eps_all[target])
-
-    # If the frozen-density solver returned a continuum (unbound) state but
-    # the UPF carries a PSWFC for this (n, l[, j]) channel, fall back to the
-    # PSWFC.  This happens for the valence d shell of late transition-metal
-    # USPP/PAW pseudos (e.g. Pt 5d), where the pseudo-atom potential alone
-    # does not bind d and the rank-0 box state is a confinement mode rather
-    # than the physical valence orbital.  The PSWFC stored in the UPF was
-    # constructed by the pseudopotential generator with full atomic SCF and
-    # is the correct radial for those shells.
     if eps >= 0.0:
         u_psw = _pswfc_on_uniform(upf, n, l, j, r)
         if u_psw is not None:
@@ -311,6 +417,67 @@ def _pswfc_on_uniform(upf, n, l, j, r_uni):
             u_uni = -u_uni
         return u_uni
     return None
+
+
+_ELEMENTS = (
+    'H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se '
+    'Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb '
+    'Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm '
+    'Bk Cf Es Fm Md No Lr'
+).split()
+_AUFBAU = [(1, 0), (2, 0), (2, 1), (3, 0), (3, 1), (4, 0), (3, 2), (4, 1), (5, 0), (4, 2), (5, 1),
+           (6, 0), (4, 3), (5, 2), (6, 1), (7, 0), (5, 3), (6, 2), (7, 1)]  # fmt: skip
+
+
+def lowest_valence_n(upf, l):
+    """Lowest principal quantum number of the valence shells of angular momentum ``l``.
+
+    The core of the pseudopotential holds ``Z - z_valence`` electrons; filling the shells in
+    the aufbau order with that many electrons gives the frozen core, and the first shell of
+    each ``l`` above it is the lowest one the pseudo-atom can describe (As: core [Ar]3d10, so
+    the lowest d shell is 4d; Si: core [Ne], 3d). Falls back to the atomic minimum
+    (``S->1, P->2, D->3, F->4``) when the element or the valence charge is unknown.
+    """
+    minimum = {0: 1, 1: 2, 2: 3, 3: 4}.get(l, l + 1)
+    elem = str(getattr(upf, 'element', '')).strip()
+    zval = getattr(upf, 'val', None)
+    if elem not in _ELEMENTS or zval is None:
+        return minimum
+    core = int(round(_ELEMENTS.index(elem) + 1 - float(zval)))
+    if core <= 0:
+        return minimum
+    highest = {}
+    # pseudopotential cores: a noble-gas core plus, possibly, the filled d (and 4f) shells of
+    # the same period ([Ar]3d10 for As, [Kr]4d10 for Sn, [Xe]4f14 5d10 for Au)
+    noble = {2: 1, 10: 2, 18: 3, 36: 4, 54: 5, 86: 6}
+    period = max((p for ne, p in noble.items() if ne <= core), default=0)
+    ne_noble = max((ne for ne in noble if ne <= core), default=0)
+    remainder = core - ne_noble
+    if period >= 5 and remainder >= 14:
+        highest[3] = 4
+        remainder -= 14
+    if period >= 3 and remainder >= 10:
+        highest[2] = period
+        remainder -= 10
+    if remainder != 0:  # not a closed-shell core: fall back to the aufbau filling
+        highest = {}
+        filled = 0
+        for n, ll in _AUFBAU:
+            if filled >= core:
+                break
+            filled += 2 * (2 * ll + 1)
+            highest[ll] = max(highest.get(ll, 0), n)
+    else:
+        for n, ll in _AUFBAU:  # the noble-gas part: every shell up to the period
+            if ll == 0 and n <= period:
+                highest[0] = max(highest.get(0, 0), n)
+            if ll == 1 and n <= period:
+                highest[1] = max(highest.get(1, 0), n)
+            if ll == 2 and n <= period - 1 and n >= 3:
+                highest[2] = max(highest.get(2, 0), n)
+            if ll == 3 and n <= period - 2 and n >= 4:
+                highest[3] = max(highest.get(3, 0), n)
+    return max(minimum, highest.get(l, 0) + 1)
 
 
 def _lowest_n_for_channel(upf, l, j):

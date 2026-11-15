@@ -16,3 +16,5 @@ haldane: tbmodel = {'label':'haldane_pythtb', 'delta':?, 't1':?, 't2':?, 'phi':?
 kane_mele: tbmodel = {'label':'kane_mele_pythtb', 'delta':?, 't':?, 'soc':?, 'rashba':?}
 fu_kane_mele: tbmodel = {'label':'fu_kane_mele_pythtb', 't':?, 'soc':?, 'dt':?}
 See https://pythtb.readthedocs.io/en/latest/ or src/PAOFLOW/models/models.py for details
+
+Graphene_nonlinear/: shift current, injection currents and SHG of gapped graphene (tbmodel = {'label':'graphene', 'delta':1.0, 't':2.7}) with PAOFLOW.nonlinear_optics (docs/internals/nonlinear-optics.md).

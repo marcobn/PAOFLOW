@@ -1,0 +1,8 @@
+&input
+  asr = 'simple', flfrc = 'sic.fc', flfrq = 'sic.freq', q_in_band_form = .true., q_in_cryst_coord = .false.
+/
+4
+ 0.0 0.0 0.0 20
+ 1.0 0.0 0.0 20
+ 0.0 0.0 0.0 20
+ 0.5 0.5 0.5 1

@@ -43,7 +43,6 @@ while [[ $# -gt 0 ]]; do
       fi
       ;;
   esac
-  shift
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"

@@ -1,0 +1,6 @@
+# Canonical single-direction table. One row per (direction, label). Keep provenance in these comment lines:
+# where each number comes from (raw data / paper table / slide text / digitised figure) and whether it was refitted.
+# observed = no for peaks looked for and NOT seen (they are a strong test). exp_angle_deg = experimental rotation angle.
+direction,exp_angle_deg,day,label,freq_T,freq_err_T,mstar_me,mstar_err_me,observed,source
+[001],0,1,gamma,16.5,2.5,0.285,0.02,yes,paper Tab. 2
+[001],0,1,beta,,,,,no,paper Tab. 2 (not resolved)

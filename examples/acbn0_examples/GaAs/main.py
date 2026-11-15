@@ -75,13 +75,10 @@ def _shell(cmd, stdin=None, stdout=None):
 
 
 def run_bare_dft():
-    """Run pw.x scf+nscf and projwfc.x on the *unmodified* templates,
-    i.e. without injecting any HUBBARD card."""
-    for c in ('scf', 'nscf', 'projwfc'):
-        shutil.copy(f'{PREFIX}.{c}.in', f'{c}.in')
+    """Run pw.x scf on the *unmodified* template (the full k-grid and band count
+    are set in the scf input; no nscf, no projwfc.x), without any HUBBARD card."""
+    shutil.copy(f'{PREFIX}.scf.in', 'scf.in')
     _shell(f'{MPI_QE} {QE_PATH}pw.x', stdin='scf.in', stdout='scf.out')
-    _shell(f'{MPI_QE} {QE_PATH}pw.x', stdin='nscf.in', stdout='nscf.out')
-    _shell(f'{MPI_QE} {QE_PATH}projwfc.x -nd 1', stdin='projwfc.in', stdout='projwfc.out')
 
 
 def compute_bands(label):
@@ -132,6 +129,11 @@ a = ACBN0(
     python_path=PY_PATH,
     outputdir=OUT,
     projection='ortho-atomic',
+    # Hubbard occupations from PAOFLOW's internal projection on the UPF
+    # pseudo-atomic orbitals ('minimal' basis): projwfc.x is never run and
+    # no <prefix>.projwfc.in template is needed.
+    use_local_basis=True,
+    configuration='minimal',
 )
 # Both s and p on each species must be declared so that the V_ss, V_sp,
 # V_pp channels exist in the eACBN0 stage; ACBN0 will fit U for all.
@@ -166,6 +168,11 @@ e = eACBN0(
     python_path=PY_PATH,
     outputdir=OUT,
     projection='ortho-atomic',
+    # Hubbard occupations from PAOFLOW's internal projection on the UPF
+    # pseudo-atomic orbitals ('minimal' basis): projwfc.x is never run and
+    # no <prefix>.projwfc.in template is needed.
+    use_local_basis=True,
+    configuration='minimal',
 )
 # Seed the joint loop with the ACBN0-converged on-site U.
 e.set_hubbard_parameters(converged_U)

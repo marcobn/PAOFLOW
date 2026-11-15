@@ -1,0 +1,13 @@
+# Branch labels for the SOC overlay. group = multiplet label as produced by skeaf_agentic (e.g. '11,12').
+# status: assigned / tentative / unassigned (unassigned = experimental branch without calculated counterpart).
+label,status,group,arrow_angle_deg,arrow_freq_T,text_angle_deg,text_freq_T,comment
+mu,assigned,"15,16",20.0,4500.0,11,7000.0,large electron sheet; -3 to -6 % from 0 to 45 deg
+delta,assigned,"13,14",3.0,944.0,10,1500.0,hole orbit; 944 vs 977 T at 0 deg (-3.4 %); only up to ~15-20 deg
+"beta1, beta2",assigned,"13,14",5.0,93.0,3,165.0,hole pocket pair near [001]; -7 to -12 %
+sigma2,assigned,"11,12",25.0,555.0,21,420.0,hole sheet; 563/554/557 T at 0/45/90 deg (-3 to -4 %)
+gamma,assigned,"15,16",50.0,17.5,37,12.5,light electron pocket; within FFT resolution; provisional (small pocket on 49^3 grid)
+beta ?,tentative,"13,14",45.0,222.0,37,185.0,hole orbit near 45 deg only; -11 %
+beta1,assigned,"17,18",88.0,282.0,80,215.0,electron orbit; same sheet as without SOC but -10 to -14 % with SOC
+delta beyond 20 deg: no continuous branch,unassigned,,,,24,2650.0,
+"kappa, delta1, delta2 at [110]: none",unassigned,,,,62,2600.0,
+"beta 50-75 deg, beta2: none",unassigned,,,,64,196.0,

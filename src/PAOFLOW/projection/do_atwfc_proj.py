@@ -860,6 +860,17 @@ def read_QE_wfc(data_controller, ik, ispin, orthonormalize=True):
         ``'nbnd'``, ``'ispin'``.
     """
     arry, attr = data_controller.data_dicts()
+    if attr.get('unfold_kpoints', False):
+        # nscf on the irreducible wedge: the block at this full-grid k is rotated from its
+        # irreducible representative (same Loewdin step below as for a stored block).
+        from ..elphon.wavefunction_symmetry import provider_for
+
+        gkspace, wfc = provider_for(attr['fpath'], attr['nspin']).gkspace_wfc(ik, ispin)
+        if orthonormalize:
+            wfc['wfc'] = loewdin_orthonormalize(wfc['wfc'])
+        else:
+            wfc['wfc'] = np.asarray(wfc['wfc'])
+        return gkspace, wfc
     if attr['nspin'] == 1 or attr['nspin'] == 4:
         wfcfile = f'wfc{ik + 1}'
     elif attr['nspin'] == 2 and ispin == 0:

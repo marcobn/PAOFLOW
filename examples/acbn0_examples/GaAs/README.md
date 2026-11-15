@@ -114,7 +114,7 @@ roughly doubles the gap.
 - `run_bands.py` — QE bands.x on the converged U+V SCF
 - `run_bands_bare.py` — QE scf + bands without HUBBARD card
 - `plot_bands.py` — overlay bare PBE vs eACBN0 (U+V) bands, report gaps
-- `GaAs.scf.in`, `GaAs.nscf.in`, `GaAs.projwfc.in` — QE input templates
+- `GaAs.scf.in` — the only QE input template: the scf runs directly on the 16³ k-grid with 32 bands (no nscf step; PAOFLOW expands the irreducible wedge) and the Hubbard occupations come from PAOFLOW's internal projection (`use_local_basis=True`, no projwfc.x)
 - `GaAs.bands.in`, `GaAs.bandsx.in` — bands-mode templates (U+V)
 - `Ga.pbe-dn-kjpaw_psl.1.0.0.UPF` — PAW Ga pseudo (3d10 in valence)
 - `As.pbe-n-kjpaw_psl.1.0.0.UPF`  — PAW As pseudo

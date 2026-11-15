@@ -1,0 +1,36 @@
+ &control
+    calculation = 'nscf'
+    prefix = 'ges'
+    outdir = './'
+    pseudo_dir = '../../../PSEUDOS/nc-sr-05_pbe_standard_upf/'
+    verbosity = 'high'
+ /
+ &system
+    ibrav = 0
+    nat = 4
+    ntyp = 2
+    ecutwfc = 60
+    ecutrho = 240
+    assume_isolated = '2D'
+    occupations = 'fixed'
+    nbnd = 40
+    nosym = .true.
+    noinv = .true.
+ /
+ &electrons
+    conv_thr = 1.0d-10
+ /
+ATOMIC_SPECIES
+ Ge 72.630 Ge.upf
+ S  32.060 S.upf
+CELL_PARAMETERS angstrom
+   4.400  0.000  0.000
+   0.000  3.680  0.000
+   0.000  0.000 18.000
+ATOMIC_POSITIONS crystal
+Ge               0.1188096577        0.2500000000        0.4292779442
+Ge               0.6188096577        0.7500000000        0.5707220558
+S                0.4928903423        0.7500000000        0.4398291295
+S                0.9928903423        0.2500000000        0.5601708705
+K_POINTS automatic
+ 18 18 1 0 0 0
