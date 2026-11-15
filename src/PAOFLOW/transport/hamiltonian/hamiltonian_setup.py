@@ -73,9 +73,10 @@ def hamiltonian_setup(
             else:
                 aux -= sgm_corr
 
-        if '00' in name:
-            block.aux[..., ik] = aux.conj()
-        else:
-            block.aux[..., ik] = aux
+        # (E - shift) S - H for every block. The on-site blocks used to be stored conjugated, which
+        # only the transfer matrices undid (by a transpose): the surface and conductor Green's
+        # functions then used E - H00^* instead of E - H00, wrong for the complex blocks of a
+        # transverse k-point (invisible for the real symmetric blocks of a wire at Gamma).
+        block.aux[..., ik] = aux
 
         block.update(ie=ie_g, ik=ik, ie_buff=ie_bl)

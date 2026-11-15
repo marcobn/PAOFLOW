@@ -265,7 +265,7 @@ def doubling_attr_arry(data_controller):
         Object providing ``data_arrays`` and ``data_attributes``.
         Attributes updated: ``omega``, ``nawf``, ``natoms`` (if present),
         ``nelec`` (if present), ``nbnds`` (if present), ``bnd`` (if present).
-        Arrays updated: ``naw``, ``sh``, ``nl``, ``atoms`` (if present),
+        Arrays updated: ``b_vectors``, ``naw``, ``sh``, ``nl``, ``atoms`` (if present),
         ``Sj`` (if present), ``Dnm`` (if present).
 
     Returns
@@ -276,11 +276,16 @@ def doubling_attr_arry(data_controller):
     Notes
     -----
     Called automatically by :func:`doubling_HRs` after each doubling step.
-    The cell volume ``omega`` is recomputed from the updated ``a_vectors``
-    and ``alat``.  The spin operator ``Sj`` and the interatomic distance
+    The cell volume ``omega`` and the reciprocal vectors ``b_vectors`` are recomputed from the
+    updated ``a_vectors`` and ``alat``.  The spin operator ``Sj`` and the interatomic distance
     matrix ``Dnm`` are extended block-diagonally if already present.
     """
     arry, attr = data_controller.data_dicts()
+
+    # the reciprocal vectors of the doubled cell (2 pi / alat units, a_i . b_j = delta_ij); they
+    # were left at those of the original cell, which put every later k-point off its grid
+    if 'b_vectors' in arry:
+        arry['b_vectors'] = np.linalg.inv(np.asarray(arry['a_vectors'], dtype=float)).T
 
     # recalculating volume
     attr['omega'] = attr['alat'] ** 3 * arry['a_vectors'][0, :].dot(

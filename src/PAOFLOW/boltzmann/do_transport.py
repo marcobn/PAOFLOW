@@ -89,18 +89,27 @@ def do_transport(
 
     .. math::
 
-        R_H = -(\\sigma^{-1})\\, \\mathcal{L}^{(0,\\text{Hall})}\\, (\\sigma^{-1})
+        R_H = -(\\sigma^{-1})\\, \\sigma^{\\text{Hall}}\\, (\\sigma^{-1}),
+        \\qquad \\sigma^{\\text{Hall}} = e^3\\,\\mathcal{L}^{(0,\\text{Hall})}
 
-    and reported as the average of the three even-permutation components
-    :math:`(R_{012} + R_{201} + R_{120}) / 3`.
+    (Madsen and Singh, Comput. Phys. Commun. 175, 67 (2006), Eq. 13), with the electron charge
+    :math:`e = -|e|`: :math:`R_H = +|e|^3 (\\sigma^{-1}) \\mathcal{L}^{(0,\\text{Hall})} (\\sigma^{-1})`,
+    which gives :math:`R_H = 1/(ne) < 0` for electrons in a parabolic band (until 15 November
+    2026 the charge was left out and :math:`R_H` had the opposite sign). It is reported as the
+    average of the three even-permutation components :math:`(R_{012} + R_{201} + R_{120}) / 3`.
 
     The Nernst tensor is built from the Hall coefficient and the first-order
     Hall transport tensor :math:`\\mathcal{L}^{(1,\\text{Hall})}` as
 
     .. math::
 
-        N = R_H\\, \\mathcal{L}^{(1)} +
-            (\\sigma^{-1})\\, \\mathcal{L}^{(1,\\text{Hall})}
+        N = R_H\\, \\nu + (\\sigma^{-1})\\, \\nu^{\\text{Hall}},
+        \\qquad \\nu = \\sigma S = e\\,\\mathcal{L}^{(1)}/T,
+        \\qquad \\nu^{\\text{Hall}} = e^2\\,\\mathcal{L}^{(1,\\text{Hall})}/T,
+
+    the weak-field expansion of the open-circuit field :math:`E = \\sigma(B)^{-1}\\nu(B)\\nabla T`.
+    For a parabolic band with an energy-independent :math:`\\tau` the two terms cancel
+    (Sondheimer).
 
     Conversion factors: ``siemen_conv = 6.9884`` converts internal units to
     S m⁻¹ × 10⁻²¹; ``temp_conv = 11604.525`` converts Kelvin to eV⁻¹;
@@ -306,8 +315,10 @@ def do_transport(
                     for n in range(esize):
                         try:
                             for r in range(3):
+                                # R = -sigma^-1 (e^3 L0_hall) sigma^-1 with e^3 = -|e|^3: the
+                                # electron charge makes R_H = 1/(ne) negative for electrons
                                 R_hall[:, :, r, n] = (
-                                    -npl.inv(L0_unconverted[:, :, n])
+                                    npl.inv(L0_unconverted[:, :, n])
                                     @ L0_hall[:, :, r, n]
                                     @ npl.inv(L0_unconverted[:, :, n])
                                 )
@@ -348,7 +359,9 @@ def do_transport(
                     for n in range(esize):
                         try:
                             for r in range(3):
-                                nernst[:, :, r, n] = (R_hall[:, :, r, n] @ L1[:, :, n]) + (
+                                # nu = sigma S = -L1 (the charge of the electron, as in S);
+                                # nu_Hall carries e^2 > 0
+                                nernst[:, :, r, n] = (R_hall[:, :, r, n] @ (-L1[:, :, n])) + (
                                     npl.inv(L0_unconverted[:, :, n]) @ L1_hall[:, :, r, n]
                                 ) * siemen_conv * hall_SI
 

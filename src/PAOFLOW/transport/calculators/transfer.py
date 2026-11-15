@@ -89,8 +89,7 @@ def compute_surface_transfer_matrices(
     ndim = h_eff.shape[0]
     A = h_eff + 1j * delta * s_eff
     try:
-        t11 = np.linalg.solve(A, np.eye(ndim))
-        t11 = t11.T
+        t11 = np.linalg.solve(A, np.eye(ndim))  # (E S - H00)^-1
 
     except np.linalg.LinAlgError:
         if verbose:

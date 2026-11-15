@@ -83,7 +83,10 @@ class Transport:
         delta : float
             Broadening parameter.
         nk : list[int] or tuple[int, int], optional
-            2D k-grid dimensions. Default is ``(0, 0)``.
+            Transverse k-mesh (the two directions perpendicular to transport). ``(0, 0)``
+            (default) uses the transverse DFT mesh. It sets the mesh on which the Hamiltonian
+            blocks are built, so a value other than the default must be given before
+            :meth:`build_hamiltonian_blocks`.
         smearing_type : str, optional
             Smearing function: ``'lorentzian'`` (default), ``'gaussian'``,
             ``'fermi-dirac'``/``'fd'``, ``'methfessel-paxton'``/``'mp'``, or
@@ -113,6 +116,13 @@ class Transport:
             'nx_smear': nx_smear,
         }
         if self.conductor_data is not None:
+            built_nk = self.conductor_data.get_runtime_data().nk_par
+            if any(int(n) > 0 for n in nk) and [int(n) for n in nk] != [int(n) for n in built_nk]:
+                raise ValueError(
+                    'The transverse k-mesh %s was fixed when the Hamiltonian blocks were built; '
+                    'call configure_energy_grid(nk=%s) before build_hamiltonian_blocks().'
+                    % ([int(n) for n in built_nk], [int(n) for n in nk])
+                )
             self.conductor_data.energy.emin = emin
             self.conductor_data.energy.emax = emax
             self.conductor_data.energy.ne = ne

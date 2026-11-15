@@ -7,7 +7,6 @@ from numpy.typing import NDArray
 
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
 from PAOFLOW.transport.io.log_module import log_rank0
 from PAOFLOW.transport.utils.converters import crystal_to_cartesian
 
@@ -185,18 +184,18 @@ def populate_real_space_hamiltonian(
 
     vr_crystal = ivr.astype(np.float64).T
     rgrid_cart = crystal_to_cartesian(vr_crystal, avec).T  # (nrtot, 3)
-    Hr = np.empty((nrtot, dim, dim), dtype=np.complex128)
 
-    for ir in range(nrtot):
-        Hr[ir] = compute_rham(rgrid_cart[ir], Hk[0], vkpts_cartesian, wk)
+    # H(R) = sum_k w_k exp(-i k.R) H(k) (compute_rham) for all R at once: one matrix product
+    # instead of a Python loop over R, k and the orbital pairs (prohibitive on 3D meshes).
+    weighted_phases = np.exp(-1j * (rgrid_cart @ vkpts_cartesian)) * wk[None, :]  # (nrtot, nk)
+    nk_points = Hk.shape[1]
+    Hr = (weighted_phases @ Hk[0].reshape(nk_points, dim * dim)).reshape(nrtot, dim, dim)
 
     arry['HRs'] = Hr
 
     if have_overlap:
-        Sr = np.empty((nrtot, dim, dim), dtype=np.complex128)
-        for ir in range(nrtot):
-            Sr[ir] = compute_rham(rgrid_cart[ir], Sk, vkpts_cartesian, wk)
-        arry['SRs'] = Sr
+        Sk_by_k = np.asarray(Sk).reshape(nk_points, dim * dim)
+        arry['SRs'] = (weighted_phases @ Sk_by_k).reshape(nrtot, dim, dim)
 
 
 def write_operator_xml(

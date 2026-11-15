@@ -71,6 +71,7 @@ nonlocal-velocity
 position-dipoles
 kubo-bastin
 scattering-channels
+landauer-3d-and-hall
 Electron-Phonon-Coupling
 nonlinear-optics
 nonlinear-optics-phase2-plan
