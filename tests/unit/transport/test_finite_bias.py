@@ -187,16 +187,18 @@ def test_self_consistent_scan(tmp_path):
 
 
 def test_compute_current_integrates_the_whole_fermi_window():
-    """A constant T must give |I| = T V whatever the grid spacing (the window used to end at sigma + 3 dE)."""
+    """A constant T must give I = T V whatever the grid spacing (the window used to end at sigma + 3 dE).
+
+    The sign is that of the Landauer formula: positive for mu_L > mu_R, as in the self-consistent scan.
+    """
     from PAOFLOW.transport.calculators.current import compute_current_vs_bias
 
     energies = np.linspace(-0.4, 0.4, 801)
-    current = compute_current_vs_bias(
-        energies, np.full_like(energies, 0.4), np.array([0.01, 0.2]), 0.5, -0.5, KT
-    )
-    assert np.allclose(
-        current, -0.4 * np.array([0.01, 0.2]), rtol=2e-4
-    )  # sign: its Fermi function is 1 - f
+    bias = np.array([0.01, 0.2])
+    current = compute_current_vs_bias(energies, np.full_like(energies, 0.4), bias, 0.5, -0.5, KT)
+    assert np.allclose(current, 0.4 * bias, rtol=2e-4)
+    swapped = compute_current_vs_bias(energies, np.full_like(energies, 0.4), bias, -0.5, 0.5, KT)
+    assert np.allclose(swapped, -current, rtol=1e-12)
 
 
 def test_finite_bias_needs_a_conductor_partition(tmp_path):

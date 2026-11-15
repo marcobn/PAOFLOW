@@ -43,3 +43,25 @@ def test_compute_current_zero_when_potentials_equal():
     )
 
     np.testing.assert_allclose(currents, 0.0, atol=1e-12)
+
+
+@pytest.mark.unit
+def test_fermi_dirac_is_the_occupation():
+    """f is 1 well below mu and 0 well above it, without overflow far from mu."""
+    energies = np.array([-1.0, 1.0, -50.0, 50.0])
+    with np.errstate(over='raise'):
+        values = fermi_dirac(energies, mu=0.0, sigma=0.01)
+
+    np.testing.assert_allclose(values, [1.0, 0.0, 1.0, 0.0], atol=1e-40)
+
+
+@pytest.mark.unit
+def test_compute_current_sign_follows_the_landauer_formula():
+    """mu_L > mu_R gives a positive current: I = T (mu_L - mu_R) for a constant T."""
+    egrid = np.linspace(-1.0, 1.0, 201)
+    transm = np.full_like(egrid, 0.5)
+    vgrid = np.array([-0.2, 0.2])
+
+    currents = compute_current_vs_bias(egrid, transm, vgrid, mu_L=0.5, mu_R=-0.5, sigma=0.02)
+
+    np.testing.assert_allclose(currents, 0.5 * vgrid, rtol=1e-4)

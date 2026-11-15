@@ -1,6 +1,6 @@
 # Self-consistent charge in Landauer transport at finite bias: plan
 
-Status: implemented on 15 November 2026 with the recommended decisions (D1 planar, D2 Hartree only, D3 mu_L/mu_R coefficients, D4 linear ramp included, D5 Al | Si | Al); see [negf-finite-bias](negf-finite-bias.md). The 3D Poisson solver, the on-site U and spin polarisation (P5) remain open.
+Status: implemented on 15 November 2026 with the recommended decisions (D1 planar, D2 Hartree only, D3 mu_L/mu_R coefficients, D4 linear ramp included, D5 Al | Si | Al); see [negf-finite-bias](negf-finite-bias.md). The 3D Poisson solver (plan: [negf-3d-electrostatics-plan](negf-3d-electrostatics-plan.md)), the on-site U and spin polarisation (P5) remain open.
 
 ## 1. Where the Transport module is today
 

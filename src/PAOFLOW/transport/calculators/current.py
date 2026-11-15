@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from scipy.special import expit
 
 from PAOFLOW.transport.calculators.transmittance import interpolate_transmittance
 
@@ -27,8 +28,8 @@ def build_bias_grid(vmin: float, vmax: float, nv: int) -> np.ndarray:
 
 
 def fermi_dirac(E: np.ndarray, mu: float, sigma: float) -> np.ndarray:
-    """
-    Compute the Fermi-Dirac distribution.
+    r"""
+    Compute the Fermi-Dirac occupation.
 
     Parameters
     ----------
@@ -37,14 +38,23 @@ def fermi_dirac(E: np.ndarray, mu: float, sigma: float) -> np.ndarray:
     `mu` : float
         Chemical potential.
     `sigma` : float
-        Broadening factor (eV).
+        Broadening factor (eV), :math:`k_B T`.
 
     Returns
     -------
     `f` : ndarray
-        Fermi-Dirac values.
+        Fermi-Dirac occupations, 1 below `mu` and 0 above it.
+
+    Notes
+    -----
+    .. math::
+        f(E) = \frac{1}{e^{(E-\mu)/\sigma} + 1},
+
+    evaluated as the logistic function of :math:`-(E-\mu)/\sigma`, which does not overflow.
+    Before 15 November 2026 this returned :math:`1 - f`, and ``compute_current_vs_bias``
+    returned the current with the opposite sign.
     """
-    return 1.0 / (np.exp(-(E - mu) / sigma) + 1.0)
+    return expit(-(np.asarray(E) - mu) / sigma)
 
 
 def locate(xx: np.ndarray, x: float) -> int:
@@ -132,9 +142,9 @@ def compute_current_vs_bias(
     The integration mesh is refined to resolve the energy window around the chemical potentials, which
     extends ``10 * sigma + 3 dE`` beyond them (clipped to the energy grid).
 
-    ``fermi_dirac`` is :math:`1/(e^{-(E-\mu)/\sigma}+1) = 1 - f`, so the value returned is
-    :math:`-\int dE\, T(E)[f(E-\mu_L) - f(E-\mu_R)]`: negative for :math:`\mu_L > \mu_R`
-    (``Transport.compute_current_self_consistent`` returns the positive sign).
+    The current is positive for :math:`\mu_L > \mu_R` (electrons flow from left to right), in units
+    of :math:`2e/h` times eV, the same convention as ``Transport.compute_current_self_consistent``.
+    Before 15 November 2026 ``fermi_dirac`` returned :math:`1 - f` and the sign was the opposite.
     """
     ne = len(egrid)
     de_old = (egrid[-1] - egrid[0]) / (ne - 1)

@@ -142,16 +142,24 @@ transverse mesh, δ = 1 meV, 300 K; 515 s on 8 ranks; full report in
   tanh(1/2) ≈ 0.46 to 0.57 of the current: 0.0024 instead of 0.0044 for the double barrier at 0.01 V, a 1 meV grid and
   300 K. The window now extends 10σ + 3dE and is clipped to the grid instead of skipping the bias point. The
   integration reference of example02 (0.09 eV grid) moves well within the 1 % tolerance, and the test passes.
-- **Sign of `compute_current`, documented, not changed.** Its `fermi_dirac` is 1/(e^{−(E−μ)/σ}+1) = 1 − f, so it
-  returns −∫T[f_L − f_R]: negative for μ_L > μ_R, against its own docstring formula. Changing it would invert the
-  reference `current.dat` of the integration assets. `compute_current_self_consistent` returns the formula's sign.
+- **Sign of `compute_current`, fixed.** Its `fermi_dirac` was 1/(e^{−(E−μ)/σ}+1) = 1 − f, so it returned
+  −∫T[f_L − f_R]: negative for μ_L > μ_R, against its own docstring formula and against
+  `compute_current_self_consistent`.
+  - The old sign was self-consistent in one reading. With the example's coefficients `mu_L=-0.5, mu_R=0.5`, it gave
+    the electric current ∫T(f_R − f_L), positive at positive V.
+  - `fermi_dirac` is now f (evaluated with `scipy.special.expit`, no overflow), and both methods return the particle
+    current from left to right, positive for μ_L > μ_R.
+  - Transport example02 (examples and integration test) now passes `mu_L=0.5, mu_R=-0.5`. With these coefficients
+    the new code reproduces the old `current.dat` to 7e-16, so the release assets (sha256 bccba698…) stay valid.
+  - Old scripts that passed `mu_L=-0.5, mu_R=0.5` to get a positive current must swap the coefficients.
 - **Partition.** `HamiltonianBlockPartition` now keeps `central_atoms`, in the orbital order of the conductor block,
   for the layers.
 
 ## Limits
 
 - Hartree only: no exchange-correlation response.
-- Planar average: no in-plane structure (molecules, wires: a 3D Poisson solver is the next step).
+- Planar average: no in-plane structure. Molecules and wires need the 3D solver planned in
+  [negf-3d-electrostatics-plan](negf-3d-electrostatics-plan.md).
 - Orthonormal orbitals and spin-unpolarised (or spinor) inputs: a `NotImplementedError` otherwise.
 - The buffer layers of the conductor must screen the field. Check that U is flat there; if it is not, use a longer
   supercell.

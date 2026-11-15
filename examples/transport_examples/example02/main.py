@@ -124,8 +124,8 @@ def _run_case(case: str) -> None:
             bias_min=-1.0,
             bias_max=1.0,
             nbias=100,
-            mu_L=-0.5,
-            mu_R=0.5,
+            mu_L=0.5,
+            mu_R=-0.5,
             sigma=0.05,
         )
 

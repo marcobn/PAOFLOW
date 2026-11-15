@@ -702,6 +702,18 @@ class Transport:
 
         Notes
         -----
+        The current is the Landauer integral of the zero-bias transmission between the two shifted
+        Fermi functions,
+
+        .. math::
+            I(V) = \int dE\, T(E)\,[f(E - \mu_L V) - f(E - \mu_R V)],
+
+        in units of :math:`2e/h` times eV per transverse cell, positive for electrons flowing from
+        left to right (:math:`\mu_L V > \mu_R V`). This is the sign of
+        ``compute_current_self_consistent``. Before 15 November 2026 the Fermi function was
+        :math:`1 - f` and the sign was the opposite: swap ``mu_L`` and ``mu_R`` in scripts written
+        for it.
+
         Writes ``current.dat`` as two columns ``V I`` under the configured
         output directory.
         """
