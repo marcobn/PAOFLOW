@@ -52,6 +52,7 @@ class Transport:
         self._onsite_shift_config: dict[str, Any] | None = None
         self._lead_convergence_config: dict[str, Any] | None = None
         self._eigenchannel_config: dict[str, Any] | None = None
+        self._bias_settings: Any = None
 
     def configure_energy_grid(
         self,
@@ -757,3 +758,182 @@ class Transport:
         results.bias_grid = bias_grid
         results.current = currents
         return currents
+
+    def configure_bias_self_consistency(
+        self,
+        *,
+        temperature: float = 300.0,
+        fermi_energy: float = 0.0,
+        electrostatics: str = 'planar',
+        arc_points: int = 30,
+        line_points: int = 40,
+        fermi_poles: int = 10,
+        window_spacing: float = 0.005,
+        mixing: float = 0.5,
+        history: int = 6,
+        tolerance: float = 1.0e-3,
+        max_iterations: int = 80,
+        thomas_fermi_preconditioner: bool = True,
+        verbose: bool = False,
+    ) -> None:
+        """Configure the finite-bias calculation of :meth:`compute_current_self_consistent`.
+
+        Parameters
+        ----------
+        temperature : float, optional
+            Electron temperature of the leads (K).
+        fermi_energy : float, optional
+            Fermi level of the leads at zero bias (eV); 0 for a PAO Hamiltonian referred to the Fermi level.
+        electrostatics : {'planar'}, optional
+            Poisson solver: ``'planar'`` (planar average between the electrodes; layers along the transport
+            direction, periodic across it).
+        arc_points, line_points, fermi_poles : int, optional
+            Equilibrium contour: Gauss-Legendre points on the arc and on the line, Fermi poles enclosed. The
+            defaults integrate a bound state to about 2e-7.
+        window_spacing : float, optional
+            Energy step in the bias window (eV).
+        mixing : float, optional
+            Anderson mixing parameter, applied to the preconditioned residual.
+        history : int, optional
+            Iterations kept by the Anderson mixing.
+        tolerance : float, optional
+            Convergence threshold on the change of the potential (eV).
+        max_iterations : int, optional
+            Iteration limit per bias.
+        thomas_fermi_preconditioner : bool, optional
+            Precondition the residual with the Thomas-Fermi response of the conductor (default): without it the
+            charge of a metal sloshes unless ``mixing`` is a few hundredths.
+        verbose : bool, optional
+            Print one line per iteration.
+
+        Raises
+        ------
+        ValueError
+            For an unknown electrostatics or non-positive numerical settings.
+        """
+        from PAOFLOW.transport.negf.self_consistency import SelfConsistencySettings
+
+        if electrostatics != 'planar':
+            raise ValueError(f"electrostatics must be 'planar', got {electrostatics!r}")
+        if temperature <= 0 or window_spacing <= 0 or tolerance <= 0 or not 0 < mixing <= 1:
+            raise ValueError(
+                'temperature, window_spacing, tolerance must be positive and 0 < mixing <= 1'
+            )
+        self._bias_settings = SelfConsistencySettings(
+            temperature=temperature,
+            fermi_energy=fermi_energy,
+            arc_points=arc_points,
+            line_points=line_points,
+            fermi_poles=fermi_poles,
+            window_spacing=window_spacing,
+            mixing=mixing,
+            history=history,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+            thomas_fermi_preconditioner=thomas_fermi_preconditioner,
+            verbose=verbose,
+        )
+
+    def compute_current_self_consistent(
+        self,
+        *,
+        bias: Any,
+        mu_L: float = 0.5,
+        mu_R: float = -0.5,
+        profile: str = 'self_consistent',
+        write: bool = True,
+        comm: MPI.Comm = MPI.COMM_WORLD,
+    ) -> Any:
+        r"""Current, potential profile and charge of the junction at finite bias.
+
+        At each bias the leads shift to :math:`\mu_{L,R} = E_F + c_{L,R}\,eV` and the conductor gets a potential
+        energy on every atomic layer. With ``profile='self_consistent'`` it is the Hartree potential of the
+        bias-induced charge (planar Poisson between the electrodes) and is iterated to self-consistency; with
+        ``'linear'`` it is the ramp between the electrodes. The current is the Landauer integral of the
+        bias-dependent transmission :math:`T(E;V)`.
+
+        Parameters
+        ----------
+        bias : array_like
+            Biases (V), solved in order (each starts from the previous one).
+        mu_L, mu_R : float, optional
+            Coefficients :math:`c_L`, :math:`c_R` (as in :meth:`compute_current`); default symmetric.
+        profile : {'self_consistent', 'linear'}, optional
+        write : bool, optional
+            Write ``current_<profile><postfix>.dat`` (V, I, iterations, converged, residual),
+            ``potential_<profile><postfix>.dat`` and ``charge_<profile><postfix>.dat`` (layer coordinate in bohr,
+            then one column per bias) and ``transmission_<profile><postfix>.dat`` (V, E, T) to the output
+            directory.
+        comm : MPI.Comm, optional
+            The energy points are shared out over its ranks.
+
+        Returns
+        -------
+        FiniteBiasResults
+            :mod:`PAOFLOW.transport.negf.self_consistency`; also ``self.results.bias_scan``.
+
+        Raises
+        ------
+        RuntimeError
+            Before ``build_hamiltonian_blocks(calculation_type='conductor')``.
+        NotImplementedError
+            For spin-polarised inputs or non-orthonormal orbitals.
+
+        Notes
+        -----
+        The current is :math:`\int dE\, T(E;V)[f(E-\mu_L) - f(E-\mu_R)]` per transverse cell, in eV: units
+        of :math:`2e/h` as :meth:`compute_current`. The zero-bias PAO Hamiltonian is the self-consistent
+        reference: only the change of the electron numbers acts, and the exchange-correlation response is
+        neglected (``docs/internals/negf-finite-bias.md``).
+        """
+        from PAOFLOW.transport.negf.density_matrix import open_conductor_from
+        from PAOFLOW.transport.negf.electrostatics import planar_layers
+        from PAOFLOW.transport.negf.self_consistency import (
+            SelfConsistencySettings,
+            check_orthonormal_conductor,
+            finite_bias_scan,
+        )
+        from PAOFLOW.transport.partition.directions import direction_index
+
+        if self.conductor_data is None or self.blc_blocks is None or self._partition is None:
+            raise RuntimeError(
+                'Call build_hamiltonian_blocks(...) before compute_current_self_consistent(...).'
+            )
+        if self._partition.dim_l is None or not self._partition.central_atoms:
+            raise RuntimeError(
+                'finite-bias transport needs a conductor partition: define_partition(..., left_lead_layers=..., '
+                "right_lead_layers=...) and build_hamiltonian_blocks(calculation_type='conductor')"
+            )
+        arrays, attributes = self.data_controller.data_dicts()
+        if int(attributes.get('nspin', 1)) != 1:
+            raise NotImplementedError('finite-bias self-consistency for spin-polarised inputs')
+        check_orthonormal_conductor(self.blc_blocks)
+        settings = self._bias_settings or SelfConsistencySettings()
+        layers = planar_layers(
+            self._partition.central_atoms,
+            direction_index(self._partition.transport_direction),
+            np.asarray(arrays['a_vectors'], dtype=float) * float(attributes['alat']),
+        )
+        spin_factor = 1.0 if attributes.get('dftSO', False) else 2.0
+        scan = finite_bias_scan(
+            open_conductor_from(self.conductor_data, self.blc_blocks),
+            layers,
+            settings,
+            np.atleast_1d(np.asarray(bias, dtype=float)),
+            mu_left_coefficient=mu_L,
+            mu_right_coefficient=mu_R,
+            profile=profile,
+            spin_factor=spin_factor,
+            comm=comm,
+        )
+        if write and comm.Get_rank() == 0:
+            from PAOFLOW.transport.io.write_data import write_finite_bias_results
+
+            write_finite_bias_results(
+                output_dir=self._output_config['output_dir'],
+                postfix=self._output_config.get('postfix', ''),
+                scan=scan,
+            )
+        if self.results is not None:
+            self.results.bias_scan = scan
+        return scan

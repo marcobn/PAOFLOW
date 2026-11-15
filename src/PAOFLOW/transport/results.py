@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -50,3 +51,4 @@ class TransportResults:
     self_energy_R: NDArray[np.complex128] | None = None
     bias_grid: NDArray[np.float64] | None = None
     current: NDArray[np.float64] | None = None
+    bias_scan: Any = None  # FiniteBiasResults of compute_current_self_consistent

@@ -25,3 +25,4 @@ class HamiltonianBlockPartition:
     dim_r: int | None
     transport_direction: str
     selectors: dict[str, dict[str, str]]
+    central_atoms: tuple[AtomOrbitals, ...] = ()  # in the orbital order of the conductor block

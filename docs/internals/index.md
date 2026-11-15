@@ -72,6 +72,8 @@ position-dipoles
 kubo-bastin
 scattering-channels
 landauer-3d-and-hall
+negf-finite-bias-plan
+negf-finite-bias
 Electron-Phonon-Coupling
 nonlinear-optics
 nonlinear-optics-phase2-plan

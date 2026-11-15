@@ -129,7 +129,12 @@ def compute_current_vs_bias(
     .. math::
         I(V) = \int dE \; T(E) [f(E - \mu_L) - f(E - \mu_R)]
 
-    The integration mesh is refined to resolve the energy window around the chemical potentials.
+    The integration mesh is refined to resolve the energy window around the chemical potentials, which
+    extends ``10 * sigma + 3 dE`` beyond them (clipped to the energy grid).
+
+    ``fermi_dirac`` is :math:`1/(e^{-(E-\mu)/\sigma}+1) = 1 - f`, so the value returned is
+    :math:`-\int dE\, T(E)[f(E-\mu_L) - f(E-\mu_R)]`: negative for :math:`\mu_L > \mu_R`
+    (``Transport.compute_current_self_consistent`` returns the positive sign).
     """
     ne = len(egrid)
     de_old = (egrid[-1] - egrid[0]) / (ne - 1)
@@ -139,9 +144,15 @@ def compute_current_vs_bias(
         muL_v = mu_L * V
         muR_v = mu_R * V
 
+        # The Fermi window extends several sigma beyond both chemical potentials: the former margin of
+        # sigma + 3 dE kept only tanh(sigma / (2 sigma)) of the current on fine energy grids (dE << sigma).
+        # The window is clipped to the energy grid instead of skipping the bias point.
+        margin = 10.0 * sigma + 3 * de_old
+        low = max(min(muL_v, muR_v) - margin, egrid[0])
+        high = min(max(muL_v, muR_v) + margin, egrid[-1] - 0.5 * de_old)
         try:
-            i_start = locate(egrid, min(muL_v, muR_v) - sigma - 3 * de_old)
-            i_end = locate(egrid, max(muL_v, muR_v) + sigma + 3 * de_old)
+            i_start = locate(egrid, low)
+            i_end = locate(egrid, high)
         except ValueError:
             continue
 

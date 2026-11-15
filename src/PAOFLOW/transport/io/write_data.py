@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -358,3 +358,49 @@ def write_current_results(
     outpath.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(outpath, np.column_stack([bias_grid, currents]))
     log.log_rank0(f'Saved current vs bias to {outpath}')
+
+
+def write_finite_bias_results(output_dir: str, postfix: str, scan: Any) -> None:
+    """Write a finite-bias scan (:func:`PAOFLOW.transport.negf.self_consistency.finite_bias_scan`).
+
+    Parameters
+    ----------
+    output_dir : str
+    postfix : str
+        Appended to the file names.
+    scan : FiniteBiasResults
+
+    Returns
+    -------
+    None
+        Writes ``current_<profile><postfix>.dat`` (V, I in eV = units of 2e/h per transverse cell, iterations,
+        converged, residual in eV), ``potential_<profile><postfix>.dat`` and ``charge_<profile><postfix>.dat``
+        (layer coordinate in bohr, then the potential energy in eV or the change of the electron number per
+        transverse cell, one column per bias) and ``transmission_<profile><postfix>.dat`` (V, E, T).
+    """
+    import os
+
+    tag = f'{scan.profile}{postfix}'
+    biases = ' '.join(f'{point.bias:+.4f}' for point in scan.points)
+    with open(os.path.join(output_dir, f'current_{tag}.dat'), 'w') as handle:
+        handle.write(
+            '# V (volt)   I (eV: units of 2e/h, per transverse cell)   iterations   converged   residual (eV)\n'
+        )
+        for point in scan.points:
+            handle.write(f'{point.bias:12.6f} {point.current:16.8e} {point.iterations:6d} {int(point.converged):3d} '
+                         f'{point.residual:12.4e}\n')  # fmt: skip
+    for name, attribute, unit in (
+        ('potential', 'layer_potential', 'eV'),
+        ('charge', 'layer_charge', 'electrons'),
+    ):
+        columns = np.column_stack(
+            [scan.layer_coordinates] + [getattr(point, attribute) for point in scan.points]
+        )
+        np.savetxt(os.path.join(output_dir, f'{name}_{tag}.dat'), columns, fmt='%16.8e',
+                   header=f'z (bohr), then {unit} at V = {biases}')  # fmt: skip
+    with open(os.path.join(output_dir, f'transmission_{tag}.dat'), 'w') as handle:
+        handle.write('# V (volt)   E (eV)   T(E; V)\n')
+        for point in scan.points:
+            for energy, value in zip(point.window_energies, point.transmission):
+                handle.write(f'{point.bias:12.6f} {energy:14.6f} {value:16.8e}\n')
+            handle.write('\n')
