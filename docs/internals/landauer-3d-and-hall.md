@@ -108,14 +108,43 @@ of the formula and e³ < 0 cancel, so R_H is negative for electrons. Against 1/(
 - electrons: R_H/(1/ne) = 0.975;
 - holes: +1.114×10⁻⁸ against +1.156×10⁻⁸.
 
-The Nernst tensor `N = R_H ν + σ⁻¹ ν_Hall`, with ν = σS = −L1, carried the same sign twice, so its values are
-unchanged; the code now writes it in that form. For one parabolic band with constant τ, N vanishes (Sondheimer). The
-residual is 3.2 / 1.4 / 0.69 % at 0.01 / 0.003 / 0.001 electrons per cell, scaling with the non-parabolicity.
+The Nernst tensor `N = R_H ν + σ⁻¹ ν_Hall`, with ν = σS = −L1, carried the same sign twice, so the Hall-sign fix left
+its values unchanged; the code now writes it in that form. Before the curvature fix, N was erratic: ±6×10⁴ to
+±3.5×10⁵ in the file units, changing sign between kernels and grids. The swapped curvatures caused that, not the
+Nernst formula.
+
+**What N should be.** For degenerate carriers, the Sommerfeld expansion of ν and ν_Hall gives
+
+$$
+N = \frac{\pi^2}{3}\frac{k_B^2T}{|e|}\,\frac{d(R_H\sigma)}{dE},
+$$
+
+the energy derivative of the Hall mobility R_Hσ. A parabolic band with constant τ has the constant Hall mobility
+eτ/m*, so the two terms of N cancel (Sondheimer). The cosine band of the cubic model has a Hall mobility that falls
+with energy near its bottom, at a nearly constant rate. N/τ is therefore almost independent of the filling, while
+each cancelling term R_H σ S grows as n^(−2/3).
+
+Cubic model, 40³ grid, adaptive Gaussians, 300 K, μ grid of 10 meV:
+
+| electrons per cell | N/τ (V K⁻¹ T⁻¹ s⁻¹) | N / (R_H σ S) | N / formula above (from R_H and σ only) |
+|---|---|---|---|
+| 0.1 | 2.955×10⁵ | 0.209 | 1.001 |
+| 0.03 | 2.556×10⁵ | 0.073 | 1.003 |
+| 0.01 | 2.423×10⁵ | 0.034 | 1.008 |
+
+On denser grids the residual ratio is 3.2 % (0.01, 100³), 1.4 % (0.003, 100³) and 0.69 % (0.001, 140³). It falls as
+n^(2/3), that is as E_F over the bandwidth.
+
+**Units.** With the default constant τ (τ = 1, no scattering channels) the Nernst file holds N/τ in V K⁻¹ T⁻¹ s⁻¹,
+like σ/τ; with τ = 10 fs the 0.01-electron residual is 2.4 nV K⁻¹ T⁻¹. Until 15 November 2026 the docstring of
+`do_transport` gave V K⁻¹ T⁻¹ for every case.
 
 Tests: `tests/unit/boltzmann/test_hall_and_curvature.py` covers:
 - the degenerate-groups helper;
 - the curvature not swapped with the flat band;
-- R_H in the parabolic limit for electrons and holes on a 40³ grid, within 15 %.
+- R_H in the parabolic limit for electrons and holes on a 40³ grid, within 15 %;
+- N against the Hall-mobility derivative within 3 %, positive for electrons near the band bottom, and its ratio to
+  the cancelling terms below 5 % at 0.01 electrons per cell and shrinking with the filling.
 
 ## Two numerical traps (no code change)
 

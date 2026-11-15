@@ -35,7 +35,12 @@ def do_transport(
     -------
     None
         On rank 0, writes (when ``write_to_file`` is ``True``) one file per
-        spin channel and transport quantity:
+        spin channel and transport quantity. The units below hold with
+        scattering channels (``tau`` in s). With the default constant
+        relaxation time (no channels, :math:`\\tau = 1`) the files hold
+        :math:`\\sigma/\\tau`, :math:`\\kappa/\\tau`, :math:`S^2\\sigma/\\tau` and
+        :math:`N/\\tau`, each unit times s⁻¹; :math:`S` and :math:`R_H` do not
+        depend on a constant :math:`\\tau`.
 
         - ``sigma[smearing]_{ispin}.dat``: electrical conductivity
           :math:`\\sigma` in S m⁻¹.
@@ -51,7 +56,8 @@ def do_transport(
           antisymmetrised components :math:`(R_{ijr} - R_{jir})/2` of the Hall
           coefficient tensor in m³ C⁻¹.
         - ``nernst[smearing]_{ispin}.dat`` (if ``do_hall``): all 27 components
-          :math:`N_{ijr}` of the Nernst tensor in V K⁻¹ T⁻¹.
+          :math:`N_{ijr}` of the Nernst tensor in V K⁻¹ T⁻¹ (V K⁻¹ T⁻¹ s⁻¹,
+          i.e. :math:`N/\\tau`, with a constant relaxation time).
 
         When ``save_tensors`` is ``True``, adds the following keys to
         ``data_controller.data_arrays``:
@@ -108,7 +114,9 @@ def do_transport(
         \\qquad \\nu^{\\text{Hall}} = e^2\\,\\mathcal{L}^{(1,\\text{Hall})}/T,
 
     the weak-field expansion of the open-circuit field :math:`E = \\sigma(B)^{-1}\\nu(B)\\nabla T`.
-    For a parabolic band with an energy-independent :math:`\\tau` the two terms cancel
+    For degenerate carriers :math:`N = (\\pi^2/3)(k_B^2T/|e|)\\, d(R_H\\sigma)/dE`, the energy
+    derivative of the Hall mobility :math:`R_H\\sigma`. A parabolic band with an
+    energy-independent :math:`\\tau` has a constant Hall mobility, so the two terms cancel
     (Sondheimer).
 
     Conversion factors: ``siemen_conv = 6.9884`` converts internal units to
