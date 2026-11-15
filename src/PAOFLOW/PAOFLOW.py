@@ -1062,28 +1062,44 @@ class PAOFLOW:
 
     def bands(
         self,
-        ibrav=None,
-        band_path=None,
-        high_sym_points=None,
-        adhoc_SO=False,
-        fname='bands',
-        nk=500,
-        write_QE_path=False,
-    ):
-        """
-        Compute the electronic band structure
+        ibrav: int | None = None,
+        band_path: str | None = None,
+        high_sym_points: dict | None = None,
+        adhoc_SO: bool = False,
+        fname: str = 'bands',
+        nk: int = 500,
+        write_QE_path: bool = False,
+        interpolation: str = 'fft_grid',
+    ) -> None:
+        """Compute the electronic band structure along a path.
 
-        Arguments:
-            ibrav (int): Crystal structure (following the specifications of QE)
-            band_path (str): A string representing the band path to follow
-            high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
-            adhoc_SO (bool): If True the calculation includes relativistic spin orbit coupling
-            fname (str): File name for the band output
-            nk (int): Number of k-points to include in the path (High Symmetry points are currently included twice, increasing nk)
-            write_QE_path (bool): If True generates the kpath in tpiba to run QE bands
-        Returns:
-            None
+        Parameters
+        ----------
+        ibrav : int, optional
+            Crystal structure (following the specifications of QE); selects the default path.
+        band_path : str, optional
+            A string representing the band path to follow.
+        high_sym_points : dict, optional
+            Symbols of the high-symmetry points as keys and length-3 arrays with their positions as values.
+        adhoc_SO : bool, optional
+            If True the calculation includes relativistic spin-orbit coupling.
+        fname : str, optional
+            File name for the band output.
+        nk : int, optional
+            Number of k-points along the path (high-symmetry points are currently included twice).
+        write_QE_path : bool, optional
+            If True generates the k-path in tpiba to run QE bands.
+        interpolation : {'fft_grid', 'wigner_seitz'}, optional
+            Fourier sum of ``HRs`` off the DFT mesh. ``'fft_grid'`` (default) sums over the FFT grid
+            as stored; ``'wigner_seitz'`` gives every grid vector its shortest image in the supercell
+            lattice, as Wannier interpolation does, and is the more accurate when the real-space
+            Hamiltonian has not decayed at the edge of the supercell. Both reproduce the DFT mesh.
 
+        Returns
+        -------
+        None
+            Stores ``E_k`` and ``v_k`` on the path in the data controller and writes the bands to
+            ``fname``.
         """
         from .spectrum.do_bands import do_bands
         from .utils.communication import gather_full
@@ -1110,7 +1126,7 @@ class PAOFLOW:
         attr['write_QE_bands'] = write_QE_path
         # Prepare HRs for band computation with spin-orbit coupling
         try:
-            do_bands(self.data_controller)
+            do_bands(self.data_controller, interpolation=interpolation)
             if self.rank == 0 and 'nkpnts' in attr and arrays['kq'].shape[1] == attr['nkpnts']:
                 print('WARNING: The bands kpath and nscf calculations have the same size.')
                 print(
@@ -1750,22 +1766,44 @@ class PAOFLOW:
         arrays.pop('Rfft', None)
         arrays.pop('R_wght', None)
 
-    def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False, free_HRs=True):
-        """
-        Calculate the interpolated Hamiltonian with the method of zero padding
-        Populates DataController with 'Hksp'.
+    def interpolated_hamiltonian(
+        self,
+        nfft1: int = 0,
+        nfft2: int = 0,
+        nfft3: int = 0,
+        reshift_Ef: bool = False,
+        free_HRs: bool = True,
+        interpolation: str = 'zero_padding',
+    ) -> None:
+        """Fourier-interpolate the PAO Hamiltonian onto a denser k-grid.
 
-        Arguments:
-            nfft1 (int): Desired size of the interpolated Hamiltonian's first dimension
-            nfft2 (int): Desired size of the interpolated Hamiltonian's second dimension
-            nfft3 (int): Desired size of the interpolated Hamiltonian's third dimension
-            free_HRs (bool): Release 'HRs' once it has been interpolated. It is replicated
-                on every rank, so keeping it roughly doubles the peak footprint of this
-                step. Set False only when calling 'topology' or 'berry_phase' afterwards
-                without an intervening 'pao_eigh' (which frees it regardless).
+        Parameters
+        ----------
+        nfft1, nfft2, nfft3 : int, optional
+            Size of the interpolated grid along each reciprocal vector; 0 (default) doubles the
+            DFT mesh along that direction.
+        reshift_Ef : bool, optional
+            Recompute the Fermi energy on the interpolated grid and subtract it from ``Hksp``.
+        free_HRs : bool, optional
+            Release ``HRs`` once it has been interpolated. It is replicated on every rank, so
+            keeping it roughly doubles the peak footprint of this step. Set False only when calling
+            ``topology`` or ``berry_phase`` afterwards without an intervening ``pao_eigh`` (which
+            frees it regardless).
+        interpolation : {'zero_padding', 'wigner_seitz'}, optional
+            How the real-space grid of ``HRs`` is mapped to lattice vectors off the DFT mesh.
+            ``'zero_padding'`` (default) keeps the parallelepiped of grid vectors and splits the
+            Nyquist planes; ``'wigner_seitz'`` gives every grid vector its shortest image in the
+            supercell lattice, as Wannier interpolation does. Both reproduce the DFT mesh exactly
+            and cost one FFT per orbital pair; the Wigner-Seitz choice is the more accurate when
+            ``HRs`` has not decayed at the edge of the supercell. It needs a grid that holds every
+            image (about 1.5 times the DFT mesh for fcc and bcc lattices, twice the default) and
+            raises otherwise.
 
-        Returns:
-            None
+        Returns
+        -------
+        None
+            Stores ``Hksp`` (distributed over the k-points) and the new grid sizes in the data
+            controller.
         """
         from .hamiltonian.do_double_grid import do_double_grid
         from .spectrum.do_Efermi import E_Fermi
@@ -1802,7 +1840,7 @@ class PAOFLOW:
                 attr['npool'] = temp_pool
 
             # Fourier interpolation on extended grid (zero padding)
-            do_double_grid(self.data_controller)
+            do_double_grid(self.data_controller, interpolation=interpolation)
             # do_double_grid has taken its scattered copy; the replicated original is
             # dead weight through the gather_scatter peak below.
             if free_HRs and 'HRs' in arrays:
@@ -1841,7 +1879,11 @@ class PAOFLOW:
             if attr['abort_on_exception']:
                 raise e
 
-        self.report_module_time('R -> k with Zero Padding')
+        self.report_module_time(
+            'R -> k with Zero Padding'
+            if interpolation == 'zero_padding'
+            else 'R -> k with Wigner-Seitz images'
+        )
 
     def pao_eigh(self, bval=0):
         """

@@ -65,6 +65,7 @@ release
 :caption: Major Subsystems
 
 internal-basis
+wigner-seitz-interpolation
 acbn0
 nonlocal-velocity
 position-dipoles
