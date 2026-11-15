@@ -1,6 +1,6 @@
 # How to plot PAOFLOW output with GPAO
 
-Every PAOFLOW property writes its result as text files in `outputdir`: `bands()` writes `bands_0.dat` and `kpath_points.txt`, `dos()` the DOS and one projected-DOS (PDOS) file per orbital, `transport()` the transport tensors, `spin_Hall()` the spin Hall conductivity (SHC), `fermi_surface()` a BXSF file. The `GPAO` class reads these files and draws them with matplotlib, so you can plot a finished run without its `PAOFLOW` object, for example after a cluster job or on another machine. This page shows the call for each kind of output, the arguments that change what the figure shows, and how to check that a figure matches its run. GPAO computes nothing: a figure carries the approximations of the run that wrote the files.
+Every PAOFLOW property writes its result as text files in `outputdir`: {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.bands` writes `bands_0.dat` and `kpath_points.txt`, {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.dos` the DOS and one projected-DOS (PDOS) file per orbital, {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.transport` the transport tensors, {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.spin_Hall` the spin Hall conductivity (SHC), {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.fermi_surface` a BXSF file. The {py:class}`~PAOFLOW.GPAO.GPAO` class reads these files and draws them with matplotlib, so you can plot a finished run without its `PAOFLOW` object, for example after a cluster job or on another machine. This page shows the call for each kind of output, the arguments that change what the figure shows, and how to check that a figure matches its run. GPAO computes nothing: a figure carries the approximations of the run that wrote the files.
 
 Base examples: [examples/qe_examples/example01/](https://github.com/marcobn/PAOFLOW/tree/master/examples/qe_examples/example01) (Si), [examples/qe_examples/example02/](https://github.com/marcobn/PAOFLOW/tree/master/examples/qe_examples/example02) (Al), [examples/qe_examples/example04/](https://github.com/marcobn/PAOFLOW/tree/master/examples/qe_examples/example04) (Fe), [examples/qe_examples/example05/](https://github.com/marcobn/PAOFLOW/tree/master/examples/qe_examples/example05) (Pt), [examples/qe_examples/example06/](https://github.com/marcobn/PAOFLOW/tree/master/examples/qe_examples/example06) (AlP), [examples/qe_examples/example08/](https://github.com/marcobn/PAOFLOW/tree/master/examples/qe_examples/example08) (SnTe monolayer), [examples/pyskeaf_examples/Bi/](https://github.com/marcobn/PAOFLOW/tree/master/examples/pyskeaf_examples/Bi) (Bi)
 
@@ -44,7 +44,7 @@ plotter.plot_dos_beside_bands(
 )
 ```
 
-`sym_points` reads the tick positions and labels from `kpath_points.txt`. A segment with 0 points marks a jump in the path, and its tick carries both labels: `K|U` is the end of one piece of the path at K and the start of the next at U. `label` (`band_label` in `plot_dos_beside_bands`) is the energy-axis label, and `y_lim` the energy range. `plot_dos_beside_bands` draws the DOS on the energy axis of the bands, so set `y_lim` inside the energy range of the DOS file: the DOS stops where `dos(emin, emax)` stopped. `plot_bands` also takes a list of files and a list of `labels`, and overlays them, for example the bands of two runs.
+`sym_points` reads the tick positions and labels from `kpath_points.txt`. A segment with 0 points marks a jump in the path, and its tick carries both labels: `K|U` is the end of one piece of the path at K and the start of the next at U. `label` (`band_label` in {py:meth}`~PAOFLOW.GPAO.GPAO.plot_dos_beside_bands`) is the energy-axis label, and `y_lim` the energy range. `plot_dos_beside_bands` draws the DOS on the energy axis of the bands, so set `y_lim` inside the energy range of the DOS file: the DOS stops where `dos(emin, emax)` stopped. {py:meth}`~PAOFLOW.GPAO.GPAO.plot_bands` also takes a list of files and a list of `labels`, and overlays them, for example the bands of two runs.
 
 ![Si band structure along the fcc path with the DOS on the same energy axis to its right](../../_static/images/howtos/plotting/si_bands_dos.png)
 
@@ -52,7 +52,7 @@ The figure shows the files of example01, which calls `bands(ibrav=2, nk=2000)` a
 
 ## Projected DOS grouped by orbital
 
-`dos()` writes one PDOS file per pseudo-atomic orbital, named by atom and orbital (`Si1_3s_pdosdk_0.dat`, `Si1_3px_pdosdk_0.dat`, ...), with the energy and the PDOS per spin. `plot_pdos` draws one curve per file, or, with `psum_inds`, one curve per group of files: each inner list holds the positions in the file list of the files to add up.
+`dos()` writes one PDOS file per pseudo-atomic orbital, named by atom and orbital (`Si1_3s_pdosdk_0.dat`, `Si1_3px_pdosdk_0.dat`, ...), with the energy and the PDOS per spin. {py:meth}`~PAOFLOW.GPAO.GPAO.plot_pdos` draws one curve per file, or, with `psum_inds`, one curve per group of files: each inner list holds the positions in the file list of the files to add up.
 
 ```python
 from pathlib import Path
@@ -77,7 +77,7 @@ The $3s$ orbitals carry most of the weight at the bottom of the valence band, be
 
 ## Berry curvature along the path
 
-`topology(Berry=True, spol=..., ipol=..., jpol=...)` writes the Berry curvature $\Omega_{ij}(\mathbf{k})$ along the path of `bands()`, summed over the occupied bands, to `Omega_{spol}_{ipol}{jpol}.dat`: the point index and $\Omega$ in bohr$^2$. The first label in the name is the spin direction `spol`, which only the spin Berry curvature `Omegaj_*.dat` uses. Example04 (bcc Fe with spin–orbit coupling) calls `topology(spol=2, ipol=1, jpol=2, Berry=True)`, so its file is `Omega_z_yz.dat`.
+{py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.topology` with `Berry=True, spol=..., ipol=..., jpol=...` writes the Berry curvature $\Omega_{ij}(\mathbf{k})$ along the path of `bands()`, summed over the occupied bands, to `Omega_{spol}_{ipol}{jpol}.dat`: the point index and $\Omega$ in bohr$^2$. The first label in the name is the spin direction `spol`, which only the spin Berry curvature `Omegaj_*.dat` uses. Example04 (bcc Fe with spin–orbit coupling) calls `topology(spol=2, ipol=1, jpol=2, Berry=True)`, so its file is `Omega_z_yz.dat`.
 
 ```python
 fe = 'plotting/fe/'
@@ -93,7 +93,7 @@ plotter.plot_berry_under_bands(
 )
 ```
 
-`plot_berry_under_bands` puts the curvature in a panel under the bands, on the same k axis; `y_lim` applies to the bands, and the curvature panel spans the range of the data. To choose the range of the curvature as well, plot it alone with `plotter.plot_berry(fe + 'Omega_z_yz.dat', sym_points=fe + 'kpath_points.txt', y_lim=(-50.0, 50.0))`.
+{py:meth}`~PAOFLOW.GPAO.GPAO.plot_berry_under_bands` puts the curvature in a panel under the bands, on the same k axis; `y_lim` applies to the bands, and the curvature panel spans the range of the data. To choose the range of the curvature as well, plot it alone with `plotter.plot_berry(fe + 'Omega_z_yz.dat', sym_points=fe + 'kpath_points.txt', y_lim=(-50.0, 50.0))`.
 
 ![Fe band structure with the Berry curvature along the same path in a panel below](../../_static/images/howtos/plotting/fe_berry.png)
 
@@ -101,7 +101,7 @@ The curvature has a peak of $1.47\times10^{3}$ bohr$^2$ on the P–H line, close
 
 ## Spin Hall conductivity
 
-`spin_Hall(s_tensor=[[ipol, jpol, spol]])` writes `shcEf_{spol}_{ipol}{jpol}.dat`: the Fermi energy relative to $E_F$ (eV) and the spin Hall conductivity $\sigma^{s}_{ij}$ with the bands kept rigid. `plot_shc` takes one file, or a list of files drawn together, with a legend entry made of the last four characters of each file name (`z_xy`).
+`spin_Hall(s_tensor=[[ipol, jpol, spol]])` writes `shcEf_{spol}_{ipol}{jpol}.dat`: the Fermi energy relative to $E_F$ (eV) and the spin Hall conductivity $\sigma^{s}_{ij}$ with the bands kept rigid. {py:meth}`~PAOFLOW.GPAO.GPAO.plot_shc` takes one file, or a list of files drawn together, with a legend entry made of the last four characters of each file name (`z_xy`).
 
 ```python
 plotter.plot_shc('plotting/pt/shcEf_z_xy.dat', title=r'Pt, $\sigma^z_{xy}$', cols=palette[0])
@@ -125,7 +125,7 @@ In the SnTe monolayer (example08) the two components have opposite signs. Betwee
 
 ## Conductivity and Seebeck coefficient
 
-`transport()` writes one file per tensor, with the columns temperature (K), chemical potential $\mu$ relative to $E_F$ (eV), and the components $xx$, $yy$, $zz$, $xy$, $xz$, $yz$. Without scattering channels the relaxation time is constant and equal to 1 s, so `sigmagauss_0.dat` holds $\sigma/\tau$ (see [Tutorial 02](../tutorial02.ipynb)). `t_ele` selects the components: the default is the three diagonal ones, `[(0, 1)]` gives $xy$, and `[]` plots the average of the diagonal. Each temperature in the file gets its own figure. `plot_seebeck` converts $S$ from V/K to $\mu$V/K.
+`transport()` writes one file per tensor, with the columns temperature (K), chemical potential $\mu$ relative to $E_F$ (eV), and the components $xx$, $yy$, $zz$, $xy$, $xz$, $yz$. Without scattering channels the relaxation time is constant and equal to 1 s, so `sigmagauss_0.dat` holds $\sigma/\tau$ (see [Tutorial 02](../tutorial02.ipynb)). `t_ele` selects the components: the default is the three diagonal ones, `[(0, 1)]` gives $xy$, and `[]` plots the average of the diagonal. Each temperature in the file gets its own figure. {py:meth}`~PAOFLOW.GPAO.GPAO.plot_seebeck` converts $S$ from V/K to $\mu$V/K.
 
 ```python
 plotter.plot_electrical_conductivity(
