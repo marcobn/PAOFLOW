@@ -258,11 +258,13 @@ for name in sys.argv[1:]:
         idx = (path.parent / "index.md").read_text()
         if path.stem not in re.findall(r":link:\s*(\S+)", idx) or not re.search(rf"^{path.stem}$", idx, re.M):
             say("registration", "missing grid card or toctree entry in docs/tutorials/howtos/index.md")
-        m = re.search(r"Base example:.*?(examples/[\w./-]+)", allmd)
-        if not m:
+        m = re.search(r"^Base examples?:(.*)$", allmd, re.M)
+        paths = re.findall(r"(?<![/\w])examples/[\w./-]+", m.group(1)) if m else []
+        if not paths:
             say("base-example", "no 'Base example: examples/...' line")
-        elif not Path(m.group(1)).exists():
-            say("base-example", f"{m.group(1)} does not exist")
+        for ex in paths:
+            if not Path(ex).exists():
+                say("base-example", f"{ex} does not exist")
     elif path.name.startswith("tutorial"):
         if path.stem not in re.findall(r":link:\s*(\S+)", (path.parent / "index.md").read_text()):
             say("registration", "missing grid card in docs/tutorials/index.md")

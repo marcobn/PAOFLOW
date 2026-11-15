@@ -86,7 +86,7 @@ user-invocable: true
     tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data
     examples/             qe_examples, transport_examples, acbn0_examples, TBmodel_examples, elphon (one folder per
                           system: system.py, qe/, phonons/ coupling/ superconductivity/ optics/ transport/ arpes/),
-                          pyskeaf_examples, qo_analysis_examples, unfold_examples, plot_examples, new_examples, vasp_examples,
+                          pyskeaf_examples, qo_analysis_examples, unfold_examples, new_examples, vasp_examples,
                           nlo_examples (Graphene TB, GaAs, GeS: shift current / SHG, REPORT.md, figures)
     BASIS/                Per-element radial orbital tables (e.g. BASIS/Si/3P.dat) for internal projections
     PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard)
