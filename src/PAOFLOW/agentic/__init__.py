@@ -30,6 +30,10 @@ Each subpackage serves the workflow of the same name in the repository folder
   interpreting SSCHA campaigns (anharmonic phonons at temperature, stability
   verdicts, the stability temperature; ``SSCHARun``, ``scan``, ``dispersion``,
   ``plotting``).
+* :mod:`PAOFLOW.agentic.campaign` -- ``agentic/campaign/``: orchestrating and
+  watching computational campaigns on several machines (``Machine``,
+  ``Campaign``, pw.x output and log parsing, preflight checks, findings with
+  an authority, the background watcher).
 
 The last four reuse the data toolkit of :mod:`PAOFLOW.agentic.thermo_optics`
 (datasets with provenance, units, PDF/raster ingestion and digitising, metrics,

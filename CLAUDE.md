@@ -63,7 +63,9 @@ user-invocable: true
                           Boltzmann channel bridge), superconductivity/ (EliashbergModel, GapModel,
                           AnisotropicGapModel, Allen-Dynes/BCS baselines), arpes/ (ArpesModel, MDC curve
                           analysis, band-map images), nlo/ (NonlinearModel, point-group symmetry audit of
-                          second-order tensors); the elphon adapters open a system folder via from_system
+                          second-order tensors), campaign/ (Machine, Campaign, pw.x output and log parsing,
+                          preflight checks, findings with an authority, background watcher); the elphon
+                          adapters open a system folder via from_system
       basis_gen/          Generates atomic-orbital basis from pseudopotentials (paoflow-genbasis-ps)
       gen/                Generators: QE input from AFLOW/C2DB (paoflow-gen-qe), main.py driver (paoflow-gen),
                           elphon_system.py + elphon_templates/ (paoflow-gen elphon writes a system folder; the
@@ -90,6 +92,8 @@ user-invocable: true
                           transport/, superconductivity/, arpes/: same layout, one playbook each over the
                           elphon system folders (mobility/resistivity, alpha2F/Tc/gaps, band maps/kinks)
                           nlo/: same layout for the non-linear optics outputs (SHG, shift current)
+                          campaign/: same layout, orchestrating and watching campaigns on several machines
+                          (plan, preflight, pilot, watcher, interventions within report/act/ask)
     docs/                 Sphinx + MyST site (Read the Docs); docs/internals/ holds developer notes
     .github/              CI workflows and asset_generation scripts for integration-test tarballs
     ```

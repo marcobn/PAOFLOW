@@ -96,6 +96,7 @@ agentic-superconductivity
 agentic-arpes
 agentic-nlo
 agentic-sscha
+agentic-campaign
 sk-edtb
 cli-generators
 web-gui-plan
