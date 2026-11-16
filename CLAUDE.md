@@ -87,7 +87,7 @@ user-invocable: true
                           keeps its own copies of the model scripts; the TB examples are in the tight-binding how-to)
     examples/             qe_examples, transport_examples, acbn0_examples, elphon (one folder per
                           system: system.py, qe/, phonons/ coupling/ superconductivity/ optics/ transport/ arpes/),
-                          pyskeaf_examples, qo_analysis_examples, unfold_examples, new_examples, vasp_examples,
+                          pyskeaf_examples, qo_analysis_examples, new_examples, vasp_examples,
                           nlo_examples (Graphene TB, GaAs, GeS: shift current / SHG, REPORT.md, figures)
     BASIS/                Per-element radial orbital tables (e.g. BASIS/Si/3P.dat) for internal projections
     PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard)

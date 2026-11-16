@@ -17,13 +17,13 @@ There are two page types with different jobs. Read the matching template before 
 | Job       | Teaches a complete workflow end to end, with its physics | Answers one practical question: how to set X up, which flags matter, how to check it |
 | File      | `docs/tutorials/tutorialNN.ipynb`                        | `docs/tutorials/howtos/<task>.md`                                                    |
 | Template  | `references/tutorial.md`                                 | `references/howto.md`                                                                |
-| Builds on | Tutorial 01 (except Tutorial 01 itself)                  | an example under `examples/`, named on the page                                      |
+| Builds on | Tutorial 01 (except Tutorial 01 itself)                  | Tutorial 01, and an example under `examples/` when one exists, named on the page     |
 
 When a request fits neither type (a long derivation, a design note), say so: derivations belong in `docs/about/theory.md` or `docs/internals/`, and design notes in `docs/internals/`.
 
 ## Workflow
 
-1. **Read before writing.** Read the base example (`examples/.../main.py`, inputs, README), the PAOFLOW methods the page calls and their docstrings, and the existing pages that already cover nearby concepts. You need the code to know what is computed, and the neighbouring pages to know what is already explained (see "Say it once").
+1. **Read before writing.** Read the base example, if the page has one (`examples/.../main.py`, inputs, README), the PAOFLOW methods the page calls and their docstrings, and the existing pages that already cover nearby concepts. You need the code to know what is computed, and the neighbouring pages to know what is already explained (see "Say it once").
 2. **Find the equation the code evaluates** for each step that gets an equation. Write it down from the source, signs, factors, unit conversions and normalisations included. If it differs from the textbook form, the page shows what the code does and you report the discrepancy to the user. Never write the textbook version silently, and never change the code to match the page.
 3. **Run the code** (see "Running the code"). Every number, table and figure on the page comes from that run.
 4. **Write the page** from the template, in the style below.
@@ -267,10 +267,10 @@ for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
         idx = (path.parent / "index.md").read_text()
         if not re.search(rf"^- \[.+\]\({path.stem}\.md\)$", idx, re.M) or not re.search(rf"^{path.stem}$", idx, re.M):
             say("registration", "missing list entry or toctree entry in docs/tutorials/howtos/index.md")
-        m = re.search(r"^Base examples?:(.*)$", allmd, re.M)
+        m = re.search(r"^Base examples?:(.*)$", allmd, re.M)  # optional; checked when present
         paths = re.findall(r"(?<![/\w])examples/[\w./-]+", m.group(1)) if m else []
-        if not paths:
-            say("base-example", "no 'Base example: examples/...' line")
+        if m and not paths:
+            say("base-example", "'Base example:' line without an examples/... path")
         for ex in paths:
             if not Path(ex).exists():
                 say("base-example", f"{ex} does not exist")
