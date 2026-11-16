@@ -47,6 +47,9 @@ pip install "PAOFLOW[phonon]"
 # Weyl point search (z2pack, tbmodels)
 pip install "PAOFLOW[weyl_search]"
 
+# Tight-binding models built with PythTB (the *_pythtb labels and PythTB model objects)
+pip install "PAOFLOW[pythtb]"
+
 # JIT compilation via Numba (speed-up for dense k-grids)
 pip install "PAOFLOW[fast]"
 

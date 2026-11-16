@@ -6,7 +6,7 @@ cubium2: tbmodel = {'label':'cubium2', 't':?, 'Eg':?}
 graphene: tbmodel = {'label':'graphene', 'delta':?, 't':?}
 kane_mele: tbmodel = {'label':'kane_mele', 'v_par':?, 't':?, 'soc_par':?, 'r_par':?}
 
-Predefined PythTB models (PythTB V2.0.0)
+Predefined PythTB models (PythTB V2.0.0, install with: pip install "PAOFLOW[pythtb]")
 cubium: tbmodel = {'label':'cubium_pythtb', 't':?}
 cubium2: tbmodel = {'label':'cubium2_pythtb', 't':?, 'Eg':?}
 ssh: tbmodel = {'label':'ssh_pythtb', 'v':?, 'w':?}

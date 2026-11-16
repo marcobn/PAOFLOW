@@ -24,6 +24,7 @@ dependencies = ["numpy>=2.0,<2.5; python_version < '3.14'",
 
 [project.optional-dependencies]
 weyl_search = ["z2pack", "tbmodels"]
+pythtb = ["pythtb>=2"]
 graphics = ["vtk", "matplotlib","mendeleev"]
 fermisurface = ["mayavi", "scikit-image>=0.20"]
 transport = ["psutil"]
