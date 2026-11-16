@@ -14,7 +14,7 @@ user-invocable: true
     - `.agents/skills/feature-design/SKILL.md`: API and module design rules (summarized in section 5)
     - `.agents/skills/sparse-backend/SKILLS.md`: design notes and memory contract for `src/PAOFLOW/sparse/`. Read it before touching the sparse backend or `SparsePAOFLOW.py`
 
-    Several developers share these skills. When a request would break a rule in one of them, or the task cannot be done without breaking one, stop before doing that part. Name the skill and the rule, say why the rule exists, and offer the version that follows it. Go ahead with the exception only if the developer explicitly overrides that rule in their reply. An earlier override, one given for another file, or a general "go ahead" does not count. Record the override where the skill says (the tutorials skill uses a `% override:` line on the page); otherwise put it in the final report so it can go into the commit message.
+    Several developers share these skills. When a request would break a rule in one of them, or the task cannot be done without breaking one, stop before doing that part. Name the skill and the rule, say why the rule exists, and offer the version that follows it. Go ahead with the exception only if the developer explicitly overrides that rule in their reply. An earlier override, one given for another file, or a general "go ahead" does not count. Record the override only in the commit message, never in the file itself: give it in the final report so it can go into the commit message (the tutorials skill defines the `Override:` trailer its checks read from `git log`).
 
 3. **What PAOFLOW is**
     PAOFLOW (version 3.0.0, GPL-3.0-or-later) is a Python package for post-processing DFT calculations. It projects Kohn–Sham states from Quantum ESPRESSO (or VASP) onto a Projected Atomic Orbital (PAO) basis to build *ab initio* tight-binding Hamiltonians. From these it computes bands, DOS/PDOS, Fermi surfaces, Boltzmann transport, Berry-phase/topology, spin/anomalous Hall, dielectric response, Green's-function (Landauer) transport, phonons, electron–phonon coupling and ACBN0 Hubbard U/V.
@@ -83,8 +83,9 @@ user-invocable: true
     rust/paoflow_rs/      Optional Rust (PyO3 + rayon) kernels for ACBN0 ERIs, epsilon/JDOS and the e-ph absorption
                           kernel; one pool tied to the MPI core budget. Parity < 1e-12
     tests/unit/           Fast unit tests, organized by subpackage
-    tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data
-    examples/             qe_examples, transport_examples, acbn0_examples, TBmodel_examples, elphon (one folder per
+    tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data (TBmodel/
+                          keeps its own copies of the model scripts; the TB examples are in the tight-binding how-to)
+    examples/             qe_examples, transport_examples, acbn0_examples, elphon (one folder per
                           system: system.py, qe/, phonons/ coupling/ superconductivity/ optics/ transport/ arpes/),
                           pyskeaf_examples, qo_analysis_examples, unfold_examples, new_examples, vasp_examples,
                           nlo_examples (Graphene TB, GaAs, GeS: shift current / SHG, REPORT.md, figures)

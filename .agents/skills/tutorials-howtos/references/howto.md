@@ -4,6 +4,8 @@ A how-to is a Markdown page `docs/tutorials/howtos/<task>.md` that answers one p
 
 ## Structure
 
+The items below are the default order, not a list of required sections. The title, the opening paragraph with its `Base example:` line, and the change are always there. Every other section is written only when it adds information the reader does not already have from the sections above it; a section that repeats values or checks already stated next to their output is left out, and its content stays where it is.
+
 1. **Title**: `# How to <verb> <object>` (for example "How to add spin–orbit coupling to a scalar-relativistic calculation").
 2. **Opening paragraph**: the question the page answers, the situation in which the reader needs it, and the physical approximation it introduces, if any. The page is written for every system the task applies to. The system used to test it (the base example, a supercell chosen for the runs) is not its subject and appears only where a concrete example helps. Then a line of the form
    `Base example: [examples/<family>/<name>/](https://github.com/marcobn/PAOFLOW/tree/master/examples/<family>/<name>)`
@@ -11,7 +13,7 @@ A how-to is a Markdown page `docs/tutorials/howtos/<task>.md` that answers one p
 3. **The change**: one screen of code at most, showing only the lines that differ from the base example's `main.py`, with enough context to place them. Use a fenced `python` block. When the change is a single argument, show the call with that argument and nothing more.
 4. **The parameters that matter**: one short subsection or a table per flag, giving the physical meaning, units, default, how to choose the value for a given material, and what goes wrong when it is too small or too large. Explain the physics of each flag: what it approximates and why the default is what it is. Quote a measured number only where it drives a choice ("on Si, `1e-4` moves the bands near the gap by about 10 meV, the default `1e-3` by about 0.1 eV"). Tables of statistics from the test runs (bond counts, timings, memory, error sweeps) put a load on the reader without helping them choose, so they stay in the report to the developer. Flags that share their physics (two ways of setting the same cutoff) get a parent subsection that states the shared physics once, then one subsection per flag.
 5. **Other cases** (when the change affects many properties): one or two sentences on how to apply it to the properties the page does not show, with a link to the list of supported methods.
-6. **Checking the result**: the concrete checks in order of cost, for example the log lines to read, a comparison with the dense pipeline or the DFT bands, and a convergence test. Each check states what a good result looks like.
+6. **Checking the result** (only when it adds information): the concrete checks in order of cost, for example the log lines to read, a comparison with the dense pipeline or the DFT bands, and a convergence test. Each check states what a good result looks like. When each section already states what its output should show, as on a page whose figures and printed output carry the expected values, there is no separate checking section.
 7. **Troubleshooting** (optional): a table `| message | meaning | what to do |` with the literal error or warning text the code prints. Every method or option the table names is introduced in the body above.
 8. **Where to go next** (optional): links to the internals page that explains the mechanism, and to related how-tos, one clause each.
 

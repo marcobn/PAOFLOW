@@ -134,5 +134,6 @@ You can diff your results against them to confirm a correct installation.
 - The repository `examples/` folder has one folder per topic: `qe_examples` and `vasp_examples`
   (the property workflows), `elphon` (electron-phonon: superconductivity, optics, transport,
   ARPES, one system folder each), `nlo_examples` (shift current and second-harmonic
-  generation), `acbn0_examples`, `transport_examples` (Landauer), `TBmodel_examples`,
-  `unfold_examples`, `pyskeaf_examples` and `qo_analysis_examples`.
+  generation), `acbn0_examples`, `transport_examples` (Landauer), `unfold_examples`,
+  `pyskeaf_examples` and `qo_analysis_examples`. Tight-binding models are covered by the how-to
+  [How to run PAOFLOW on a tight-binding model](tutorials/howtos/tight-binding-model.md).

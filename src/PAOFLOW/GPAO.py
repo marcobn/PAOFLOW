@@ -744,7 +744,8 @@ class GPAO:
         label : str, optional
             y-axis label; the default is for a bulk calculation,
             :math:`(\\Omega\\,\\mathrm{cm})^{-1}`. A ``twoD=True`` run writes the
-            sheet conductivity in :math:`\\Omega^{-1}`.
+            sheet conductivity in atomic units (:math:`\\hbar = e = 1`), where the
+            quantum :math:`e/2\\pi` is :math:`1/2\\pi`.
 
         Returns
         -------
@@ -1040,6 +1041,7 @@ class GPAO:
         cols: Color | list[Color] | None = None,
         labels: list[str] | None = None,
         legend: bool = True,
+        y_label: str | None = None,
     ) -> None:
         """Plot a user-selected set of optical / emissivity spectra together.
 
@@ -1080,6 +1082,10 @@ class GPAO:
             Legend labels, one per property (defaults to the property names).
         legend : bool, optional
             Show the legend.
+        y_label : str, optional
+            y-axis label. The default is the label of the property, in the bulk
+            units of the file; a ``twoD=True`` run writes sheet units (for
+            example nm µA/V² for the shift current), so pass the label here.
 
         Returns
         -------
@@ -1146,7 +1152,8 @@ class GPAO:
                     'energy-axis spectra; x-axis is labeled as energy.'
                 )
 
-        y_label = y_labels.pop() if len(y_labels) == 1 else 'Optical response'
+        if y_label is None:
+            y_label = y_labels.pop() if len(y_labels) == 1 else 'Optical response'
 
         if title is None:
             title = 'Optical properties'

@@ -65,7 +65,7 @@ The page is read top to bottom by someone who has not seen the code. Three thing
 
 **Software detail.** It stays on the page only when the reader can act on it: memory per MPI rank that decides how many ranks to start, a call that must precede another, a limitation that decides which route to take. Exception classes, internal function names and statements that only confirm default behaviour ("the k-points are divided among the ranks as usual") go. A limitation is stated by what it means for the calculation (which properties are unavailable, and how to compute them anyway); the literal error message belongs in the troubleshooting table.
 
-**Validation statements.** Agreement with another code path or a reference ("reproduces the dense DOS exactly") goes on the page only where it tells the reader what controls the error of their result or what a check should show, and then once, in the checking section. Benchmarks and error sweeps stay in the report to the developer.
+**Validation statements.** Agreement with another code path or a reference ("reproduces the dense DOS exactly") goes on the page only where it tells the reader what controls the error of their result or what a check should show, and then once: in the checking section if the page has one, otherwise next to the output it concerns. Benchmarks and error sweeps stay in the report to the developer.
 
 **Beyond the cases shown.** A page whose change affects many properties (a backend, a global flag) shows one or two and then tells the reader how to run any other: whether the call is unchanged, and where the list of supported methods is (the API page, or a table on the page).
 
@@ -155,15 +155,15 @@ Several developers use this skill, and a rule is sometimes broken on purpose. A 
 
 1. If the developer asks for something that breaks a rule in this skill, or the task cannot be done without breaking one, stop before writing that part. Examples: a catchy title, an em dash, a tutorial on data inside the repository, a number we did not run, a figure in a non-palette color. Name the rule (its section here, and its check key below if it has one), say in one sentence why it exists, and offer the version that follows it.
 2. Proceed with the exception only after the developer explicitly says to override that rule in their reply. Silence, an earlier override on another page or in an earlier session, or a general "do whatever" does not count.
-3. Mention every override in the final report.
+3. Record every override only in the commit message, never on the page: one trailer line per page and rule, `Override: <page> <key> | <reason>`, for example `Override: docs/tutorials/howtos/plotting.md color | white midpoint of a diverging map`. You do not commit, so give these lines in the final report for the developer to paste into the commit message.
 
-The same applies to a page that already breaks a rule when you are asked to revise it. Point out the violations the checks report, and fix them unless the page has an override line for that rule. If the developer wants to keep one, they give the override and you record it.
+The same applies to a page that already breaks a rule when you are asked to revise it. Point out the violations the checks report, and fix them unless a commit of the page records an override for that rule (the checks read the `Override:` trailers from `git log` of the page). If the developer wants to keep one, they give the override and you report its trailer line.
 
-Check keys: `banned-phrase`, `history`, `em-dash`, `bold`, `greek`, `voice`, `todo`, `repo-path`, `color`, `hide-input`, `no-output`, `registration`, `base-example`. Rules without a key (jargon, titles, physics depth, numbers from the run) are checked by reading. Their overrides use the section name as the key, for example `% override: titles | ...`.
+Check keys: `banned-phrase`, `history`, `em-dash`, `bold`, `greek`, `voice`, `todo`, `repo-path`, `color`, `hide-input`, `no-output`, `registration`, `base-example`. Rules without a key (jargon, titles, physics depth, numbers from the run) are checked by reading. Their overrides use the section name as the key, for example `Override: docs/tutorials/tutorial01.ipynb titles | ...`.
 
 ## Checks
 
-Run from the repository root, giving the pages you wrote or revised:
+Run from the repository root, giving the pages you wrote or revised. The checks waive a rule for a page when a commit of that page has its `Override:` trailer. For an override the developer gave in this session, which is not committed yet, add `--override=<page>:<key>`.
 
 ````bash
 /home/anooja/miniconda3/envs/paoflow/bin/python - docs/tutorials/tutorial01.ipynb docs/tutorials/howtos/sparse-workflow.md <<'EOF'
@@ -183,7 +183,16 @@ HISTORY = ["previously", "now uses", "no longer", "was changed", "has been chang
            "the old ", "renamed", "as requested", "the new option", "deprecated", "used to be"]
 PALETTE = {"#004488", "#D55E00", "#FFC20A", "#8A6800", "#009E73", "#56B4E9", "#CC79A7", "#000000"}
 GREEK = re.compile(r"[Α-ωϑϕϵ]")
-OVERRIDE = re.compile(r"^%\s*override:\s*([\w-]+)\s*\|(.*)$", re.M)
+OVERRIDE = re.compile(r"^Override:\s*(\S+)\s+([\w-]+)\s*\|(.*)$", re.M)
+PENDING = {tuple(a.split("=", 1)[1].rsplit(":", 1)) for a in sys.argv[1:] if a.startswith("--override=")}
+
+def overrides(path):
+    """Overrides of this page: Override: trailers in the commits of the page, plus --override flags."""
+    import subprocess
+    log = subprocess.run(["git", "log", "--format=%B", "--", str(path)], capture_output=True, text=True).stdout
+    found = {key: why.strip() for page, key, why in OVERRIDE.findall(log) if Path(page) == path}
+    found.update({key: "given in this session, not committed" for page, key in PENDING if Path(page) == path})
+    return found
 
 def blocks(path):
     """Yield (kind, text, tags, has_output) for markdown prose and code."""
@@ -208,7 +217,7 @@ def prose(text):
     return re.sub(r"`[^`]*`|\$[^$]*\$", "X", text)  # placeholder keeps **`flag`** intact
 
 problems, overridden = [], []
-for name in sys.argv[1:]:
+for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
     path = Path(name)
     found = []
     say = lambda key, msg: found.append((key, msg))
@@ -268,7 +277,7 @@ for name in sys.argv[1:]:
     elif path.name.startswith("tutorial"):
         if path.stem not in re.findall(r":link:\s*(\S+)", (path.parent / "index.md").read_text()):
             say("registration", "missing grid card in docs/tutorials/index.md")
-    waived = {k: why.strip() for k, why in OVERRIDE.findall(allmd)}
+    waived = overrides(path)
     problems += [f"{name}: [{k}] {msg}" for k, msg in found if k not in waived]
     overridden += [f"{name}: [{k}] overridden ({why})" for k, why in waived.items()]
 print("\n".join(overridden + problems) or "no problems found")
@@ -276,4 +285,4 @@ sys.exit(1 if problems else 0)
 EOF
 ````
 
-Some hits are false positives. A quoted log line may contain "we", and "no longer" can be physics ("no longer projectable"). Do not write override lines for these: leave them and mention them in the report. Override lines are only for rules the developer chose to break.
+Some hits are false positives. A quoted log line may contain "we", and "no longer" can be physics ("no longer projectable"). Do not record overrides for these: leave them and mention them in the report. Overrides are only for rules the developer chose to break.

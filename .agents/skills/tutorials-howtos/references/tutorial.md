@@ -4,7 +4,7 @@ A tutorial is a Jupyter notebook `docs/tutorials/tutorialNN.ipynb` that takes on
 
 ## Structure
 
-Cells in this order. Headings are numbered so that other pages can link to a step.
+Cells in this order. Headings are numbered so that other pages can link to a step. Items 1 to 5 are always there; the others, and the optional parts of a step (the `**Output:**` list, the expert checks after a figure), are written only when they add information the reader does not already have from the cells above. A section that repeats values or checks already stated next to their output is left out.
 
 1. **Title and opening** (markdown). `# Tutorial NN: <Physical topic>`. One paragraph: the material, the physical question, what the reader computes, and the PAOFLOW methods involved. Then a `**What you will compute**` label followed by a short list of the quantities and concepts the reader will meet. Each item is a physics statement ("How the PAO Hamiltonian $H(\mathbf{R})$ is built by Fourier transform"), not a method name.
 2. **Download tip** (markdown). A `:::{tip}` admonition: the notebook link (`[tutorialNN.ipynb](tutorialNN.ipynb)`), the release tag and the file the setup cell downloads, and the directory it extracts next to the notebook, so that a reader without internet access on the compute node can fetch it by hand. One sentence on the prerequisites, for example "This tutorial assumes [Tutorial 01](tutorial01.ipynb)."

@@ -214,7 +214,8 @@ Literature targets for the examples: GaAs $\chi_{xyz}$ with a 0.86 eV scissor (W
 Fig. 4; Rashkeev *et al.* 1998; Nastos *et al.* 2005) and $\sigma_{xyz}$ (Ibañez-Azpiroz *et al.* 2018);
 monolayer GeS shift current and SHG (Wang *et al.* 2017, Fig. 1; Rangel *et al.* 2017); the
 Rice–Mele shift vector (Fregoso, Morimoto and Moore 2017). The examples are in
-`examples/nlo_examples/` (`Graphene`, `GaAs`, `GeS`; the graphene one is also in `examples/TBmodel_examples/Graphene_nonlinear`),
+`examples/nlo_examples/` (`Graphene`, `GaAs`, `GeS`; the graphene one is explained in the how-to
+[How to run PAOFLOW on a tight-binding model](../tutorials/howtos/tight-binding-model.md)),
 with the report `examples/nlo_examples/REPORT.md`.
 
 ## Performance
