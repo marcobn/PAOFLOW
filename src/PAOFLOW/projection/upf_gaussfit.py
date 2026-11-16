@@ -323,7 +323,40 @@ def fit(nzeta, label, l, r, rab, wfc, threshold, least_squares=True):
 # ======================================================================
 # Construct basis string for orbitals and write it to file
 # ======================================================================
-def build_basis_dict(labels, ls, coefficients, exponents):
+def build_basis_dict(
+    labels: list[str],
+    ls: list[int],
+    coefficients: list,
+    exponents: list,
+) -> list[list[list[tuple[int, int, int, float, float]]]]:
+    """Attach real spherical harmonics to the fitted radial Gaussians of each shell.
+
+    Parameters
+    ----------
+    labels : list of str
+        Shell labels of the pseudopotential (e.g. ``'3D'``).
+    ls : list of int
+        Angular momentum of each shell (0 to 3).
+    coefficients, exponents : list of sequences of float
+        Contraction coefficients (angular normalization included) and
+        Gaussian exponents of each shell, from :func:`fit`.
+
+    Returns
+    -------
+    list
+        One entry per shell, holding one list per magnetic component
+        (``2l+1`` of them); each component is a list of Cartesian primitives
+        ``(lx, ly, lz, coefficient, exponent)``.
+
+    Notes
+    -----
+    Component order: s; :math:`p_z, p_y, p_x`;
+    :math:`d_{z^2}, d_{xz}, d_{yz}, d_{x^2-y^2}, d_{xy}`;
+    :math:`f_{z^3}, f_{xz^2}, f_{yz^2}, f_{z(x^2-y^2)}, f_{xyz}, f_{x(x^2-3y^2)}, f_{y(3x^2-y^2)}`.
+    Until November 2026 the f shell carried :math:`-z^3` in place of
+    :math:`-x^3` in :math:`f_{xz^2}` and one copy of :math:`f_{xyz}` per
+    primitive.
+    """
     basis = []
 
     for il, _ in enumerate(labels):
@@ -397,7 +430,7 @@ def build_basis_dict(labels, ls, coefficients, exponents):
             for i, c in enumerate(coeffs):
                 ibasis.append((1, 0, 2, 4 * fact * c, expon[i]))
             for i, c in enumerate(coeffs):
-                ibasis.append((0, 0, 3, -fact * c, expon[i]))
+                ibasis.append((3, 0, 0, -fact * c, expon[i]))
             for i, c in enumerate(coeffs):
                 ibasis.append((1, 2, 0, -fact * c, expon[i]))
             lbasis.append(ibasis)
@@ -423,8 +456,7 @@ def build_basis_dict(labels, ls, coefficients, exponents):
             lbasis.append(ibasis)
 
             # x*y*z
-            for i, c in enumerate(coeffs):
-                lbasis.append([(1, 1, 1, c, expon[i]) for i, c in enumerate(coeffs)])
+            lbasis.append([(1, 1, 1, c, expon[i]) for i, c in enumerate(coeffs)])
 
             # 1/(2*sqrt(6)) * x*(x2 - 3*y2)
             ibasis = []
