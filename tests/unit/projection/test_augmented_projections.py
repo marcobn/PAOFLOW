@@ -122,6 +122,7 @@ def test_norm_conserving_projectors_have_no_charges():
 
 def test_unparsed_ultrasoft_file_falls_back_to_the_plain_overlap(monkeypatch, capsys):
     """A UPF v1 ultrasoft species has no parsed projectors or charges: warn and return None."""
+    from PAOFLOW.inputs import pseudopotentials as loader
     from PAOFLOW.projection import augmentation as module
 
     class _Upf:
@@ -143,6 +144,47 @@ def test_unparsed_ultrasoft_file_falls_back_to_the_plain_overlap(monkeypatch, ca
             attrs = {'dft': 'QE', 'fpath': '/nowhere', 'ecutwfc': 20.0, 'omega': 100.0, 'alat': 5.0}
             return arrays, attrs
 
-    monkeypatch.setattr(module, 'UPF', _Upf)
+    monkeypatch.setattr(loader, 'UPF', _Upf)
     assert module.build_augmentation(_DC()) is None
     assert 'H' in capsys.readouterr().out
+
+
+def test_plain_overlap_warning_for_augmented_and_norm_conserving_runs(monkeypatch, capsys):
+    from PAOFLOW.inputs import pseudopotentials as loader
+    from PAOFLOW.projection.augmentation import plain_overlap_warning
+
+    class _Upf:
+        def __init__(self, path):
+            self.ptype = 'PAW' if 'paw' in path else 'NC'
+            self.has_augmentation = self.ptype == 'PAW'
+
+    class _DC:
+        def __init__(self, dft, pseudo, verbose=False):
+            self.arrays = {'species': [('X', pseudo)]}
+            self.attrs = {'dft': dft, 'fpath': '/nowhere', 'verbose': verbose}
+
+        def data_dicts(self):
+            return self.arrays, self.attrs
+
+    monkeypatch.setattr(loader, 'UPF', _Upf)
+    plain_overlap_warning(_DC('QE', 'X.paw.UPF'), requested=True)
+    out = capsys.readouterr().out
+    assert out.startswith('WARNING') and 'plain_overlap=True' in out
+    plain_overlap_warning(_DC('QE', 'X.paw.UPF'))
+    assert 'not available' in capsys.readouterr().out
+    plain_overlap_warning(_DC('VASP', 'PAW_PBE X 01Jan2000'))
+    assert 'every VASP run' in capsys.readouterr().out
+    plain_overlap_warning(_DC('QE', 'X.nc.UPF'))
+    assert capsys.readouterr().out == ''  # exact metric: nothing unless verbose
+    plain_overlap_warning(_DC('QE', 'X.nc.UPF', verbose=True))
+    assert 'exact' in capsys.readouterr().out
+
+
+def test_vasp_license_notice_is_printed_once(monkeypatch, capsys):
+    from PAOFLOW.inputs import read_potcar as module
+
+    monkeypatch.setattr(module, '_LICENSE_NOTICE_SHOWN', False)
+    module.vasp_license_notice()
+    module.vasp_license_notice()
+    out = capsys.readouterr().out
+    assert out.count('valid VASP license') == 1

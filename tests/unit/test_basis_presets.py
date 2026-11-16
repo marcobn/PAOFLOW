@@ -14,6 +14,7 @@ from PAOFLOW.inputs.basis_presets import (
     extended_augmentation,
     minimal_shells_from_upf,
     resolve_configuration,
+    resolve_configuration_dict,
 )
 
 # ---------------------------------------------------------------------------
@@ -209,13 +210,21 @@ def test_resolve_configuration_rejects_non_string():
 
 
 @pytest.mark.unit
-def test_resolve_configuration_extended_requires_basispath():
+def test_resolve_configuration_without_basispath_is_the_unfiltered_rule(monkeypatch):
+    """No table directory: the shells are generated at run time, so nothing is filtered."""
+    import PAOFLOW.inputs.basis_presets as module
+
+    monkeypatch.setattr(module, 'minimal_shells_from_upf', lambda dc, elem: ['3S', '3P'])
     dc = _FakeDataController(
         arry={'atoms': ['Si'], 'species': [('Si', 'fake.UPF')]},
         attr={'fpath': '/nowhere'},
     )
-    with pytest.raises(ValueError, match='basispath'):
-        resolve_configuration(dc, 'extended')
+    assert resolve_configuration(dc, 'standard') == {'Si': ['3S', '3P', '3D', '4S', '4P']}
+    extended = resolve_configuration(dc, 'extended')['Si']
+    assert extended[:2] == ['3S', '3P'] and set(extended) >= {'3D', '4S', '4P', '5S', '5P'}
+    assert resolve_configuration_dict(dc, {'Si': 'standard'}) == {
+        'Si': ['3S', '3P', '3D', '4S', '4P']
+    }
 
 
 @pytest.mark.unit

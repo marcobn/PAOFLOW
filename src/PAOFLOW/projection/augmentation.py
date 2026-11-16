@@ -37,13 +37,10 @@ spinors (QE ``fcoef``), and the inner products run over both spinor components.
 
 from __future__ import annotations
 
-import os
-
 import numpy as np
 from numpy.typing import NDArray
 
 from ..elphon.pseudopotential_terms import KleinmanBylanderProjectors
-from ..inputs.read_upf import UPF
 
 
 def k_plus_g_vectors(gkspace: dict) -> NDArray[np.float64]:
@@ -63,8 +60,8 @@ def k_plus_g_vectors(gkspace: dict) -> NDArray[np.float64]:
     return k_plus_g + np.asarray(gkspace['xk'], dtype=float)[None, :]
 
 
-def is_augmented(upf: UPF) -> bool:
-    """Whether a UPF carries augmentation charges (ultrasoft or PAW)."""
+def is_augmented(upf) -> bool:
+    """Whether a pseudopotential (UPF or POTCAR dataset) carries augmentation charges (ultrasoft or PAW)."""
     return getattr(upf, 'ptype', 'NC') != 'NC' or bool(getattr(upf, 'has_augmentation', False))
 
 
@@ -184,6 +181,54 @@ class AugmentedOverlap:
         )
 
 
+def plain_overlap_warning(data_controller, requested: bool = False) -> None:
+    """Report that the projections use the plain plane-wave overlap.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        The run (``species``, ``dft``).
+    requested : bool, optional
+        The user asked for the plain overlap (``projections(plain_overlap=True)``).
+
+    Returns
+    -------
+    None
+        Prints a ``WARNING`` when any species is ultrasoft / PAW (every VASP run), for which the
+        plain overlap is an approximation; for norm-conserving pseudopotentials, for which it
+        is the exact metric, a note is printed in verbose mode only.
+    """
+    from ..inputs.pseudopotentials import load_pseudopotentials
+
+    arry, attr = data_controller.data_dicts()
+    if attr.get('dft', 'QE') == 'VASP':
+        augmented = True
+    else:
+        try:
+            augmented = any(
+                is_augmented(d) for d in load_pseudopotentials(data_controller).values()
+            )
+        except Exception:
+            augmented = True
+    if not augmented:
+        if attr.get('verbose'):
+            print('Norm-conserving pseudopotentials: projections with the plain overlap (exact).')
+        return
+    reason = (
+        'as requested (plain_overlap=True)'
+        if requested
+        else 'because the augmentation charges and projectors are not available'
+    )
+    print(
+        'WARNING: the projections use the plain plane-wave overlap with re-orthonormalised '
+        'bands %s. With ultrasoft / PAW pseudopotentials%s this metric is approximate: '
+        'the point symmetry of the PAO Hamiltonian is broken at a few k-points, the '
+        'real-space Hamiltonian decays slowly and the projectabilities are overestimated '
+        '(see docs/internals/internal-basis.md).'
+        % (reason, ' (every VASP run)' if attr.get('dft') == 'VASP' else '')
+    )
+
+
 def build_augmentation(data_controller) -> AugmentedOverlap | None:
     """The augmented overlap of the run, or ``None`` when the plain overlap is the right one.
 
@@ -196,19 +241,37 @@ def build_augmentation(data_controller) -> AugmentedOverlap | None:
     Returns
     -------
     AugmentedOverlap or None
-        ``None`` for VASP input, when every species is norm-conserving, or when an augmented
-        species comes from a UPF v1 file whose projectors and charges are not parsed (a warning
-        names the species and the plain-overlap path is kept). With spin-orbit
-        coupling the charges of the fully relativistic pseudopotentials are rotated into the
-        spinor basis (``kb.Q_so``); a scalar-relativistic species in such a run couples the
-        spins diagonally, as in QE.
+        ``None`` when every species is norm-conserving, when an augmented species comes from a
+        UPF v1 file whose projectors and charges are not parsed, or when the POTCAR datasets of
+        a VASP run are not found (a warning names the problem and the plain-overlap path is
+        kept). With spin-orbit coupling the charges of the fully relativistic pseudopotentials
+        are rotated into the spinor basis (``kb.Q_so``); a scalar-relativistic species in such
+        a run, and every VASP dataset (scalar relativistic, spin-orbit coupling added by VASP
+        at run time), couples the spins diagonally, as in QE.
+
+    Notes
+    -----
+    VASP datasets are read through :mod:`PAOFLOW.inputs.pseudopotentials` (``fpath/POTCAR``,
+    ``attr['potcar_dir']`` or ``$PAOFLOW_POTCAR_DIR``); their projectors at ``k+G`` come from
+    the reciprocal-space tables of the file, the ones VASP applies with ``LREAL = .FALSE.``.
     """
+    from ..inputs.pseudopotentials import load_pseudopotentials
+
     arry, attr = data_controller.data_dicts()
-    if attr.get('dft', 'QE') != 'QE':
+    try:
+        upf_by_species = load_pseudopotentials(data_controller)
+    except FileNotFoundError as err:
+        if attr.get('dft', 'QE') != 'VASP':
+            raise
+        # VASP run without POTCAR datasets: the PAW metric is unknown, keep the plain-overlap
+        # path (band re-orthonormalisation, the behaviour before November 2026)
+        if getattr(data_controller, 'rank', 0) == 0:
+            print(
+                'WARNING: %s. The projections use the plain overlap with re-orthonormalised '
+                'bands (approximate for PAW: symmetry breaking at a few k-points, inflated '
+                'projectabilities); pass potcar_dir= to PAOFLOW() for the augmented metric.' % err
+            )
         return None
-    upf_by_species = {
-        name: UPF(os.path.join(attr['fpath'], pseudo)) for name, pseudo in arry['species']
-    }
     if not any(is_augmented(upf) for upf in upf_by_species.values()):
         return None
     unparsed = [

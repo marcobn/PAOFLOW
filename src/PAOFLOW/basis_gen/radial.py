@@ -330,6 +330,7 @@ def pseudize_shell(
     r_box: float | None = None,
     n_points: int = 2000,
     prefer_pswfc: bool = True,
+    cache: dict | None = None,
 ):
     """Return the (n, l[, j]) radial function on a uniform mesh.
 
@@ -348,6 +349,10 @@ def pseudize_shell(
     solver has to provide, i.e. one above the highest pseudo-orbital of the channel, or, for a
     channel without pseudo-orbitals, the lowest valence ``n`` of that ``l`` given the core of
     the pseudopotential (:func:`lowest_valence_n`; Si ``3D``, As ``4D``).
+
+    ``cache`` (a dict the caller keeps across the shells of one pseudopotential) stores the
+    channel solutions, so that several shells of one ``(l, j)`` channel cost one generalized
+    eigenproblem.
 
     Returns
     -------
@@ -372,9 +377,16 @@ def pseudize_shell(
         raise ValueError(
             f'Requested (n, l) = ({n}, {l}) below lowest pseudo-atom level (n_first = {n_first}).'
         )
-    eps_all, U, r = solve_radial_channel(
-        upf, l, j=j, r_box=r_box, n_points=n_points, n_states=max(8, target + 5)
-    )
+    n_states = max(8, target + 5)
+    key = (int(l), j, r_box, int(n_points))
+    if cache is not None and key in cache and cache[key][0].size >= n_states:
+        eps_all, U, r = cache[key]
+    else:
+        eps_all, U, r = solve_radial_channel(
+            upf, l, j=j, r_box=r_box, n_points=n_points, n_states=max(n_states, 12)
+        )
+        if cache is not None:
+            cache[key] = (eps_all, U, r)
     if prefer_pswfc:
         ranks = select_physical_states(upf, l, j, eps_all, U, r)
         if target >= len(ranks):

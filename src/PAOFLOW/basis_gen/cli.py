@@ -2,8 +2,9 @@
 
 Generate per-element ``BASIS_PS/<elem>/<shell>.dat`` files by solving
 the pseudo-atom radial Schrödinger equation in a confining box for a
-given UPF (norm-conserving, ultrasoft, or PAW) or every UPF in a
-directory.  For ultrasoft/PAW pseudos the generalized eigenproblem
+given UPF (norm-conserving, ultrasoft, or PAW) or VASP POTCAR, or every
+pseudopotential in a directory (UPF files, a concatenated ``POTCAR`` or
+the ``<name>/POTCAR`` folders of a PAW library).  For ultrasoft/PAW pseudos the generalized eigenproblem
 ``H u = eps S u`` is solved with the augmentation overlap operator
 ``S = I + sum_ij q_ij |beta_i><beta_j|`` built from ``PP_AUGMENTATION``.
 Output files are consumed by ``PAOFLOW.projections(configuration='standard'
@@ -27,8 +28,15 @@ def _parse_args(argv):
         'pseudopotentials (norm-conserving, ultrasoft, or PAW).',
     )
     src = p.add_mutually_exclusive_group(required=True)
-    src.add_argument('--pseudo', help='Path to a single UPF file.')
-    src.add_argument('--pseudo-dir', help='Directory containing one or more *.UPF / *.upf files.')
+    src.add_argument('--pseudo', help='Path to a single UPF file or POTCAR.')
+    src.add_argument(
+        '--pseudo-dir',
+        help='Directory containing *.UPF / *.upf files, a POTCAR, or <name>/POTCAR folders.',
+    )
+    src.add_argument(
+        '--potcar-dir',
+        help='A VASP PAW library (<dir>/<name>/POTCAR); same as --pseudo-dir.',
+    )
     p.add_argument(
         '--out',
         required=True,
@@ -65,12 +73,19 @@ def _parse_args(argv):
         action='store_true',
         help='Skip files that already exist.',
     )
+    p.add_argument(
+        '--solve-all',
+        action='store_true',
+        help='Solve every shell in the box instead of taking the stored pseudo-orbitals.',
+    )
     p.add_argument('-v', '--verbose', action='store_true')
     return p.parse_args(argv)
 
 
 def main(argv=None):
     args = _parse_args(argv)
+    if args.potcar_dir is not None:
+        args.pseudo_dir = args.potcar_dir
     if args.shells is not None and args.pseudo_dir is not None:
         print('error: --shells cannot be combined with --pseudo-dir', file=sys.stderr)
         return 2
@@ -87,6 +102,7 @@ def main(argv=None):
             n_points=args.n_points,
             overwrite=not args.no_overwrite,
             verbose=args.verbose,
+            prefer_pswfc=not args.solve_all,
         )
     else:
         generate_basis_for_directory(
@@ -97,6 +113,7 @@ def main(argv=None):
             n_points=args.n_points,
             overwrite=not args.no_overwrite,
             verbose=args.verbose,
+            prefer_pswfc=not args.solve_all,
         )
     return 0
 

@@ -44,8 +44,6 @@ def _parallel_radialfft(tasks, qmesh, volume):
     return wfc_g_all
 
 
-from ..inputs.read_upf import UPF
-
 AUTOA = 0.529177249  # VASP A.U. to Angstrom
 # Unitility functions to build atomic wfc from the pseudopotential and build the projections U (and overlaps if needed)
 
@@ -66,26 +64,26 @@ def read_pswfc_from_upf(data_controller, atom):
     -------
     r : np.ndarray
         Radial grid of the pseudopotential (Bohr).
-    pswfc : dict
-        Pseudopotential wavefunctions keyed by orbital shell label.
+    pswfc : list of dict
+        Pseudo-orbitals (``label``, ``occ``, ``wfc``) of the UPF (QE) or of the POTCAR
+        dataset (VASP, :mod:`PAOFLOW.inputs.pseudopotentials`).
     pseudo : str
-        Filename of the UPF pseudopotential for the matched species.
+        Filename of the UPF pseudopotential (QE) or title of the POTCAR dataset (VASP).
 
     Raises
     ------
     RuntimeError
         If no species matching ``atom`` is found in ``data_arrays['species']``.
     """
+    from ..inputs.pseudopotentials import load_pseudopotential
+
     arry, attr = data_controller.data_dicts()
-
-    # loop over species
-    for at, pseudo in arry['species']:
-        if atom == at:
-            upf = UPF(os.path.join(attr['fpath'], pseudo))
-            arry['jchia'][at] = upf.jchia
-            return upf.r, upf.pswfc, pseudo
-
-    raise RuntimeError('atom not found')
+    try:
+        data, pseudo = load_pseudopotential(data_controller, atom)
+    except RuntimeError:
+        raise RuntimeError('atom not found') from None
+    arry['jchia'][atom] = data.jchia
+    return data.r, data.pswfc, pseudo
 
 
 def radialfft_simpson(r, f, l, qmesh, volume):
@@ -1389,7 +1387,7 @@ def augmented_proj_k(data_controller, augmentation, basis, ik, ispin):
     Parameters
     ----------
     data_controller : DataController
-        See :func:`calc_proj_k` (QE input only).
+        See :func:`calc_proj_k` (QE or VASP input).
     augmentation : PAOFLOW.projection.augmentation.AugmentedOverlap
         The projectors and augmentation charges of the run.
     basis : list of dict
@@ -1411,7 +1409,7 @@ def augmented_proj_k(data_controller, augmentation, basis, ik, ispin):
     from .augmentation import k_plus_g_vectors
 
     _, attr = data_controller.data_dicts()
-    gkspace, wfc = read_QE_wfc(data_controller, ik, ispin, orthonormalize=False)
+    gkspace, wfc = read_dft_wfc(data_controller, ik, ispin, orthonormalize=False)
     atwfc_k = calc_atwfc_k(basis, gkspace, attr['dftSO'])
     beta = augmentation.beta(k_plus_g_vectors(gkspace))
     becp_phi = augmentation.becp(beta, atwfc_k)  # <beta_p|phi_i>   (nproj, natwfc)
@@ -1445,14 +1443,10 @@ def calc_proj_k(data_controller, basis, ik, ispin):
         for all bands and basis functions.
     """
     arry, attr = data_controller.data_dicts()
-    augmentation = arry.get('augmentation') if attr['dft'] == 'QE' else None
+    augmentation = arry.get('augmentation')
     if augmentation is not None:
         return augmented_proj_k(data_controller, augmentation, basis, ik, ispin)[0]
-    if attr['dft'] == 'QE':
-        gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
-    else:
-        read_WAVECAR_header(data_controller)
-        gkspace, wfc = read_VASP_wfc(data_controller, ik, ispin)
+    gkspace, wfc = read_dft_wfc(data_controller, ik, ispin)
     atwfc_k = calc_atwfc_k(basis, gkspace, attr['dftSO'])
     oatwfc_k = ortho_atwfc_k(atwfc_k)
     proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
@@ -1495,14 +1489,10 @@ def calc_proj_and_ovlp_k(data_controller, basis, ik, ispin):
         Raw (non-orthogonal) atomic-orbital overlap matrix.
     """
     arry, attr = data_controller.data_dicts()
-    augmentation = arry.get('augmentation') if attr['dft'] == 'QE' else None
+    augmentation = arry.get('augmentation')
     if augmentation is not None:
         return augmented_proj_k(data_controller, augmentation, basis, ik, ispin)
-    if attr['dft'] == 'QE':
-        gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
-    else:
-        read_WAVECAR_header(data_controller)
-        gkspace, wfc = read_VASP_wfc(data_controller, ik, ispin)
+    gkspace, wfc = read_dft_wfc(data_controller, ik, ispin)
     atwfc_k = calc_atwfc_k(basis, gkspace, attr['dftSO'])
     # Raw (pre-Löwdin) overlap: S_μν = <φ_μ|φ_ν>
     # ``atwfc_k`` shape is (natwfc, igwx); the inner product over G-vectors
@@ -1604,6 +1594,8 @@ def read_WAVECAR_header(data_controller):
           per k-point.
     """
     arry, attr = data_controller.data_dicts()
+    if 'nplws' in arry and 'ngrid' in arry and 'recl' in attr and 'wfc_prec' in attr:
+        return  # already read (one header per run)
     try:
         wfcfile = open(os.path.join(attr['fpath'], 'WAVECAR'), 'rb')
     except:
@@ -1689,8 +1681,8 @@ def readBandCoeff(data_controller, ispin=0, ikpt=0, iband=0):
     return np.asarray(dump, dtype=attr['wfc_prec'])
 
 
-def read_VASP_wfc(data_controller, ik, ispin):
-    """Read VASP WAVECAR wavefunction and return orthonormalised coefficients with k+G info.
+def read_VASP_wfc(data_controller, ik, ispin, orthonormalize=True):
+    """Read VASP WAVECAR wavefunction coefficients with the k+G info of the k-point.
 
     Parameters
     ----------
@@ -1702,6 +1694,11 @@ def read_VASP_wfc(data_controller, ik, ispin):
         Zero-based k-point index.
     ispin : int
         Spin index.
+    orthonormalize : bool, optional
+        Loewdin-orthonormalise the bands with the plain plane-wave overlap (default). Pass
+        ``False`` when the PAW overlap operator of the POTCAR datasets is applied explicitly
+        (:mod:`PAOFLOW.projection.augmentation`): the stored coefficients are then used as they
+        are, since VASP writes them orthonormal in the augmented metric.
 
     Returns
     -------
@@ -1709,8 +1706,9 @@ def read_VASP_wfc(data_controller, ik, ispin):
         G-space descriptor with keys ``'xk'``, ``'igwx'``, ``'mill'``,
         ``'bg'``, ``'gamma_only'``.
     wfc : dict
-        Wavefunction data with keys ``'wfc'`` (orthonormalised coefficients),
-        ``'npol'``, ``'nbnd'``, ``'ispin'``.
+        Wavefunction data with keys ``'wfc'`` (coefficients, rows = bands; with spin-orbit
+        coupling the two spinor components are concatenated, upper then lower), ``'npol'``,
+        ``'nbnd'``, ``'ispin'``.
     """
     arry, attr = data_controller.data_dicts()
     igwx = arry['nplws'][ik] // 2 if attr['dftSO'] else arry['nplws'][ik]
@@ -1722,13 +1720,9 @@ def read_VASP_wfc(data_controller, ik, ispin):
     wfc = []
     for ibnd in range(nbnd):
         wfc.append(readBandCoeff(data_controller, ispin, ik, ibnd))
-    # Loewdin orthonormalisation; see read_QE_wfc for the identity used here.
-    wfc = np.asarray(wfc)
-    ovp = wfc.conj() @ wfc.T
-    eigs, eigv = np.linalg.eigh(ovp)
-    assert np.all(eigs >= -1e-12)
-    inv_sqrt = 1.0 / np.sqrt(np.clip(eigs, 1e-30, None))
-    owfc = ((eigv.conj() * inv_sqrt) @ eigv.T) @ wfc
+    # Loewdin orthonormalisation with the plain overlap (see read_QE_wfc), unless the
+    # augmented metric is applied by the caller.
+    owfc = loewdin_orthonormalize(wfc) if orthonormalize else np.asarray(wfc)
 
     gkspace = {
         'xk': xk,
@@ -1737,7 +1731,37 @@ def read_VASP_wfc(data_controller, ik, ispin):
         'bg': bg,
         'gamma_only': False,
     }  # Gamma-only not supported yet
-    return gkspace, {'wfc': owfc, 'npol': attr['nspin'], 'nbnd': nbnd, 'ispin': ispin}
+    npol = 2 if attr['dftSO'] else 1
+    return gkspace, {'wfc': owfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin}
+
+
+def read_dft_wfc(data_controller, ik, ispin, orthonormalize=True):
+    """Wavefunction coefficients of one k-point and spin from the DFT code of the run.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Required attribute ``dft`` (``'QE'`` or ``'VASP'``) and what :func:`read_QE_wfc` or
+        :func:`read_VASP_wfc` need.
+    ik : int
+        Zero-based k-point index.
+    ispin : int
+        Spin index.
+    orthonormalize : bool, optional
+        Loewdin-orthonormalise the bands with the plain overlap (default); ``False`` keeps the
+        stored coefficients (augmented metric).
+
+    Returns
+    -------
+    gkspace, wfc : dict, dict
+        As :func:`read_QE_wfc` (``'xk'``, ``'bg'`` in bohr^-1, ``'mill'`` of shape ``(3, npw)``
+        for both codes).
+    """
+    _, attr = data_controller.data_dicts()
+    if attr.get('dft', 'QE') == 'VASP':
+        read_WAVECAR_header(data_controller)
+        return read_VASP_wfc(data_controller, ik, ispin, orthonormalize=orthonormalize)
+    return read_QE_wfc(data_controller, ik, ispin, orthonormalize=orthonormalize)
 
 
 def calc_gvec_VASP(data_controller, ikpt=0):

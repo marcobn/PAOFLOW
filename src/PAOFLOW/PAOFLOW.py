@@ -240,7 +240,9 @@ class PAOFLOW:
             workpath (str): Path to the working directory
             outputdir (str): Name of the output directory (created in the working directory path)
             inputfile (str): (optional) Name of the xml inputfile
-            savedir (str): QE .save directory
+            savedir (str): QE .save directory or VASP directory
+                For 'VASP', the default location for POTCAR is savedir.
+                Or specify environmental variable $PAOFLOW_POTCAR_DIR
             model (dict): Dictionary with 'label' key and parameters to build Hamiltonian from TB model
             npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
             smearing (str): Smearing type (None, m-p, gauss)
@@ -461,7 +463,15 @@ class PAOFLOW:
                 print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / to_gb))
 
     def projections(
-        self, configuration=None, basispath=None, internal=None, pseudo_orbitals='auto'
+        self,
+        configuration=None,
+        basispath=None,
+        internal=None,
+        pseudo_orbitals='auto',
+        r_box=None,
+        n_points=2000,
+        save_basis=False,
+        plain_overlap=False,
     ):
         """
         Calculate the projections on the atomic basis provided by the pseudopotential or
@@ -472,8 +482,15 @@ class PAOFLOW:
         ----------
         basispath : str, optional
             Directory containing the per-element ``BASIS/<elem>/*.dat``
-            files.  Required when configuration is 'standard', 'extended' or when
-            configuration is a preset string.
+            files of the augmenting shells (the shipped all-electron tables or the
+            ``BASIS_PS`` of ``paoflow-genbasis-ps``). Without it the augmenting shells of
+            ``'standard'``, ``'extended'`` and of a dict are generated at run time from the
+            pseudopotentials of the run (UPF files for QE, POTCAR datasets for VASP): the
+            shells the pseudopotential carries as pseudo-orbitals as stored, the others as
+            eigenstates of the pseudo-atom in a box selected by the ghost filter of
+            :mod:`PAOFLOW.basis_gen` (``projection.radial_shell_basis``). This is the route
+            for VASP input, whose PAW datasets are read from ``potcar_dir`` (see the
+            constructor).
         configuration : dict, str, or None, optional
             How to build the projection basis:
 
@@ -507,13 +524,31 @@ class PAOFLOW:
               ``arry['configuration']`` (legacy behaviour).
         internal: for backward compatibility only, not used
         pseudo_orbitals : {'auto', True, False}, optional
-            Take the shells that the pseudopotential provides as pseudo-orbitals (``PP_PSWFC``)
-            from the UPF and only the remaining shells of the configuration from the tables of
-            ``basispath``. ``'auto'`` does so for ultrasoft / PAW pseudopotentials (the stored
-            pseudo-orbitals are the only radial functions consistent with their augmented
-            metric; all-electron tables project PAW semicore bands poorly) and keeps the pure
-            table basis for norm-conserving ones; ``True`` / ``False`` force either choice.
-            Not with the ``'minimal'`` preset (already the UPF basis) nor with spin-orbit.
+            Take the shells that the pseudopotential provides as pseudo-orbitals (``PP_PSWFC``
+            of a UPF, bound reference states of a POTCAR dataset) from the pseudopotential and
+            only the remaining shells of the configuration from the tables of ``basispath``
+            (or from the generator without it). ``'auto'`` does so for ultrasoft / PAW
+            pseudopotentials (the stored pseudo-orbitals are the only radial functions
+            consistent with their augmented metric; all-electron tables project PAW semicore
+            bands poorly) and keeps the pure table basis for norm-conserving ones; ``True`` /
+            ``False`` force either choice (``False`` with the generator route solves every
+            shell in the box). Not with the ``'minimal'`` preset (already the pseudo-orbital
+            basis). With spin-orbit coupling the scalar pseudo-orbitals fill both ``j``
+            blocks (as the scalar tables do).
+        r_box : float, optional
+            Generator route only: radius of the confining box of the radial solver (bohr),
+            default ``min(r_max of the mesh, 10)``.
+        n_points : int, optional
+            Generator route only: mesh size of the radial solver.
+        save_basis : bool, optional
+            Generator route only: write the generated radial functions to
+            ``outputdir/BASIS_PS/<elem>/<shell>.dat`` (the table format) for inspection.
+        plain_overlap : bool, optional
+            Skip the augmented metric of ultrasoft / PAW pseudopotentials and project with the
+            plain plane-wave overlap after re-orthonormalising the bands (the behaviour before
+            October 2026, approximate: symmetry breaking at a few k-points, inflated
+            projectabilities). A warning is printed whenever the plain overlap is used with
+            augmented pseudopotentials, for this or any other reason.
         """
 
         from .inputs.basis_presets import (
@@ -536,10 +571,6 @@ class PAOFLOW:
         preset = None
         if configuration is not None:
             if isinstance(configuration, str):
-                if attr['dft'] == 'VASP':
-                    raise TypeError(
-                        'configuration must be a user-defined dict when input is from VASP'
-                    )
                 preset = configuration.lower()
                 arry['configuration'] = resolve_configuration(self.data_controller, configuration)
                 if attr.get('verbose') and self.rank == 0:
@@ -574,21 +605,40 @@ class PAOFLOW:
         #                 rule-based polarization shells).
         if preset == None or preset == 'minimal':
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
+        elif not attr.get('basispath'):
+            # generator route: the shells of the configuration from the pseudopotentials
+            from .projection.radial_shell_basis import build_generated_basis
+
+            if attr.get('verbose') and self.rank == 0:
+                print('Basis generated from the pseudopotentials (no table directory)')
+            basis, arry['shells'] = build_generated_basis(
+                self.data_controller,
+                prefer_pswfc=pseudo_orbitals in ('auto', True),
+                r_box=r_box,
+                n_points=n_points,
+                save_basis=save_basis,
+            )
         else:
             use_pseudo = pseudo_orbitals
             if use_pseudo == 'auto':
-                import os
-
-                from .inputs.read_upf import UPF
+                from .inputs.pseudopotentials import load_pseudopotentials
                 from .projection.augmentation import is_augmented
 
-                use_pseudo = attr.get('dft', 'QE') == 'QE' and any(
-                    is_augmented(UPF(os.path.join(attr['fpath'], pseudo)))
-                    for _, pseudo in arry['species']
-                )
-            if use_pseudo and not attr.get('dftSO', False):
+                try:
+                    use_pseudo = any(
+                        is_augmented(data)
+                        for data in load_pseudopotentials(self.data_controller).values()
+                    )
+                except FileNotFoundError:
+                    if attr.get('dft') != 'VASP':
+                        raise
+                    # no POTCAR datasets: tables only, and the plain overlap below (warning
+                    # printed by build_augmentation)
+                    use_pseudo = False
+            if use_pseudo:
                 from .inputs.basis_presets import minimal_shells_from_upf
                 from .projection.do_atwfc_proj import build_basis_from_sources
+                from .projection.radial_shell_basis import build_mixed_basis_with_tables
 
                 pseudo_labels = {}
                 for elem in arry['configuration']:
@@ -600,13 +650,20 @@ class PAOFLOW:
                     ]
                 if attr.get('verbose') and self.rank == 0:
                     for elem, labels in pseudo_labels.items():
-                        print('  %-3s: %s from the UPF pseudo-orbitals, %s from %s' % (
+                        print('  %-3s: %s from the pseudopotential pseudo-orbitals, %s from %s' % (
                             elem, ', '.join(labels) or 'nothing',
                             ', '.join(l for l in arry['configuration'][elem] if l not in labels) or 'nothing',
                             attr.get('basispath')))  # fmt: skip
-                basis, arry['shells'] = build_basis_from_sources(
-                    self.data_controller, pseudo_labels
-                )
+                if attr.get('dftSO', False):
+                    # spin-orbit: scalar pseudo-orbitals duplicated into the j blocks, tables
+                    # j-resolved when available
+                    basis, arry['shells'] = build_mixed_basis_with_tables(
+                        self.data_controller, pseudo_labels
+                    )
+                else:
+                    basis, arry['shells'] = build_basis_from_sources(
+                        self.data_controller, pseudo_labels
+                    )
             else:
                 basis, arry['shells'] = build_aewfc_basis(self.data_controller)
 
@@ -621,15 +678,17 @@ class PAOFLOW:
         # Ultrasoft / PAW pseudopotentials: the projections, the overlap of the atomic
         # orbitals and the orthonormality of the bands are all taken in the augmented
         # metric S = 1 + sum q_ij |beta_i><beta_j| (None for norm-conserving sets and VASP).
-        from .projection.augmentation import build_augmentation
+        from .projection.augmentation import build_augmentation, plain_overlap_warning
 
-        arry['augmentation'] = build_augmentation(self.data_controller)
+        arry['augmentation'] = None if plain_overlap else build_augmentation(self.data_controller)
         if arry['augmentation'] is not None and self.rank == 0 and attr.get('verbose'):
             print(
                 'Ultrasoft / PAW pseudopotentials: projections in the augmented %smetric '
                 '(%d projectors)'
                 % ('spinor ' if arry['augmentation'].spin_orbit else '', arry['augmentation'].nproj)
             )
+        if arry['augmentation'] is None and self.rank == 0:
+            plain_overlap_warning(self.data_controller, requested=plain_overlap)
 
         nkpnts = len(arry['kpnts'])
         nbnds = attr['nbnds']
@@ -687,19 +746,25 @@ class PAOFLOW:
             # One sanity check of the projectors and charges: the stored bands must be
             # orthonormal in the augmented metric (QE's S-orthonormalisation).
             from .projection.augmentation import k_plus_g_vectors
-            from .projection.do_atwfc_proj import read_QE_wfc
+            from .projection.do_atwfc_proj import read_dft_wfc
 
-            gkspace, wfc = read_QE_wfc(
+            gkspace, wfc = read_dft_wfc(
                 self.data_controller, int(k_local[0]), 0, orthonormalize=False
             )
             beta = arry['augmentation'].beta(k_plus_g_vectors(gkspace))
             ovp = arry['augmentation'].overlap(wfc['wfc'], wfc['wfc'], beta)
             deviation = float(np.abs(ovp - np.eye(ovp.shape[0])).max())
             if deviation > 1.0e-3:
+                hint = (
+                    ' (VASP: the POTCAR datasets must be those of the run, which must use '
+                    'LREAL = .FALSE., the reciprocal-space projectors)'
+                    if attr.get('dft') == 'VASP'
+                    else ''
+                )
                 print(
                     'WARNING (rank %d): <psi|S|psi> deviates from the identity by %.1e at '
-                    'k-point %d: check the pseudopotential files of the save directory'
-                    % (self.rank, deviation, int(k_local[0]) + 1)
+                    'k-point %d: check the pseudopotential files of the save directory%s'
+                    % (self.rank, deviation, int(k_local[0]) + 1, hint)
                 )
             elif self.rank == 0 and attr.get('verbose'):
                 print('<psi|S|psi> - 1 at k-point %d: %.1e' % (int(k_local[0]) + 1, deviation))

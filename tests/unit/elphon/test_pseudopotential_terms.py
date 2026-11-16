@@ -151,3 +151,38 @@ def test_spin_orbit_projectors_from_a_relativistic_upf():
     assert kb.D_so[0, 0, 0, 0] == pytest.approx(1.0) and kb.D_so[0, 1, 0, 0] == 0.0
     scalar = KleinmanBylanderProjectors({'X': upf}, ['X'], 100.0, 3.0)
     assert scalar.nproj == 1 + 3  # the two j channels averaged into one p projector
+
+
+def test_projector_q_table_hook_reproduces_the_simpson_table():
+    """The QE path is untouched; a reciprocal-space table fed back gives the same numbers."""
+    from PAOFLOW.elphon.pseudopotential_terms import (
+        FPI,
+        KleinmanBylanderProjectors,
+        projector_q_table,
+    )
+
+    upf = toy_upf()
+    omega = 125.0
+    pref = FPI / np.sqrt(omega)
+    q = np.arange(int(4.0 / 0.01 + 4)) * 0.01
+    beta = upf.beta[0]['wfc']
+    kkbeta = upf.beta[0]['cutoff_index']
+    table = projector_q_table(upf, 0, beta, 0, q, upf.r, upf.rab, kkbeta, pref)
+    from scipy.special import spherical_jn
+
+    rr = upf.r[:kkbeta]
+    direct = (
+        np.array(
+            [
+                qe_simpson(beta[:kkbeta] * spherical_jn(0, qq * rr) * rr, upf.rab[:kkbeta])
+                for qq in q
+            ]
+        )
+        * pref
+    )
+    assert np.array_equal(table, direct)
+    upf.projector_q_tables = [(q, table * FPI / pref)]  # 4 pi int r^2 beta j_l dr (no 1/sqrt omega)
+    hooked = projector_q_table(upf, 0, beta, 0, q, upf.r, upf.rab, kkbeta, pref)
+    assert np.allclose(hooked, table, atol=1e-12)
+    kb = KleinmanBylanderProjectors({'X': upf}, ['X'], omega, 4.0)
+    assert np.allclose(kb.tables['X'][0], table, atol=1e-12)
