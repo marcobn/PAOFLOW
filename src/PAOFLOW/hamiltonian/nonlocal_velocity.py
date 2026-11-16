@@ -19,7 +19,6 @@ Kleinman-Bylander projectors) went with it.
 from __future__ import annotations
 
 import functools
-import os
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -245,10 +244,11 @@ def load_pao_orbitals(data_controller) -> PAOCatalog:
     data_controller : DataController
         Required:
 
-        - ``arrays['species']``: list of ``(label, pseudo_file)``.
+        - ``arrays['species']``: list of ``(label, pseudo_file)`` (``(label, title)`` for VASP).
         - ``arrays['atoms']``: per-site list of species labels.
         - ``arrays['tau']``: ``(natoms, 3)`` Cartesian positions (Bohr).
-        - ``attributes['fpath']``: directory containing the UPF files.
+        - ``attributes['fpath']``: directory containing the UPF files (QE), or the run
+          folder whose POTCAR datasets :mod:`PAOFLOW.inputs.pseudopotentials` locates (VASP).
 
         Optional:
 
@@ -268,17 +268,18 @@ def load_pao_orbitals(data_controller) -> PAOCatalog:
         ``atomic_basis`` records for the same species disagree on the
         radial mesh.
     """
+    from ..inputs.pseudopotentials import load_pseudopotentials
+
     arry, attr = data_controller.data_dicts()
-    fpath = attr['fpath']
 
     atomic_basis = arry.get('atomic_basis')
 
+    pseudopotentials = load_pseudopotentials(data_controller)
     species_data: dict[str, PAOSpeciesData] = {}
     for label, pseudo_file in arry['species']:
         if label in species_data:
             continue
-        upf_path = os.path.join(fpath, pseudo_file)
-        upf = UPF(upf_path)
+        upf = pseudopotentials[label]
 
         if atomic_basis:
             channels, r_basis = _channels_from_atomic_basis(label, atomic_basis)

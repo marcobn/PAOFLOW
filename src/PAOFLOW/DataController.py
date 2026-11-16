@@ -315,6 +315,7 @@ class DataController:
             # Set or update attributes
             attr['adhoc_SO'] = False
             attr['dft'] = dft
+            attr['potcar_dir'] = savedir
             attr['mpisize'] = self.size
             attr['savedir'] = savedir
             attr['verbose'] = verbose
@@ -670,6 +671,9 @@ class DataController:
     def read_vasp_output(self, symprec):
         from os.path import exists
 
+        from .inputs.read_potcar import vasp_license_notice
+
+        vasp_license_notice()
         fpath = self.data_attributes['fpath']
 
         if exists(fpath + '/vasprun.xml'):

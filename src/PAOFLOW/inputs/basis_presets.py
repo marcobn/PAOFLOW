@@ -26,7 +26,6 @@ import os
 import re
 import warnings
 
-from .read_upf import UPF
 
 # ---------------------------------------------------------------------------
 # Periodic-table classification
@@ -221,10 +220,12 @@ def _resolve_pseudo_path(data_controller, elem: str) -> str | None:
 
 
 def minimal_shells_from_upf(data_controller, elem: str) -> list[str]:
-    """Return the PP_PSWFC shell labels shipped with ``elem``'s UPF.
+    """Return the pseudo-orbital shell labels shipped with ``elem``'s pseudopotential.
 
-    Reads the species' UPF file and returns the labels of every
-    ``PP_CHI`` entry, preserving the order in which they appear in
+    Reads the species' UPF file (QE) or POTCAR dataset (VASP, through
+    :mod:`PAOFLOW.inputs.pseudopotentials`) and returns the labels of
+    every pseudo-orbital (``PP_CHI`` entry, or bound reference state of
+    the PAW dataset), preserving the order in which they appear in
     the pseudopotential.  Duplicates (rare, but possible for
     spin-orbit pseudos where two j-channels share a label) are
     collapsed.
@@ -243,13 +244,21 @@ def minimal_shells_from_upf(data_controller, elem: str) -> list[str]:
     RuntimeError
         If no UPF can be located for ``elem``.
     """
-    pseudo_path = _resolve_pseudo_path(data_controller, elem)
-    if pseudo_path is None:
+    from .pseudopotentials import load_pseudopotential
+
+    arry, attr = data_controller.data_dicts()
+    if not arry.get('species') or attr.get('fpath') is None:
         raise RuntimeError(
             "Cannot resolve UPF for element '%s'; populate "
             "data_arrays['species'] and data_attributes['fpath'] first." % elem
         )
-    upf = UPF(pseudo_path)
+    try:
+        upf, _ = load_pseudopotential(data_controller, elem)
+    except RuntimeError:
+        raise RuntimeError(
+            "Cannot resolve UPF for element '%s'; populate "
+            "data_arrays['species'] and data_attributes['fpath'] first." % elem
+        ) from None
     seen = []
     for chi in upf.pswfc:
         label = _normalize_shell(chi['label'])
@@ -463,11 +472,15 @@ def resolve_configuration(data_controller, preset: str) -> dict[str, list[str]]:
         Mapping ``{element: [shells]}`` suitable for assignment to
         ``arry['configuration']``.
 
+    Without ``data_attributes['basispath']`` the augmenting shells are
+    not filtered by the files of a table directory: they are generated at
+    run time from the pseudopotentials (UPF or POTCAR) by the generator
+    route of ``projections()``.
+
     Raises
     ------
     ValueError
-        If ``preset`` is not recognised, or if ``"extended"`` is
-        requested without ``data_attributes['basispath']`` being set.
+        If ``preset`` is not recognised.
     """
     if not isinstance(preset, str):
         raise TypeError('configuration preset must be a string; got %r' % type(preset).__name__)
@@ -481,11 +494,6 @@ def resolve_configuration(data_controller, preset: str) -> dict[str, list[str]]:
 
     _, attr = data_controller.data_dicts()
     basispath = attr.get('basispath')
-    if key in ('standard', 'extended') and not basispath:
-        raise ValueError(
-            "configuration='%s' requires 'basispath' to be set so that "
-            'augmenting AE wavefunctions can be located.' % key
-        )
 
     config: dict[str, list[str]] = {}
     for elem in _unique_elements(data_controller):
@@ -504,6 +512,17 @@ def _resolve_element_shells(data_controller, elem: str, key: str, basispath) -> 
     minimal = minimal_shells_from_upf(data_controller, elem)
     if key == 'minimal':
         return list(minimal)
+
+    if not basispath:
+        # no table directory: the shells are generated at run time from the
+        # pseudopotential (``projection.radial_shell_basis``), which skips the
+        # ones it cannot bind, so the rule-based list is returned unfiltered
+        augment = (
+            standard_augmentation(elem, minimal)
+            if key == 'standard'
+            else extended_augmentation(elem, minimal)
+        )
+        return list(minimal) + [extra for extra in augment if extra not in minimal]
 
     # 'standard' / 'extended': start from the all-electron
     # shells available on disk and select the requested subset.
@@ -569,11 +588,6 @@ def _select_shells(data_controller, elem: str, spec, basispath) -> list[str]:
                 "Unknown configuration preset '%s' for element '%s'. "
                 'Supported presets: %s (or pass an explicit list of shells).'
                 % (spec, elem, ', '.join(SUPPORTED_PRESETS))
-            )
-        if key in ('standard', 'extended') and not basispath:
-            raise ValueError(
-                "configuration preset '%s' for element '%s' requires "
-                "'basispath' to be set." % (key, elem)
             )
         return _resolve_element_shells(data_controller, elem, key, basispath)
 

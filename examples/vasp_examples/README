@@ -1,12 +1,17 @@
 
 Important Notes:
 (1) When using VASP, PAOFLOW requires spglib. All examples show below are run with ISYM = 2 in VASP. ISYM = -1 and 0 also work (For LSORBIT=T and Magnetic system, ISYM = -1 and 0 are equivalent, i.e. full grid).  Make sure the PAOFLOW printed space group is correct.   
-(2) Either run VASP SCF with LWAVE=T and a fine K-mesh, or run VASP SCF (LCHARG=T) first with a coarse K-mesh, then non-SCF (ICHARG=11 and LWAVE=T) with finer K-mesh. The later one may save some computation. Gamma-centered K-mesh is strongly recommended.
+(2) Either run VASP SCF with LWAVE=T and a fine K-mesh, or run VASP SCF (LCHARG=T) first with a coarse K-mesh, then non-SCF (ICHARG=11 and LWAVE=T) with finer K-mesh.   
+    The later one may save some computation. Gamma-centered K-mesh is strongly recommended.  Run the scf or nscf with LREAL = .FALSE.   
 (3) If magnetic, MAGMOM in INCAR is necessary. This is because PAOFLOW reads the MAGMOM tag in vasprun.xml to determine the symmetry, which comes from INCAR.  
-(4) PAOFLOW reads "vasprun.xml" and "WAVECAR", make sure they are in the directory.   
+(4) PAOFLOW reads "vasprun.xml", "WAVECAR" and "POTCAR", make sure they are in the directory. The POTCAR files are licensed and not distributed with PAOFLOW. 
+    POTCAR directory can also be specified by the environment variable PAOFLOW_POTCAR_DIR.
 (5) If using VASP, when calling pao_hamiltonian(), DO NOT set "open_wedge=False" even if symmetry is turned off (ISYM = -1). This is because VASP might use a different set of k-mesh from PAOFLOW and a mapping between the k-points is required.
+(7) For projections(configuration='minimal'|'standard'|'extended'|{dict}), the pseudo-orbitals come from the POTCAR.    
+    When basispath=None, augmenting shells are built from the POTCAR 
+    When basispath is specified (PAOFLOW/BASIS/), augmenting shells come from the basispath.
 
-VASP_examples.ipynb: Jupyter Notebook containing all of the examples with interactive plots
+VASP_examples.ipynb: Jupyter Notebook containing all of the examples with interactive plots (the stored outputs predate the augmented metric of November 2026)
 
 example01 : Si
 example02 : Pt (with SOC)

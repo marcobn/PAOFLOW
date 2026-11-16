@@ -83,7 +83,7 @@ Two consequences for ultrasoft / PAW runs:
 
 ## Which shells come from where: `projections(pseudo_orbitals='auto')`
 
-Since October 28 2026 the shells of a configuration are taken from two sources
+Since PAOFLOW 3.0.1 the shells of a configuration are taken from two sources
 (`projection/do_atwfc_proj.py::build_basis_from_sources`, records ordered atom by atom as
 `pao_sym` requires): the shells that the pseudopotential carries as pseudo-orbitals (`PP_PSWFC`,
 the pseudo-atom's own solutions, consistent with the augmented metric) from the UPF, the other
@@ -96,6 +96,10 @@ UPF basis already, nor with spin-orbit). On PAW GaAs (example10, 62 orbitals):
 
 | basis | bands above 0.95 | Ga 3d bands | sp valence | conduction 9–17 |
 |---|---|---|---|---|
+| all-electron tables only (`pseudo_orbitals=False`) | 12 | 0.86–0.90 | 0.98 | 0.98 → 0.92 |
+| UPF pseudo-orbitals + all-electron augmentation (`'auto'`) | 23 | 1.00 | 0.995 | 0.995 → 0.96 |
+
+## Spin-orbit coupling with ultrasoft / PAW: the spinor augmentation
 | all-electron tables only | 12 | 0.86–0.90 | 0.98 | 0.98 → 0.92 |
 | UPF pseudo-orbitals + all-electron augmentation (`'auto'`) | 23 | 1.00 | 0.995 | 0.995 → 0.96 |
 | `BASIS_PS` standard (generator, see below) | 14 | 1.00 | 0.99 | 0.98 → 0.72 |
@@ -158,16 +162,102 @@ Tests: `tests/unit/projection/test_spinor_augmentation.py` (the $f$ matrices are
 the $j$ subspaces that sum to the identity; `Q_so` against the QE loop; the spinor overlap; the
 SnTe metric, skipped without `examples/qe_examples/example17/SnTe.save`).
 
-Not covered: VASP input (PAW projectors of the POTCAR are not read) and the PAW augmentation
-of the position dipoles with spin-orbit coupling (the dipoles themselves cover spin-orbit runs with
-norm-conserving pseudopotentials, `position-dipoles.md`).
+## VASP input: POTCAR datasets, the augmented metric and the generated basis
+
+VASP is PAW-only, so every VASP run needs the augmented metric above. Since November 2026 the
+PAW data come from the `POTCAR` datasets of the run (`src/PAOFLOW/inputs/read_potcar.py`,
+`PotcarDataset`), exposed with the attributes of a `UPF` object so that every consumer
+(`KleinmanBylanderProjectors`, the basis builders, the generator and the position dipoles) reads
+them through one loader, `src/PAOFLOW/inputs/pseudopotentials.py` (`load_pseudopotentials`,
+`load_pseudopotential`). The datasets are located by the `TITEL` of every atom type of
+`vasprun.xml`: the `POTCAR` of the run folder (possibly concatenated), then
+`potcar_dir/<name>/POTCAR` (`PAOFLOW(..., dft='VASP', potcar_dir=...)`), then
+`$PAOFLOW_POTCAR_DIR`. Without them the projections keep the plain-overlap path with a warning;
+`plain_overlap_warning` is printed whenever an ultrasoft / PAW run (every VASP run) is projected
+with the plain overlap, including on request (`projections(plain_overlap=True)`), and
+`vasp_license_notice` reminds once per process that VASP output and POTCAR files require a valid
+VASP license.
+
+What the reader provides, in bohr / Hartree:
+
+- the projectors VASP applies to the plane waves: the `Reciprocal Space Part` tables
+  $P_i(q) = 4\pi\int \tilde p_i(r) j_l(qr) r^2 dr$ on $q_i = i\,\mathrm{PSMAXN}/100$, injected
+  into the radial table of `KleinmanBylanderProjectors` (`projector_q_table`) and divided by
+  $\sqrt\Omega$. With them the WAVECAR bands are orthonormal in $S$ to $2\times10^{-6}$ (Si,
+  `LREAL = .FALSE.`, the default; real-space projectors of `LREAL = Auto` runs give deviations
+  of $10^{-3}$-$10^{-2}$, which the `<psi|S|psi>` check reports). The `Real Space Part` of the
+  file is a real-space-optimised approximation (3-8 % off) and is not used;
+- the integrated charges $q_{ij}$ (`augmentation charges`, equal to
+  $\int (u_i u_j - \tilde u_i\tilde u_j) dr$ of the stored partial waves to $10^{-4}$), the
+  partial waves $u = r\phi$, $\tilde u = r\tilde\phi$, the local potential
+  (`local pseudopotential core`), the atomic pseudo valence density (transform of the
+  reciprocal-space table, $Z_v$ electrons with the compensation charges) and the pseudised
+  core density, on the logarithmic grid of the file extended geometrically to 12 bohr (the
+  stored grids end at 2.6-6 angstrom: 4.9 bohr for Si);
+- real-space projectors for the radial generator and the position dipoles: the inverse
+  transform of the reciprocal tables, truncated at `RMAX` and re-biorthogonalised to the
+  pseudo partial waves of each channel ($\langle\tilde p_i|\tilde\phi_j\rangle = \delta_{ij}$
+  to $10^{-10}$; the raw transforms are dual to 1-5 %);
+- the pseudo-orbitals (`pswfc`): the pseudo partial wave of every projector whose reference
+  energy is a level of the `Atomic configuration` table and whose partial wave extends to the
+  end of the grid (Si `3S 3P`, Ga_d `3D 4S 4P`, Fe `3D 4S`; the reference energies chosen at
+  $-0.1$ Ha for the p channel of the transition metals, or the empty d level of As and I,
+  give scattering partial waves cut off outside the sphere, which are not orbitals). Beyond
+  the stored grid the orbital is continued by inward integration in the screened potential of
+  the pseudo-atom, $\tilde v_{loc} + V_H[\tilde n_v] + V_{xc}[\tilde n_v + \tilde n_c]$, the
+  `frozen_effective_potential` recipe of the QE route, which reproduces the local energy of the
+  bound partial waves outside the sphere to 0.01 eV;
+- the non-local strengths of the generator: by default the screened strengths of the
+  reference atom, $D_{jk} = \varepsilon_k(\langle\tilde\phi_j|\tilde\phi_k\rangle_R + q_{jk})
+  - \langle\tilde\phi_j|T + \tilde v_{eff}|\tilde\phi_k\rangle_R$ (Kresse-Joubert identity,
+  kinetic term by parts, the column of a bound reference state exact), with which the bound
+  reference states are eigenstates of the generalized box problem $Hu = \varepsilon Su$ within
+  0.3 eV (overlap above 0.995, Si / Ga_d / Fe); the unscreened `D_ij` of the file (the analogue
+  of QE's `PP_DIJ`, which the QE generator uses) misplace the Si 3s level by several eV and are
+  kept as `nonlocal_strength='file'`.
+
+The basis for VASP (and for QE without `basispath`) is generated at run time
+(`src/PAOFLOW/projection/radial_shell_basis.py`, `build_generated_basis`): `projections(
+configuration='minimal' | 'standard' | 'extended' | {elem: [...] | preset})` resolves the rule-based
+shells without filtering by table files, rank 0 runs `basis_gen.driver.generate_basis_shells`
+per element (the pseudo-orbitals as stored, the other shells from the box solver with the ghost
+filter, one generalized eigenproblem per channel, cached), the functions are broadcast and
+turned into the records of the projection on one uniform mesh per species (the scalar
+duplication of `build_aewfc_basis` with spin-orbit coupling, j-resolved pairs of fully
+relativistic UPFs otherwise). `r_box`, `n_points` and `save_basis` (tables written to
+`outputdir/BASIS_PS/`) are the user controls; `paoflow-genbasis-ps --pseudo <POTCAR>` /
+`--potcar-dir` write the same tables for the table route. The legacy
+`projections(basispath=BASIS, configuration={...})` of the VASP examples still works and now
+takes the pseudo-orbitals from the POTCAR and the augmenting shells from the tables, in the
+augmented metric; with spin-orbit coupling this mixed route goes through
+`build_mixed_basis_with_tables` (scalar pseudo-orbitals in both $j$ blocks, j-resolved tables when
+present), where `build_basis_from_sources` used to refuse it and every shell came from the tables.
+
+Si (example01 of `examples/vasp_examples`, 18 bands): `minimal` 8 orbitals, 4 bands above
+0.95; `standard` 26 orbitals, 12 bands; `extended` 44 orbitals, 16 bands (the shipped
+all-electron tables with `3S 3P 3D 4S 4P 4D`: 36 orbitals, 15 bands). Pt with spin-orbit
+coupling (example02): the spinor metric with the scalar datasets couples the spins diagonally,
+$\langle\psi|S|\psi\rangle - 1 = 2\times10^{-6}$, 12 of 20 bands above 0.95 with `5D 6S 6P 7S 7P`.
+Tests: `tests/unit/inputs/test_read_potcar.py`, `tests/unit/test_basis_gen_potcar.py`,
+`tests/unit/projection/test_vasp_augmented_projections.py`,
+`tests/unit/projection/test_radial_shell_basis.py` (the POTCAR and WAVECAR ones are skipped
+without `PAOFLOW_POTCAR_DIR` / `../potpaw_PBE_64` and `../example01` next to the repository).
+
+Not covered: the PAW augmentation of the position dipoles with spin-orbit coupling
+(scalar-relativistic only; the dipoles themselves cover spin-orbit runs with norm-conserving
+pseudopotentials, `position-dipoles.md`), Gamma-only WAVECARs, ultrasoft POTCARs (`LPAW = F`).
 
 ## Files
 
 | File | Role |
 |------|------|
 | `src/PAOFLOW/PAOFLOW.py` | API dispatch — routes preset strings to the resolver |
-| `src/PAOFLOW/defs/basis_presets.py` | Preset resolution logic |
+| `src/PAOFLOW/inputs/basis_presets.py` | Preset resolution logic (rule-based shells; filtered by the table files only with `basispath`) |
+| `src/PAOFLOW/inputs/read_potcar.py` | VASP POTCAR datasets with the attributes of a UPF (`PotcarDataset`, `read_potcar`, `find_potcar_datasets`) |
+| `src/PAOFLOW/inputs/pseudopotentials.py` | One loader of the pseudopotential data of a run, UPF (QE) or POTCAR (VASP) |
+| `src/PAOFLOW/basis_gen/driver.py` | Generator: `generate_basis_shells` (in memory), `generate_basis_for_pseudo` (tables) |
+| `src/PAOFLOW/projection/radial_shell_basis.py` | Generated-basis route of `projections()` (`build_generated_basis`, `build_basis_from_radial_shells`) |
+| `tests/unit/inputs/test_read_potcar.py`, `tests/unit/test_basis_gen_potcar.py`, `tests/unit/projection/test_vasp_augmented_projections.py`, `tests/unit/projection/test_radial_shell_basis.py` | VASP route (skipped without the POTCAR library / WAVECAR example) |
 | `tests/unit/test_basis_presets.py` | 37 unit tests covering all preset variants |
 | `src/PAOFLOW/projection/augmentation.py` | Augmented overlap of ultrasoft / PAW pseudopotentials (`AugmentedOverlap`, `build_augmentation`) |
 | `tests/unit/projection/test_augmented_projections.py` | Löwdin factor in a general metric, projector charges of the example10 PAW files |

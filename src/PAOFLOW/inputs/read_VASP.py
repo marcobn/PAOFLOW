@@ -52,6 +52,9 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
     nawf = nbnds
     ecutwfc = float(parameters.find(".//i[@name='ENMAX']").text.strip()) / Ryd2eV  # convert to Ryd
     ecutrho = ecutwfc * 5
+    lreal_node = parameters.find(".//i[@name='LREAL']")
+    # 'F': reciprocal-space projectors (the tables of the POTCAR), otherwise real-space ones
+    vasp_lreal = lreal_node.text.strip() if lreal_node is not None and lreal_node.text else 'F'
     """end"""
 
     # tag = atominfo
@@ -234,6 +237,7 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
         ('dftSO', dftSO),
         ('dftMAG', dftMag),
         ('insulator', insulator),
+        ('vasp_lreal', vasp_lreal),
     ]
     for s, v in attrs:
         attr[s] = v

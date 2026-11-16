@@ -53,7 +53,6 @@ vectorised over the orbitals of a site pair in :mod:`PAOFLOW.hamiltonian.two_cen
 
 from __future__ import annotations
 
-import os
 import sys
 import warnings
 from collections.abc import Callable
@@ -63,7 +62,6 @@ from functools import cache
 import numpy as np
 from numpy.typing import NDArray
 
-from ..inputs.read_upf import UPF
 from ._two_center import _SPHERE_DIRS, _SPHERE_WEIGHTS, _SPHERE_YLM, radial_bessel_transform
 from .nonlocal_velocity import (
     PAOCatalog,
@@ -756,7 +754,9 @@ def build_projector_augmentation(
     Parameters
     ----------
     data_controller : DataController
-        ``arrays['species']``, ``arrays['atoms']``, ``arrays['tau']`` (bohr), ``attr['fpath']``.
+        ``arrays['species']``, ``arrays['atoms']``, ``arrays['tau']`` (bohr), ``attr['fpath']``
+        (and ``attr['potcar_dir']`` for VASP: the partial waves and projectors then come from
+        the POTCAR datasets, :mod:`PAOFLOW.inputs.pseudopotentials`).
     pao_catalog : PAOCatalog
         The PAO orbitals (:func:`~PAOFLOW.hamiltonian.nonlocal_velocity.load_pao_orbitals`).
     q_max, n_q, pao_tol : optional
@@ -769,10 +769,10 @@ def build_projector_augmentation(
         partial waves (``PP_FULL_WFC``) are skipped with a warning: their overlap augmentation
         ``q_ij`` is applied, their dipole augmentation is not available.
     """
+    from ..inputs.pseudopotentials import load_pseudopotentials
+
     arrays, attributes = data_controller.data_dicts()
-    species_upf = {
-        name: UPF(os.path.join(attributes['fpath'], pseudo)) for name, pseudo in arrays['species']
-    }
+    species_upf = load_pseudopotentials(data_controller)
     augmented = {
         name
         for name, upf in species_upf.items()

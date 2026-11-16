@@ -3,6 +3,8 @@
 Until October 2026 PAOFLOW offered a correction Δp = m/(iħ)[V_NL, r] to the velocity operator,
 assembled from the Kleinman–Bylander projectors of the UPF files by two-centre integrals:
 `gradient_and_momenta(nonlocal_velocity=True)` / `attr['nonlocal_velocity']` on the `dHksp`
+route and `raman_spectrum(nonlocal_velocity=True)`. The term was removed in PAOFLOW 3.0.1; its
+last released version is PAOFLOW 3.0.0.
 route, `nonlocal_velocity=<DataController>` (`NONLOCAL_VELOCITY`) in the electron–phonon
 drivers. The term was removed; its last version is in commit `c564f569`.
 
@@ -48,6 +50,12 @@ obtained with the defective term; `epsilon.x` itself uses the local momentum onl
   `pao_orbital_signs`, `lowdin_transform`, `scalar_to_jm_matrix`. The projector loader, the
   β–PAO tables, the k-space assembly, `inject_into_dHksp` and the (j, m_j) rotation of Δp are gone,
   together with their unit tests.
+- `gradient_and_momenta(nonlocal_velocity=True)` and `attr['nonlocal_velocity']` raise
+  `ValueError` pointing to the replacement; `raman_spectrum` takes `position_dipoles=` instead of
+  `nonlocal_velocity=`.
+- Replacement: `gradient_and_momenta(position_dipoles=True)` (`PAOFLOW.position_dipole_correction`,
+  scalar, ad-hoc spin-orbit and (j, m_j) bases), the default of `raman_spectrum` and of the optical
+  run emitted by `paoflow-gen`.
 - `gradient_and_momenta(nonlocal_velocity=True)`, `attr['nonlocal_velocity']` and the drivers'
   `nonlocal_velocity=` raise `ValueError` pointing to the replacement.
 - Replacement: `gradient_and_momenta(position_dipoles=True)` (`PAOFLOW.position_dipole_correction`,

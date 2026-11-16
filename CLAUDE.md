@@ -30,9 +30,11 @@ user-invocable: true
       ACBN0.py            ACBN0 / eACBN0 self-consistent Hubbard U and intersite V
       GPAO.py             Plotting helper class (bands, DOS, Berry, transport, optics, phonons)
       ErrorHandler.py     Error reporting
-      inputs/             QE XML, VASP, UPF, PAOFLOW XML input readers; basis presets; input_default.xml
+      inputs/             QE XML, VASP (vasprun.xml), UPF and POTCAR readers (read_potcar.py: PAW datasets with
+                          the UPF attributes; pseudopotentials.py: one loader for QE/VASP), basis presets
       projection/         Atomic-wfc projections, projectability, ortho/non-ortho, minimal basis,
-                          augmentation (ultrasoft/PAW metric S = 1 + q|beta><beta| of the projections, spinor q_so with SOC)
+                          augmentation (ultrasoft/PAW metric S = 1 + q|beta><beta| of the projections, spinor q_so with SOC),
+                          radial_shell_basis (basis generated at run time from the pseudopotentials: the VASP route)
       hamiltonian/        H(k)/H(R) construction, doubling, SOC, external fields, gradients, momenta,
                           bloch_derivatives (H, dH, d2H at arbitrary k from HRs for the non-linear optics),
                           nonlocal velocity, symmetry expansion (pao_sym), two-center integrals
@@ -66,7 +68,8 @@ user-invocable: true
                           second-order tensors), campaign/ (Machine, Campaign, pw.x output and log parsing,
                           preflight checks, findings with an authority, background watcher); the elphon
                           adapters open a system folder via from_system
-      basis_gen/          Generates atomic-orbital basis from pseudopotentials (paoflow-genbasis-ps)
+      basis_gen/          Generates atomic-orbital basis from pseudopotentials, UPF or POTCAR (paoflow-genbasis-ps,
+                          generate_basis_shells in memory)
       gen/                Generators: QE input from AFLOW/C2DB (paoflow-gen-qe), main.py driver (paoflow-gen),
                           elphon_system.py + elphon_templates/ (paoflow-gen elphon writes a system folder; the
                           templates are the thin drivers copied into examples/elphon), fermi_plotter

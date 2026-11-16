@@ -14,7 +14,9 @@ def build_atom_orbital_inventory(data_controller: DataController) -> list[AtomOr
     atoms = list(arrays['atoms'])
     positions = np.asarray(arrays['tau'], dtype=float)
     total_orbitals = int(attributes['nawf'])
-    orbital_counts = _orbital_counts_by_atom(arrays, attributes, atoms, total_orbitals)
+    orbital_counts = _orbital_counts_by_atom(
+        arrays, attributes, atoms, total_orbitals, data_controller
+    )
 
     inventory: list[AtomOrbitals] = []
     first_orbital = 1
@@ -47,6 +49,7 @@ def _orbital_counts_by_atom(
     attributes: dict,
     atoms: list[str],
     total_orbitals: int,
+    data_controller: DataController | None = None,
 ) -> list[int]:
     """Number of PAO orbitals on each atom, in the order of ``arrays['atoms']``.
 
@@ -61,6 +64,8 @@ def _orbital_counts_by_atom(
         Species label of every atom.
     total_orbitals : int
         ``nawf``.
+    data_controller : DataController, optional
+        Reads the pseudopotentials (POTCAR) of a VASP run when there is no basis.
 
     Returns
     -------
@@ -76,8 +81,9 @@ def _orbital_counts_by_atom(
     -----
     The basis of the internal projections (``atomic_basis``) is used first: each record carries
     the position of its atom, so any preset (``minimal``, ``standard``, ``extended``, explicit
-    shells) is counted correctly. Without it (the ``projwfc.x`` route) the count comes from the
-    pseudo-orbitals of each species' UPF file, and without species metadata from an equal split.
+    shells) is counted correctly, for QE and VASP alike. Without it (the ``projwfc.x`` route) the
+    count comes from the pseudo-orbitals of each species (the UPF files, or the POTCAR of a VASP
+    run), and without species metadata from an equal split.
     """
     basis_counts = _orbital_counts_from_basis(arrays, atoms, total_orbitals)
     if basis_counts is not None:
@@ -87,10 +93,18 @@ def _orbital_counts_by_atom(
             raise ValueError('Cannot infer per-atom orbital counts without species metadata.')
         return [total_orbitals // len(atoms)] * len(atoms)
 
-    species_counts = {
-        str(element): _count_orbitals_from_pseudopotential(attributes, pseudo_file)
-        for element, pseudo_file in arrays['species']
-    }
+    if data_controller is not None and attributes.get('dft', 'QE') == 'VASP':
+        from PAOFLOW.inputs.pseudopotentials import load_pseudopotentials
+
+        species_counts = {
+            str(element): _count_orbitals(data)
+            for element, data in load_pseudopotentials(data_controller).items()
+        }
+    else:
+        species_counts = {
+            str(element): _count_orbitals_from_pseudopotential(attributes, pseudo_file)
+            for element, pseudo_file in arrays['species']
+        }
     orbital_counts = [species_counts[str(atom)] for atom in atoms]
     if sum(orbital_counts) != total_orbitals:
         raise ValueError(
@@ -133,6 +147,12 @@ def _orbital_counts_from_basis(
     basis = arrays.get('atomic_basis')
     if basis is None or len(basis) == 0 or total_orbitals % len(basis) != 0:
         return None
+    if 'tau' not in arrays:
+        # Records alone: those of one atom are consecutive (same species and centre).
+        counts = [0] * len(atoms)
+        for site in _sites_of_basis_records(basis, atoms):
+            counts[site] += 1
+        return counts if sum(counts) == total_orbitals else None
     copies = total_orbitals // len(basis)
     if len(atoms) % copies != 0:
         return None
@@ -160,12 +180,34 @@ def _orbital_counts_from_basis(
     return cell_counts * copies
 
 
-def _count_orbitals_from_pseudopotential(attributes: dict, pseudo_file: str) -> int:
-    pseudo_path = _find_pseudopotential(attributes, pseudo_file)
-    upf = UPF(str(pseudo_path))
+def _sites_of_basis_records(atomic_basis: list, atoms: list[str]) -> list[int]:
+    """Atom site of every basis record (records are stored atom by atom, in site order)."""
+    sites: list[int] = []
+    site = -1
+    for index, record in enumerate(atomic_basis):
+        new_atom = index == 0 or (
+            record['atom'] != atomic_basis[index - 1]['atom']
+            or not np.array_equal(record['tau'], atomic_basis[index - 1]['tau'])
+        )
+        if new_atom:
+            site += 1
+        sites.append(site)
+    if site + 1 != len(atoms):
+        raise ValueError(
+            'atomic_basis records span %d atoms but the run has %d' % (site + 1, len(atoms))
+        )
+    return sites
+
+
+def _count_orbitals(upf) -> int:
     if upf.jchia:
         return sum(int(round(2.0 * float(j_value) + 1.0)) for j_value in upf.jchia)
     return sum(2 * int(shell_l) + 1 for shell_l in upf.shells)
+
+
+def _count_orbitals_from_pseudopotential(attributes: dict, pseudo_file: str) -> int:
+    pseudo_path = _find_pseudopotential(attributes, pseudo_file)
+    return _count_orbitals(UPF(str(pseudo_path)))
 
 
 def _find_pseudopotential(attributes: dict, pseudo_file: str) -> Path:

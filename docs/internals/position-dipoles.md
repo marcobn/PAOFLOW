@@ -4,6 +4,7 @@
 
 PAOFLOW's velocity operator in the orthonormal PAO Bloch basis is the k-derivative of the
 Hamiltonian plus the inter-site term, `v = dH/dk + i[H, τ]`
+(the `Dnm` term of `hamiltonian/do_gradient`): the position
 (`elphon/elph_bloch.band_velocities`, the `Dnm` term of `hamiltonian/do_gradient`): the position
 operator is taken diagonal on the orbital centres τ_i. For orthonormal localised orbitals ω the
 exact tight-binding velocity has a third term,
@@ -37,6 +38,12 @@ S^{±1/2}, and from the bra-site origin of X; d(k) is Hermitian.
 | `assemble_position_kspace` | S(k), ∂_k S(k), X(k) by Bloch sums e^{ik·ΔR} |
 | `lowdin_dipole_kspace` | the formula above; `level='intra-atomic'` keeps the on-site blocks with S ≡ 1 |
 | `dipole_velocity_term` | i[H(k), d(k)] in the orbital basis |
+| `position_dipole_operator` | data-controller-facing callable `K_cryst -> d(k)` |
+
+Hooks: `gradient_and_momenta(position_dipoles=True, position_dipole_level='full')` (or
+`attr['position_dipoles'] = True`; off by default, see the `dHksp` route below),
+`raman_spectrum(position_dipoles=True)` (default on) and the optical run emitted by `paoflow-gen`
+(`gradient_and_momenta(position_dipoles=True)`).
 | `position_dipole_operator` | data-controller-facing callable `K_cryst -> d(k)`, the `position_dipoles` input of `band_velocities` |
 
 Hooks: `band_velocities(..., position_dipoles=)`,
@@ -127,11 +134,24 @@ not a validation of a velocity operator.
   basis tables of the projection, else the UPF `PP_PSWFC` block), so ultrasoft and PAW saves run the
   dipole route like norm-conserving ones (the norm-conserving guard of the removed term went with it on
   2026-10-22; checked on ultrasoft Si and PAW GaAs).
+- PAW augmentation: the partial-wave correction of the position matrix (`PP_FULL_WFC`) and the
+  q_ij term of the overlap (`ProjectorAugmentation`, `build_projector_augmentation`,
+  `augmentation_kspace`) are added to S(k), ∂_k S and X(k) by
+  `position_dipole_operator(augmentation='auto')`, scalar-relativistic only. The `dHksp` route
+  (`position_dipoles_on_grid`) does not apply it yet. With an all-electron-only basis S + ΔS can
+  be nearly singular (a `RuntimeWarning` flags ill-conditioned PAO overlaps); the default basis
+  route of `projections(pseudo_orbitals='auto')` takes the valence shells of ultrasoft / PAW
+  species from the UPF pseudo-orbitals (`internal-basis.md`).
 - The former non-local correction Δp was removed in October 2026 (`nonlocal-velocity.md`):
   v = i[H, τ + d] is already the full commutator of a Hamiltonian that contains V_NL, and adding
   Δp double counted (exact plane-wave ε₂ of Si: dipoles 0.99–1.01, dipoles + Δp 0.87).
 - The Hubbard term of eACBN0 electrons is inside H(R), so i[H, τ + d] contains its velocity
   commutator; nothing else is needed.
+- VASP input (November 2026): `build_projector_augmentation` reads the partial waves, projectors
+  and charges of the PAW datasets of the POTCAR through `inputs/pseudopotentials.py` (the
+  real-space projectors are the inverse transforms of the reciprocal tables, re-biorthogonalised to
+  the pseudo partial waves, see `internal-basis.md`), so the PAW augmentation of the dipoles applies
+  to VASP runs as to QE PAW runs; not validated against a reference yet.
 
 ## References
 
