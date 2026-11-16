@@ -468,3 +468,40 @@ def test_plot_script_hall_coefficient_reads_smeared_three_column_file(tmp_path, 
     assert list(lines[1].get_xdata()) == [-0.5, 0.0]
     assert list(lines[1].get_ydata()) == [3.0e-9, 4.0e-9]
     plt.close('all')
+
+
+def test_run_script_interpolation_route_reaches_bands_and_grid():
+    standard = d.build_run_script(
+        _run_cfg(ibrav=2, is_2d=False, properties=['bands', 'dos'], interpolate=True, nfft=24)
+    )
+    assert "p.bands(ibrav=IBRAV, nk=NK, fname='bands')" in standard
+    assert 'p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])' in standard
+    pairs = d.build_run_script(
+        _run_cfg(
+            ibrav=2,
+            is_2d=False,
+            properties=['bands', 'dos'],
+            interpolate=True,
+            nfft=24,
+            interpolation='wigner_seitz_pairs',
+        )
+    )
+    assert "p.bands(ibrav=IBRAV, nk=NK, fname='bands', interpolation='wigner_seitz_pairs')" in pairs
+    assert (
+        'p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2], '
+        "interpolation='wigner_seitz_pairs')" in pairs
+    )
+
+
+def test_run_script_hall_and_nernst():
+    plain = _run_cfg(ibrav=2, is_2d=False, properties=['transport'])
+    text = d.build_run_script(plain)
+    assert 'do_hall' not in text and 'band_curvature' not in text
+    assert 'plot_nernst' not in d.build_plot_script(plain)
+    hall = _run_cfg(ibrav=2, is_2d=False, properties=['transport'], do_hall=True)
+    text = d.build_run_script(hall)
+    assert 'p.gradient_and_momenta(band_curvature=True)' in text
+    assert 'ne=NE, do_hall=True, write_to_file=True)' in text
+    plot = d.build_plot_script(hall)
+    assert 'def plot_nernst' in plot and "_spin_channels('nernst*_0.dat')" in plot
+    compile(plot, 'plot.py', 'exec')

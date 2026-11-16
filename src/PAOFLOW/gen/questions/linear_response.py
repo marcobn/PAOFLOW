@@ -24,6 +24,10 @@ Observables: charge current (conductivity, anomalous Hall), spin current (spin H
 every observable, with the sign convention of the Kubo formula (``docs/internals/kubo-bastin.md``).
 The time-reversal parity of the result is printed, not asked: a Fermi-sea spin-density response or
 a Fermi-surface spin-current response is T-odd and needs a magnetic system.
+
+With ``lr_frequency`` the same observable and components are computed as functions of the photon
+energy by :meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_optical_response` (Kubo-Greenwood: interband
+transitions and the Drude term of the bands at the Fermi level, all three terms written).
 """
 
 from __future__ import annotations
@@ -63,6 +67,9 @@ SURFACE_TERM = {
     'intraband': 'surface_intraband',
     'interband': 'surface_interband',
 }
+
+#: Terms of the optical (frequency-dependent) response, all written.
+OPTICAL_TERMS: tuple[str, ...] = ('total', 'interband', 'intraband')
 
 #: Default components: (polarization,) response, field.
 DEFAULT_COMPONENTS = {
@@ -122,6 +129,14 @@ def _wants(answers: Answers) -> bool:
     return 'linear_response' in (answers.get('properties') or [])
 
 
+def _static(answers: Answers) -> bool:
+    return _wants(answers) and not answers.get('lr_frequency')
+
+
+def _optical(answers: Answers) -> bool:
+    return _wants(answers) and bool(answers.get('lr_frequency'))
+
+
 def linear_response_items(
     spinful: Callable[[Answers, Context], bool],
     section: str = LINEAR_RESPONSE,
@@ -142,8 +157,8 @@ def linear_response_items(
     Returns
     -------
     tuple of Question and Note
-        Keys ``lr_observable``, ``lr_term``, ``lr_sea``, ``lr_surface``, ``lr_components``,
-        ``lr_gamma``, ``lr_temperature``.
+        Keys ``lr_observable``, ``lr_frequency``, ``lr_term``, ``lr_sea``, ``lr_surface``,
+        ``lr_components``, ``lr_gamma``, ``lr_omega_max``, ``lr_nomega``, ``lr_temperature``.
     """
 
     def observables(answers: Answers, context: Context) -> list[str]:
@@ -198,26 +213,39 @@ def linear_response_items(
             section=section,
         ),
         Question(
+            'lr_frequency',
+            'Frequency-dependent (optical) response, Kubo-Greenwood?',
+            kind='bool',
+            default=False,
+            when=lambda a, c: _wants(a),
+            label='Optical (photon energy)',
+            help='kubo_optical_response: the same observable and components as functions of the '
+            'photon energy; interband transitions and the Drude term of the bands at the Fermi level '
+            '(ħ/τ = 2Γ), all three written. Optical and magneto-optical conductivity, AC spin and '
+            'orbital Hall, AC Edelstein.',
+            section=section,
+        ),
+        Question(
             'lr_term',
             'Term (fermi_sea: intrinsic, Berry-curvature-like; fermi_surface: proportional to the '
             'lifetime; both: total and the two terms; total)',
             kind='choice',
             choices=lambda a, c: list(TERMS),
             default='fermi_sea',
-            when=lambda a, c: _wants(a),
+            when=lambda a, c: _static(a),
             label='Term',
             help='Kubo-Bastin at constant broadening Γ: Fermi-surface and Fermi-sea terms '
             '(Bonbien-Manchon), their sum, or the Γ → 0 Berry-curvature form of the sea term.',
             section=section,
         ),
-        Note(describe, when=lambda a, c: _wants(a), section=section),
+        Note(describe, when=lambda a, c: _static(a), section=section),
         Question(
             'lr_sea',
             'Fermi-sea term (gamma_to_zero: Berry curvature; finite_gamma: exact at Γ)',
             kind='choice',
             choices=lambda a, c: list(SEA_VARIANTS),
             default='gamma_to_zero',
-            when=lambda a, c: _wants(a) and term_has(a, 'fermi_sea'),
+            when=lambda a, c: _static(a) and term_has(a, 'fermi_sea'),
             label='Fermi-sea variant',
             section=section,
             level='advanced',
@@ -228,7 +256,7 @@ def linear_response_items(
             kind='choice',
             choices=lambda a, c: list(SURFACE_VARIANTS),
             default='total',
-            when=lambda a, c: _wants(a) and term_has(a, 'fermi_surface'),
+            when=lambda a, c: _static(a) and term_has(a, 'fermi_surface'),
             label='Fermi-surface variant',
             section=section,
             level='advanced',
@@ -252,14 +280,37 @@ def linear_response_items(
             kind='float',
             default=0.01,
             unit='eV',
-            when=lambda a, c: _wants(a)
-            and (
-                a.get('lr_term') == 'total'
-                or term_has(a, 'fermi_surface')
-                or (term_has(a, 'fermi_sea') and a.get('lr_sea') == 'finite_gamma')
+            when=lambda a, c: _optical(a)
+            or (
+                _static(a)
+                and (
+                    a.get('lr_term') == 'total'
+                    or term_has(a, 'fermi_surface')
+                    or (term_has(a, 'fermi_sea') and a.get('lr_sea') == 'finite_gamma')
+                )
             ),
             doc='PAOFLOW.PAOFLOW.PAOFLOW.kubo_response:eta',
             section=section,
+        ),
+        Question(
+            'lr_omega_max',
+            'Highest photon energy (0: the energy range of the bands)',
+            kind='float',
+            default=0.0,
+            unit='eV',
+            when=lambda a, c: _optical(a),
+            doc='PAOFLOW.PAOFLOW.PAOFLOW.kubo_optical_response:omega_max',
+            section=section,
+        ),
+        Question(
+            'lr_nomega',
+            'Number of photon energies',
+            kind='int',
+            default=501,
+            when=lambda a, c: _optical(a),
+            doc='PAOFLOW.PAOFLOW.PAOFLOW.kubo_optical_response:nomega',
+            section=section,
+            level='advanced',
         ),
         Question(
             'lr_temperature',
@@ -291,8 +342,8 @@ def assemble_linear_response(cfg: dict, answers: Answers, spinful: bool) -> dict
     -------
     dict
         ``cfg`` with ``lr_observable``, ``lr_term``, ``lr_sea``, ``lr_surface``,
-        ``lr_components`` (list of letter strings), ``lr_gamma``, ``lr_temperature`` and
-        ``lr_spinful``.
+        ``lr_components`` (list of letter strings), ``lr_gamma``, ``lr_temperature``,
+        ``lr_spinful``, ``lr_frequency``, ``lr_omega_max`` and ``lr_nomega``.
     """
     observable = answers.get('lr_observable', 'charge_current')
     term = answers.get('lr_term', 'fermi_sea')
@@ -304,6 +355,9 @@ def assemble_linear_response(cfg: dict, answers: Answers, spinful: bool) -> dict
     cfg['lr_gamma'] = float(answers.get('lr_gamma', 0.01))
     cfg['lr_temperature'] = float(answers.get('lr_temperature', 0.0))
     cfg['lr_spinful'] = bool(spinful)
+    cfg['lr_frequency'] = bool(answers.get('lr_frequency', False))
+    cfg['lr_omega_max'] = float(answers.get('lr_omega_max', 0.0))
+    cfg['lr_nomega'] = int(answers.get('lr_nomega', 501))
     return cfg
 
 
@@ -343,9 +397,25 @@ def linear_response_calls(cfg: dict) -> list[tuple[str, dict[str, Any], str]]:
     -------
     list of tuple
         One :meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_response` call: components as letters (the field
-        direction last), the terms of :func:`kubo_terms`, Γ, the temperature and ``twoD``.
+        direction last), the terms of :func:`kubo_terms`, Γ, the temperature and ``twoD``. With
+        ``lr_frequency``, one :meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_optical_response` call with the
+        :data:`OPTICAL_TERMS`, Γ, the photon energies, the temperature and ``twoD``.
     """
     observable = cfg['lr_observable']
+    if cfg.get('lr_frequency'):
+        omega_max = float(cfg.get('lr_omega_max', 0.0))
+        kwargs = {
+            'observable': observable,
+            'components': list(cfg['lr_components']),
+            'terms': OPTICAL_TERMS,
+            'eta': float(cfg['lr_gamma']),
+            'omega_max': omega_max if omega_max > 0.0 else None,
+            'nomega': int(cfg.get('lr_nomega', 501)),
+            'temperature': float(cfg.get('lr_temperature', 0.0)),
+            'twoD': bool(cfg.get('is_2d', False)),
+        }
+        comment = 'Kubo-Greenwood %s: %s' % (OBSERVABLES[observable][0], ', '.join(OPTICAL_TERMS))
+        return [('kubo_optical_response', kwargs, comment)]
     terms = kubo_terms(cfg)
     kwargs = {
         'observable': observable,

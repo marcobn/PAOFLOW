@@ -373,10 +373,17 @@ def write_finite_bias_results(output_dir: str, postfix: str, scan: Any) -> None:
     Returns
     -------
     None
-        Writes ``current_<profile><postfix>.dat`` (V, I in eV = units of 2e/h per transverse cell, iterations,
-        converged, residual in eV), ``potential_<profile><postfix>.dat`` and ``charge_<profile><postfix>.dat``
-        (layer coordinate in bohr, then the potential energy in eV or the change of the electron number per
-        transverse cell, one column per bias) and ``transmission_<profile><postfix>.dat`` (V, E, T).
+        Writes:
+
+        - ``current_<profile><postfix>.dat``: V, I in eV (units of 2e/h per transverse cell), iterations,
+          converged, residual in eV;
+        - ``potential_<profile><postfix>.dat`` and ``charge_<profile><postfix>.dat``: the potential energy (eV) or
+          the change of the electron number per transverse cell, one column per bias, on every layer (layer
+          coordinate in bohr first) or, for the three-dimensional electrostatics, on every atom (index, element,
+          x, y, z in bohr first);
+        - ``potential_planar_average_<profile><postfix>.dat`` (three-dimensional electrostatics): z in bohr, then
+          the planar average of U (eV) at every bias;
+        - ``transmission_<profile><postfix>.dat``: V, E, T.
     """
     import os
 
@@ -389,15 +396,30 @@ def write_finite_bias_results(output_dir: str, postfix: str, scan: Any) -> None:
         for point in scan.points:
             handle.write(f'{point.bias:12.6f} {point.current:16.8e} {point.iterations:6d} {int(point.converged):3d} '
                          f'{point.residual:12.4e}\n')  # fmt: skip
+    coordinates = np.asarray(scan.group_coordinates, dtype=float)
     for name, attribute, unit in (
-        ('potential', 'layer_potential', 'eV'),
-        ('charge', 'layer_charge', 'electrons'),
+        ('potential', 'group_potential', 'eV'),
+        ('charge', 'group_charge', 'electrons'),
     ):
-        columns = np.column_stack(
-            [scan.layer_coordinates] + [getattr(point, attribute) for point in scan.points]
+        values = np.column_stack([getattr(point, attribute) for point in scan.points])
+        target = os.path.join(output_dir, f'{name}_{tag}.dat')
+        if coordinates.ndim == 1:
+            np.savetxt(target, np.column_stack([coordinates, values]), fmt='%16.8e',
+                       header=f'z (bohr), then {unit} at V = {biases}')  # fmt: skip
+            continue
+        labels = scan.group_labels or ['X'] * len(coordinates)
+        with open(target, 'w') as handle:
+            handle.write(f'# atom element x y z (bohr), then {unit} at V = {biases}\n')
+            for index, (label, position, row) in enumerate(zip(labels, coordinates, values)):
+                handle.write(f'{index:6d} {label:>3s} ' + ' '.join(f'{x:12.6f}' for x in position) + ' '
+                             + ' '.join(f'{x:16.8e}' for x in row) + '\n')  # fmt: skip
+    if scan.planar_average_coordinates is not None:
+        averages = np.column_stack(
+            [scan.planar_average_coordinates]
+            + [point.planar_average_potential for point in scan.points]
         )
-        np.savetxt(os.path.join(output_dir, f'{name}_{tag}.dat'), columns, fmt='%16.8e',
-                   header=f'z (bohr), then {unit} at V = {biases}')  # fmt: skip
+        np.savetxt(os.path.join(output_dir, f'potential_planar_average_{tag}.dat'), averages, fmt='%16.8e',
+                   header=f'z (bohr), then the planar average of U (eV) at V = {biases}')  # fmt: skip
     with open(os.path.join(output_dir, f'transmission_{tag}.dat'), 'w') as handle:
         handle.write('# V (volt)   E (eV)   T(E; V)\n')
         for point in scan.points:

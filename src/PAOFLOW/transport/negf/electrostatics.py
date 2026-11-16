@@ -1,15 +1,30 @@
-"""Electrostatics of a planar junction: the potential of the layer charges between two electrodes.
+"""Electrostatics of the junction: the potential of the bias-induced charge between two electrodes.
 
-The bias-induced change of the electron number on each atomic layer of the conductor is a sheet of charge. The
-planar average of the Hartree potential solves a one-dimensional Poisson equation along the transport axis with the
-potentials of the two electrodes as Dirichlet conditions. The potential is piecewise linear, with kinks at the
-charged layers; this is exact in planar average for a junction uniform across the transverse cell.
+The self-consistent loop (:mod:`~PAOFLOW.transport.negf.self_consistency`) sees the electrostatics only through an
+:class:`ElectrostaticModel`: the orbitals are grouped into charge groups (atomic layers, atoms), and the potential
+energy of an electron on the groups is linear in their charges,
+
+.. math::
+
+    U_g = U^{\rm ext}_g + \sum_h P_{gh}\,\delta q_h,
+
+with :math:`U^{\rm ext}` the solution of the Laplace equation with the electrode potentials as Dirichlet values and
+:math:`P` the Poisson kernel with grounded electrodes (eV per electron).
+
+Two models:
+
+- :class:`PlanarLayers` (here): the change of the electron number on each atomic layer is a sheet of charge. The
+  planar average of the Hartree potential solves a one-dimensional Poisson equation along the transport axis; the
+  potential is piecewise linear, with kinks at the charged layers. Exact in planar average for a junction uniform
+  across the transverse cell.
+- :class:`~PAOFLOW.transport.negf.atomic_electrostatics.AtomicElectrostatics`: one Gaussian charge per atom and
+  the three-dimensional Poisson equation, periodic across the transverse cell (molecules, wires).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Protocol, Sequence, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,6 +32,39 @@ from numpy.typing import NDArray
 from PAOFLOW.transport.partition.types import AtomOrbitals
 
 HARTREE_EV = 27.211386245988
+
+
+@runtime_checkable
+class ElectrostaticModel(Protocol):
+    """What the self-consistent loop needs from the electrostatics.
+
+    Attributes
+    ----------
+    group_of_orbital : ndarray, shape ``(dimC,)``, int
+        Charge group of every orbital of the conductor block.
+    n_groups : int
+    coordinates : ndarray
+        Positions of the groups (bohr): ``(n_groups,)`` along the transport axis for layers, ``(n_groups, 3)`` for
+        atoms.
+    """
+
+    group_of_orbital: NDArray[np.int_]
+
+    @property
+    def n_groups(self) -> int: ...
+
+    @property
+    def coordinates(self) -> NDArray[np.float64]: ...
+
+    def external_potential(
+        self, potential_left: float, potential_right: float
+    ) -> NDArray[np.float64]:
+        """Potential energy on the groups with no charge (eV): the Laplace solution, shape ``(n_groups,)``."""
+        ...
+
+    def kernel(self) -> NDArray[np.float64]:
+        """Potential energy on the groups per extra electron on each group, grounded electrodes (eV)."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -44,6 +92,36 @@ class PlanarLayers:
     @property
     def n_layers(self) -> int:
         return len(self.coordinates)
+
+    @property
+    def group_of_orbital(self) -> NDArray[np.int_]:
+        return self.layer_of_orbital
+
+    @property
+    def n_groups(self) -> int:
+        return self.n_layers
+
+    def external_potential(
+        self, potential_left: float, potential_right: float
+    ) -> NDArray[np.float64]:
+        """The linear ramp between the electrode planes at the layers (eV).
+
+        Parameters
+        ----------
+        potential_left, potential_right : float
+            Potential energy of an electron in the left and right electrodes (eV).
+
+        Returns
+        -------
+        ndarray, shape ``(n_layers,)``
+        """
+        z = self.coordinates
+        a, b = self.left_boundary, self.right_boundary
+        return potential_left + (potential_right - potential_left) * (z - a) / (b - a)
+
+    def kernel(self) -> NDArray[np.float64]:
+        """The planar Poisson kernel (:func:`poisson_kernel`)."""
+        return poisson_kernel(self)
 
 
 def planar_layers(
@@ -106,8 +184,25 @@ def planar_layers(
     )
 
 
+def group_sums(
+    orbital_values: NDArray[np.float64], model: ElectrostaticModel
+) -> NDArray[np.float64]:
+    """Sum an orbital-resolved quantity over each charge group.
+
+    Parameters
+    ----------
+    orbital_values : ndarray, shape ``(dimC,)``
+    model : ElectrostaticModel
+
+    Returns
+    -------
+    ndarray, shape ``(n_groups,)``
+    """
+    return np.bincount(model.group_of_orbital, weights=orbital_values, minlength=model.n_groups)
+
+
 def layer_sums(orbital_values: NDArray[np.float64], layers: PlanarLayers) -> NDArray[np.float64]:
-    """Sum an orbital-resolved quantity over each layer.
+    """Sum an orbital-resolved quantity over each layer (:func:`group_sums`).
 
     Parameters
     ----------
@@ -118,7 +213,33 @@ def layer_sums(orbital_values: NDArray[np.float64], layers: PlanarLayers) -> NDA
     -------
     ndarray, shape ``(n_layers,)``
     """
-    return np.bincount(layers.layer_of_orbital, weights=orbital_values, minlength=layers.n_layers)
+    return group_sums(orbital_values, layers)
+
+
+def electrostatic_potential(
+    group_charge: NDArray[np.float64],
+    model: ElectrostaticModel,
+    potential_left: float,
+    potential_right: float,
+) -> NDArray[np.float64]:
+    """Electron potential energy on the groups from their charges and the electrode potentials.
+
+    Parameters
+    ----------
+    group_charge : ndarray, shape ``(n_groups,)``
+        Change of the electron number on each group, per transverse cell (positive: more electrons).
+    model : ElectrostaticModel
+    potential_left, potential_right : float
+        Potential energy of an electron in the left and right electrodes (eV): :math:`\mu_{L,R} - E_F`.
+
+    Returns
+    -------
+    ndarray, shape ``(n_groups,)``
+        :math:`U = U^{\rm ext} + P\,\delta q` (eV).
+    """
+    return model.external_potential(potential_left, potential_right) + model.kernel() @ np.asarray(
+        group_charge, dtype=float
+    )
 
 
 def planar_potential(

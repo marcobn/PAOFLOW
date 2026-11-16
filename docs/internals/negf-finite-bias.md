@@ -27,7 +27,8 @@ T(E; V), iterations, convergence and residual for every bias. It writes the foll
 - `charge_…`;
 - `transmission_…`.
 
-The conductor Hamiltonian is restored at the end.
+The conductor Hamiltonian is restored at the end. `paoflow-gen` and the Studio generate the whole driver: workflow
+`landauer` (`main.landauer.py`; see [CLI generators](cli-generators.md), workflow I).
 
 ## What it computes
 
@@ -158,8 +159,8 @@ transverse mesh, δ = 1 meV, 300 K; 515 s on 8 ranks; full report in
 ## Limits
 
 - Hartree only: no exchange-correlation response.
-- Planar average: no in-plane structure. Molecules and wires need the 3D solver planned in
-  [negf-3d-electrostatics-plan](negf-3d-electrostatics-plan.md).
+- Planar average: no in-plane structure. For molecules and wires use `electrostatics='3d'`
+  ([negf-3d-electrostatics](negf-3d-electrostatics.md)).
 - Orthonormal orbitals and spin-unpolarised (or spinor) inputs: a `NotImplementedError` otherwise.
 - The buffer layers of the conductor must screen the field. Check that U is flat there; if it is not, use a longer
   supercell.

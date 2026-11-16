@@ -8,9 +8,11 @@ the projection cancel and :math:`V = 0` gives back the DFT Hamiltonian):
 
 .. math::
 
-    H(V) = H_0 + \\tfrac12\\{U, S\\},\\qquad U = U_{\\rm ramp} + v_H[\\delta n(U)].
+    H(V) = H_0 + \\tfrac12\\{U, S\\},\\qquad U = U_{\\rm ext} + v_H[\\delta n(U)].
 
-The exchange-correlation response is neglected. The fixed point is found with Anderson mixing of :math:`U`.
+:math:`U` is constant on the charge groups of an
+:class:`~PAOFLOW.transport.negf.electrostatics.ElectrostaticModel` (atomic layers or atoms). The
+exchange-correlation response is neglected. The fixed point is found with Anderson mixing of :math:`U`.
 """
 
 from __future__ import annotations
@@ -31,10 +33,9 @@ from PAOFLOW.transport.negf.density_matrix import (
     open_system_density,
 )
 from PAOFLOW.transport.negf.electrostatics import (
-    PlanarLayers,
-    layer_sums,
-    planar_potential,
-    poisson_kernel,
+    ElectrostaticModel,
+    electrostatic_potential,
+    group_sums,
 )
 
 PROFILES = ('self_consistent', 'linear')
@@ -100,10 +101,11 @@ class BiasPointResult:
         V (volt).
     chemical_potential_left, chemical_potential_right : float
         :math:`\\mu_L`, :math:`\\mu_R` (eV).
-    layer_potential : ndarray, shape ``(n_layers,)``
-        Electron potential energy on every layer (eV).
-    layer_charge : ndarray, shape ``(n_layers,)``
-        Change of the electron number on every layer with respect to zero bias, per transverse cell.
+    group_potential : ndarray, shape ``(n_groups,)``
+        Electron potential energy on every charge group (layer or atom, eV); alias ``layer_potential``.
+    group_charge : ndarray, shape ``(n_groups,)``
+        Change of the electron number on every group with respect to zero bias, per transverse cell; alias
+        ``layer_charge``.
     window_energies, transmission : ndarray, shape ``(n_window,)``
         :math:`T(E; V)` per spin and transverse cell in the bias window.
     current : float
@@ -113,19 +115,31 @@ class BiasPointResult:
     converged : bool
     residual : float
         Last :math:`\\max|U_{\\rm out} - U_{\\rm in}|` (eV).
+    planar_average_potential : ndarray or None
+        Planar average of :math:`U(\\mathbf r)` on ``FiniteBiasResults.planar_average_coordinates`` (eV), for the
+        three-dimensional electrostatics.
     """
 
     bias: float
     chemical_potential_left: float
     chemical_potential_right: float
-    layer_potential: NDArray[np.float64]
-    layer_charge: NDArray[np.float64]
+    group_potential: NDArray[np.float64]
+    group_charge: NDArray[np.float64]
     window_energies: NDArray[np.float64]
     transmission: NDArray[np.float64]
     current: float
     iterations: int
     converged: bool
     residual: float
+    planar_average_potential: NDArray[np.float64] | None = None
+
+    @property
+    def layer_potential(self) -> NDArray[np.float64]:
+        return self.group_potential
+
+    @property
+    def layer_charge(self) -> NDArray[np.float64]:
+        return self.group_charge
 
 
 @dataclass
@@ -136,14 +150,28 @@ class FiniteBiasResults:
     ----------
     profile : str
         ``'self_consistent'`` or ``'linear'``.
-    layer_coordinates : ndarray, shape ``(n_layers,)``
-        Layer positions along the transport axis (bohr).
+    group_coordinates : ndarray
+        Positions of the charge groups (bohr): ``(n_layers,)`` along the transport axis for the planar
+        electrostatics, ``(n_atoms, 3)`` for the atoms; alias ``layer_coordinates``.
     points : list of BiasPointResult
+    electrostatics : str
+        ``'planar'`` or ``'3d'``.
+    group_labels : list of str or None
+        Element of every atom (three-dimensional electrostatics).
+    planar_average_coordinates : ndarray or None
+        Positions along the transport axis of ``BiasPointResult.planar_average_potential`` (bohr).
     """
 
     profile: str
-    layer_coordinates: NDArray[np.float64]
+    group_coordinates: NDArray[np.float64]
     points: list[BiasPointResult] = field(default_factory=list)
+    electrostatics: str = 'planar'
+    group_labels: list[str] | None = None
+    planar_average_coordinates: NDArray[np.float64] | None = None
+
+    @property
+    def layer_coordinates(self) -> NDArray[np.float64]:
+        return self.group_coordinates
 
     @property
     def bias(self) -> NDArray[np.float64]:
@@ -195,13 +223,13 @@ def anderson_update(
 
 
 class ConductorPotential:
-    """A potential energy on the layers of the conductor, added to its Hamiltonian block.
+    """A potential energy on the charge groups of the conductor, added to its Hamiltonian block.
 
     Parameters
     ----------
     blc_blocks : Mapping[str, Any]
         Block operators; ``blc_00C.H`` is changed in place by :meth:`apply` and given back by :meth:`restore`.
-    layers : PlanarLayers
+    model : ElectrostaticModel
 
     Notes
     -----
@@ -209,21 +237,21 @@ class ConductorPotential:
     orbitals.
     """
 
-    def __init__(self, blc_blocks: Mapping[str, Any], layers: PlanarLayers) -> None:
+    def __init__(self, blc_blocks: Mapping[str, Any], model: ElectrostaticModel) -> None:
         self._block = blc_blocks['blc_00C']
         self._reference = np.array(self._block.H, copy=True)
         self._overlap = np.array(self._block.S, copy=True)
-        self._layers = layers
+        self._group_of_orbital = np.asarray(model.group_of_orbital)
 
-    def apply(self, layer_potential: NDArray[np.float64]) -> None:
+    def apply(self, group_potential: NDArray[np.float64]) -> None:
         """Set :math:`H = H_0 + \\tfrac12\\{U, S\\}`.
 
         Parameters
         ----------
-        layer_potential : ndarray, shape ``(n_layers,)``
-            Potential energy of every layer (eV).
+        group_potential : ndarray, shape ``(n_groups,)``
+            Potential energy of every charge group (eV).
         """
-        orbital = np.asarray(layer_potential, dtype=float)[self._layers.layer_of_orbital]
+        orbital = np.asarray(group_potential, dtype=float)[self._group_of_orbital]
         pair = 0.5 * (orbital[:, None] + orbital[None, :])
         self._block.H[...] = self._reference + pair[:, :, None] * self._overlap
 
@@ -253,7 +281,7 @@ def lowest_conductor_energy(blc_blocks: Mapping[str, Any]) -> float:
 
 def finite_bias_scan(
     system: OpenConductor,
-    layers: PlanarLayers,
+    electrostatics: ElectrostaticModel,
     settings: SelfConsistencySettings,
     bias_values: Sequence[float],
     mu_left_coefficient: float = 0.5,
@@ -267,16 +295,19 @@ def finite_bias_scan(
     Parameters
     ----------
     system : OpenConductor
-    layers : PlanarLayers
-        Layers of the conductor and the electrode planes.
+    electrostatics : ElectrostaticModel
+        Charge groups of the conductor, the Laplace potential of the electrodes and the Poisson kernel
+        (:class:`~PAOFLOW.transport.negf.electrostatics.PlanarLayers` or
+        :class:`~PAOFLOW.transport.negf.atomic_electrostatics.AtomicElectrostatics`).
     settings : SelfConsistencySettings
     bias_values : sequence of float
         V (volt), in the order they are solved (each starts from the previous one).
     mu_left_coefficient, mu_right_coefficient : float, optional
         :math:`\\mu_{L,R} = E_F + c_{L,R}\\,eV` (the convention of ``Transport.compute_current``).
     profile : {'self_consistent', 'linear'}, optional
-        ``'linear'`` keeps the ramp between the electrodes, without the response of the charge (one evaluation
-        per bias); ``'self_consistent'`` adds the Hartree potential of :math:`\\delta n` and iterates.
+        ``'linear'`` keeps the Laplace potential of the electrodes (the ramp), without the response of the charge
+        (one evaluation per bias); ``'self_consistent'`` adds the Hartree potential of :math:`\\delta n` and
+        iterates.
     spin_factor : float, optional
         2 for spin-degenerate orbitals, 1 for spin-orbitals.
     comm : MPI.Comm, optional
@@ -294,22 +325,28 @@ def finite_bias_scan(
     -----
     The conductor Hamiltonian is changed during the scan and restored at the end.
 
-    In a metal the fixed-point map :math:`U \\mapsto U_{\\rm ramp} + P\\,\\delta q(U)` has the Jacobian
-    :math:`J \\approx -P\\chi_0`, with :math:`P` the Poisson kernel (:func:`poisson_kernel`, tens of eV per electron
-    and layer) and :math:`\\chi_0` the local density of states of each layer at :math:`E_F`: plain mixing then
-    oscillates and diverges (charge sloshing). The residual is preconditioned with :math:`(1 + P\\chi_0)^{-1}`, the
-    exact inverse for a linear Thomas-Fermi response; :math:`\\chi_0` is
-    :math:`-\\mathrm{Im}\\,G_{ii}(E_F + i\\eta)/\\pi` summed over each layer, :math:`\\eta = \\max(\\pi k_BT, \\delta)`.
+    In a metal the fixed-point map :math:`U \\mapsto U_{\\rm ext} + P\\,\\delta q(U)` has the Jacobian
+    :math:`J \\approx -P\\chi_0`, with :math:`P` the Poisson kernel (tens of eV per electron and group) and
+    :math:`\\chi_0` the local density of states of each group at :math:`E_F`: plain mixing then oscillates and
+    diverges (charge sloshing). The residual is preconditioned with :math:`(1 + P\\chi_0)^{-1}`, the exact inverse
+    for a linear Thomas-Fermi response; :math:`\\chi_0` is :math:`-\\mathrm{Im}\\,G_{ii}(E_F + i\\eta)/\\pi` summed
+    over each group, :math:`\\eta = \\max(\\pi k_BT, \\delta)`.
     """
     if profile not in PROFILES:
         raise ValueError(f'profile must be one of {PROFILES}, got {profile!r}')
     temperature_ev = settings.temperature_ev
     fermi = settings.fermi_energy
-    potential = ConductorPotential(system.blc_blocks, layers)
+    model = electrostatics
+    potential = ConductorPotential(system.blc_blocks, model)
     no_window = EnergyQuadrature(
         points=np.zeros(0, dtype=complex), weights=np.zeros(0, dtype=complex)
     )
-    results = FiniteBiasResults(profile=profile, layer_coordinates=layers.coordinates.copy())
+    results = FiniteBiasResults(
+        profile=profile,
+        group_coordinates=np.array(model.coordinates, dtype=float, copy=True),
+        electrostatics=getattr(model, 'name', 'planar'),
+        group_labels=getattr(model, 'labels', None),
+    )
     lowest = lowest_conductor_energy(system.blc_blocks)
     say = settings.verbose and comm.Get_rank() == 0
 
@@ -341,52 +378,52 @@ def finite_bias_scan(
         preconditioner = None
         if settings.thomas_fermi_preconditioner:
             broadening = max(np.pi * temperature_ev, system.broadening)
-            response = layer_sums(
+            response = group_sums(
                 local_density_of_states(
                     system, fermi + 1j * broadening, 0.0, 0.0, spin_factor, comm
                 ),
-                layers,
-            )  # states per eV on each layer
+                model,
+            )  # states per eV on each group
             preconditioner = np.linalg.inv(
-                np.eye(layers.n_layers) + poisson_kernel(layers) * response[None, :]
+                np.eye(model.n_groups) + model.kernel() * response[None, :]
             )
         previous: tuple[float, NDArray[np.float64], NDArray[np.float64]] | None = None
         for bias in bias_values:
             shift_left, shift_right = mu_left_coefficient * bias, mu_right_coefficient * bias
             mu_left, mu_right = fermi + shift_left, fermi + shift_right
             window = bias_window(mu_left, mu_right, temperature_ev, settings.window_spacing)
-            ramp = planar_potential(np.zeros(layers.n_layers), layers, shift_left, shift_right)
+            ramp = electrostatic_potential(np.zeros(model.n_groups), model, shift_left, shift_right)
 
             def evaluate(
-                layer_potential: NDArray[np.float64],
+                group_potential: NDArray[np.float64],
             ) -> tuple[NonEquilibriumDensity, NDArray[np.float64]]:
-                potential.apply(layer_potential)
-                floor = min(shift_left, shift_right, float(np.min(layer_potential)))
+                potential.apply(group_potential)
+                floor = min(shift_left, shift_right, float(np.min(group_potential)))
                 contour_right = contour_at(mu_right, floor)
                 contour_left = contour_right if mu_left == mu_right else contour_at(mu_left, floor)
                 density = open_system_density(
                     system, contour_left, contour_right, window, mu_left, mu_right, temperature_ev,
                     shift_left, shift_right, spin_factor, comm,
                 )  # fmt: skip
-                return density, layer_sums(density.occupations - reference, layers)
+                return density, group_sums(density.occupations - reference, model)
 
             iterations, converged, residual = 0, True, 0.0
             if profile == 'linear':
-                layer_potential = ramp
-                density, charge = evaluate(layer_potential)
+                group_potential = ramp
+                density, charge = evaluate(group_potential)
             else:
                 if previous is not None and previous[0] != 0.0:
                     # the response to the charge scales with the bias: start from the previous one, rescaled
-                    layer_potential = ramp + (previous[1] - previous[2]) * bias / previous[0]
+                    group_potential = ramp + (previous[1] - previous[2]) * bias / previous[0]
                 else:
-                    layer_potential = ramp
+                    group_potential = ramp
                 inputs: list[NDArray[np.float64]] = []
                 residuals: list[NDArray[np.float64]] = []
                 converged = False
                 for iterations in range(1, settings.max_iterations + 1):
-                    density, charge = evaluate(layer_potential)
-                    output = planar_potential(charge, layers, shift_left, shift_right)
-                    step = output - layer_potential
+                    density, charge = evaluate(group_potential)
+                    output = electrostatic_potential(charge, model, shift_left, shift_right)
+                    step = output - group_potential
                     residual = float(np.max(np.abs(step)))
                     if say:
                         print(f'  V = {bias:+.4f} V  iteration {iterations:3d}  max|dU| = {residual:.2e} eV  '
@@ -394,19 +431,19 @@ def finite_bias_scan(
                     if residual < settings.tolerance:
                         converged = True
                         break
-                    inputs = (inputs + [layer_potential])[-settings.history :]
+                    inputs = (inputs + [group_potential])[-settings.history :]
                     residuals = (residuals + [step])[-settings.history :]
-                    layer_potential = anderson_update(
+                    group_potential = anderson_update(
                         inputs, residuals, settings.mixing, preconditioner
                     )
-                previous = (bias, layer_potential.copy(), ramp)
+                previous = (bias, group_potential.copy(), ramp)
             results.points.append(
                 BiasPointResult(
                     bias=float(bias),
                     chemical_potential_left=mu_left,
                     chemical_potential_right=mu_right,
-                    layer_potential=np.asarray(layer_potential, dtype=float).copy(),
-                    layer_charge=np.asarray(charge, dtype=float),
+                    group_potential=np.asarray(group_potential, dtype=float).copy(),
+                    group_charge=np.asarray(charge, dtype=float),
                     window_energies=window.points.real.copy(),
                     transmission=density.transmission.copy(),
                     current=landauer_current(density, mu_left, mu_right, temperature_ev),

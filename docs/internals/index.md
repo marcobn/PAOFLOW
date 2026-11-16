@@ -75,6 +75,7 @@ landauer-3d-and-hall
 negf-finite-bias-plan
 negf-finite-bias
 negf-3d-electrostatics-plan
+negf-3d-electrostatics
 Electron-Phonon-Coupling
 nonlinear-optics
 nonlinear-optics-phase2-plan

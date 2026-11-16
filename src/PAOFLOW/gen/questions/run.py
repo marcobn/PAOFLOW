@@ -313,6 +313,80 @@ NONLINEAR_ITEMS = (
     ),
 )
 
+#: Fourier-interpolation routes: answer -> argument of ``bands`` and ``interpolated_hamiltonian``
+#: (``standard`` keeps their defaults, ``fft_grid`` and ``zero_padding``).
+INTERPOLATION_ROUTES: tuple[str, ...] = ('standard', 'wigner_seitz', 'wigner_seitz_pairs')
+
+INTERPOLATION_PROMPT = (
+    'Fourier interpolation (standard: zero padding; wigner_seitz; wigner_seitz_pairs: '
+    'bond-resolved, keeps the space group)'
+)
+HALL_PROMPT = 'Hall coefficient and Nernst tensor with the Boltzmann transport (do_hall)?'
+
+
+def interpolation_question(when, section: str) -> Question:
+    """The Fourier-interpolation route of the band path and of the dense grid.
+
+    Parameters
+    ----------
+    when : callable
+        ``when(answers, context)``: the run interpolates (a band path or a dense grid).
+    section : str
+        GUI section.
+
+    Returns
+    -------
+    Question
+        Key ``interpolation``, one of :data:`INTERPOLATION_ROUTES`.
+    """
+    return Question(
+        'interpolation',
+        INTERPOLATION_PROMPT,
+        kind='choice',
+        choices=lambda a, c: list(INTERPOLATION_ROUTES),
+        default='standard',
+        when=when,
+        label='Fourier interpolation',
+        help='standard: the simple sum of the band path and zero padding on the dense grid. '
+        'wigner_seitz: every H(R) on the Wigner-Seitz cell of the supercell lattice, as Wannier '
+        'interpolation does; wigner_seitz_pairs: the bond vectors of every orbital pair, which keeps '
+        'the full space group. Both reproduce the DFT mesh exactly, at the same cost.',
+        doc='PAOFLOW.PAOFLOW.PAOFLOW.interpolated_hamiltonian:interpolation',
+        section=section,
+        level='advanced',
+    )
+
+
+def hall_question(when, section: str) -> Question:
+    """Hall coefficient and Nernst tensor of the Boltzmann transport.
+
+    Parameters
+    ----------
+    when : callable
+        ``when(answers, context)``: Boltzmann transport is computed.
+    section : str
+        GUI section.
+
+    Returns
+    -------
+    Question
+        Key ``do_hall``.
+    """
+    return Question(
+        'do_hall',
+        HALL_PROMPT,
+        kind='bool',
+        default=False,
+        when=when,
+        label='Hall and Nernst',
+        help='hall_trace, hall and nernst files: the Hall coefficient R_H (m³/C, negative for '
+        'electrons) and the Nernst tensor over the relaxation time; they need the second '
+        'derivatives of the bands.',
+        doc='PAOFLOW.PAOFLOW.PAOFLOW.transport:do_hall',
+        section=section,
+    )
+
+
 RUN_ITEMS = (
     Question(
         'properties',
@@ -421,6 +495,7 @@ RUN_ITEMS = (
         when=lambda a, c: 'dos' in _properties(a),
         section=GRIDS,
     ),
+    hall_question(lambda a, c: 'transport' in _properties(a), GRIDS),
     Question(
         'interpolate',
         'Use double-grid interpolation (denser FFT)?',
@@ -435,6 +510,9 @@ RUN_ITEMS = (
         default=24,
         when=lambda a, c: bool(a.get('interpolate')),
         section=GRIDS,
+    ),
+    interpolation_question(
+        lambda a, c: 'bands' in _properties(a) or bool(a.get('interpolate')), GRIDS
     ),
     *gated(NONLINEAR_ITEMS, lambda a, c: 'nonlinear' in _properties(a)),
     *linear_response_items(lambda a, c: bool(a.get('spin_orbit'))),
@@ -555,8 +633,11 @@ def assemble_run_from_common(common: dict, answers: Answers) -> dict:
     else:
         cfg['emin'], cfg['emax'], cfg['ne'] = -8.0, 4.0, 1000
     cfg['do_pdos'] = answers['do_pdos'] if 'dos' in props else False
+    cfg['do_hall'] = bool(answers.get('do_hall', False)) if 'transport' in props else False
     cfg['interpolate'] = answers['interpolate']
     cfg['nfft'] = answers['nfft'] if cfg['interpolate'] else 0
+    interpolates = 'bands' in props or cfg['interpolate']
+    cfg['interpolation'] = answers.get('interpolation', 'standard') if interpolates else 'standard'
     if 'nonlinear' in props:
         assemble_nonlinear(cfg, answers)
     if 'linear_response' in props:

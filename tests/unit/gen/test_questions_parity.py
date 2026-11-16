@@ -20,6 +20,7 @@ from PAOFLOW.gen import paoflow_driver as pd
 from PAOFLOW.gen import sscha_driver as sd
 from PAOFLOW.gen import ep_model_driver as em
 from PAOFLOW.gen import tb_model_driver as tm
+from PAOFLOW.gen import landauer_driver as ld
 from PAOFLOW.gen.questions import collect
 from PAOFLOW.gen.questions.linear_response import linear_response_calls
 
@@ -464,7 +465,8 @@ def test_sscha_workflow_parity(name, qe_dir, monkeypatch, capsys):
 #: key must get a question in PAOFLOW.gen.questions (``cli=False`` for a GUI-only refinement) or
 #: be listed here on purpose.
 BUILDER_ONLY_KEYS: dict[str, set[str]] = {
-    'run': {'periodic', 'tb_model'},  # the shared non-linear builder reads them for model runs
+    'run': {'periodic', 'tb_model'},
+    'landauer': set(),  # the shared non-linear builder reads them for model runs
     'acbn0': set(),
     'phonon': set(),
     'elphon': set(),
@@ -538,6 +540,7 @@ def _builders(name: str) -> list:
             linear_response_calls,
         ],
         'ep_model': [em.build_ep_model_script],
+        'landauer': [ld.build_landauer_script, *common],
     }[name]
 
 
@@ -596,8 +599,21 @@ RUN_NEW_SCENARIOS = {
     },
 }
 
+#: The Landauer workflow (15 November 2026; no frozen prompts, coverage only).
+LANDAUER_SCENARIOS = {
+    'bulk_defaults': {'Calculation (bulk': 'bulk'},
+    'conductor_3d_finite_bias': {
+        'Calculation (bulk': 'conductor',
+        'Self-consistent finite-bias': 'y',
+        'Electrostatics (planar': '3d',
+        'Gaussian widths': 'Al 1.8, H 1.0',
+        'Also the linear ramp': 'y',
+    },
+}
+
 SCENARIOS = {
     'run': {**RUN_SCENARIOS, **RUN_NEW_SCENARIOS},
+    'landauer': LANDAUER_SCENARIOS,
     'acbn0': ACBN0_SCENARIOS,
     'phonon': PHONON_SCENARIOS,
     'elphon': {**ELPHON_SCENARIOS, **ELPHON_NEW_SCENARIOS},

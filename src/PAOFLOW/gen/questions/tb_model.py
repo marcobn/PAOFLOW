@@ -16,7 +16,14 @@ import numpy as np
 
 from .model import Answers, Context, Note, Question, Workflow, optional_number
 from .linear_response import assemble_linear_response, linear_response_items
-from .run import COUPLED, NONLINEAR_ITEMS, assemble_nonlinear, point_row
+from .run import (
+    COUPLED,
+    NONLINEAR_ITEMS,
+    assemble_nonlinear,
+    hall_question,
+    interpolation_question,
+    point_row,
+)
 
 MODEL = 'Tight-binding model'
 PROPERTIES = 'Properties'
@@ -520,6 +527,7 @@ TB_MODEL_ITEMS = (
         when=lambda a, c: 'dos' in _properties(a),
         section=GRIDS,
     ),
+    hall_question(lambda a, c: 'transport' in _properties(a), GRIDS),
     Question(
         'nfft',
         'Dense k-grid per periodic direction (interpolated Hamiltonian)',
@@ -529,6 +537,7 @@ TB_MODEL_ITEMS = (
         'DOS, transport, Hall, Fermi surface and optics.',
         section=GRIDS,
     ),
+    interpolation_question(lambda a, c: True, GRIDS),
     *_nonlinear_items(),
     *linear_response_items(lambda a, c: _spinful(a, c), orbital=False),
     Question(
@@ -594,7 +603,9 @@ def assemble_tb_model(answers: Answers, context: Context) -> dict:
     cfg['emax'] = answers['emax'] if energies else _energy_default(answers, context, 1)
     cfg['ne'] = answers['ne'] if energies else 1000
     cfg['do_pdos'] = answers['do_pdos'] if 'dos' in props else False
+    cfg['do_hall'] = bool(answers.get('do_hall', False)) if 'transport' in props else False
     cfg['nfft'] = answers['nfft']
+    cfg['interpolation'] = answers.get('interpolation', 'standard')
     if 'nonlinear' in props:
         assemble_nonlinear(
             cfg, {**answers, 'nlo_molecule': False, 'nlo_dipoles': False, 'nlo_coupled': False}

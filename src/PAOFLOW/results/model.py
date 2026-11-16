@@ -58,6 +58,9 @@ class Kind:
         Unit and factor per named-group value (``{'q': {'sigma': ...}}``).
     describe : callable, optional
         ``describe(groups) -> (title, y_label, y_unit)`` for kinds whose labels depend on the file.
+    group : tuple of (str, str), optional
+        Name and unit of the first column of the ``hall`` family, whose rows are grouped by it
+        (temperature in K by default; the bias in V for the finite-bias transmission).
     """
 
     name: str
@@ -76,6 +79,7 @@ class Kind:
     priority: int = 50
     gpao: str | None = None
     describe: Callable[[dict], tuple[str, str, str]] | None = None
+    group: tuple[str, str] = ('Temperature', 'K')
 
 
 @dataclass

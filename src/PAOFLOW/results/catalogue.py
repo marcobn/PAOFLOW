@@ -288,6 +288,17 @@ KINDS: tuple[Kind, ...] = (
         zero='x',
     ),
     Kind(
+        'nernst',
+        'Nernst coefficient',
+        TRANSPORT,
+        r'nernst(?:_(?P<smearing>[\w-]+?))?_(?P<spin>\d+)\.dat',
+        'hall',  # T, E, then 27 components: N_xyz first
+        x=('Chemical potential μ − E_F', 'eV'),
+        y=('N_xyz / τ', 'V K⁻¹ T⁻¹ s⁻¹'),
+        series=('spin',),
+        zero='x',
+    ),
+    Kind(
         'doping',
         'Chemical potential at doping {type}{conc}',
         TRANSPORT,
@@ -791,12 +802,60 @@ KINDS: tuple[Kind, ...] = (
     ),
     Kind(
         'current',
-        'Current–voltage',
+        'Current–voltage (zero-bias transmission)',
         GREEN,
         r'current\.dat',
         'curve',
         x=('Bias', 'V'),
-        y=('I', 'a.u.'),
+        y=('I', '2e/h · eV per cell'),  # positive for mu_L > mu_R since 15 November 2026
+    ),
+    Kind(
+        'finite_bias_current',
+        'Current–voltage at finite bias, {profile} {post}',
+        GREEN,
+        r'current_(?P<profile>self_consistent|linear)(?P<post>.*)\.dat',
+        'curve',
+        x=('Bias', 'V'),
+        y=('I', '2e/h · eV per cell'),
+    ),
+    Kind(
+        'finite_bias_planar_average',
+        'Planar average of the potential energy under bias, {profile} {post}',
+        GREEN,
+        r'potential_planar_average_(?P<profile>self_consistent|linear)(?P<post>.*)\.dat',
+        'columns',  # z, then one column per bias
+        x=('Position along the transport axis', 'bohr'),
+        y=('U', 'eV'),
+        priority=40,
+    ),
+    Kind(
+        'finite_bias_potential',
+        'Potential energy under bias, {profile} {post}',
+        GREEN,
+        r'potential_(?P<profile>self_consistent|linear)(?P<post>.*)\.dat',
+        'columns',  # per layer: z, then one column per bias (per atom: a table)
+        x=('Position along the transport axis', 'bohr'),
+        y=('U', 'eV'),
+    ),
+    Kind(
+        'finite_bias_charge',
+        'Bias-induced charge, {profile} {post}',
+        GREEN,
+        r'charge_(?P<profile>self_consistent|linear)(?P<post>.*)\.dat',
+        'columns',
+        x=('Position along the transport axis', 'bohr'),
+        y=('δq', 'electrons per cell'),
+    ),
+    Kind(
+        'finite_bias_transmission',
+        'Transmission under bias, {profile} {post}',
+        GREEN,
+        r'transmission_(?P<profile>self_consistent|linear)(?P<post>.*)\.dat',
+        'hall',  # V, E, T: rows grouped by the bias
+        x=E,
+        y=('T(E; V)', ''),
+        zero='x',
+        group=('Bias', 'V'),
     ),
     # ---------------------------------------------------------------- ACBN0
     Kind('acbn0_u', 'Hubbard U of {orbital}', ACBN0, r'(?P<orbital>.+)_UJ\.txt', 'text'),

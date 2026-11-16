@@ -1,6 +1,8 @@
 # Three-dimensional electrostatics for finite-bias transport (molecules, wires): plan
 
-Status: plan, 15 November 2026, not implemented. It extends [negf-finite-bias](negf-finite-bias.md), whose planar
+Status: implemented on 15 November 2026 with the recommended decisions; see
+[negf-3d-electrostatics](negf-3d-electrostatics.md). The kernel became semi-analytic (in-plane sums exact, sine
+series along z) instead of a 3D grid solve; the grid is used only for the XSF output. It extends [negf-finite-bias](negf-finite-bias.md), whose planar
 Poisson solver averages the bias-induced charge over the transverse cell. Decisions are in Sec. 8.
 
 ## 1. Why the planar solver is not enough

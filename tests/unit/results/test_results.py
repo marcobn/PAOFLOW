@@ -58,6 +58,15 @@ def test_discovery_of_the_silicon_reference():
         ('mobility.dat', 'transport/output', 'mobility'),
         ('alpha2F_tr.dat', '.', 'alpha2f'),
         ('conductance_bulk.dat', '.', 'conductance'),
+        ('current.dat', '.', 'current'),
+        ('nernst_gauss_0.dat', '.', 'nernst'),
+        ('nernst_0.dat', '.', 'nernst'),
+        ('current_self_consistent_alsi.dat', '.', 'finite_bias_current'),
+        ('current_linear.dat', '.', 'finite_bias_current'),
+        ('potential_self_consistent_alsi.dat', '.', 'finite_bias_potential'),
+        ('potential_planar_average_self_consistent_3d.dat', '.', 'finite_bias_planar_average'),
+        ('charge_linear_wire.dat', '.', 'finite_bias_charge'),
+        ('transmission_self_consistent_alsi.dat', '.', 'finite_bias_transmission'),
         ('FermiSurf_0.bxsf', '.', 'fermi_surface'),
         ('Fermi_surf_band_3.bxsf', '.', 'fermi_sheet'),
         ('Spin_Berry_z_xy.bxsf', '.', 'berry_bxsf'),
@@ -434,3 +443,30 @@ def test_photocurrent_channels_of_a_metal_have_readable_names(tmp_path):
     assert names == {label for label, _ in CHANNEL_LABELS.values()}
     totals = [r for r in folder.datasets if r.kind == 'nlo']
     assert len(totals) == 2 and any('circular' in r.title for r in totals)
+
+
+def test_finite_bias_and_nernst_loaders(tmp_path):
+    """The finite-bias files of Transport.compute_current_self_consistent and the Nernst table of
+    PAOFLOW.transport(do_hall=True), in the formats of their writers."""
+    biases, energies = (0.0, 0.1, 0.2), np.linspace(-0.3, 0.3, 7)
+    with open(tmp_path / 'transmission_self_consistent_x.dat', 'w') as handle:
+        handle.write('# V (volt)   E (eV)   T(E; V)\n')
+        for bias in biases:
+            for energy in energies:
+                handle.write('%12.6f %14.6f %16.8e\n' % (bias, energy, 1.0 - bias))
+            handle.write('\n')
+    z = np.linspace(0.0, 10.0, 5)
+    np.savetxt(tmp_path / 'potential_self_consistent_x.dat', np.column_stack([z, 0 * z, z, -z]),
+               header='z (bohr), then eV at V = +0.0000 +0.1000 +0.2000')  # fmt: skip
+    rows = [[300.0, e] + [k + e for k in range(27)] for e in energies]
+    np.savetxt(tmp_path / 'nernst_gauss_0.dat', rows)
+    kinds, _refs = _by_kind(tmp_path)
+    transmission = load(kinds['finite_bias_transmission'][0], str(tmp_path))
+    assert [series.name for series in transmission.series] == ['0 V', '0.1 V', '0.2 V']
+    assert np.allclose(transmission.series[1].y, 0.9)
+    assert transmission.options['temperatures']['label'] == 'Biases (V)'
+    potential = load(kinds['finite_bias_potential'][0], str(tmp_path))
+    assert [series.name for series in potential.series] == ['+0.0000', '+0.1000', '+0.2000']
+    nernst = load(kinds['nernst'][0], str(tmp_path))
+    assert [series.name for series in nernst.series] == ['300 K']
+    assert np.allclose(nernst.series[0].y, energies)  # N_xyz, the first component

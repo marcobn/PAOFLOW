@@ -155,3 +155,69 @@ def test_haldane_chern_number_from_the_generated_driver(tmp_path):
     chern = np.pi * data[gap, 3]
     assert abs(chern - 1.0) < 0.03
     assert abs(np.pi * data[gap, 1] - 1.0) < 0.03  # the full response at finite broadening too
+
+
+def test_optical_response_maps_onto_kubo_optical_response():
+    cfg = _cfg(lr_frequency=True, lr_omega_max=0.0, lr_nomega=201, lr_gamma=0.05, is_2d=True)
+    ((method, kwargs, _comment),) = linear_response_calls(cfg)
+    assert method == 'kubo_optical_response'
+    assert kwargs == {
+        'observable': 'charge_current',
+        'components': ['xy'],
+        'terms': ('total', 'interband', 'intraband'),
+        'eta': 0.05,
+        'omega_max': None,  # 0: the energy range of the bands
+        'nomega': 201,
+        'temperature': 0.0,
+        'twoD': True,
+    }
+    assert (
+        linear_response_calls(_cfg(lr_frequency=True, lr_omega_max=4.0))[0][1]['omega_max'] == 4.0
+    )
+
+
+def test_optical_questions_replace_the_static_terms(tmp_path):
+    static = _form(tmp_path, tb_model='honeycomb', properties=['linear_response'])
+    shown = {i.get('key') for i in static.items if i.get('visible')}
+    assert 'lr_term' in shown and 'lr_omega_max' not in shown
+    optical = _form(
+        tmp_path, tb_model='honeycomb', properties=['linear_response'], lr_frequency='true'
+    )
+    shown = {i.get('key') for i in optical.items if i.get('visible')}
+    assert {'lr_omega_max', 'lr_nomega', 'lr_gamma'} <= shown and 'lr_term' not in shown
+    assert optical.config['lr_frequency'] is True
+
+
+def test_optical_driver_runs(tmp_path):
+    """The generated kubo_optical_response call runs on a model and writes the photon-energy table."""
+    form = _form(
+        tmp_path,
+        tb_model='honeycomb',
+        properties=['linear_response'],
+        lr_frequency='true',
+        lr_nomega='41',
+        lr_omega_max='6',
+        nfft='12',
+        ne='21',
+    )
+    assert not form.errors, form.errors
+    for f in workflow_outputs('tb_model', form.config):
+        f.write(str(tmp_path))
+    text = (tmp_path / 'main.py').read_text()
+    assert (
+        "p.kubo_optical_response(observable='charge_current'" in text
+        and 'emin=EMIN' not in text.split('kubo_optical_response')[1].split('\n')[0]
+    )
+    result = subprocess.run(
+        [sys.executable, 'main.py'],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        env={**os.environ, 'OMP_NUM_THREADS': '1'},
+    )
+    assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
+    files = sorted((tmp_path / 'output').glob('kubo_optical_charge_current_*.dat'))
+    assert files
+    data = np.loadtxt(files[0])
+    assert data.shape[0] == 41 and data[-1, 0] == pytest.approx(6.0)

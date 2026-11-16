@@ -4,7 +4,8 @@ Each workflow is a :class:`~PAOFLOW.gen.questions.model.Workflow`: an ordered li
 notes plus the ``assemble`` function that turns the answers into the configuration the script
 builders of :mod:`PAOFLOW.gen.paoflow_driver`, :mod:`PAOFLOW.gen.elphon_system`,
 :mod:`PAOFLOW.gen.sscha_driver`, :mod:`PAOFLOW.gen.pyskeaf_driver`,
-:mod:`PAOFLOW.gen.tb_model_driver` and :mod:`PAOFLOW.gen.ep_model_driver` read.  :func:`collect` is the interactive CLI of one workflow.
+:mod:`PAOFLOW.gen.tb_model_driver`, :mod:`PAOFLOW.gen.ep_model_driver` and
+:mod:`PAOFLOW.gen.landauer_driver` read.  :func:`collect` is the interactive CLI of one workflow.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from typing import Any
 
 from .acbn0 import ACBN0
 from .elphon import ELPHON
+from .landauer import LANDAUER
 from .model import Answers, Context, Note, Question, Workflow
 from .phonon import PHONON
 from .prompt import ask_items
@@ -25,7 +27,7 @@ from .ep_model import EP_MODEL
 #: The workflows of ``paoflow-gen``, in the order of its first prompt.
 WORKFLOWS: dict[str, Workflow] = {
     workflow.name: workflow
-    for workflow in (ACBN0, RUN, TB_MODEL, PHONON, ELPHON, EP_MODEL, SSCHA, PYSKEAF)
+    for workflow in (ACBN0, RUN, TB_MODEL, PHONON, ELPHON, EP_MODEL, SSCHA, PYSKEAF, LANDAUER)
 }
 
 

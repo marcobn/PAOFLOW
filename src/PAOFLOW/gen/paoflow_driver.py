@@ -770,7 +770,8 @@ def build_run_script(cfg):
         lines.append('    p.pao_hamiltonian()')
         lines.append('    if NFFT is not None:')
         lines.append(
-            '        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])'
+            '        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2]%s)'
+            % _interpolation_argument(cfg)
         )
         lines.append('    p.pao_eigh()')
         lines.append('')
@@ -839,13 +840,22 @@ def _linear_response_lines(cfg):
     list of str
         The lines of ``main.py``: one commented :meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_response` call
         (:func:`PAOFLOW.gen.questions.linear_response.linear_response_calls`); it writes
-        ``kubo_<observable>_<component>.dat`` with one column per term.
+        ``kubo_<observable>_<component>.dat`` with one column per term. With ``lr_frequency``, one
+        :meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_optical_response` call, which writes
+        ``kubo_optical_<observable>_<component>.dat`` against the photon energy.
     """
     from .questions.linear_response import OBSERVABLES, linear_response_calls
 
+    optical = bool(cfg.get('lr_frequency'))
     lines = [
-        '    # Linear response (Kubo-Bastin at constant broadening): %s, components %s.'
-        % (OBSERVABLES[cfg['lr_observable']][0], ', '.join(cfg['lr_components'])),
+        '    # %s: %s, components %s.'
+        % (
+            'Optical response (Kubo-Greenwood)'
+            if optical
+            else 'Linear response (Kubo-Bastin at constant broadening)',
+            OBSERVABLES[cfg['lr_observable']][0],
+            ', '.join(cfg['lr_components']),
+        ),
     ]
     if cfg.get('is_2d'):
         lines.append(
@@ -855,8 +865,27 @@ def _linear_response_lines(cfg):
     for method, kwargs, comment in linear_response_calls(cfg):
         arguments = ', '.join('%s=%r' % (key, value) for key, value in kwargs.items())
         lines.append('    # %s' % comment)
-        lines.append('    p.%s(emin=EMIN, emax=EMAX, ne=NE, %s)' % (method, arguments))
+        if optical:
+            lines.append('    p.%s(%s)' % (method, arguments))
+        else:
+            lines.append('    p.%s(emin=EMIN, emax=EMAX, ne=NE, %s)' % (method, arguments))
     return lines
+
+
+def _interpolation_argument(cfg):
+    """``, interpolation='...'`` of ``bands`` and ``interpolated_hamiltonian`` ('' when standard).
+
+    Parameters
+    ----------
+    cfg : dict
+        Run configuration with ``interpolation`` (:data:`PAOFLOW.gen.questions.run.INTERPOLATION_ROUTES`).
+
+    Returns
+    -------
+    str
+    """
+    route = cfg.get('interpolation', 'standard')
+    return '' if route == 'standard' else ', interpolation=%r' % route
 
 
 def _emit_standard_properties(props, needs_spin, cfg):
@@ -868,16 +897,24 @@ def _emit_standard_properties(props, needs_spin, cfg):
     if 'bands' in selected:
         if _wants_explicit_band_path(cfg):
             body.append('    p.bands(ibrav=IBRAV, nk=NK, band_path=BAND_PATH,')
-            body.append("            high_sym_points=HIGH_SYM, fname='bands')")
+            body.append(
+                "            high_sym_points=HIGH_SYM, fname='bands'%s)"
+                % _interpolation_argument(cfg)
+            )
         else:
-            body.append("    p.bands(ibrav=IBRAV, nk=NK, fname='bands')")
+            body.append(
+                "    p.bands(ibrav=IBRAV, nk=NK, fname='bands'%s)" % _interpolation_argument(cfg)
+            )
 
     if 'topology' in selected:
         body.append('    p.topology(Berry=True, eff_mass=True, spol=2, ipol=0, jpol=1)')
 
     body.append('')
     body.append('    if NFFT is not None:')
-    body.append('        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])')
+    body.append(
+        '        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2]%s)'
+        % _interpolation_argument(cfg)
+    )
     body.append('    p.pao_eigh()')
     body.append('')
 
@@ -893,7 +930,12 @@ def _emit_standard_properties(props, needs_spin, cfg):
         # spinful model) when it is not there yet.
         body.append('    p.spin_texture()')
 
-    body.append('    p.gradient_and_momenta()')
+    if 'transport' in selected and cfg.get('do_hall'):
+        body.append(
+            '    p.gradient_and_momenta(band_curvature=True)  # the Hall and Nernst tensors'
+        )
+    else:
+        body.append('    p.gradient_and_momenta()')
     body.append('    p.adaptive_smearing()')
 
     if 'dos' in selected:
@@ -912,7 +954,10 @@ def _emit_standard_properties(props, needs_spin, cfg):
         body.extend(_linear_response_lines(cfg))
     if 'transport' in selected:
         body.append('    p.transport(tmin=TMIN, tmax=TMAX, nt=NT, emin=EMIN, emax=EMAX,')
-        body.append('                ne=NE, write_to_file=True)')
+        if cfg.get('do_hall'):
+            body.append('                ne=NE, do_hall=True, write_to_file=True)')
+        else:
+            body.append('                ne=NE, write_to_file=True)')
 
     return body
 
@@ -2142,6 +2187,37 @@ def build_plot_script(cfg):
             ],
         )
         menu.append(('Hall coefficient', 'plot_hall_coefficient'))
+        if cfg.get('do_hall'):
+            funcs += _plot_func(
+                'plot_nernst',
+                [
+                    '# Nernst tensor over the relaxation time (do_hall): nernst[_<smearing>]_<spin>.dat',
+                    '# holds T (K), E (eV) and 27 components, N_xyz first, in V K^-1 T^-1 s^-1.',
+                    'import numpy as np',
+                    'import matplotlib.pyplot as plt',
+                    '',
+                    "files, labels = _spin_channels('nernst*_0.dat')",
+                    'if not files:',
+                    '    _missing(None)',
+                    '    return',
+                    'fig, ax = plt.subplots()',
+                    "fig.suptitle('Nernst coefficient N_xyz / tau')",
+                    'for fn, base in zip(files, labels):',
+                    '    data = np.atleast_2d(np.loadtxt(fn))',
+                    '    for temp in np.unique(data[:, 0]):',
+                    '        rows = data[data[:, 0] == temp]',
+                    "        tag = '{:g} K'.format(temp)",
+                    '        if len(files) > 1:',
+                    "            tag = '{}, {}'.format(base, tag)",
+                    '        ax.plot(rows[:, 1], rows[:, 2], label=tag)',
+                    'ax.set_xlim(*_ewin())',
+                    "ax.set_xlabel('Energy (eV)')",
+                    "ax.set_ylabel(r'$N_{xyz}/\\tau$ (V K$^{-1}$ T$^{-1}$ s$^{-1}$)')",
+                    'ax.legend()',
+                    'plt.show()',
+                ],
+            )
+            menu.append(('Nernst coefficient', 'plot_nernst'))
 
     if 'spin_Hall' in props:
         funcs += _plot_func(
@@ -3357,7 +3433,17 @@ def main(argv: list[str] | None = None) -> int:
 
     workflow = ask_choice(
         'Which workflow?',
-        ['acbn0', 'run', 'tb_model', 'phonon', 'elphon', 'ep_model', 'sscha', 'pyskeaf'],
+        [
+            'acbn0',
+            'run',
+            'tb_model',
+            'phonon',
+            'elphon',
+            'ep_model',
+            'sscha',
+            'pyskeaf',
+            'landauer',
+        ],
         'run',
     )
 
@@ -3381,9 +3467,10 @@ def main(argv: list[str] | None = None) -> int:
         from .sscha_driver import collect_sscha
 
         cfg = collect_sscha(args, workdir)
-    elif workflow in ('pyskeaf', 'tb_model', 'ep_model'):
+    elif workflow in ('pyskeaf', 'tb_model', 'ep_model', 'landauer'):
         # Quantum oscillations from the BXSF files of a Property run, a property run on a
-        # tight-binding model or the electron-phonon run of a model crystal: no QE save needed.
+        # tight-binding model or the electron-phonon run of a model crystal (no QE save needed),
+        # and Landauer transport from a save: the declarative questions.
         from .questions import collect
 
         cfg = collect(workflow, args, workdir)

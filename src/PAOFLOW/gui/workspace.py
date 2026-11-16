@@ -257,6 +257,7 @@ def detect(app: 'GuiApp', relative: str | None) -> dict:
         suggestions.append(('acbn0', 'Hubbard U (and V) from the same save'))
         suggestions.append(('phonon', 'finite-displacement phonons from the scf'))
         suggestions.append(('sscha', 'anharmonic phonons at temperature'))
+        suggestions.append(('landauer', 'Landauer conductance and current through the cell'))
     if pw_inputs:
         suggestions.append(('elphon', 'a pw.x input is present: electron-phonon system folder'))
     if any(

@@ -551,6 +551,7 @@ export class SetupView {
       elphon: 'the plot_*.py of the chosen workflows',
       sscha: 'plot.sscha.py: the figures saved as PDF',
       pyskeaf: 'plot.pyskeaf.py: the figures saved as PDF',
+      landauer: 'plot.landauer.py: the figures saved as PDF',
     };
     const plot = h('input', {
       type: 'checkbox',

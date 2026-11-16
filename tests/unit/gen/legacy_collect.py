@@ -32,6 +32,7 @@ from PAOFLOW.gen.paoflow_driver import (
     detect_v_cutoff,
     parse_laser_list,
 )
+from PAOFLOW.gen.questions.run import HALL_PROMPT, INTERPOLATION_PROMPT, INTERPOLATION_ROUTES
 from PAOFLOW.gen.sscha_driver import DEFAULT_POPULATIONS
 
 def select_properties():
@@ -127,11 +128,19 @@ def collect_run(common):
         cfg['emax'] = 4.0
         cfg['ne'] = 1000
     cfg['do_pdos'] = ask_yes_no('Projected DOS as well?', True) if 'dos' in props else False
+    # added 15 November 2026 (Hall and Nernst of the Boltzmann transport; Fourier interpolation)
+    cfg['do_hall'] = ask_yes_no(HALL_PROMPT, False) if 'transport' in props else False
     cfg['interpolate'] = ask_yes_no(
         'Use double-grid interpolation (denser FFT)?',
         'optical' in props,
     )
     cfg['nfft'] = ask_int('FFT grid size per direction', 24) if cfg['interpolate'] else 0
+    if 'bands' in props or cfg['interpolate']:
+        cfg['interpolation'] = ask_choice(
+            INTERPOLATION_PROMPT, list(INTERPOLATION_ROUTES), 'standard'
+        )
+    else:
+        cfg['interpolation'] = 'standard'
     if 'nonlinear' in props:
         collect_nonlinear(cfg)
     cfg['plot'] = ask_yes_no('Also generate a plotting script (plot.py)?', True)

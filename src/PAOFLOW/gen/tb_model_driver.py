@@ -41,6 +41,7 @@ def build_tb_model_script(cfg: dict) -> str:
         SPIN_PROPERTIES,
         _band_path_constant_lines,
         _emit_standard_properties,
+        _interpolation_argument,
         _nonlinear_call_lines,
         _nonlinear_constant_lines,
     )
@@ -155,7 +156,8 @@ def build_tb_model_script(cfg: dict) -> str:
             'def run_optical():',
             '    """Dielectric tensor of the model (velocity from the hoppings and the orbital centres)."""',
             '    p = new_paoflow()',
-            '    p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])',
+            '    p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2]%s)'
+            % _interpolation_argument(cfg),
             '    p.pao_eigh()',
             '    p.gradient_and_momenta()',
             '    p.adaptive_smearing()',

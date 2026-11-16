@@ -217,8 +217,8 @@ def test_finite_bias_needs_a_conductor_partition(tmp_path):
         )
     with pytest.raises(RuntimeError, match='conductor partition'):
         transport.compute_current_self_consistent(bias=[0.1])
-    with pytest.raises(ValueError, match='planar'):
-        transport.configure_bias_self_consistency(electrostatics='3d')
+    with pytest.raises(ValueError, match="'planar' or '3d'"):
+        transport.configure_bias_self_consistency(electrostatics='spherical')
 
 
 def test_thomas_fermi_preconditioner_reaches_the_same_solution(tmp_path):

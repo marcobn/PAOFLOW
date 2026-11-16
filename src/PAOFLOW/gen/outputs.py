@@ -83,6 +83,7 @@ DRIVER_NAMES = {
     'pyskeaf': 'main.pyskeaf.py',
     'tb_model': 'main.py',
     'ep_model': 'main.ep_model.py',
+    'landauer': 'main.landauer.py',
 }
 
 #: Whether a workflow writes its plot scripts by default (``cfg['plot']`` decides otherwise): the
@@ -98,10 +99,23 @@ PLOT_DEFAULTS = {
     'pyskeaf': True,
     'tb_model': True,
     'ep_model': True,
+    'landauer': True,
 }
 
+#: Result kinds drawn by plot.landauer.py (:data:`PAOFLOW.results.catalogue.KINDS`).
+LANDAUER_KINDS = (
+    'conductance',
+    'doscond',
+    'current',
+    'finite_bias_current',
+    'finite_bias_potential',
+    'finite_bias_planar_average',
+    'finite_bias_charge',
+    'finite_bias_transmission',
+)
+
 #: Plot scripts that save their figures (no display): the Runs tab can run them.
-SAVING_PLOT_SCRIPTS = ('plot.sscha.py', 'plot.pyskeaf.py', 'plot.ep_model.py')
+SAVING_PLOT_SCRIPTS = ('plot.sscha.py', 'plot.pyskeaf.py', 'plot.ep_model.py', 'plot.landauer.py')
 
 
 def workflow_outputs(
@@ -146,7 +160,7 @@ def workflow_outputs(
         files.append(
             GeneratedFile(plot_out or 'plot.acbn0.py', text=pd.build_acbn0_plot_script(cfg))
         )
-    elif name in ('sscha', 'pyskeaf', 'ep_model') and wants_plot:
+    elif name in ('sscha', 'pyskeaf', 'ep_model', 'landauer') and wants_plot:
         from .ep_model_driver import PLOT_KINDS
         from .results_plot import build_results_plot_script
 
@@ -162,6 +176,7 @@ def workflow_outputs(
                 PLOT_KINDS,
                 cfg.get('outputdir', 'output'),
             ),
+            'landauer': ('Landauer transport', LANDAUER_KINDS, cfg.get('outputdir', 'output')),
         }[name]
         files.append(
             GeneratedFile(
@@ -206,6 +221,10 @@ def _driver_text(name: str, cfg: dict) -> str:
         from .ep_model_driver import build_ep_model_script
 
         return build_ep_model_script(cfg)
+    if name == 'landauer':
+        from .landauer_driver import build_landauer_script
+
+        return build_landauer_script(cfg)
     raise ValueError('unknown workflow %r' % name)
 
 
@@ -366,6 +385,16 @@ def run_plan(name: str, cfg: dict, files: list[GeneratedFile] | None = None) -> 
     steps: list[RunStep] = []
     if name == 'run':
         steps.append(RunStep('PAOFLOW properties', ('python', driver), mpi=True))
+    elif name == 'landauer':
+        steps.append(
+            RunStep(
+                'Landauer transport',
+                ('python', driver),
+                mpi=True,
+                note='the energies (and the bias-window points) spread over the ranks; the Results tab '
+                'plots T(E), the conductor DOS and the current',
+            )
+        )
     elif name == 'tb_model':
         steps.append(
             RunStep(

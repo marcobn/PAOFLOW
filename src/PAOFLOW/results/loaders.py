@@ -421,19 +421,28 @@ def load_transport(ref: DatasetRef, root: str, options: dict) -> Dataset:
     return dataset
 
 
-def _shown_temperatures(dataset: Dataset, options: dict, temperatures: list[float]) -> list[float]:
-    """The temperatures drawn (at most five, chosen by the user or evenly spread)."""
+def _shown_temperatures(
+    dataset: Dataset,
+    options: dict,
+    temperatures: list[float],
+    group: tuple[str, str] = ('Temperature', 'K'),
+) -> list[float]:
+    """The temperatures (or the values of another grouping column) drawn: at most five, chosen by
+    the user or evenly spread."""
+    plural = group[0] + ('es' if group[0].endswith('s') else 's')
     chosen = options.get('temperatures')
     if isinstance(chosen, list) and chosen:
         shown = [t for t in temperatures if any(abs(t - float(c)) < 1e-6 for c in chosen)]
     else:
         shown = spread(temperatures)
     if len(shown) > MAX_ORDINAL:
-        dataset.notes.append('At most %d temperatures at once (one colour ramp).' % MAX_ORDINAL)
+        dataset.notes.append(
+            'At most %d %s at once (one colour ramp).' % (MAX_ORDINAL, plural.lower())
+        )
         shown = spread(shown)
     shown = shown or temperatures[:1]
     dataset.options['temperatures'] = {
-        'label': 'Temperatures (K)',
+        'label': '%s (%s)' % (plural, group[1]),
         'choices': temperatures,
         'value': shown,
         'multiple': True,
@@ -451,12 +460,15 @@ def load_hall(ref: DatasetRef, root: str, options: dict) -> Dataset:
             tables.append((file, label, data))
     if not tables:
         return dataset
+    group = _kind(ref).group
     temperatures = sorted({float(t) for _, _, d in tables for t in d[:, 0]})
-    shown = _shown_temperatures(dataset, options, temperatures)
+    shown = _shown_temperatures(dataset, options, temperatures, group)
     for file, label, data in tables:
         for temperature, role in zip(shown, ordinal_roles(len(shown))):
             rows = data[np.isclose(data[:, 0], temperature)]
-            name = '%g K' % temperature + (' · %s' % label if len(ref.files) > 1 else '')
+            name = '%g %s' % (temperature, group[1]) + (
+                ' · %s' % label if len(ref.files) > 1 else ''
+            )
             dataset.series.append(
                 Series(name, rows[:, 1], rows[:, 2], role=role, meta={'file': file})
             )

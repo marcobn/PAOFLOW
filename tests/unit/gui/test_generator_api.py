@@ -34,6 +34,7 @@ def test_workflows_listed(client):
         'ep_model',
         'sscha',
         'pyskeaf',
+        'landauer',
         'qe_input',
         'basis',
     ]
