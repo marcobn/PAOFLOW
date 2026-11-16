@@ -409,6 +409,77 @@ def bare_local_perturbation(
     return np.fft.ifftn(box, axes=(1, 2, 3)) * int(np.prod(fft_grid))
 
 
+def projector_q_table(
+    upf,
+    nb: int,
+    beta: NDArray[np.float64],
+    l: int,
+    q: NDArray[np.float64],
+    r: NDArray[np.float64],
+    rab: NDArray[np.float64],
+    kkbeta: int,
+    pref: float,
+) -> NDArray[np.float64]:
+    r"""Radial table ``beta_l(q)`` of one projector on the interpolation grid (QE ``init_us_1``).
+
+    Parameters
+    ----------
+    upf : UPF or PotcarDataset
+        The dataset of the species.
+    nb : int
+        Projector index within the dataset.
+    beta : ndarray ``(mesh,)``
+        ``r beta(r)`` on the radial mesh.
+    l : int
+        Angular momentum.
+    q : ndarray ``(nqx,)``
+        Interpolation grid (bohr^-1).
+    r, rab : ndarray ``(mesh,)``
+        Radial mesh (bohr) and ``dr/di``.
+    kkbeta : int
+        Number of mesh points of the projector support.
+    pref : float
+        ``4 pi / sqrt(omega)``.
+
+    Returns
+    -------
+    ndarray ``(nqx,)``
+        :math:`\frac{4\pi}{\sqrt\Omega}\int_0^{r_{kkbeta}} r^2 \beta(r) j_l(qr)\, dr`, Simpson
+        integration on the mesh as QE's ``beta_mod``.
+
+    Notes
+    -----
+    A VASP dataset (:class:`~PAOFLOW.inputs.read_potcar.PotcarDataset`) stores the projector
+    VASP applies to the plane waves as a reciprocal-space table ``projector_q_tables[nb]``,
+    :math:`P(q) = 4\pi\int \tilde p(r) j_l(qr) r^2 dr`; that table is interpolated (cubic spline,
+    zero beyond its last point) and divided by :math:`\sqrt\Omega` instead, so that the
+    augmented metric of the projections is the one of the WAVECAR bands.
+    """
+    tables = getattr(upf, 'projector_q_tables', None)
+    if tables is not None:
+        from scipy.interpolate import CubicSpline
+
+        q_table, values = tables[nb]
+        if q[-1] > q_table[-1]:
+            import warnings
+
+            warnings.warn(
+                '%s: the projector table ends at %.2f bohr^-1 but |k+G| reaches %.2f; the '
+                'projector is zero beyond the table'
+                % (getattr(upf, 'title', 'dataset'), q_table[-1], q[-1]),
+                RuntimeWarning,
+                stacklevel=3,
+            )
+        out = np.zeros(q.size)
+        inside = q <= q_table[-1]
+        out[inside] = CubicSpline(q_table, values)(q[inside]) * (pref / FPI)
+        return out
+    rr = r[:kkbeta]
+    bes = spherical_jn(l, q[:, None] * rr[None, :])  # (nqx, kkbeta)
+    aux = beta[None, :kkbeta] * bes * rr[None, :]
+    return np.array([qe_simpson(a, rab[:kkbeta]) for a in aux]) * pref
+
+
 class KleinmanBylanderProjectors:
     """Kleinman-Bylander projectors ``beta_i(k+G)`` and ``D_ij`` (Ry) of all atoms (QE ``init_us_2``).
 
@@ -496,10 +567,7 @@ class KleinmanBylanderProjectors:
             tab = np.zeros((len(proj['betas']), nqx))
             q = np.arange(nqx) * self.dq
             for nb, (beta, l) in enumerate(zip(proj['betas'], proj['lll'])):
-                rr = r[:kkbeta]
-                bes = spherical_jn(l, q[:, None] * rr[None, :])  # (nqx, kkbeta)
-                aux = beta[None, :kkbeta] * bes * rr[None, :]
-                tab[nb] = np.array([qe_simpson(a, rab[:kkbeta]) for a in aux]) * pref
+                tab[nb] = projector_q_table(upf, nb, beta, l, q, r, rab, kkbeta, pref)
             self.tables[name] = tab
             self.lll[name] = list(proj['lll'])
             self.dion[name] = np.asarray(proj['dion_ry'], dtype=float)

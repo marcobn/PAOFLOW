@@ -111,6 +111,11 @@ not a validation of a velocity operator.
   Δp double counted (exact plane-wave ε₂ of Si: dipoles 0.99–1.01, dipoles + Δp 0.87).
 - The Hubbard term of eACBN0 electrons is inside H(R), so i[H, τ + d] contains its velocity
   commutator; nothing else is needed.
+- VASP input (November 2026): `build_projector_augmentation` reads the partial waves, projectors
+  and charges of the PAW datasets of the POTCAR through `inputs/pseudopotentials.py` (the
+  real-space projectors are the inverse transforms of the reciprocal tables, re-biorthogonalised to
+  the pseudo partial waves, see `internal-basis.md`), so the PAW augmentation of the dipoles applies
+  to VASP runs as to QE PAW runs; not validated against a reference yet.
 
 ## References
 
