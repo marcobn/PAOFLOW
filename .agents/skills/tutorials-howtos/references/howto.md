@@ -21,7 +21,7 @@ Leave out any physics background beyond what is needed to choose the flags, and 
 
 ## Figures and output
 
-A how-to's code is not executed by the docs build. Run it as a script (the base example with the change applied, or the page's own code blocks) before publishing, and paste the relevant output as a fenced `text` block, trimmed to the lines the page discusses. Figures are PNGs from that run in `docs/_static/images/howtos/<task>/`, made with the palette in SKILL.md. The plotting script is not kept; the text after each figure names the run and the settings it was made from (see "Figures" in SKILL.md).
+A how-to's code is not executed by the docs build. Run it as a script (the base example with the change applied, or the page's own code blocks) before publishing, and paste the relevant output as a fenced `text` block, trimmed to the lines the page discusses. Figures are PNGs from that run in `docs/_static/images/howtos/<task>/`, made with the palette in SKILL.md. A how-to is short, so each figure has to earn its place: use one where it replaces a paragraph the reader would otherwise have to picture (the geometry of a setting, the range a flag acts on, a before-and-after comparison; see "Where a picture carries the explanation" in SKILL.md). The plotting script is not kept; the text after each figure names the run and the settings it was made from (see "Figures" in SKILL.md).
 
 ## Registration
 

@@ -10,6 +10,8 @@ How-Tos assume you have already worked through [Tutorial 01](../tutorial01.ipynb
 - [Agentic analysis of quantum oscillations (`PAOFLOW.agentic.qo_analysis`)](qo_analysis.md)
 - [How to plot PAOFLOW output with GPAO](plotting.md)
 - [How to run PAOFLOW on a tight-binding model](tight-binding-model.md)
+- [How to unfold supercell bands onto the primitive Brillouin zone](band-unfolding.md)
+- [How to compute the band structure of twisted bilayer graphene](twisted-bilayer.md)
 
 ```{toctree}
 :hidden:
@@ -19,4 +21,6 @@ sparse-workflow
 qo_analysis
 plotting
 tight-binding-model
+band-unfolding
+twisted-bilayer
 ```

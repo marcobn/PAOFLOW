@@ -53,13 +53,8 @@ ACBN0 examples: ./acbn0_examples/
 - ACBN0 / eACBN0 Hubbard U and V in MgO, ZnO, MnO (antiferromagnetic) and others, with the
   internal projections (no projwfc.x).
 
-Tight-binding models: ./TBmodel_examples/
-
-- Analytical tight-binding model Hamiltonians (Kane-Mele, graphene, cubium, Slater-Koster)
-
-Band unfolding: ./unfold_examples/
-
-- Supercell band structures unfolded to the primitive cell (DFT-PAO and tight-binding)
+Tight-binding models and band unfolding: no folder; see the how-tos
+docs/tutorials/howtos/tight-binding-model.md and docs/tutorials/howtos/band-unfolding.md
 
 Quantum transport (Landauer-Buttiker): ./transport_examples/
 

@@ -26,10 +26,10 @@ When a request fits neither type (a long derivation, a design note), say so: der
 1. **Read before writing.** Read the base example, if the page has one (`examples/.../main.py`, inputs, README), the PAOFLOW methods the page calls and their docstrings, and the existing pages that already cover nearby concepts. You need the code to know what is computed, and the neighbouring pages to know what is already explained (see "Say it once").
 2. **Find the equation the code evaluates** for each step that gets an equation. Write it down from the source, signs, factors, unit conversions and normalisations included. If it differs from the textbook form, the page shows what the code does and you report the discrepancy to the user. Never write the textbook version silently, and never change the code to match the page.
 3. **Run the code** (see "Running the code"). Every number, table and figure on the page comes from that run.
-4. **Write the page** from the template, in the style below.
+4. **Plan the figures, then write the page** from the template, in the style below. Decide first what the reader must see at each step and draw it (see "Where a picture carries the explanation"); the text then says what the figure cannot. When the draft is done, read it paragraph by paragraph and ask whether a figure would carry that paragraph better.
 5. **Register it**: a tutorial gets a grid card plus a toctree entry, a how-to a list entry (a link with its title) plus a toctree entry (see the templates).
 6. **Run the checks** at the end of this file and fix what they report. They are a floor, not the whole review.
-7. **Report** briefly: what you wrote, every place where code and textbook physics disagree, every number or reference you could not confirm, and every cell left for the user to run, and every concept whose home page or internals page is missing (see "Say it once" and "Building the explanation").
+7. **Report** briefly: what you wrote, every place where code and textbook physics disagree, every number or reference you could not confirm, every cell left for the user to run, every concept whose home page or internals page is missing (see "Say it once" and "Building the explanation"), and every place where a figure would help but you did not make one, with the reason (no data from the run, a heavy run still pending).
 
 ## Running the code
 
@@ -59,7 +59,7 @@ The page is read top to bottom by someone who has not seen the code. Three thing
 
 **Constraints on the order of calls** are shown as code, with the call in its place in the script and a short comment, instead of a sentence listing what must come before and after.
 
-**New concepts.** A concept the page's workflow depends on gets a short paragraph the first time it appears: what happens, in which order, and how it differs from what the reader already knows (usually the dense pipeline of Tutorial 01). A concrete example or a schematic figure (see "Figures") does more than an abstract sentence. A method that behaves differently from its usual role, such as a call that computes nothing or a step that runs later than where it is written, is explained by why it behaves so and what that changes in the script. Every method, option and mechanism named anywhere on the page, the troubleshooting table included, is introduced in the body first.
+**New concepts.** A concept the page's workflow depends on gets a short paragraph the first time it appears: what happens, in which order, and how it differs from what the reader already knows (usually the dense pipeline of Tutorial 01). A concrete example or a schematic figure (see "Where a picture carries the explanation") does more than an abstract sentence. A method that behaves differently from its usual role, such as a call that computes nothing or a step that runs later than where it is written, is explained by why it behaves so and what that changes in the script. Every method, option and mechanism named anywhere on the page, the troubleshooting table included, is introduced in the body first.
 
 **Reasons and consequences in the reader's terms.** Give the reason for a setting and the consequence of a condition in terms of the calculation: run time, memory, the system size at which it fails, which results change and by how much, whether output files stay comparable between runs. Steps of the implementation ("the probe is skipped", "the margin is not added") are not reasons. "A pass that contains a Hall property solves the full spectrum" tells the reader nothing until it continues: "so each k-point needs a full $n_\mathrm{awf} \times n_\mathrm{awf}$ diagonalisation, and above `dense_n_max` orbitals the run stops with an error".
 
@@ -122,6 +122,22 @@ Avoiding jargon is not the same as simplifying the physics. Do not explain what 
 
 ## Figures
 
+### Where a picture carries the explanation
+
+A well-defined picture is worth a thousand words. A reader takes in a supercell, a Brillouin zone or an energy window at a glance, where the same content in prose is a paragraph they must rebuild in their head, and often rebuild wrongly. Treat figures as part of the explanation, not as decoration of the results: wherever the reader has to picture something to follow the text, show it. These are the places where a figure usually does better than prose:
+
+- Geometry in real space: cells and supercells, neighbour shells and cutoff radii, atom mappings, stacking and twist, slabs and interfaces.
+- Reciprocal space: Brillouin zones, high-symmetry paths, k-meshes, the folding of one zone into another.
+- Ranges on an energy or frequency axis: energy windows, smearing widths, projectability cutoffs, the bands a setting keeps or drops.
+- A paragraph of numbers read off a result (splittings, shifts, weights, gaps). Show a zoom of the region with the numbers annotated, and keep in the text only the one or two that carry the conclusion.
+- A comparison of two methods, two parameter values, or a run before and after a change: overlay them in one panel, in the colours used for the same series elsewhere.
+- The dependence of a result on a parameter (convergence, cost, error): a curve, not a table, unless the reader needs to look up exact values.
+- An order of steps or a flow of data that differs from Tutorial 01: a small diagram.
+
+A well-defined figure makes one point. It shows the quantity the text discusses, in the range where the point is visible (zoom in instead of making the reader search), with labelled axes and units, and with every colour, line style and marker explained in the legend or in the sentences after it. Draw it from the page's run, the actual cells, bands and windows of the system, rather than from an idealised sketch, wherever the concept has data behind it. A figure that needs a long paragraph to decode is not yet well defined: split it into panels, zoom it or annotate it. Figures that repeat what a neighbouring figure shows stay out.
+
+### Rules for every figure
+
 - Plot with GPAO (`from PAOFLOW import GPAO`) whenever it has a function for the quantity: bands, DOS and PDOS, conductivity, Seebeck coefficient, Berry curvature, Hall conductivities, dielectric and optical spectra, phonons and the electron–phonon outputs. The reader learns the plotting calls they will use on their own runs, and the parsing of PAOFLOW's output files stays in one place. Pass the palette below through the `col`/`cols` arguments, because the GPAO defaults are not in it. Write matplotlib code only for a quantity GPAO has no function for, and when a GPAO function lacks something the figure needs (an axis label, a color argument), fix it in `GPAO.py` instead of rewriting the plot by hand.
 - Colors: Deep Blue `#004488`, Vermillion `#D55E00` and Yellow-Amber `#FFC20A` first, then Okabe–Ito `#009E73`, `#56B4E9`, `#CC79A7`, `#000000`. Use `#8A6800` for amber text and spines. One color per physical series, kept the same across all panels and pages (for example, the PAO bands are always `#004488`, and DFT reference points are always `#D55E00`).
 - Axis labels carry the quantity and the unit: `$E - E_F$ (eV)`, `$\sigma_{xx}$ ($\Omega^{-1}\,\mathrm{m}^{-1}$)`. State the energy zero in the caption sentence that follows the figure.
@@ -129,7 +145,6 @@ Avoiding jargon is not the same as simplifying the physics. Do not explain what 
 - In how-tos, figures are PNGs in `docs/_static/images/howtos/<task>/`, produced by a script you ran, and embedded with `![alt text describing the physics](../../_static/images/howtos/<task>/<name>.png)`. Alt text states what the figure shows ("Si bands along L–Γ–X, PAO vs DFT").
 - After the figure, a few sentences tell the reader what to see in it, with numbers.
 - Plotting scripts are not kept in the repository. Instead, the sentences after a figure name the run it was made from: the dataset, the options that shape it (truncation, energy ranges, windows, k-mesh) and, where it is not obvious, the output file or log line each plotted quantity comes from. A later developer can then redraw the figure when the code changes, and the reader knows which calculation it shows.
-- A concept that is geometric or spatial (neighbour shells and a cutoff radius, an energy window on a band structure, a supercell built by doubling) gets a schematic figure where the prose would otherwise carry it alone. Draw it from real data where possible (the actual shells of the base example, its actual bands), with a script you ran and the palette above.
 
 ## Notation
 
