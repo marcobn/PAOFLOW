@@ -73,6 +73,7 @@ position-dipoles
 kubo-bastin
 scattering-channels
 landauer-3d-and-hall
+magnetic-fields
 negf-finite-bias-plan
 negf-finite-bias
 negf-3d-electrostatics-plan

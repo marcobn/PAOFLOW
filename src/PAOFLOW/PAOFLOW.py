@@ -83,7 +83,13 @@ class PAOFLOW:
         Build the real-space Hamiltonian ``H(R)`` (stored as ``HRs``) and the
         k-space Hamiltonian ``H(k)`` (stored as ``Hks``).
     add_external_fields(Efield, Bfield, HubbardU)
-        Apply electric field, magnetic field, or Hubbard-U corrections to ``HRs``.
+        Apply electric field, Zeeman (exchange-like, eV), or Hubbard-U corrections to ``HRs``.
+    spinor_basis()
+        Rewrite a spin-degenerate or collinear ``HRs`` in block-ordered spinors.
+    magnetic_field(field, spin, orbital, g_s, orbital_angular_momentum)
+        Uniform field (T) on site: the spin and atomic orbital Zeeman terms mu_B (L + g_s S).B.
+    peierls_field(field, flux_quanta, plane)
+        Uniform field coupled to the hoppings (Peierls phases, Landau gauge).
     write_Hamiltonian(fname)
         Dump ``HRs`` in the Z2Pack format.
 
@@ -137,7 +143,11 @@ class PAOFLOW:
     ----------------------------------------
     topology(eff_mass, Berry, spin_Hall, spin_orbit, spol, ipol, jpol)
         Berry curvature, effective mass, and spin Berry curvature along the
-        k-path, including Z2 invariant support.
+        k-path (the Pfaffian Z2 it writes is legacy: use Z2Pack or berry_phase flows).
+    orbital_moment(degeneracy_tol)
+        Orbital magnetic moment m_n(k) of the Bloch states on the grid (mu_B).
+    orbital_magnetization(emin, emax, ne, temperature, degeneracy_tol, fname)
+        Orbital magnetization per cell against the chemical potential (modern theory).
     berry_phase(kspace_method, berry_path, high_sym_points, …)
         Berry/Zak phase via the discretized product formula (Resta 1994).
     anomalous_Hall(do_ac, emin, emax, fermi_up, fermi_dw, ne, delta, a_tensor)
@@ -975,31 +985,51 @@ class PAOFLOW:
         Add External Fields and Corrections to the Hamiltonian 'HRs'
 
         Arguments:
-            Efield (ndarray): 1D array of Efield values
-            Bfield (ndarray): 1D array of Bfield values
-            HubbardU (ndarray): 1D array of Hubbard Correctional values
+            Efield (ndarray): uniform electric field (V/A); each orbital is shifted by -E.tau at
+                its own centre
+            Bfield (ndarray): Zeeman energy (eV): adds -B.S on site, lowering the spin parallel to
+                B (an exchange field; a physical field B_T is -g mu_B B_T: use magnetic_field for
+                tesla and the orbital term). Needs a spinor basis (fully relativistic, adhoc
+                spin-orbit, spinful models, or spinor_basis()); the spin operator is built if
+                missing; a collinear run (nspin = 2) takes B along z only
+            HubbardU (ndarray): Hubbard corrections, -U_n / 2 on each orbital (eV)
 
         Returns:
             None
 
+        Each call applies only the fields passed to it (before 16 Nov 2026 a later call
+        re-applied every field stored by earlier ones); the arrays 'Efield', 'Bfield' and
+        'HubbardU' hold the totals applied so far. Call it before interpolated_hamiltonian, on
+        'HRs'.
         """
         arry, attr = self.data_controller.data_dicts()
 
-        if any(v != 0.0 for v in Efield):
-            arry['Efield'] = np.array(Efield)
-        if any(v != 0.0 for v in Bfield):
-            arry['Bfield'] = np.array(Bfield)
-        if any(v != 0.0 for v in HubbardU):
-            arry['HubbardU'] = np.array(HubbardU)
-
-        Efield, Bfield, HubbardU = arry['Efield'], arry['Bfield'], arry['HubbardU']
+        efield = np.array(Efield, dtype=float) if any(v != 0.0 for v in Efield) else np.zeros(3)
+        bfield = np.array(Bfield, dtype=float) if any(v != 0.0 for v in Bfield) else np.zeros(3)
+        hubbard = np.array(HubbardU, dtype=float) if any(v != 0.0 for v in HubbardU) else None
 
         try:
-            # Add external fields or non scf ACBN0 correction
-            if Efield.any() != 0.0 or Bfield.any() != 0.0 or HubbardU.any() != 0.0:
+            if efield.any() or bfield.any() or hubbard is not None:
                 from .hamiltonian.add_ext_field import add_ext_field
 
-                add_ext_field(self.data_controller)
+                if bfield.any() and arry['HRs'].shape[-1] == 1 and 'Sj' not in arry:
+                    if not attr.get('dftSO', False):
+                        raise ValueError(
+                            'Bfield needs a spinor basis: this run is spin-degenerate (call '
+                            'spinor_basis() first)'
+                        )
+                    self.spin_operator(adhoc_SO=attr.get('adhoc_SO', False))
+                add_ext_field(
+                    self.data_controller,
+                    efield=efield,
+                    bfield=bfield,
+                    hubbard_u=np.zeros(arry['HRs'].shape[0]) if hubbard is None else hubbard,
+                )
+                arry['Efield'] = np.asarray(arry['Efield'], dtype=float) + efield
+                arry['Bfield'] = np.asarray(arry['Bfield'], dtype=float) + bfield
+                if hubbard is not None:
+                    previous = np.asarray(arry['HubbardU'], dtype=float)
+                    arry['HubbardU'] = hubbard if not previous.any() else previous + hubbard
                 if self.rank == 0 and attr['verbose']:
                     print('External Fields Added')
         except Exception as e:
@@ -1008,6 +1038,267 @@ class PAOFLOW:
                 raise e
 
         self.comm.Barrier()
+
+    def spinor_basis(self):
+        """
+        Rewrite the Hamiltonian in block-ordered spinors (all orbitals spin up, then spin down)
+
+        A spin-degenerate run (nspin = 1 without spin-orbit coupling) becomes diag(H, H), a
+        collinear one (nspin = 2) diag(H_up, H_dn), with nspin = 1. Every band then holds one
+        electron, and magnetic fields (magnetic_field, add_external_fields(Bfield=...)) can point
+        in any direction. Sj is set to sigma/2 x 1; Dnm, Hks and Lj are doubled. Call it on
+        'HRs', before interpolated_hamiltonian.
+
+        Arguments:
+            None
+
+        Returns:
+            None
+        """
+        from .hamiltonian.magnetic_field import spinor_basis
+
+        arry, attr = self.data_controller.data_dicts()
+        try:
+            if isinstance(arry.get('shells'), dict) and not attr.get('dftSO', False):
+                # orbital labels of the scalar basis (orb_atom), for orbital_operator afterwards
+                self.data_controller.build_arrays_adhoc_soc()
+            spinor_basis(self.data_controller)
+        except Exception as e:
+            self.report_exception('spinor_basis')
+            if self.data_controller.data_attributes['abort_on_exception']:
+                raise e
+        self.report_module_time('Spinor basis')
+
+    def magnetic_field(
+        self,
+        field,
+        spin=True,
+        orbital=True,
+        g_s=None,
+        orbital_angular_momentum=None,
+    ):
+        """
+        Add a uniform magnetic field (tesla) on site: mu_B (L + g_s S) . B
+
+        The spin and the atomic orbital Zeeman terms, with the physical sign (the magnetic moment
+        -mu_B (L + g_s S) lines up with B). L is the orbital angular momentum of every PAO shell
+        (orbital_operator: fully relativistic and adhoc spin-orbit runs, and scalar runs); the
+        coupling of the itinerant motion to the vector potential is peierls_field, the orbital
+        moment of the Bloch states orbital_moment. A spin-degenerate run is first rewritten in
+        spinors (spinor_basis); a collinear run (nspin = 2) takes B along z only. Call it on
+        'HRs', before interpolated_hamiltonian; each call adds its field, and the array
+        'magnetic_field' holds the total (T).
+
+        Arguments:
+            field (array_like): Cartesian field (T), shape (3,)
+            spin (bool): include g_s mu_B S . B
+            orbital (bool): include mu_B L . B
+            g_s (float): spin g-factor (default: the free-electron 2.00231930436)
+            orbital_angular_momentum (ndarray): (3, n, n) L matrices (units of hbar) of the current
+                basis (n = nawf) or of one spin block (n = nawf / 2), for bases whose orbitals
+                PAOFLOW cannot label (models)
+
+        Returns:
+            ndarray: the on-site term added (eV), shape (nawf, nawf, nspin)
+        """
+        from .hamiltonian.magnetic_field import ELECTRON_SPIN_G_FACTOR, onsite_magnetic_field
+
+        arry, attr = self.data_controller.data_dicts()
+        field = np.asarray(field, dtype=float).reshape(3)
+        g_s = ELECTRON_SPIN_G_FACTOR if g_s is None else float(g_s)
+        term = None
+        try:
+            nspin = arry['HRs'].shape[-1]
+            if orbital and orbital_angular_momentum is not None:
+                lmat = np.asarray(orbital_angular_momentum, dtype=complex)
+                nawf = arry['HRs'].shape[0]
+                if lmat.shape == (3, nawf // 2, nawf // 2) and attr.get('dftSO', False):
+                    lmat = np.stack([np.kron(np.eye(2), lmat[a]) for a in range(3)])
+                arry['Lj'] = lmat
+            elif orbital and 'Lj' not in arry:
+                self._orbital_operator_for_fields()
+            if nspin == 1 and not attr.get('dftSO', False):
+                self.spinor_basis()
+            elif nspin == 1 and 'Sj' not in arry:
+                self.spin_operator(adhoc_SO=attr.get('adhoc_SO', False))
+            term = onsite_magnetic_field(
+                self.data_controller, field, g_s=g_s, spin=spin, orbital=orbital
+            )
+            arry['magnetic_field'] = (
+                np.asarray(arry.get('magnetic_field', np.zeros(3)), dtype=float) + field
+            )
+        except Exception as e:
+            self.report_exception('magnetic_field')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Magnetic field')
+        return term
+
+    def peierls_field(self, field=None, flux_quanta=None, plane=(0, 1)):
+        """
+        Couple a uniform magnetic field to the hoppings: Peierls phases (orbital motion, vector potential)
+
+        Every hopping <i,0|H|j,R> takes the phase (e/hbar) int A.dl along the straight line between
+        the orbital centres, in the Landau gauge of the plane (a_p, a_q); the field points along the
+        third lattice vector a_r. A periodic cell along a_p must hold an integer number of flux
+        quanta (a magnetic supercell, doubling_Hamiltonian); a ribbon or a flake (open along a_p,
+        cutting_Hamiltonian) takes any field. Together with magnetic_field (spin and atomic orbital
+        Zeeman terms on site) it is the full coupling of the PAO Hamiltonian to B. Call it on 'HRs',
+        before interpolated_hamiltonian; each call adds its flux.
+
+        Arguments:
+            field (float): field along a_r (T), or
+            flux_quanta (float): flux through the cell a_p x a_q in units of h/e
+            plane (tuple of int): the lattice directions (p, q) of the cyclotron orbits
+
+        Returns:
+            float: the flux quanta per cell applied
+        """
+        from .hamiltonian.peierls import flux_quanta_per_cell, peierls_phases
+
+        arry, attr = self.data_controller.data_dicts()
+        flux = None
+        try:
+            if (field is None) == (flux_quanta is None):
+                raise ValueError('give either field (T) or flux_quanta')
+            if flux_quanta is None:
+                flux = flux_quanta_per_cell(field, arry['a_vectors'], attr['alat'], tuple(plane))
+            else:
+                flux = float(flux_quanta)
+            peierls_phases(self.data_controller, flux, tuple(plane))
+            if 'Hks' in arry and np.shape(arry['Hks']) == np.shape(arry['HRs']):
+                arry['Hks'] = np.fft.fftn(arry['HRs'], axes=(2, 3, 4))
+            attr['peierls_flux_quanta'] = attr.get('peierls_flux_quanta', 0.0) + flux
+        except Exception as e:
+            self.report_exception('peierls_field')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Peierls phases')
+        return flux
+
+    def orbital_moment(self, degeneracy_tol=1.0e-6):
+        """
+        Orbital magnetic moment m_n(k) of every Bloch state on the interpolated grid (mu_B)
+
+        m_n = -i (e / 2 hbar) <grad u_n| x (H - e_n) |grad u_n>, from the velocity matrices of
+        gradient_and_momenta (with the Dnm term), for an electron: a state circulating
+        counter-clockwise about z has m_z < 0, and its energy in a field is e_n - m_n . B to first
+        order (the itinerant part of the band g-factor; the atomic part is magnetic_field's L).
+        States closer than degeneracy_tol are left out of each other's sums: inside a degenerate
+        group the per-band values depend on the basis, their sum does not. Call it after pao_eigh
+        and gradient_and_momenta.
+
+        Arguments:
+            degeneracy_tol (float): degeneracy threshold (eV)
+
+        Returns:
+            None: arrays 'orbital_moment' and 'berry_curvature_vector', shape (nk, nbnd, 3, nspin)
+            on the local k-points (mu_B, bohr^2)
+        """
+        from .response.orbital_moment import moment_and_curvature
+
+        arry, attr = self.data_controller.data_dicts()
+        try:
+            energies, momenta = arry['E_k'], arry['pksp']
+            nk, nb, nspin = energies.shape
+            moment = np.zeros((nk, nb, 3, nspin))
+            curvature = np.zeros((nk, nb, 3, nspin))
+            for ispin in range(nspin):
+                for ik in range(nk):
+                    moment[ik, :, :, ispin], curvature[ik, :, :, ispin] = moment_and_curvature(
+                        energies[ik, :, ispin], momenta[ik, :, :nb, :nb, ispin], degeneracy_tol
+                    )
+            arry['orbital_moment'], arry['berry_curvature_vector'] = moment, curvature
+        except Exception as e:
+            self.report_exception('orbital_moment')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Orbital moment')
+
+    def orbital_magnetization(
+        self,
+        emin=-1.0,
+        emax=1.0,
+        ne=201,
+        temperature=0.0,
+        degeneracy_tol=1.0e-6,
+        fname='orbital_magnetization',
+    ):
+        """
+        Orbital magnetization per cell against the chemical potential (modern theory, mu_B)
+
+        M(mu) = (g / N_k) sum_nk f_nk [m_nk + (e / hbar)(mu - e_nk) Omega_nk], g = 2 for
+        spin-degenerate bands, 1 otherwise. In the gap of a Chern insulator dM/dmu = (e/h) C times
+        the cell area (Streda). Call it after pao_eigh and gradient_and_momenta (it calls
+        orbital_moment if needed); writes <fname>.dat (mu, Mx, My, Mz).
+
+        Arguments:
+            emin, emax, ne: the chemical potentials (eV, relative to the Fermi level of 'E_k')
+            temperature (float): electronic temperature (K); 0 gives step occupations
+            degeneracy_tol (float): see orbital_moment
+
+        Returns:
+            tuple: chemical potentials (ne,) and M (ne, 3) in mu_B per cell
+        """
+        from mpi4py import MPI
+
+        from .response.orbital_moment import magnetization_density
+
+        arry, attr = self.data_controller.data_dicts()
+        chemical = np.linspace(emin, emax, ne)
+        total = np.zeros((ne, 3))
+        try:
+            if 'orbital_moment' not in arry:
+                self.orbital_moment(degeneracy_tol)
+            energies = arry['E_k']
+            nk, nb, nspin = energies.shape
+            spin_factor = 2.0 if (nspin == 1 and not attr.get('dftSO', False)) else 1.0
+            kT = 8.617333262e-5 * float(temperature)
+            local = np.zeros((ne, 3))
+            for ispin in range(nspin):
+                for ik in range(nk):
+                    local += magnetization_density(
+                        energies[ik, :, ispin],
+                        arry['orbital_moment'][ik, :, :, ispin],
+                        arry['berry_curvature_vector'][ik, :, :, ispin],
+                        chemical,
+                        kT,
+                    )
+            self.comm.Allreduce(local, total, op=MPI.SUM)
+            total *= spin_factor / self.comm.allreduce(nk, op=MPI.SUM)
+            if self.rank == 0:
+                import os
+
+                np.savetxt(
+                    os.path.join(attr['opath'], fname + '.dat'),
+                    np.column_stack([chemical, total]),
+                    header='mu (eV)   M_x   M_y   M_z (mu_B per cell)',
+                )
+        except Exception as e:
+            self.report_exception('orbital_magnetization')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Orbital magnetization')
+        return chemical, total
+
+    def _orbital_operator_for_fields(self):
+        """Build Lj with orbital_operator when the basis carries the labels it needs."""
+        arry, attr = self.data_controller.data_dicts()
+        fully_relativistic = attr.get('dftSO', False) and not attr.get('adhoc_SO', False)
+        if attr.get('adhoc_SO', False):
+            ready = 'orb_atom' in arry
+        elif fully_relativistic:
+            ready = 'jchia' in arry or isinstance(arry.get('shells'), dict)
+        else:
+            ready = isinstance(arry.get('shells'), dict) and 'atoms' in arry
+        if not ready:
+            raise ValueError(
+                'the orbital angular momentum of this basis is unknown (a model?): pass '
+                'orbital=False, or orbital_angular_momentum=(Lx, Ly, Lz)'
+            )
+        self.orbital_operator(adhoc_SO=attr.get('adhoc_SO', False))
+        if 'Lj' not in arry:
+            raise ValueError('orbital_operator did not build Lj for this basis')
 
     def write_Hamiltonian(self, fname='hamiltonian.dat'):
         """

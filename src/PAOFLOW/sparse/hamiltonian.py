@@ -444,10 +444,10 @@ class SparseHamiltonian:
         inside the cutoff.
 
         ``rcut`` **must** be applied here, at the base cell:
-        ``doubling.double_axis`` zeroes ``dnm`` on cross-replica blocks
-        (replicating the dense ``block_diag(Dnm, Dnm)`` semantics), after
-        which the true bond vector is no longer recoverable from the
-        container.  Note also that ``rcut`` is a physically *different*
+        ``doubling.double_axis`` only replicates the base bonds, so the cutoff
+        of the doubled cell is that of the base cell (until 16 Nov 2026 it
+        also zeroed ``dnm`` on cross-replica blocks, as the dense kernel did,
+        which made the true bond vector unrecoverable from the container).  Note also that ``rcut`` is a physically *different*
         truncation axis from ``threshold`` (bond length vs matrix-element
         magnitude) and the two interact; the default is ``None``.
         """

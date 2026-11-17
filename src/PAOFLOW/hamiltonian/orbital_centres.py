@@ -27,7 +27,7 @@ def orbital_centres_bohr(arrays: dict, attributes: dict) -> NDArray[np.float64]:
     ----------
     arrays : dict
         DataController arrays: ``HRs`` (its first dimension is the number of orbitals ``nawf``),
-        and ``basis`` (the projection basis, centres in bohr) or ``tau`` (atomic or orbital
+        ``orbital_centres`` (bohr) if present, and ``basis`` (the projection basis, centres in bohr) or ``tau`` (atomic or orbital
         positions), with ``shells`` (Slater-Koster models) or ``naw`` (orbitals per atom).
     attributes : dict
         DataController attributes: ``alat`` (bohr) and ``tau_units`` (``'alat'`` for the model
@@ -45,7 +45,8 @@ def orbital_centres_bohr(arrays: dict, attributes: dict) -> NDArray[np.float64]:
 
     Notes
     -----
-    The sources, in order: the projection ``basis`` (one entry per orbital); ``tau`` with one row
+    The sources, in order: ``orbital_centres`` (bohr, written by ``doubling_Hamiltonian`` and
+    ``spinor_basis``); the projection ``basis`` (one entry per orbital); ``tau`` with one row
     per orbital (the hopping-list and PythTB models); ``tau`` per atom expanded with the orbital
     counts of the Slater-Koster ``shells`` or of ``naw``, when they add up; ``tau`` per atom
     with ``nawf // natoms`` consecutive orbitals each (the former rule of ``add_ext_field``). A
@@ -62,6 +63,10 @@ def orbital_centres_bohr(arrays: dict, attributes: dict) -> NDArray[np.float64]:
         if 2 * per_orbital.shape[0] == nawf:
             return np.vstack([per_orbital, per_orbital])
         return None
+
+    stored = arrays.get('orbital_centres')
+    if stored is not None and np.shape(stored) == (nawf, 3):
+        return np.asarray(stored, dtype=float)
 
     basis = arrays.get('basis')
     if basis is not None:

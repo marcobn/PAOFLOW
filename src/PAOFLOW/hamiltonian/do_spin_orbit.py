@@ -237,6 +237,34 @@ def _shell_soc_block(theta, phi, l):
     return H
 
 
+def _placed_shell_block(theta: float, phi: float, l: int, start: int, norb: int) -> np.ndarray:
+    """L.S kernel of one shell (``_shell_soc_block``) placed in a ``(2*norb, 2*norb)`` atom matrix.
+
+    Parameters
+    ----------
+    theta, phi : float
+        Quantisation-axis angles (radians).
+    l : int
+        Angular momentum of the shell.
+    start : int
+        Index of the first orbital of the shell in the atom's spin-up block.
+    norb : int
+        Orbitals per atom (spin-up block size).
+
+    Returns
+    -------
+    np.ndarray, shape ``(2*norb, 2*norb)``, complex
+        The kernel, block-ordered spinors (spin up ``0..norb-1``, spin down ``norb..2*norb-1``).
+    """
+    n = 2 * l + 1
+    block = _shell_soc_block(theta, phi, l)
+    HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
+    up, dn = slice(start, start + n), slice(norb + start, norb + start + n)
+    HR_soc[up, up], HR_soc[dn, dn] = block[:n, :n], block[n:, n:]
+    HR_soc[up, dn], HR_soc[dn, up] = block[:n, n:], block[n:, :n]
+    return HR_soc
+
+
 def build_generic_soc(theta, phi, shells_list, norb, active_shells=None):
     """Build per-l SOC contributions for an arbitrary shells layout.
 
@@ -491,36 +519,9 @@ def soc_p_ps(theta, phi, norb):
         p-state block occupies indices 0–2 (up) and ``norb``–``norb+2``
         (down).
     """
-    HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
-
-    sTheta, sPhi = np.sin(theta), np.sin(phi)
-    cTheta, cPhi = np.cos(theta), np.cos(phi)
-
-    # Spin Up - Spin Up  part of the p-satets Hamiltonian
-    HR_soc[0, 1] = -0.5j * sTheta * sPhi
-    HR_soc[0, 2] = 0.5j * sTheta * cPhi
-    HR_soc[1, 2] = -0.5j * cTheta
-    HR_soc[1, 0] = np.conj(HR_soc[0, 1])
-    HR_soc[2, 0] = np.conj(HR_soc[0, 2])
-    HR_soc[2, 1] = np.conj(HR_soc[1, 2])
-    # Spin Down - Spin Down  part of the p-satets Hamiltonian
-    HR_soc[5:8, 5:8] = -HR_soc[1:4, 1:4]
-    # Spin Up - Spin Down  part of the p-satets Hamiltonian
-    HR_soc[0, 5] = -0.5 * complex(cPhi, cTheta * sPhi)
-    HR_soc[0, 6] = -0.5 * complex(sPhi, -cTheta * cPhi)
-    HR_soc[1, 6] = 0.5j * sTheta
-    HR_soc[1, 4] = -HR_soc[0, 5]
-    HR_soc[2, 4] = -HR_soc[0, 6]
-    HR_soc[2, 5] = -HR_soc[1, 6]
-    # Spin Down - Spin Up  part of the p-satets Hamiltonian
-    HR_soc[5, 0] = np.conj(HR_soc[0, 5])
-    HR_soc[6, 0] = np.conj(HR_soc[0, 6])
-    HR_soc[4, 1] = np.conj(HR_soc[1, 4])
-    HR_soc[6, 1] = np.conj(HR_soc[1, 6])
-    HR_soc[4, 2] = np.conj(HR_soc[2, 4])
-    HR_soc[5, 2] = np.conj(HR_soc[2, 5])
-
-    return HR_soc
+    # 16 Nov 2026: the hand-written matrix was L.S only for theta = 0 (wrong off the z axis);
+    # the p shell sits at orbitals 0..2 of the layout (p, s).
+    return _placed_shell_block(theta, phi, 1, 0, norb)
 
 
 ################## END PSEUDOPOTENTIAL PS ##############################
@@ -648,67 +649,9 @@ def soc_d_spd(theta, phi, norb):
         d-channel spin-orbit coupling matrix in the SPD orbital ordering
         (d-states occupy indices 4–8).
     """
-    HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
-
-    sTheta, sPhi = np.sin(theta), np.sin(phi)
-    cTheta, cPhi = np.cos(theta), np.cos(phi)
-
-    s3 = np.sqrt(3.0)
-
-    # Spin Up - Spin Up  part of the d-satets Hamiltonian
-    HR_soc[4, 5] = -s3 * 0.5j * sTheta * sPhi
-    HR_soc[4, 6] = s3 * 0.5j * sTheta * cPhi
-    HR_soc[5, 6] = -0.5j * cTheta
-    HR_soc[5, 7] = -0.5j * sTheta * sPhi
-    HR_soc[5, 8] = 0.5j * sTheta * cPhi
-    HR_soc[6, 7] = -0.5j * sTheta * cPhi
-    HR_soc[6, 8] = -0.5j * sTheta * sPhi
-    HR_soc[7, 8] = -1.0j * cTheta
-    HR_soc[5, 4] = np.conj(HR_soc[4, 5])
-    HR_soc[6, 4] = np.conj(HR_soc[4, 6])
-    HR_soc[6, 5] = np.conj(HR_soc[5, 6])
-    HR_soc[7, 5] = np.conj(HR_soc[5, 7])
-    HR_soc[8, 5] = np.conj(HR_soc[5, 8])
-    HR_soc[7, 6] = np.conj(HR_soc[6, 7])
-    HR_soc[8, 6] = np.conj(HR_soc[6, 8])
-
-    # Spin Down - Spin Down  part of the p-satets Hamiltonian
-    HR_soc[13:18, 13:18] = -HR_soc[4:9, 4:9]
-    # Spin Up - Spin Down  part of the p-satets Hamiltonian
-    HR_soc[4, 14] = -s3 * 0.5 * complex(cPhi, cTheta * sPhi)
-    HR_soc[4, 15] = -s3 * 0.5 * complex(sPhi, -cTheta * cPhi)
-    HR_soc[5, 15] = 0.5j * sTheta
-    HR_soc[5, 16] = -0.5 * complex(cPhi, cTheta * sPhi)
-    HR_soc[5, 17] = -0.5 * complex(sPhi, -cTheta * cPhi)
-    HR_soc[6, 16] = 0.5 * complex(sPhi, -cTheta * cPhi)
-    HR_soc[6, 17] = -0.5 * complex(cPhi, cTheta * sPhi)
-    HR_soc[7, 17] = 1j * sTheta
-    HR_soc[5, 13] = -HR_soc[4, 14]
-    HR_soc[6, 13] = -HR_soc[4, 15]
-    HR_soc[6, 14] = -HR_soc[5, 15]
-    HR_soc[7, 14] = -HR_soc[5, 16]
-    HR_soc[8, 14] = -HR_soc[5, 17]
-    HR_soc[7, 15] = -HR_soc[6, 16]
-    HR_soc[8, 15] = -HR_soc[6, 17]
-    HR_soc[8, 16] = -HR_soc[7, 17]
-    # Spin Down - Spin Up  part of the p-satets Hamiltonian
-    HR_soc[14, 4] = np.conj(HR_soc[4, 14])
-    HR_soc[15, 4] = np.conj(HR_soc[4, 15])
-    HR_soc[15, 5] = np.conj(HR_soc[5, 15])
-    HR_soc[16, 5] = np.conj(HR_soc[5, 16])
-    HR_soc[17, 5] = np.conj(HR_soc[5, 17])
-    HR_soc[16, 6] = np.conj(HR_soc[6, 16])
-    HR_soc[17, 6] = np.conj(HR_soc[6, 17])
-    HR_soc[17, 7] = np.conj(HR_soc[7, 17])
-    HR_soc[13, 5] = np.conj(HR_soc[5, 13])
-    HR_soc[13, 6] = np.conj(HR_soc[6, 13])
-    HR_soc[14, 6] = np.conj(HR_soc[6, 14])
-    HR_soc[14, 7] = np.conj(HR_soc[7, 14])
-    HR_soc[14, 8] = np.conj(HR_soc[8, 14])
-    HR_soc[15, 7] = np.conj(HR_soc[7, 15])
-    HR_soc[15, 8] = np.conj(HR_soc[8, 15])
-
-    return HR_soc
+    # 16 Nov 2026: the hand-written matrix missed Hermitian partners (non-Hermitian SOC);
+    # the d shell sits at orbitals 4..8 of the layout.
+    return _placed_shell_block(theta, phi, 2, 4, norb)
 
 
 ################## END PSEUDOPOTENTIAL SPD ##############################
@@ -792,69 +735,9 @@ def soc_d_sspd(theta, phi, norb):
     -----
     Orbital layout is hardcoded to the s, s*, p, d basis.
     """
-    # Hardcoded to s,p,d. This must change latter.
-    HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
-
-    sTheta, sPhi = np.sin(theta), np.sin(phi)
-    cTheta, cPhi = np.cos(theta), np.cos(phi)
-
-    s3 = cmath.sqrt(3.0)
-
-    # Spin Up - Spin Up  part of the d-satets Hamiltonian
-    HR_soc[5, 6] = -s3 * 0.5j * sTheta * sPhi
-    HR_soc[5, 7] = s3 * 0.5j * sTheta * cPhi
-    HR_soc[6, 7] = -0.5j * cTheta
-    HR_soc[6, 8] = -0.5j * sTheta * sPhi
-    HR_soc[6, 9] = 0.5j * sTheta * cPhi
-    HR_soc[7, 8] = -0.5j * sTheta * cPhi
-    HR_soc[7, 9] = -0.5j * sTheta * sPhi
-    HR_soc[8, 9] = -1j * cTheta
-    HR_soc[6, 5] = np.conj(HR_soc[5, 6])
-    HR_soc[7, 5] = np.conj(HR_soc[5, 7])
-    HR_soc[7, 6] = np.conj(HR_soc[6, 7])
-    HR_soc[8, 6] = np.conj(HR_soc[6, 8])
-    HR_soc[9, 6] = np.conj(HR_soc[6, 9])
-    HR_soc[8, 7] = np.conj(HR_soc[7, 8])
-    HR_soc[9, 7] = np.conj(HR_soc[7, 9])
-    HR_soc[9, 8] = np.conj(HR_soc[8, 9])
-
-    # Spin Down - Spin Down  part of the p-satets Hamiltonian
-    HR_soc[15:20, 15:20] = -HR_soc[5:10, 5:10]
-    # Spin Up - Spin Down  part of the p-satets Hamiltonian
-    HR_soc[5, 16] = -s3 * 0.5 * complex(cPhi, cTheta * sPhi)
-    HR_soc[5, 17] = -s3 * 0.5 * complex(sPhi, -cTheta * cPhi)
-    HR_soc[6, 17] = 0.5j * sTheta
-    HR_soc[6, 18] = -0.5 * complex(cPhi, cTheta * sPhi)
-    HR_soc[6, 19] = -0.5 * complex(sPhi, -cTheta * cPhi)
-    HR_soc[7, 18] = 0.5 * complex(sPhi, -cTheta * cPhi)
-    HR_soc[7, 19] = -0.5 * complex(cPhi, cTheta * sPhi)
-    HR_soc[8, 19] = 1j * sTheta
-    HR_soc[6, 15] = -HR_soc[5, 16]
-    HR_soc[7, 15] = -HR_soc[5, 17]
-    HR_soc[7, 16] = -HR_soc[6, 17]
-    HR_soc[8, 16] = -HR_soc[6, 18]
-    HR_soc[9, 16] = -HR_soc[6, 19]
-    HR_soc[8, 17] = -HR_soc[7, 18]
-    HR_soc[9, 17] = -HR_soc[7, 19]
-    HR_soc[9, 18] = -HR_soc[8, 19]
-    # Spin Down - Spin Up  part of the p-satets Hamiltonian
-    HR_soc[16, 5] = np.conj(HR_soc[5, 16])
-    HR_soc[17, 5] = np.conj(HR_soc[5, 17])
-    HR_soc[17, 6] = np.conj(HR_soc[6, 17])
-    HR_soc[18, 6] = np.conj(HR_soc[6, 18])
-    HR_soc[19, 6] = np.conj(HR_soc[6, 19])
-    HR_soc[18, 7] = np.conj(HR_soc[7, 18])
-    HR_soc[19, 7] = np.conj(HR_soc[7, 19])
-    HR_soc[19, 8] = np.conj(HR_soc[8, 19])
-    HR_soc[15, 6] = np.conj(HR_soc[6, 15])
-    HR_soc[15, 7] = np.conj(HR_soc[7, 15])
-    HR_soc[16, 7] = np.conj(HR_soc[7, 16])
-    HR_soc[16, 8] = np.conj(HR_soc[8, 16])
-    HR_soc[16, 9] = np.conj(HR_soc[9, 16])
-    HR_soc[17, 8] = np.conj(HR_soc[8, 17])
-    HR_soc[17, 9] = np.conj(HR_soc[9, 17])
-
-    return HR_soc
+    # 16 Nov 2026: the hand-written matrix missed Hermitian partners (non-Hermitian SOC);
+    # the d shell sits at orbitals 5..9 of the layout.
+    return _placed_shell_block(theta, phi, 2, 5, norb)
 
 
 ################## END PSEUDOPOTENTIAL SSPD ##############################
@@ -1039,66 +922,9 @@ def soc_d_ssppd(theta, phi, norb):
     np.ndarray, shape ``(2*norb, 2*norb)``, complex
         d-channel spin-orbit coupling matrix in the SSPPD orbital ordering.
     """
-    HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
-
-    sTheta, sPhi = np.sin(theta), np.sin(phi)
-    cTheta, cPhi = np.cos(theta), np.cos(phi)
-
-    s3 = cmath.sqrt(3.0)
-
-    # Spin Up - Spin Up  part of the d-satets Hamiltonian
-    HR_soc[8, 9] = -s3 * 0.5j * sTheta * sPhi
-    HR_soc[8, 10] = s3 * 0.5j * sTheta * cPhi
-    HR_soc[9, 10] = -0.5j * cTheta
-    HR_soc[9, 11] = -0.5j * sTheta * sPhi
-    HR_soc[9, 12] = 0.5j * sTheta * cPhi
-    HR_soc[10, 11] = -0.5j * sTheta * cPhi
-    HR_soc[10, 12] = -0.5j * sTheta * sPhi
-    HR_soc[11, 12] = -1j * cTheta
-    HR_soc[9, 8] = np.conj(HR_soc[8, 9])
-    HR_soc[10, 8] = np.conj(HR_soc[8, 10])
-    HR_soc[10, 9] = np.conj(HR_soc[9, 10])
-    HR_soc[11, 9] = np.conj(HR_soc[9, 11])
-    HR_soc[12, 9] = np.conj(HR_soc[9, 12])
-    HR_soc[11, 10] = np.conj(HR_soc[10, 11])
-    HR_soc[12, 10] = np.conj(HR_soc[10, 12])
-    # Spin Down - Spin Down  part of the d-satets Hamiltonian
-    HR_soc[21:26, 21:26] = -HR_soc[8:13, 8:13]
-    # Spin Up - Spin Down  part of the d-satets Hamiltonian
-    HR_soc[8, 22] = -s3 * 0.5 * complex(cPhi, cTheta * sPhi)
-    HR_soc[8, 23] = -s3 * 0.5 * complex(sPhi, -cTheta * cPhi)
-    HR_soc[9, 23] = 0.5j * sTheta
-    HR_soc[9, 24] = -0.5 * complex(cPhi, cTheta * sPhi)
-    HR_soc[9, 25] = -0.5 * complex(sPhi, -cTheta * cPhi)
-    HR_soc[10, 24] = 0.5 * complex(sPhi, -cTheta * cPhi)
-    HR_soc[10, 25] = -0.5 * complex(cPhi, cTheta * sPhi)
-    HR_soc[11, 25] = 1j * sTheta
-    HR_soc[9, 21] = -HR_soc[8, 22]
-    HR_soc[10, 21] = -HR_soc[8, 23]
-    HR_soc[10, 22] = -HR_soc[9, 23]
-    HR_soc[11, 22] = -HR_soc[9, 24]
-    HR_soc[12, 22] = -HR_soc[9, 25]
-    HR_soc[11, 23] = -HR_soc[10, 24]
-    HR_soc[12, 23] = -HR_soc[10, 25]
-    HR_soc[12, 24] = -HR_soc[11, 25]
-    # Spin Down - Spin Up  part of the d-satets Hamiltonian
-    HR_soc[22, 8] = np.conj(HR_soc[8, 22])
-    HR_soc[23, 8] = np.conj(HR_soc[8, 23])
-    HR_soc[23, 9] = np.conj(HR_soc[9, 23])
-    HR_soc[24, 9] = np.conj(HR_soc[9, 24])
-    HR_soc[25, 9] = np.conj(HR_soc[9, 25])
-    HR_soc[24, 10] = np.conj(HR_soc[10, 24])
-    HR_soc[25, 10] = np.conj(HR_soc[10, 25])
-    HR_soc[25, 11] = np.conj(HR_soc[11, 25])
-    HR_soc[21, 9] = np.conj(HR_soc[9, 21])
-    HR_soc[21, 10] = np.conj(HR_soc[10, 21])
-    HR_soc[22, 10] = np.conj(HR_soc[10, 22])
-    HR_soc[22, 11] = np.conj(HR_soc[11, 22])
-    HR_soc[22, 12] = np.conj(HR_soc[12, 22])
-    HR_soc[23, 11] = np.conj(HR_soc[11, 23])
-    HR_soc[23, 12] = np.conj(HR_soc[12, 23])
-
-    return HR_soc
+    # 16 Nov 2026: the hand-written matrix missed Hermitian partners (non-Hermitian SOC);
+    # the d shell sits at orbitals 8..12 of the layout.
+    return _placed_shell_block(theta, phi, 2, 8, norb)
 
 
 ################## END PSEUDOPOTENTIAL SSPPD ##############################
