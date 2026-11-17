@@ -74,6 +74,7 @@ kubo-bastin
 scattering-channels
 landauer-3d-and-hall
 magnetic-fields
+spin-response
 negf-finite-bias-plan
 negf-finite-bias
 negf-3d-electrostatics-plan

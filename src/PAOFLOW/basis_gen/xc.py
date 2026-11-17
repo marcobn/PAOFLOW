@@ -116,6 +116,53 @@ def lda_pw92(n):
     return eps, v
 
 
+# PW92 parameters of the spin stiffness (Perdew & Wang, PRB 45, 13244 (1992), Table I): the fit is of
+# -alpha_c(r_s), with alpha_c = d^2 eps_c / d zeta^2 at zeta = 0.
+_PW92_ALPHA = (0.016887, 0.11125, 10.357, 3.6231, 0.88026, 0.49671, 1.0)
+
+
+def _pw92_g(rs, A, a1, b1, b2, b3, b4, p):
+    """The PW92 interpolation G(r_s) (Hartree)."""
+    rs_h = np.sqrt(rs)
+    q1 = 2.0 * A * (b1 * rs_h + b2 * rs + b3 * rs * rs_h + b4 * rs ** (p + 1.0))
+    return -2.0 * A * (1.0 + a1 * rs) * np.log(1.0 + 1.0 / q1)
+
+
+def lsda_spin_kernel(n):
+    r"""Spin kernel of the LSDA, :math:`f_s(n) = \partial^2 (n\varepsilon_{xc})/\partial m^2` at :math:`m = 0`.
+
+    Parameters
+    ----------
+    n : ndarray
+        Electron density (bohr^-3); entries below 1e-30 give zero.
+
+    Returns
+    -------
+    ndarray
+        :math:`f_s = [\tfrac49\varepsilon_x(n) + \alpha_c(n)]/n` (Hartree bohr^3), Slater exchange and
+        the PW92 spin stiffness :math:`\alpha_c`. Negative: exchange favours a moment.
+
+    Notes
+    -----
+    With :math:`\zeta = m/n`, :math:`\varepsilon_x(n,\zeta) = \varepsilon_x(n,0)[(1+\zeta)^{4/3} +
+    (1-\zeta)^{4/3}]/2` has :math:`\partial^2_\zeta\varepsilon_x = \tfrac49\varepsilon_x(n,0)`, and PW92's
+    interpolation has :math:`\partial^2_\zeta\varepsilon_c = \alpha_c`. The exchange-correlation magnetic
+    field of a small magnetization is :math:`(v_\uparrow - v_\downarrow)/2 = f_s\,m` (Gunnarsson, J. Phys.
+    F 6, 587 (1976)).
+    """
+    n = np.asarray(n, dtype=float)
+    kernel = np.zeros_like(n)
+    pos = n > 1e-30
+    if not np.any(pos):
+        return kernel
+    npos = n[pos]
+    rs = np.cbrt(3.0 / (4.0 * np.pi * npos))
+    eps_x, _ = _lda_x(npos)
+    alpha_c = -_pw92_g(rs, *_PW92_ALPHA)
+    kernel[pos] = (4.0 / 9.0 * eps_x + alpha_c) / npos
+    return kernel
+
+
 # ---------------------------------------------------------------------------
 # PBE (spherical, frozen-density)
 # ---------------------------------------------------------------------------

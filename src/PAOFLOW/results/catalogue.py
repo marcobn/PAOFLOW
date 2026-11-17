@@ -396,6 +396,13 @@ KINDS: tuple[Kind, ...] = (
         series=('rest', 'component'),
     ),
     Kind('weyl_points', 'Weyl points', HALL, r'weyl_points\.dat', 'text'),
+    Kind(
+        'spin_susceptibility',
+        'Spin susceptibility',
+        ELECTRONIC,
+        r'spin_susceptibility\.dat',
+        'text',
+    ),
     Kind('z2', 'Z2 invariants', HALL, r'Z2\.dim', 'text'),
     Kind('berry_phase', 'Berry phase', HALL, r'.*berry_phase.*\.dat', 'columns', x=('index', '')),
     Kind(

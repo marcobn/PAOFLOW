@@ -597,6 +597,12 @@ RUN_NEW_SCENARIOS = {
         'Components (letters': 'yx, xy',
         'Spectral broadening': '0.02',
     },
+    # the spin susceptibility (16 November 2026), appended after it
+    'spin_susceptibility': {
+        'Enter a comma': '14',
+        'methods (comma separated': 'bare, stoner, alda',
+        'also look for an ordered moment': 'y',
+    },
 }
 
 #: The Landauer workflow (15 November 2026; no frozen prompts, coverage only).

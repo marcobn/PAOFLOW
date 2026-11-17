@@ -64,8 +64,9 @@ All the Hamiltonian terms act on `HRs`. Call them before `interpolated_hamiltoni
 
 ### What is not included
 
-- **No self-consistent response of the density.** The Zeeman term on a DFT Hamiltonian gives the bare Pauli and Van
-  Vleck response. The exchange-correlation (Stoner) enhancement, a factor 3–4 in Pt or Pd, is missing.
+- **No self-consistent response of the density in `magnetic_field`.** The Zeeman term on a DFT Hamiltonian gives the
+  bare Pauli and Van Vleck response. The exchange-correlation (Stoner) enhancement, a factor 2.5–7 in Pt and Pd, comes
+  from `self_consistent_spin` and `spin_susceptibility`: see [the spin response](spin-response.md).
 - **Interpolation artefact.** The zero-padding interpolation of an even `HRs` grid splits Kramers pairs off the grid
   points by a few meV (5 meV in Pt). That is more than any laboratory Zeeman energy, so use grid points or the
   Wigner–Seitz sums for g-factors.

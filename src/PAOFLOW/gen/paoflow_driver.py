@@ -361,6 +361,10 @@ PROPERTY_MENU = [
     ('emissivity', 'Emissivity (Fresnel/Kirchhoff; implies the optical run)'),
     ('nonlinear', 'Non-linear optics (shift / injection currents, SHG) on the PAO Hamiltonian'),
     ('linear_response', 'Linear response (Kubo): Hall, Edelstein, conductivity, any term'),
+    (
+        'spin_susceptibility',
+        'Spin susceptibility (Pauli, Stoner, LSDA grid) and Stoner instability',
+    ),
 ]
 SPIN_PROPERTIES = {'spin_texture', 'spin_Hall'}
 # Properties that read an explicit (emin, emax) energy window.
@@ -621,6 +625,15 @@ def _nonlinear_run_lines(cfg):
     return lines
 
 
+def _spin_response_parts(cfg):
+    """Constants and run_spin_response() of main.py (:mod:`PAOFLOW.gen.questions.spin_response`)."""
+    from .questions.spin_response import spin_response_lines
+
+    constants, body = spin_response_lines(cfg)
+    at = body.index('__PROJECTIONS__')
+    return constants, body[:at] + _projection_lines(cfg, configuration='STD_BASIS') + body[at + 1 :]
+
+
 def _nonlinear_call_lines(cfg):
     """The nonlinear_optics (and coupled_optical_response) calls of run_nonlinear() on ``p``."""
     lines = [
@@ -653,10 +666,12 @@ def _nonlinear_call_lines(cfg):
 def build_run_script(cfg):
     """Assemble a full property-run main.py from the collected config."""
     props = cfg['properties']
-    standard_props = [p for p in props if p not in ('optical', 'emissivity', 'nonlinear')]
+    separate = ('optical', 'emissivity', 'nonlinear', 'spin_susceptibility')
+    standard_props = [p for p in props if p not in separate]
     has_optical = 'optical' in props or 'emissivity' in props
     has_emissivity = 'emissivity' in props
     has_nonlinear = 'nonlinear' in props
+    has_spin_response = 'spin_susceptibility' in props
     needs_spin = any(p in SPIN_PROPERTIES for p in props)
     needs_energy_window = any(p in ENERGY_WINDOW_PROPERTIES for p in props)
 
@@ -707,6 +722,8 @@ def build_run_script(cfg):
     lines.append('')
     if has_nonlinear:
         lines.extend(_nonlinear_constant_lines(cfg))
+    if has_spin_response:
+        lines.extend(_spin_response_parts(cfg)[0])
 
     # ---- basis generation --------------------------------------------- #
     lines.append(BASIS_GEN_BLOCK)
@@ -795,6 +812,10 @@ def build_run_script(cfg):
     if has_nonlinear:
         lines.extend(_nonlinear_run_lines(cfg))
 
+    # ---- spin susceptibility (spinors, needs HRs) ---------------------- #
+    if has_spin_response:
+        lines.extend(_spin_response_parts(cfg)[1])
+
     # ---- main --------------------------------------------------------- #
     lines.append('')
     lines.append('def main():')
@@ -813,7 +834,9 @@ def build_run_script(cfg):
         lines.append('    run_optical()')
     if has_nonlinear:
         lines.append('    run_nonlinear()')
-    if not standard_props and not has_optical and not has_nonlinear:
+    if has_spin_response:
+        lines.append('    run_spin_response()')
+    if not standard_props and not has_optical and not has_nonlinear and not has_spin_response:
         lines.append('    pass  # no properties selected')
     lines.append('')
     lines.append('')

@@ -54,8 +54,7 @@ KEEP_PREFIXES = ('README',)
 # Directory names whose entire subtree is preserved verbatim.
 # - Reference/Reference2: curated expected outputs.
 # - BASIS: per-tutorial atomic basis files (inputs to PAOFLOW).
-# - data_files: shipped reference data consumed by examples/plot_examples/.
-KEEP_DIRS = {'Reference', 'Reference2', 'BASIS', 'data_files'}
+KEEP_DIRS = {'Reference', 'Reference2', 'BASIS'}
 
 # Directory name suffixes (lowercase) whose entire subtree is removed.
 # e.g. 'pt.save', 'silicon.save', ... produced by pw.x.

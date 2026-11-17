@@ -90,6 +90,12 @@ class PAOFLOW:
         Uniform field (T) on site: the spin and atomic orbital Zeeman terms mu_B (L + g_s S).B.
     peierls_field(field, flux_quanta, plane)
         Uniform field coupled to the hoppings (Peierls phases, Landau gauge).
+    stoner_parameters(density)
+        Stoner integrals of the PAO shells from the LSDA spin kernel (eV per mu_B).
+    self_consistent_spin(field, nk, smearing, degauss, stoner, seed, …)
+        On-site LSDA (Stoner) mean field: the enhanced spin response or the ordered moment.
+    spin_susceptibility(field, nk, smearing, degauss, methods, …)
+        Uniform static spin susceptibility: bare, on-site Stoner and the LSDA kernel on the grid.
     write_Hamiltonian(fname)
         Dump ``HRs`` in the Z2Pack format.
 
@@ -1280,6 +1286,256 @@ class PAOFLOW:
                 raise e
         self.report_module_time('Orbital magnetization')
         return chemical, total
+
+    def stoner_parameters(self, density='auto', verbose=True):
+        """
+        Stoner integrals of the PAO shells from the LSDA spin kernel (eV per mu_B)
+
+        I_gg' = -2 int r^2 dr R_g^2 R_g'^2 f_s(n) / 4 pi, with the radial functions of the projection
+        basis, a valence plus core density and the LSDA spin kernel f_s (Slater exchange + PW92
+        correlation); the exchange splitting of shell g is sum_g' I_gg' m_g' (Janak's convention:
+        Stoner criterion I N(E_F) > 1, N per spin). Needs the projection basis (DFT runs); for
+        models pass shells and stoner to self_consistent_spin. The on-site model leaves out the
+        bond (off-diagonal) part of the magnetization density and its self-consistent shape: for
+        Pd, Pt and Fe its effective I is about 2/3 of the full LSDA one (spin_susceptibility with
+        'alda', docs/internals/spin-response.md).
+
+        Arguments:
+            density (str): 'crystal' (QE's charge density, spherically averaged about the atom; the
+                free-atom tail makes the integrals of diffuse shells diverge), 'atomic' (the
+                pseudopotential's atomic density) or 'auto' (crystal when the save holds
+                charge-density.dat)
+            verbose (bool): print the table
+
+        Returns:
+            tuple: the shells (list of dict) and the matrix (ngroups, ngroups)
+        """
+        from .hamiltonian.stoner import (
+            crystal_densities,
+            shell_groups,
+            species_densities,
+            stoner_matrix,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+        groups, matrix = None, None
+        try:
+            groups = shell_groups(arry, attr)
+            if density == 'auto':
+                import os
+
+                found = os.path.isfile(os.path.join(attr.get('fpath', ''), 'charge-density.dat'))
+                density = 'crystal' if found else 'atomic'
+            if density not in ('crystal', 'atomic'):
+                raise ValueError(f"density must be 'crystal', 'atomic' or 'auto', not {density!r}")
+            densities = (crystal_densities if density == 'crystal' else species_densities)(
+                self.data_controller
+            )
+            matrix = stoner_matrix(groups, densities)
+            arry['stoner_shells'], arry['stoner_matrix'] = groups, matrix
+            if verbose and self.rank == 0:
+                print(f'Stoner integrals (eV per mu_B, {density} density), diagonal per shell:')
+                for g, group in enumerate(groups):
+                    print(
+                        f'  {group["species"]:>3s} {group["label"]:>3s} (l = {group["l"]}): {matrix[g, g]:.4f}'
+                    )
+        except Exception as e:
+            self.report_exception('stoner_parameters')
+            if attr['abort_on_exception']:
+                raise e
+        return groups, matrix
+
+    def self_consistent_spin(
+        self,
+        field=(0.0, 0.0, 0.0),
+        nk=(16, 16, 16),
+        smearing='marzari-vanderbilt',
+        degauss=0.2721,
+        stoner=None,
+        shells=None,
+        spin=True,
+        orbital=False,
+        g_s=None,
+        seed=None,
+        mixing=0.5,
+        tol=1.0e-7,
+        max_iter=300,
+        update_hamiltonian=True,
+        linear=False,
+    ):
+        """
+        Self-consistent spin response to a uniform field: the LSDA exchange field in the Stoner mean field
+
+        Solves H(k) + mu_B (L + g_s S).B - sum_g h_g . S_g with h_g = sum_g' I_gg' (m_g' - m0_g')
+        self-consistently on a k-grid, m_g the spin moment of shell g and m0 its value without field
+        (a magnetic DFT Hamiltonian already holds its exchange splitting). In the linear regime this
+        is the RPA-Stoner enhancement chi = chi0 / (1 - I chi0); with seed it finds a Stoner
+        instability (the solution returned is checked to be stable). A spin-degenerate run is first
+        rewritten in spinors. Call it on 'HRs', before interpolated_hamiltonian.
+
+        Arguments:
+            field (array_like): field (T), Cartesian
+            nk (tuple): k-grid of the self-consistency
+            smearing (str): 'marzari-vanderbilt', 'gaussian' or 'fermi-dirac'
+            degauss (float): smearing width (eV; QE's degauss in Ry times 13.6057)
+            stoner (float or ndarray): None computes stoner_parameters; a float is one I (eV) on the
+                d shells (or on every shell when there are no d shells); an array the full matrix
+            shells (list of dict): the shells ('orbitals' index arrays), for models
+            spin, orbital (bool): Zeeman terms of the field (orbital needs Lj)
+            g_s (float): spin g-factor
+            seed (array_like): initial moments (ngroups, 3) on top of m0, to probe an instability
+            mixing, tol, max_iter: the loop (Anderson mixing after a linear warm-up)
+            update_hamiltonian (bool): add the field and the converged exchange term to 'HRs'
+            linear (bool): stay on the solution connected to m0 (Anderson mixing from the start, no
+                stability check): the linear response, negative across a Stoner instability
+
+        Returns:
+            dict: 'moments' (ngroups, 3, mu_B), 'total_moment' (3,), 'reference', 'mu', 'converged',
+            'stable', 'iterations', 'shells'
+        """
+        from .hamiltonian.magnetic_field import ELECTRON_SPIN_G_FACTOR, add_onsite, zeeman_matrix
+        from .hamiltonian.stoner import bloch_hamiltonians, solve_spin_response
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            if orbital and 'Lj' not in arry:
+                self._orbital_operator_for_fields()
+            nspin = arry['HRs'].shape[-1]
+            if nspin == 1 and not attr.get('dftSO', False):
+                self.spinor_basis()
+            elif nspin == 1 and 'Sj' not in arry:
+                self.spin_operator(adhoc_SO=attr.get('adhoc_SO', False))
+            if shells is None:
+                from .hamiltonian.stoner import shell_groups
+
+                if stoner is None and 'stoner_matrix' not in arry:
+                    self.stoner_parameters(verbose=attr.get('verbose', False))
+                # the orbitals of the current basis (both spinor components after spinor_basis);
+                # the shells keep the order of stoner_parameters
+                shells = shell_groups(arry, attr)
+            if stoner is None:
+                matrix = np.asarray(arry['stoner_matrix'], dtype=float)
+            elif np.ndim(stoner) == 0:
+                d_shells = [g for g, group in enumerate(shells) if group.get('l') == 2]
+                chosen = d_shells if d_shells else list(range(len(shells)))
+                matrix = np.zeros((len(shells), len(shells)))
+                matrix[chosen, chosen] = float(stoner)
+            else:
+                matrix = np.asarray(stoner, dtype=float)
+            g_s = ELECTRON_SPIN_G_FACTOR if g_s is None else float(g_s)
+            onsite = zeeman_matrix(arry, np.asarray(field, dtype=float), g_s, spin, orbital)
+            comm = self.comm if self.size > 1 else None
+            from .hamiltonian.orbital_centres import orbital_centres_bohr
+
+            # pair-resolved Wigner-Seitz interpolation, as the grid response and the optics
+            lattice = float(attr['alat']) * np.asarray(arry['a_vectors'], dtype=float)
+            positions = orbital_centres_bohr(arry, attr) @ np.linalg.inv(lattice)
+            hk = bloch_hamiltonians(np.asarray(arry['HRs']), tuple(nk), comm,
+                                    np.asarray(arry['a_vectors'], dtype=float), float(attr['alat']), positions)  # fmt: skip
+            result = solve_spin_response(
+                hk, onsite, shells, matrix, arry.get('Sj'), float(attr['nelec']), float(degauss),
+                smearing, mixing, tol, max_iter, None if seed is None else np.asarray(seed, dtype=float),
+                check_stability=not linear, warmup=0 if linear else 30, comm=comm,
+            )  # fmt: skip
+            result['total_moment'] = result['moments'].sum(axis=0)
+            result['shells'] = shells
+            if update_hamiltonian:
+                add_onsite(self.data_controller, onsite + result['exchange'])
+                arry['spin_moments'] = result['moments']
+            if self.rank == 0 and attr.get('verbose', False):
+                print(f"self-consistent spin: total moment {np.round(result['total_moment'], 6)} mu_B, "
+                      f"converged {result['converged']}, stable {result['stable']}, {result['iterations']} iterations")  # fmt: skip
+        except Exception as e:
+            self.report_exception('self_consistent_spin')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Self-consistent spin')
+        return result
+
+    def spin_susceptibility(
+        self,
+        field=10.0,
+        nk=(16, 16, 16),
+        smearing='marzari-vanderbilt',
+        degauss=0.2721,
+        methods=('bare', 'stoner'),
+        stoner=None,
+        shells=None,
+        g_s=None,
+        direction=(0.0, 0.0, 1.0),
+        alda_options=None,
+        fname='spin_susceptibility',
+    ):
+        """
+        Uniform static spin susceptibility chi = dM/dh per cell (mu_B per eV)
+
+        M is the spin moment per cell, h = g_s mu_B B / 2 the half Zeeman splitting; symmetric fields
+        +-B along direction. methods: 'bare' (frozen Hamiltonian, the Pauli + Van Vleck chi0),
+        'stoner' (self_consistent_spin: on-site LSDA mean field, linear), 'alda' (the LSDA spin kernel on
+        the real-space grid of the crystal, response.spin_response; collinear spin-degenerate runs
+        with the internal basis). A negative chi is a Stoner instability: the reference state is
+        unstable (self_consistent_spin with a seed finds the ordered moment). The Hamiltonian is
+        left as it was (but in spinors). Writes <fname>.dat.
+
+        Arguments:
+            field (float): |B| (T)
+            nk, smearing, degauss, stoner, shells, g_s: as self_consistent_spin
+            methods (sequence of str): any of 'bare', 'stoner', 'alda'
+            direction (array_like): field direction
+            alda_options (dict): keyword arguments of spin_response.static_spin_susceptibility
+
+        Returns:
+            dict: chi per method (mu_B/eV), 'enhancement' (chi / chi_bare), 'h' (eV)
+        """
+        from .hamiltonian.magnetic_field import BOHR_MAGNETON_EV_PER_TESLA, ELECTRON_SPIN_G_FACTOR
+
+        attr = self.data_controller.data_attributes
+        g_s = ELECTRON_SPIN_G_FACTOR if g_s is None else float(g_s)
+        unit = np.asarray(direction, dtype=float) / np.linalg.norm(direction)
+        h = 0.5 * g_s * BOHR_MAGNETON_EV_PER_TESLA * float(field)
+        out = {'h': h, 'field': float(field)}
+        try:
+            # the grid response needs the spin-degenerate Hamiltonian: before the others make spinors
+            for method in sorted(methods, key=lambda name: name != 'alda'):
+                if method == 'alda':
+                    from .response.spin_response import static_spin_susceptibility
+
+                    comm = self.comm if self.size > 1 else None
+                    grid = static_spin_susceptibility(self.data_controller, nk=nk, smearing=smearing, degauss=degauss,
+                                                      comm=comm, **(alda_options or {}))  # fmt: skip
+                    out['alda'], out['alda_bare'] = grid['chi'], grid['chi_bare']
+                    self.report_module_time('Spin response on the grid (ALDA)')
+                    continue
+                moments = []
+                for sign in (1.0, -1.0):
+                    res = self.self_consistent_spin(
+                        field=sign * float(field) * unit, nk=nk, smearing=smearing, degauss=degauss,
+                        stoner=0.0 if method == 'bare' else stoner, shells=shells,
+                        update_hamiltonian=False, g_s=g_s, linear=True,
+                    )  # fmt: skip
+                    moments.append(float(res['total_moment'] @ unit))
+                # a field along +B raises the spins along +B: the spin moment n_up - n_down falls
+                out[method] = -(moments[0] - moments[1]) / (2.0 * h)
+            if 'bare' in out:
+                out['enhancement'] = {
+                    m: out[m] / out['bare'] for m in ('stoner', 'alda') if m in out
+                }
+            if self.rank == 0:
+                import os
+
+                with open(os.path.join(attr['opath'], fname + '.dat'), 'w') as handle:
+                    handle.write(
+                        f'# uniform static spin susceptibility dM/dh (mu_B per eV per cell); B = {field} T, h = {h:.6e} eV\n'
+                    )
+                    for method in methods:
+                        handle.write(f'{method:8s} {out[method]: .8e}\n')
+        except Exception as e:
+            self.report_exception('spin_susceptibility')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Spin susceptibility')
+        return out
 
     def _orbital_operator_for_fields(self):
         """Build Lj with orbital_operator when the basis carries the labels it needs."""

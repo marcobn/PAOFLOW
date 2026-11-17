@@ -95,21 +95,21 @@ def spinor_basis(data_controller: DataController) -> None:
     attributes['spinor_basis'] = f'from nspin = {nspin}'
 
 
-def onsite_magnetic_field(
-    data_controller: DataController,
+def zeeman_matrix(
+    arrays: dict,
     field_tesla: NDArray[np.float64],
     g_s: float = ELECTRON_SPIN_G_FACTOR,
     spin: bool = True,
     orbital: bool = True,
 ) -> NDArray[np.complex128]:
-    """Add :math:`\\mu_B(\\mathbf L + g_s\\mathbf S)\\cdot\\mathbf B` to the on-site block of ``HRs``.
+    """The on-site term :math:`\\mu_B(\\mathbf L + g_s\\mathbf S)\\cdot\\mathbf B` (eV), ``(nawf, nawf, nspin)``.
 
     Parameters
     ----------
-    data_controller : DataController
-        ``HRs``; ``Sj`` (spinor bases, ``nspin = 1``) and, with ``orbital``, ``Lj``, both
-        ``(3, nawf, nawf)`` in units of :math:`\\hbar`. Collinear runs (``nspin = 2``) take ``Lj``
-        of one channel and only a field along z.
+    arrays : dict
+        ``HRs`` (for the shape); ``Sj`` (spinor bases, ``nspin = 1``) and, with ``orbital``, ``Lj``,
+        both ``(3, nawf, nawf)`` in units of :math:`\\hbar`. Collinear runs (``nspin = 2``) take
+        ``Lj`` of one channel and only a field along z.
     field_tesla : array_like, shape ``(3,)``
         Cartesian field (T).
     g_s : float, optional
@@ -120,14 +120,12 @@ def onsite_magnetic_field(
     Returns
     -------
     ndarray, shape ``(nawf, nawf, nspin)``
-        The term added (eV), per spin channel.
 
     Raises
     ------
     ValueError
         For a transverse field on a collinear run, or a missing operator.
     """
-    arrays = data_controller.data_arrays
     field = np.asarray(field_tesla, dtype=float).reshape(3)
     hrs = arrays['HRs']
     nawf, nspin = hrs.shape[0], hrs.shape[-1]
@@ -138,9 +136,7 @@ def onsite_magnetic_field(
             raise ValueError('the orbital term needs the orbital angular momentum Lj')
         orbital_operator = np.asarray(arrays['Lj'])
         if orbital_operator.shape != (3, nawf, nawf):
-            raise ValueError(
-                f'Lj has shape {orbital_operator.shape}, the Hamiltonian {nawf} orbitals'
-            )
+            raise ValueError(f'Lj has shape {orbital_operator.shape}, the Hamiltonian {nawf} orbitals')
     if nspin == 2:
         if np.any(field[:2] != 0.0):
             raise ValueError(
@@ -156,12 +152,36 @@ def onsite_magnetic_field(
         if spin:
             if 'Sj' not in arrays:
                 raise ValueError('the spin term needs the spin operator Sj (a spinor basis)')
-            spin_operator = np.asarray(arrays['Sj'])
-            term[:, :, 0] += g_s * np.tensordot(energy, spin_operator, axes=(0, 0))
+            term[:, :, 0] += g_s * np.tensordot(energy, np.asarray(arrays['Sj']), axes=(0, 0))
         if orbital:
             term[:, :, 0] += np.tensordot(energy, orbital_operator, axes=(0, 0))
+    return term
+
+
+def add_onsite(data_controller: DataController, term: NDArray[np.complex128]) -> None:
+    """Add an ``(nawf, nawf, nspin)`` term to the R = 0 block of ``HRs``."""
+    arrays = data_controller.data_arrays
+    hrs = arrays['HRs']
     shape = hrs.shape
-    flat = np.reshape(hrs, (nawf, nawf, -1, nspin), order='C')
+    flat = np.reshape(np.asarray(hrs, dtype=complex), (shape[0], shape[1], -1, shape[-1]), order='C')
     flat[:, :, 0, :] += term
     arrays['HRs'] = np.reshape(flat, shape, order='C')
+
+
+def onsite_magnetic_field(
+    data_controller: DataController,
+    field_tesla: NDArray[np.float64],
+    g_s: float = ELECTRON_SPIN_G_FACTOR,
+    spin: bool = True,
+    orbital: bool = True,
+) -> NDArray[np.complex128]:
+    """Add :math:`\\mu_B(\\mathbf L + g_s\\mathbf S)\\cdot\\mathbf B` (:func:`zeeman_matrix`) to ``HRs``.
+
+    Returns
+    -------
+    ndarray, shape ``(nawf, nawf, nspin)``
+        The term added (eV), per spin channel.
+    """
+    term = zeeman_matrix(data_controller.data_arrays, field_tesla, g_s, spin, orbital)
+    add_onsite(data_controller, term)
     return term

@@ -45,7 +45,7 @@ def _form(tmp_path, **answers):
 
 def test_the_property_is_appended_to_the_menu():
     # appended last: the menu numbers of the other properties (and the frozen scenarios) stay
-    assert PROPERTY_MENU[-1][0] == 'linear_response'
+    assert PROPERTY_MENU[12][0] == 'linear_response'  # 13th item (spin_susceptibility follows)
     assert 'linear_response' in ENERGY_WINDOW_PROPERTIES
 
 

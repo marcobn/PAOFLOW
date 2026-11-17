@@ -5,6 +5,7 @@ from __future__ import annotations
 from .common import COMMON_ITEMS, COMMON_OVERRIDES, assemble_common, from_save
 from .linear_response import assemble_linear_response, linear_response_items
 from .model import Answers, Context, Note, Question, Workflow, gated
+from .spin_response import assemble_spin_response, spin_response_items
 
 PROPERTIES = 'Properties'
 GRIDS = 'Grids and run settings'
@@ -516,6 +517,7 @@ RUN_ITEMS = (
     ),
     *gated(NONLINEAR_ITEMS, lambda a, c: 'nonlinear' in _properties(a)),
     *linear_response_items(lambda a, c: bool(a.get('spin_orbit'))),
+    *spin_response_items(lambda a, c: 'spin_susceptibility' in _properties(a)),
     Question(
         'plot',
         'Also generate a plotting script (plot.py)?',
@@ -642,6 +644,8 @@ def assemble_run_from_common(common: dict, answers: Answers) -> dict:
         assemble_nonlinear(cfg, answers)
     if 'linear_response' in props:
         assemble_linear_response(cfg, answers, bool(answers['spin_orbit']))
+    if 'spin_susceptibility' in props:
+        assemble_spin_response(cfg, answers)
     cfg['plot'] = answers['plot']
     return cfg
 
@@ -649,8 +653,8 @@ def assemble_run_from_common(common: dict, answers: Answers) -> dict:
 RUN = Workflow(
     name='run',
     title='Property run',
-    description='Bands, DOS, transport, Hall, topology, optics and non-linear optics from a QE save '
-    '(main.py and plot.py).',
+    description='Bands, DOS, transport, Hall, topology, optics, non-linear optics and the spin '
+    'susceptibility from a QE save (main.py and plot.py).',
     items=COMMON_ITEMS + RUN_ITEMS,
     assemble=assemble_run,
     overrides=COMMON_OVERRIDES,
