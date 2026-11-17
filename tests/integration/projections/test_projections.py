@@ -174,19 +174,11 @@ def test_internal_minimal_is_projwfc(system):
     np.testing.assert_allclose(second[low], first[low], atol=1e-4)
 
 
-KRAMERS_STANDARD = pytest.mark.xfail(
-    strict=True,
-    reason='the standard internal basis splits the Kramers pairs of fully relativistic runs by 1-4 meV '
-    '(Pt, Bi; projwfc and minimal keep them to 1e-8 eV): 17 Nov 2026, sessions/FINDINGS.md',
-)
-
-
-@pytest.mark.parametrize(
-    'route', ['projwfc', 'minimal', pytest.param('standard', marks=KRAMERS_STANDARD)]
-)
+@pytest.mark.parametrize('route', ['projwfc', 'minimal', 'standard'])
 def test_kramers_pairs(system, route):
     """Spin-orbit coupling with inversion and time reversal: every band below E_F + 1 eV is a pair
-    (to the degeneracy of the DFT eigenvalues of the save)."""
+    (to the degeneracy of the DFT eigenvalues of the save). Until 17 Nov 2026 the standard basis of
+    ultrasoft / PAW runs split them by 1-4 meV (radial functions misassigned in the j blocks)."""
     name = system[0]
     if not SYSTEMS[name][2]:
         pytest.skip('no spin-orbit coupling with inversion')

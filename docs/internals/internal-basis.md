@@ -231,8 +231,13 @@ relativistic UPFs otherwise). `r_box`, `n_points` and `save_basis` (tables writt
 `projections(basispath=BASIS, configuration={...})` of the VASP examples still works and now
 takes the pseudo-orbitals from the POTCAR and the augmenting shells from the tables, in the
 augmented metric; with spin-orbit coupling this mixed route goes through
-`build_mixed_basis_with_tables` (scalar pseudo-orbitals in both $j$ blocks, j-resolved tables when
-present), where `build_basis_from_sources` used to refuse it and every shell came from the tables.
+`build_mixed_basis_with_tables` (the j-resolved pseudo-orbitals of fully relativistic UPFs, scalar
+ones in both $j$ blocks, j-resolved tables when present), where `build_basis_from_sources` used to
+refuse it and every shell came from the tables. Two fixes of 17 Nov 2026 on this route: the records
+of a j-resolved shell take the radial function of their own $j$ (`spinor_record_sources`, as in
+`build_aewfc_basis` since 13 Nov; the Kramers pairs were split by 1 meV in Pt and 4 meV in a Bi
+bilayer on the grid, up to 0.4 eV between grid points), and the pseudo-orbitals of a fully
+relativistic UPF keep both $j$ functions (both blocks took the $j = l - 1/2$ one).
 
 Si (example01 of `examples/recipes/vasp`, 18 bands): `minimal` 8 orbitals, 4 bands above
 0.95; `standard` 26 orbitals, 12 bands; `extended` 44 orbitals, 16 bands (the shipped

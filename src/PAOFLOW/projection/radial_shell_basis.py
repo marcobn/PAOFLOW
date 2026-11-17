@@ -26,7 +26,12 @@ from numpy.typing import NDArray
 
 from ..basis_gen.driver import GeneratedShell, _write_two_col, generate_basis_shells
 from ..inputs.pseudopotentials import load_pseudopotentials
-from .do_atwfc_proj import _parallel_radialfft, _resolve_ae_shell_files, assign_jm
+from .do_atwfc_proj import (
+    _parallel_radialfft,
+    _resolve_ae_shell_files,
+    assign_jm,
+    spinor_record_sources,
+)
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -115,7 +120,9 @@ def shells_from_generator(
     return shells, skipped
 
 
-def shells_from_pseudo_orbitals(dataset, labels: list[str]) -> list[RadialShell]:
+def shells_from_pseudo_orbitals(
+    dataset, labels: list[str], spin_orbit: bool = False
+) -> list[RadialShell]:
     """The pseudo-orbitals of a pseudopotential (UPF ``PP_PSWFC`` or POTCAR bound states).
 
     Parameters
@@ -123,6 +130,11 @@ def shells_from_pseudo_orbitals(dataset, labels: list[str]) -> list[RadialShell]
     dataset : UPF or PotcarDataset
     labels : list of str
         Shell labels; every label must be a pseudo-orbital of the dataset.
+    spin_orbit : bool, optional
+        The run has spin-orbit coupling. A fully relativistic UPF then gives both
+        pseudo-orbitals of an ``l > 0`` label, :math:`j = l - 1/2` and :math:`j = l + 1/2` (two
+        shells with ``j`` set, from ``jchia``), which :func:`build_basis_from_radial_shells`
+        puts in their own ``j`` blocks, as ``minimal`` and the generator route do.
 
     Returns
     -------
@@ -133,23 +145,44 @@ def shells_from_pseudo_orbitals(dataset, labels: list[str]) -> list[RadialShell]
     ------
     RuntimeError
         A label without pseudo-orbital.
+
+    Notes
+    -----
+    Without spin-orbit coupling, for a scalar dataset (POTCAR, scalar-relativistic UPF) and for
+    a label stored once, the first pseudo-orbital of the label is a scalar shell, which a
+    spin-orbit run copies into both ``j`` blocks. Until 17 Nov 2026 a fully relativistic UPF in a
+    spin-orbit run also took that route, so both blocks carried the :math:`j = l - 1/2` function
+    (time reversal kept; Bi bilayer bands 0.07 meV from DFT on the grid instead of 0.009 meV).
     """
     title = getattr(dataset, 'title', 'the pseudopotential')
+    jchia = list(getattr(dataset, 'jchia', None) or [])
+    relativistic = (
+        spin_orbit
+        and bool(getattr(dataset, 'has_spinorbit', False))
+        and len(jchia) == len(dataset.pswfc)
+    )
+    mesh = np.asarray(dataset.r, dtype=float)
+    source = 'pseudo-orbital of %s' % title
     shells = []
     for label in labels:
-        match = [p for p in dataset.pswfc if p['label'].upper() == label.upper()]
-        if not match:
+        indices = [
+            index
+            for index, orbital in enumerate(dataset.pswfc)
+            if orbital['label'].upper() == label.upper()
+        ]
+        if not indices:
             raise RuntimeError('no pseudo-orbital %s in %s' % (label, title))
         l = 'SPDF'.index(label[1].upper())
-        shells.append(
-            RadialShell(
-                label.upper(),
-                l,
-                np.asarray(dataset.r, dtype=float),
-                np.asarray(match[0]['wfc'], dtype=float),
-                'pseudo-orbital of %s' % title,
-            )
-        )
+        if relativistic and l > 0:
+            by_j = {int(round(2.0 * float(jchia[index]))): index for index in indices}
+            pair = [(j, by_j.get(int(round(2 * j)))) for j in (l - 0.5, l + 0.5)]
+            if all(index is not None for _, index in pair):
+                for j, index in pair:
+                    wfc = np.asarray(dataset.pswfc[index]['wfc'], dtype=float)
+                    shells.append(RadialShell(label.upper(), l, mesh, wfc, source, j=j))
+                continue
+        wfc = np.asarray(dataset.pswfc[indices[0]]['wfc'], dtype=float)
+        shells.append(RadialShell(label.upper(), l, mesh, wfc, source))
     return shells
 
 
@@ -199,7 +232,7 @@ def _resample(shell: RadialShell, mesh: NDArray[np.float64]) -> RadialShell:
 def build_basis_from_radial_shells(
     data_controller, shells_by_element: dict[str, list[RadialShell]]
 ) -> tuple[list[dict], dict]:
-    """Basis records of all atoms from the radial shells of every element.
+    r"""Basis records of all atoms from the radial shells of every element.
 
     Parameters
     ----------
@@ -224,6 +257,15 @@ def build_basis_from_radial_shells(
     Every shell of an element is resampled on one mesh (that of its first table shell, else
     of its first shell), so that the orbital records of a species share one mesh. Sets
     ``arry['jchia']``.
+
+    With spin-orbit coupling an :math:`l > 0` shell emits :math:`2(2l + 1)` records that
+    :func:`~PAOFLOW.projection.do_atwfc_proj.assign_jm` labels as the :math:`2l` states of
+    :math:`j = l - 1/2` followed by the :math:`2l + 2` states of :math:`j = l + 1/2`; each
+    record takes the radial function of its own :math:`j`
+    (:func:`~PAOFLOW.projection.do_atwfc_proj.spinor_record_sources`). Until 17 Nov 2026 the
+    radial functions were attached per block of :math:`2l + 1` records, which gave
+    :math:`|l + 1/2, -(l + 1/2)\rangle` the :math:`j = l - 1/2` function and split the Kramers
+    pairs (1 meV in Pt, 4 meV in a Bi bilayer).
     """
     arry, attr = data_controller.data_dicts()
     verbose = attr['verbose']
@@ -286,22 +328,25 @@ def build_basis_from_radial_shells(
                 blocks = [entries[0], entries[0]]
             else:
                 blocks = [next((e for e in entries if e['j'] is None), entries[0])]
-            for entry in blocks:
-                wfc_g = wfc_g_list[entry['task']]
-                for m in range(1, 2 * l + 2):
-                    basis.append(
-                        {
-                            'atom': atom,
-                            'tau': tau,
-                            'l': l,
-                            'm': m,
-                            'label': label,
-                            'r': entry['r'],
-                            'wfc': np.array(entry['wfc'], dtype=float),
-                            'qmesh': qmesh,
-                            'wfc_g': wfc_g,
-                        }
-                    )
+            if so and l > 0:
+                # one radial function per (j, m_j) record, in the order of assign_jm
+                record_entries = spinor_record_sources(l, blocks[0], blocks[1])
+            else:
+                record_entries = [entry for entry in blocks for _ in range(2 * l + 1)]
+            for record, entry in enumerate(record_entries):
+                basis.append(
+                    {
+                        'atom': atom,
+                        'tau': tau,
+                        'l': l,
+                        'm': record % (2 * l + 1) + 1,
+                        'label': label,
+                        'r': entry['r'],
+                        'wfc': np.array(entry['wfc'], dtype=float),
+                        'qmesh': qmesh,
+                        'wfc_g': wfc_g_list[entry['task']],
+                    }
+                )
         if atom not in shells:
             shells[atom] = ash
             arry['jchia'][atom] = jchia
@@ -406,6 +451,8 @@ def build_mixed_basis_with_tables(
     (which keeps the scalar numerics of the QE route): pseudo-orbitals from the UPF or POTCAR
     datasets, the remaining shells of ``arry['configuration']`` from ``attr['basispath']``
     (j-resolved tables when present), records built by :func:`build_basis_from_radial_shells`.
+    The pseudo-orbitals of a fully relativistic UPF keep their two ``j`` functions
+    (:func:`shells_from_pseudo_orbitals` with ``spin_orbit``); scalar datasets fill both blocks.
 
     Parameters
     ----------
@@ -431,7 +478,7 @@ def build_mixed_basis_with_tables(
         shells = []
         for label in labels:
             if label.upper() in from_pseudo:
-                shells.extend(shells_from_pseudo_orbitals(by_element[elem], [label]))
+                shells.extend(shells_from_pseudo_orbitals(by_element[elem], [label], so))
             else:
                 shells.extend(shells_from_tables(attr['basispath'], elem, [label], so))
         shells_by_element[elem] = shells

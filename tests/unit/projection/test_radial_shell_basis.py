@@ -83,8 +83,42 @@ def test_j_resolved_pair_fills_the_two_blocks(tmp_path):
     basis, built_shells = build_basis_from_radial_shells(_Controller(so=True), shells)
     y_records = [b for b in basis if b['atom'] == 'Y']
     assert len(y_records) == 6 and built_shells['Y'] == [1, 1]
-    assert np.array_equal(y_records[0]['wfc'], p_minus.wfc)  # j = l - 1/2 block first
-    assert np.array_equal(y_records[3]['wfc'], p_plus.wfc)
+    # assign_jm: 2l records of j = l - 1/2, then 2l + 2 of j = l + 1/2, each with its own radial
+    # (until 17 Nov 2026 |3/2, -3/2> took the j = 1/2 one: Kramers pairs split by meV)
+    assert [b['jm'] for b in y_records] == list(range(2, 8))
+    for index, record in enumerate(y_records):
+        expected = p_minus.wfc if index < 2 else p_plus.wfc
+        assert np.array_equal(record['wfc'], expected), index
+    assert [b['m'] for b in y_records] == [1, 2, 3, 1, 2, 3]
+
+
+def test_j_resolved_tables_match_the_table_builder(tmp_path):
+    """The generator / mixed route and build_aewfc_basis give the same spinor records."""
+    shells = _gaussian_shells(tmp_path)
+    for elem, scale in (('X', 0.8), ('Y', 1.3)):
+        resolved = []
+        for shell in shells[elem]:
+            if shell.l == 0:
+                resolved.append(shell)
+                continue
+            for j, factor in ((shell.l - 0.5, 1.0), (shell.l + 0.5, scale)):
+                path = tmp_path / elem / f'{shell.label}_j{int(2 * j)}.dat'
+                u = shell.wfc * np.exp(-(factor - 1.0) * shell.r)
+                _write_two_col(str(path), shell.r, u)
+                data = np.loadtxt(path)
+                resolved.append(
+                    RadialShell(shell.label, shell.l, data[:, 0], data[:, 1], 'table', j=j)
+                )
+        shells[elem] = resolved
+    reference, ref_shells = build_aewfc_basis(_Controller(str(tmp_path), so=True))
+    basis, built_shells = build_basis_from_radial_shells(_Controller(so=True), shells)
+    assert built_shells == ref_shells
+    assert len(basis) == len(reference)
+    for record, expected in zip(basis, reference):
+        for key in ('atom', 'l', 'm', 'jm', 'label'):
+            assert record[key] == expected[key], key
+        assert np.array_equal(record['wfc'], expected['wfc'])
+        assert np.array_equal(record['wfc_g'], expected['wfc_g'])
 
 
 def test_mixed_meshes_are_resampled_on_one_mesh(tmp_path):
@@ -153,3 +187,51 @@ def test_mixed_tables_and_pseudo_orbitals_with_spin_orbit(tmp_path, monkeypatch)
     assert np.array_equal(basis[2]['wfc_g'], reference[2]['wfc_g'])  # the 3P table shell
     with pytest.raises(RuntimeError, match='no pseudo-orbital'):
         module.build_mixed_basis_with_tables(dc, {'X': ['3P'], 'Y': []})
+
+
+def test_fully_relativistic_pseudo_orbitals_keep_their_j(tmp_path, monkeypatch):
+    """A fully relativistic UPF in a spin-orbit run: each j block takes its own pseudo-orbital
+    (both took the first one of the label until 17 Nov 2026); scalar runs keep one function."""
+    from PAOFLOW.projection import radial_shell_basis as module
+
+    shells = _gaussian_shells(tmp_path)
+    r = shells['X'][0].r
+    p_plus, p_minus = shells['X'][1].wfc, 0.5 * shells['X'][1].wfc
+
+    class _Relativistic:
+        title = 'fake FR'
+        has_spinorbit = True
+        pswfc = [  # PseudoDojo order: j = l + 1/2 first
+            {'label': '3S', 'wfc': shells['X'][0].wfc},
+            {'label': '3P', 'wfc': p_plus},
+            {'label': '3P', 'wfc': p_minus},
+        ]
+        jchia = [0.5, 1.5, 0.5]
+
+        def __init__(self):
+            self.r = r
+
+    pair = module.shells_from_pseudo_orbitals(_Relativistic(), ['3S', '3P'], spin_orbit=True)
+    assert [(s.label, s.j) for s in pair] == [('3S', None), ('3P', 0.5), ('3P', 1.5)]
+    assert np.array_equal(pair[1].wfc, p_minus) and np.array_equal(pair[2].wfc, p_plus)
+    scalar = module.shells_from_pseudo_orbitals(_Relativistic(), ['3P'])
+    assert [s.j for s in scalar] == [None] and np.array_equal(scalar[0].wfc, p_plus)
+
+    monkeypatch.setattr(
+        module, 'load_pseudopotentials', lambda dc: {'X': _Relativistic(), 'Y': _Relativistic()}
+    )
+    basis, built = module.build_mixed_basis_with_tables(
+        _Controller(str(tmp_path), so=True), {'X': ['3S', '3P'], 'Y': []}
+    )
+    assert built['X'] == [0, 1, 1, 2, 2]
+    p_records = [b for b in basis if b['atom'] == 'X' and b['label'] == '3P'][:6]
+    assert [b['jm'] for b in p_records] == list(range(2, 8))
+    for index, record in enumerate(p_records):  # assign_jm: 2 records j = 1/2, then 4 of j = 3/2
+        expected = p_minus if index < 2 else p_plus
+        assert np.allclose(record['wfc'], expected), index
+
+    class _NoJ(_Relativistic):
+        jchia = []
+
+    no_j = module.shells_from_pseudo_orbitals(_NoJ(), ['3P'], spin_orbit=True)
+    assert [s.j for s in no_j] == [None]

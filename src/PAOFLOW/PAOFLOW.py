@@ -558,8 +558,8 @@ class PAOFLOW:
             bands poorly) and keeps the pure table basis for norm-conserving ones; ``True`` /
             ``False`` force either choice (``False`` with the generator route solves every
             shell in the box). Not with the ``'minimal'`` preset (already the pseudo-orbital
-            basis). With spin-orbit coupling the scalar pseudo-orbitals fill both ``j``
-            blocks (as the scalar tables do).
+            basis). With spin-orbit coupling a fully relativistic UPF gives each ``j`` block
+            its own pseudo-orbital; scalar ones (POTCAR) fill both blocks, as scalar tables do.
         r_box : float, optional
             Generator route only: radius of the confining box of the radial solver (bohr),
             default ``min(r_max of the mesh, 10)``.
@@ -680,8 +680,8 @@ class PAOFLOW:
                             ', '.join(l for l in arry['configuration'][elem] if l not in labels) or 'nothing',
                             attr.get('basispath')))  # fmt: skip
                 if attr.get('dftSO', False):
-                    # spin-orbit: scalar pseudo-orbitals duplicated into the j blocks, tables
-                    # j-resolved when available
+                    # spin-orbit: the j-resolved pseudo-orbitals of fully relativistic UPFs
+                    # (scalar ones duplicated into the j blocks), tables j-resolved when available
                     basis, arry['shells'] = build_mixed_basis_with_tables(
                         self.data_controller, pseudo_labels
                     )
