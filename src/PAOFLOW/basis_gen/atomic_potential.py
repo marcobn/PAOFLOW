@@ -11,9 +11,16 @@ which makes the integrals cumulative trapezoidal sums of ``atrho`` and
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
+from numpy.typing import NDArray
 
 from .xc import lda_pw92, pbe, select_functional
+
+if TYPE_CHECKING:
+    from ..inputs.read_potcar import PotcarDataset
+    from ..inputs.read_upf import UPF
 
 
 def hartree_radial(atrho, r, rab=None):
@@ -96,7 +103,7 @@ def vxc_radial(atrho, r, rho_core=None, functional='LDA'):
     return v
 
 
-def frozen_effective_potential(upf):
+def frozen_effective_potential(upf: UPF | PotcarDataset) -> NDArray[np.float64]:
     """Return V_eff(r) = V_loc(r) + V_H(r) + V_xc(r) on the UPF mesh.
 
     The Hartree and XC contributions are evaluated from ``upf.atrho``
@@ -110,8 +117,15 @@ def frozen_effective_potential(upf):
     pseudos, PBE for PBE pseudos, and PBE as a fallback for any other
     GGA flavour.  All terms are in Hartree atomic units.
 
+    A POTCAR with a reconstructed reference atom provides its screened
+    potential directly, preserving the reference potential stored by VASP
+    instead of recomputing its exchange-correlation contribution.
+
     Raises ``ValueError`` if ``upf.atrho`` is missing.
     """
+    reference_potential = getattr(upf, '_atomic_effective_potential', None)
+    if reference_potential is not None:
+        return reference_potential
     if getattr(upf, 'atrho', None) is None:
         raise ValueError(
             'UPF has no PP_RHOATOM block; frozen-density solver needs '

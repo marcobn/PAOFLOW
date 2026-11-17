@@ -15,7 +15,6 @@ convention picked up by ``build_aewfc_basis``.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 
 from .driver import generate_basis_for_directory, generate_basis_for_pseudo
@@ -25,7 +24,7 @@ def _parse_args(argv):
     p = argparse.ArgumentParser(
         prog='paoflow-genbasis-ps',
         description='Generate pseudized AE-style basis files from UPF '
-        'pseudopotentials (norm-conserving, ultrasoft, or PAW).',
+        'pseudopotentials (norm-conserving, ultrasoft, or PAW) or VASP PAW POTCAR datasets.',
     )
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument('--pseudo', help='Path to a single UPF file or POTCAR.')
@@ -90,8 +89,6 @@ def main(argv=None):
         print('error: --shells cannot be combined with --pseudo-dir', file=sys.stderr)
         return 2
     shells = [s.strip() for s in args.shells.split(',') if s.strip()] if args.shells else None
-    os.makedirs(args.out, exist_ok=True)
-
     if args.pseudo is not None:
         generate_basis_for_pseudo(
             args.pseudo,

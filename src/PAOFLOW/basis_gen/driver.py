@@ -13,6 +13,7 @@ import os
 import warnings
 from dataclasses import dataclass
 from glob import glob
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -22,6 +23,10 @@ from ..inputs.basis_presets import (
     standard_augmentation,
 )
 from .radial import is_frozen_core_shell, pseudize_shell
+
+if TYPE_CHECKING:
+    from ..inputs.read_potcar import PotcarDataset
+    from ..inputs.read_upf import UPF
 
 _L_INDEX = {'S': 0, 'P': 1, 'D': 2, 'F': 3}
 
@@ -74,9 +79,15 @@ def _minimal_shells_from_upf(upf):
     return seen
 
 
-def _default_shells(upf, preset='extended'):
+def _default_shells(upf: UPF | PotcarDataset, preset: str = 'extended') -> list[str]:
     """Resolve the full shell list (minimal + augmentation) for the preset."""
     minimal = _minimal_shells_from_upf(upf)
+    if not minimal:
+        raise ValueError(
+            f'No pseudo-atomic orbitals identified for {upf.element.strip()!r}; '
+            'a preset cannot be resolved without valence shells. '
+            'Use a supported pseudopotential or provide an explicit shell list.'
+        )
     # UPF pads single-letter symbols (e.g. ' O'); the augmentation rules key
     # the periodic-table block on the bare symbol, so strip before lookup.
     elem = upf.element.strip()
@@ -112,6 +123,39 @@ def _load_dataset(pseudo):
 
         return read_pseudopotential_file(os.fspath(pseudo))
     return pseudo
+
+
+def _load_datasets(
+    pseudo: str | os.PathLike | UPF | PotcarDataset,
+) -> list[UPF | PotcarDataset]:
+    """Load every species of a file, including a concatenated POTCAR."""
+    if not isinstance(pseudo, (str, os.PathLike)):
+        return [pseudo]
+    path = os.fspath(pseudo)
+    with open(path) as handle:
+        head = next((line.strip() for line in handle if line.strip()), '')
+    if head.startswith(('<UPF', '<PP_INFO', '<?xml')):
+        return [_load_dataset(path)]
+    from ..inputs.read_potcar import read_potcar
+
+    datasets = read_potcar(path)
+    if not datasets:
+        raise ValueError(f'No pseudopotential datasets found in {path!r}')
+    return datasets
+
+
+def _check_unique_elements(datasets: list[UPF | PotcarDataset]) -> None:
+    """Reject potential variants that would overwrite the same element tables."""
+    seen: dict[str, str] = {}
+    for dataset in datasets:
+        element = dataset.element.strip()
+        title = getattr(dataset, 'title', getattr(dataset, 'source', element))
+        if element in seen:
+            raise ValueError(
+                f'Multiple pseudopotential datasets for {element}: {seen[element]!r} and '
+                f'{title!r}. Generate each potential variant in a separate output directory.'
+            )
+        seen[element] = title
 
 
 def generate_basis_shells(
@@ -230,22 +274,24 @@ def generate_basis_shells(
 
 
 def generate_basis_for_pseudo(
-    upf_path,
-    out_dir,
-    shells=None,
-    preset='extended',
-    r_box=None,
-    n_points=2000,
-    overwrite=True,
-    verbose=False,
-    prefer_pswfc=True,
-):
+    upf_path: str | os.PathLike | UPF | PotcarDataset,
+    out_dir: str | os.PathLike,
+    shells: list[str] | None = None,
+    preset: str = 'extended',
+    r_box: float | None = None,
+    n_points: int = 2000,
+    overwrite: bool = True,
+    verbose: bool = False,
+    prefer_pswfc: bool = True,
+) -> list[str]:
     """Pseudize the requested shells of a pseudopotential and write them to disk.
 
     Parameters
     ----------
     upf_path : str, UPF or PotcarDataset
-        Path to the UPF file or POTCAR (or a parsed dataset).
+        Path to the UPF file or POTCAR (or a parsed dataset). Every species
+        of a concatenated POTCAR is generated; repeated elements are rejected
+        before writing files so that potential variants cannot overwrite one another.
     out_dir : str
         Output root (per-element subdirectory ``out_dir/<elem>/`` is
         created automatically).
@@ -271,7 +317,25 @@ def generate_basis_for_pseudo(
     written : list of str
         Paths of the files written.
     """
-    upf = _load_dataset(upf_path)
+    datasets = _load_datasets(upf_path)
+    _check_unique_elements(datasets)
+    if len(datasets) != 1:
+        return [
+            path
+            for dataset in datasets
+            for path in generate_basis_for_pseudo(
+                dataset,
+                out_dir,
+                shells=shells,
+                preset=preset,
+                r_box=r_box,
+                n_points=n_points,
+                overwrite=overwrite,
+                verbose=verbose,
+                prefer_pswfc=prefer_pswfc,
+            )
+        ]
+    upf = datasets[0]
     elem = upf.element.strip()
     if shells is None:
         shells = _default_shells(upf, preset=preset)
@@ -304,46 +368,42 @@ def _pseudopotential_files(pseudo_dir):
 
 
 def generate_basis_for_directory(
-    pseudo_dir,
-    out_dir,
-    preset='extended',
-    r_box=None,
-    n_points=2000,
-    overwrite=True,
-    verbose=False,
-    prefer_pswfc=True,
-):
+    pseudo_dir: str | os.PathLike,
+    out_dir: str | os.PathLike,
+    preset: str = 'extended',
+    r_box: float | None = None,
+    n_points: int = 2000,
+    overwrite: bool = True,
+    verbose: bool = False,
+    prefer_pswfc: bool = True,
+) -> dict[str, list[str]]:
     """Run :func:`generate_basis_for_pseudo` over every pseudopotential in ``pseudo_dir``.
 
     UPF files and POTCARs (a ``POTCAR`` of the directory, possibly concatenated, and the
     ``<name>/POTCAR`` of a PAW library) are processed; every dataset of a concatenated POTCAR
-    gives one element directory.
+    gives one element directory. Multiple potentials for the same element
+    are rejected before writing; select one variant or use separate output directories.
 
     Returns a dict ``{element_symbol: [written_paths]}``.
     """
     pseudos = _pseudopotential_files(pseudo_dir)
     if not pseudos:
         raise FileNotFoundError(f'no *.UPF / *.upf / POTCAR files found in {pseudo_dir!r}')
+    datasets = [dataset for path in pseudos for dataset in _load_datasets(path)]
+    _check_unique_elements(datasets)
     out = {}
-    for p in pseudos:
+    for dataset in datasets:
         if verbose:
-            print(f'== {p} ==')
-        if os.path.basename(p) == 'POTCAR':
-            from ..inputs.read_potcar import read_potcar
-
-            datasets = read_potcar(p)
-        else:
-            datasets = [_load_dataset(p)]
-        for dataset in datasets:
-            elem = dataset.element.strip()
-            out[elem] = generate_basis_for_pseudo(
-                dataset,
-                out_dir,
-                preset=preset,
-                r_box=r_box,
-                n_points=n_points,
-                overwrite=overwrite,
-                verbose=verbose,
-                prefer_pswfc=prefer_pswfc,
-            )
+            print(f'== {getattr(dataset, "source", dataset.element)} ==')
+        elem = dataset.element.strip()
+        out[elem] = generate_basis_for_pseudo(
+            dataset,
+            out_dir,
+            preset=preset,
+            r_box=r_box,
+            n_points=n_points,
+            overwrite=overwrite,
+            verbose=verbose,
+            prefer_pswfc=prefer_pswfc,
+        )
     return out

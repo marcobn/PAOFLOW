@@ -234,6 +234,59 @@ without `PAOFLOW_POTCAR_DIR` / `../potpaw_PBE_64` and `../example01` next to the
 Not covered: the PAW augmentation of the position dipoles with spin-orbit coupling
 (scalar-relativistic only), Gamma-only WAVECARs, ultrasoft POTCARs (`LPAW = F`).
 
+### Older POTCAR datasets without atomic-state metadata
+
+Older PAW libraries can omit `local pseudopotential core`, use `pspotential` instead of
+`pspotential valence only`, and omit the `Atomic configuration` table. Their `Description`
+energies may be placeholders. The reader accepts this layout and reconstructs the ionic
+local potential from its reciprocal-space table using VASP's Gaussian Coulomb compensation
+convention. The finite reciprocal table limits the accuracy of this reconstruction.
+
+For datasets without atomic-state metadata, `inputs/potcar_atomic.py` reconstructs the
+reference atom from its radial potentials and partial waves. It identifies the valence and
+semicore shells from `VRHFIN` and the frozen core, recovers the bound reference levels, and
+handles the mixed secondary reference functions together within each angular channel.
+The radial generalized eigenproblem supplies complete pseudo-orbitals beyond the short
+stored partial-wave mesh. The original reciprocal projectors and augmentation charges are
+retained for the PAW projection metric. Newer datasets with explicit atomic-state metadata
+keep the existing stored-orbital path.
+
+This reconstruction requires an unambiguous occupied-shell configuration and enough radial
+support for a bound solution. Headers with several occupied radial shells of the same
+angular momentum need explicit atomic-state metadata. Inconsistent reference fits, ambiguous
+occupations and failed bound-state checks raise errors with the dataset name. Keep the default
+extended radial grid when generating legacy orbitals; the original sphere-sized mesh alone
+is insufficient for their tails.
+
+For a calculation whose concatenated `POTCAR` contains Cr_pv, S and Br, generate a basis with:
+
+```sh
+paoflow-genbasis-ps --pseudo /path/to/CrSBr/POTCAR \
+    --out BASIS_PS_CrSBr --preset standard
+```
+
+Every species of a concatenated POTCAR is processed. The nominal minimal shells are
+Cr `3P 3D 4S`, S `3S 3P` and Br `4S 4P`; with two atoms of each species and SOC, these give
+68 spinor basis functions. `standard` adds polarization and additional radial shells.
+The basis can also be generated directly by `projections(configuration='standard')` without
+`basispath`, with the POTCAR in the calculation directory. Use the exact potential variants
+of the DFT calculation. A library containing multiple variants of the same element is
+rejected before writing tables; generate each variant into a separate output directory.
+
+The synthetic regression tests in `tests/unit/inputs/test_potcar_legacy.py` require no VASP
+data. Set `PAOFLOW_VASP_LEGACY_RUN` to a local CrSBr calculation to additionally check the
+reconstructed shells and the spinor WAVECAR normalization in the PAW metric. Projectability
+depends on the material, the shell set and the energy window; compare these consistently
+when assessing a generated basis against the shipped all-electron tables.
+
+On the six-atom SOC CrSBr validation calculation, `standard` gives 176 spinor functions.
+All 50 occupied bands have projectability above 0.99728 over the full 130-point grid; the
+minimum within 2 eV of the Fermi energy is 0.99396. At four matching k points, the generic
+tables with the same shells give a minimum occupied projectability of 0.86985, compared
+with 0.99728 for the POTCAR-derived functions. The maximum WAVECAR PAW normalization residual
+over the full grid is $1.8\times10^{-6}$. These are projection checks; interpolation and
+transport accuracy require their own Hamiltonian validation.
+
 ## Files
 
 | File | Role |

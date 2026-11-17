@@ -52,7 +52,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.integrate import simpson, solve_ivp
 from scipy.interpolate import CubicSpline
-from scipy.special import spherical_jn
+from scipy.special import erf, spherical_jn
 
 AUTOA = 0.529177249  # bohr in angstrom (vasp/src/constant.inc)
 RYTOEV = 13.605826
@@ -155,6 +155,58 @@ def _inverse_bessel_transform(
     r"""``f(r) = (1 / 2 pi^2) int f(q) j_l(qr) q^2 dq`` of a table on a uniform q grid (Simpson)."""
     bessel = spherical_jn(l, np.multiply.outer(r, q))
     return simpson(bessel * (f_q * q * q)[None, :], x=q, axis=1) / (2.0 * np.pi**2)
+
+
+def _local_potential_from_reciprocal(
+    q: NDArray[np.float64],
+    table: NDArray[np.float64],
+    zval: float,
+    r: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    r"""Recover the ionic local potential from a POTCAR reciprocal table.
+
+    Parameters
+    ----------
+    q : ndarray, shape (nq,)
+        Reciprocal radii in inverse bohr, including zero.
+    table : ndarray, shape (nq,)
+        The ``local part`` table in Hartree times bohr cubed.
+    zval : float
+        Ionic valence charge.
+    r : ndarray, shape (nr,)
+        Radial mesh in bohr.
+
+    Returns
+    -------
+    ndarray, shape (nr,)
+        Ionic local potential in Hartree.
+
+    Notes
+    -----
+    VASP stores a Coulomb-compensated table. Following its ``POTTORHO``
+    convention, remove a Gaussian compensation in reciprocal space and
+    restore its analytic Coulomb potential after the inverse transform:
+
+    .. math::
+
+        V_{\mathrm{loc}}(r) = \mathcal F^{-1}\!\left[
+        V(q)-\frac{4\pi Z_v}{q^2}(1-e^{-q^2/4})\right]
+        - \frac{Z_v\operatorname{erf}(r)}{r}.
+
+    The Gaussian exponent is one in atomic units. Cubic resampling of the
+    finite reciprocal table reduces quadrature ringing on the logarithmic
+    radial mesh; this remains a reconstruction from a finite table.
+    """
+    q_fine = np.linspace(0.0, q[-1], 8 * q.size + 1)
+    compensation = np.empty_like(q_fine)
+    compensation[0] = np.pi * zval
+    compensation[1:] = -4.0 * np.pi * zval * np.expm1(-0.25 * q_fine[1:] ** 2) / q_fine[1:] ** 2
+    short_range = CubicSpline(q, table)(q_fine) - compensation
+    coulomb = np.empty_like(r)
+    positive = r > 0.0
+    coulomb[positive] = zval * erf(r[positive]) / r[positive]
+    coulomb[~positive] = 2.0 * zval / np.sqrt(np.pi)
+    return _inverse_bessel_transform(q_fine, short_range, 0, r) - coulomb
 
 
 class PotcarDataset:
@@ -302,11 +354,15 @@ class PotcarDataset:
 
     def _parse_psctr(self, lines: list[str]) -> None:
         params: dict[str, str] = {}
+        self.valence_configuration = ''
         self.atomic_configuration: list[tuple[int, int, float, float, float]] = []
         self.description: list[tuple[int, float, int, float]] = []
         i = 0
         while i < len(lines):
             stripped = lines[i].strip()
+            valence_match = re.match(r'VRHFIN\s*=\s*[^:]+:\s*(.*)', stripped)
+            if valence_match:
+                self.valence_configuration = valence_match.group(1).strip()
             if stripped.startswith('Atomic configuration'):
                 n_entries = int(lines[i + 1].split()[0])
                 for row in lines[i + 3 : i + 3 + n_entries]:
@@ -395,9 +451,16 @@ class PotcarDataset:
         )
         self._grid_angstrom = np.array(block('grid'))
         npts = self._grid_angstrom.size
-        self._potpsc_ev = np.array(block('local pseudopotential core')[:npts])
+        self._potpsc_ev = (
+            np.array(block('local pseudopotential core')[:npts])
+            if 'local pseudopotential core' in names
+            else None
+        )
         self._potae_ev = np.array(block('aepotential')[:npts])
-        self._potps_ev = np.array(block('pspotential valence only')[:npts])
+        pseudo_potential_name = (
+            'pspotential valence only' if 'pspotential valence only' in names else 'pspotential'
+        )
+        self._potps_ev = np.array(block(pseudo_potential_name)[:npts])
         self._core_ae = np.array(block('core charge-density')[:npts])
         self._core_ps = np.array(block('core charge-density (pseudized)')[:npts])
         self._ps_waves = [
@@ -438,7 +501,16 @@ class PotcarDataset:
             return out
 
         # local potential (Hartree), Coulomb tail beyond the stored grid
-        self.vloc = padded(self._potpsc_ev / HARTREE_EV)
+        if self._potpsc_ev is None:
+            q_local = np.arange(NPSPTS) * self.psgmax / NPSPTS
+            local_table = self.local_potential_q / (HARTREE_EV * AUTOA**3)
+            self.vloc = padded(
+                _local_potential_from_reciprocal(q_local, local_table, self.val, r_stored)
+            )
+            self.local_potential_source = 'reciprocal table'
+        else:
+            self.vloc = padded(self._potpsc_ev / HARTREE_EV)
+            self.local_potential_source = 'radial table'
         self.vloc[n_stored:] = -self.val / self.r[n_stored:]
         tail_mismatch = abs(self.vloc[n_stored - 1] + self.val / self.r[n_stored - 1])
         if tail_mismatch > 1.0e-2:
@@ -533,6 +605,10 @@ class PotcarDataset:
         self.beta.sort(key=lambda b: b['index'])
         for b in self.beta:
             del b['index']
+        if not self.atomic_configuration:
+            from .potcar_atomic import recover_legacy_atomic_data
+
+            recover_legacy_atomic_data(self)
         # pseudo-orbitals: the bound reference states
         self._build_pseudo_orbitals(n_stored)
         self.dion_screened = self._screened_dion()
@@ -555,6 +631,11 @@ class PotcarDataset:
         self.rcut_channels = np.array([row[3] for row in rows])
 
     def _build_pseudo_orbitals(self, n_stored: int) -> None:
+        legacy_orbitals = getattr(self, '_legacy_pseudo_orbitals', None)
+        if legacy_orbitals is not None:
+            self.pswfc = legacy_orbitals
+            self.shells = [self.lll[orbital['projector']] for orbital in self.pswfc]
+            return
         self.pswfc: list[dict] = []
         self.shells: list[int] = []
         effective_potential = None
@@ -590,6 +671,8 @@ class PotcarDataset:
 
     def _effective_potential(self) -> NDArray[np.float64]:
         """Screened potential of the pseudo-atom, :math:`\\tilde v_{loc} + V_H + V_{xc}` (Hartree)."""
+        if hasattr(self, '_atomic_effective_potential'):
+            return self._atomic_effective_potential
         from ..basis_gen.atomic_potential import frozen_effective_potential
 
         return frozen_effective_potential(self)
@@ -666,6 +749,9 @@ class PotcarDataset:
                 :math:`	ilde\chi_k = (arepsilon_k - T - 	ilde v_{eff})	ilde\phi_k` lies in the span of
                 the projectors; the remaining block is symmetrised and its asymmetry recorded.
         """
+        legacy_strengths = getattr(self, '_atomic_screened_dion', None)
+        if legacy_strengths is not None:
+            return legacy_strengths
         v_eff = self._effective_potential()
         r, rab = self.r, self.rab
         bound = {p['projector'] for p in self.pswfc}
