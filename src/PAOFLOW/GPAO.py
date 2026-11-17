@@ -221,7 +221,8 @@ class GPAO:
         y_lim: tuple[float, float] | None = None,
         cols: Color | list[Color] | None = None,
         legend: bool = True,
-    ) -> None:
+        show: bool = True,
+    ) -> Axes:
         """Plot one or more band structures for comparison.
 
         Parameters
@@ -250,11 +251,16 @@ class GPAO:
             file and the others get black, red, blue, ...
         legend : bool, optional
             Show legend when labels are provided (default ``True``).
+        show : bool, optional
+            Show the figure (default ``True``). With ``False`` the figure stays
+            open, so that you can draw more data on the returned axes, for
+            example reference eigenvalues, and show it with ``plt.show()``.
 
         Returns
         -------
-        None
-            Shows the figure.
+        matplotlib.axes.Axes
+            The axes of the band plot. Shows the figure when ``show`` is
+            ``True``.
         """
         from .graphics.plot_functions import plot_bands
         from .inputs.read_pao_output import read_bands_PAO
@@ -269,7 +275,7 @@ class GPAO:
                 from .inputs.read_pao_output import read_band_path_PAO
 
                 sym_points = read_band_path_PAO(sym_points)
-        plot_bands(bands_list, sym_points, title, label, y_lim, cols, labels, legend)
+        return plot_bands(bands_list, sym_points, title, label, y_lim, cols, labels, legend, show)
 
     def plot_arpes(
         self,

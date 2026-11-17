@@ -244,7 +244,22 @@ bands 01: circle -0.000000, square +0.000000
 whole zone, lower band: -0.0000 x 2 pi
 ```
 
-The reference bands of this model in the assets come from `bands(ibrav=0, nk=401, band_path='G-M-K-G', high_sym_points=points)`. The circle file ends with the line `Berry phase: <value>`; the square files hold one phase per plaquette, which the script adds up. Around K′ the two bands carry opposite phases, $\pm 2.07$ on the circle of radius 0.05 and $\pm 2.18$ on the larger square patch, and together they give zero. For gapless graphene the phase of each band is $\pm\pi$ on any loop around the Dirac point; the gap spreads the curvature over a region of size $\sim\delta/v_F$ around K′, so a finite loop encloses only part of it. Over the whole zone the flux of the lower band vanishes: K and K′ contribute equal and opposite amounts, and gapped graphene has $C = 0$.
+The reference bands of this model in the assets come from `bands(ibrav=0, nk=401, band_path='G-M-K-G', high_sym_points=points)`. The circle file ends with the line `Berry phase: <value>`; the square files hold one phase per plaquette, which the script adds up. Around K′ the two bands carry opposite phases, $\pm 2.07$ on the circle of radius 0.05 and $\pm 2.18$ on the larger square patch, and together they give zero. Over the whole zone the flux of the lower band vanishes: K and K′ contribute equal and opposite amounts, and gapped graphene has $C = 0$.
+
+The phase on a loop around K′ depends on the size of the loop, because the gap spreads the Berry curvature over a region around K′ instead of concentrating it at the Dirac point. To see how much of it a loop encloses, repeat the circle for several radii (the radius is in crystal coordinates, so in Cartesian coordinates the loop is an ellipse):
+
+```python
+for delta in (-0.2, 0.0):
+    model = PAOFLOW.PAOFLOW(model={'label': 'graphene', 't': -1.0, 'delta': delta}, outputdir=f'graphene_{delta}')
+    for radius in (0.002, 0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.18, 0.25):
+        model.berry_phase(kspace_method='circle', kcenter=k_prime, kradius=radius, nk1=201,
+                          sub=[0], closed=True, method='berry', fname=f'circle_{radius}')
+    model.finish_execution()
+```
+
+![Berry phase of the lower band of gapped graphene on circles around K' against the radius of the circle, rising from zero towards pi, with the constant pi of gapless graphene](../../_static/images/howtos/tight-binding-model/berry_radius.png)
+
+The figure shows the phases of the lower band from the `circle_<radius>.dat` files. For gapless graphene ($\delta = 0$) every loop gives $\pm\pi$: the curvature is a $\delta$ function at the Dirac point, and the sign of $\pi$ is not defined modulo $2\pi$. With the gap, a small loop encloses almost nothing (0.02 rad at radius 0.002), half of $\pi$ is reached near radius 0.03, and the largest loop, 0.25, still misses 0.30 rad. A finite loop therefore measures the flux through it, not a quantised number; only the flux over the whole zone, or over a region that holds all the curvature of one valley, has a meaning of its own.
 
 The maps of the plaquette phases show where the flux sits. GPAO has no function for a map over the zone, so the script below draws them with matplotlib, from the `square` files of the graphene and Haldane runs and from `Spin_Berry_z_xy.bxsf` of the Kane–Mele run:
 

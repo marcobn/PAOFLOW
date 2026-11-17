@@ -178,14 +178,47 @@ def plot_weighted_bands(
     plt.show()
 
 
-def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=True):
+def plot_bands(
+    bands: np.ndarray | Sequence[np.ndarray],
+    sym_points: tuple[list[int], list[str]] | None,
+    title: str | None,
+    label: str | None,
+    y_lim: tuple[float, float] | None,
+    col: Any,
+    labels: Sequence[str | None] | None = None,
+    legend: bool = True,
+    show: bool = True,
+) -> plt.Axes:
     """Plot one or more band structures for comparison.
 
-    Arguments:
-      bands: ndarray (nbands, nkpts) or list of such arrays.
-      col: single color or list of colors, one per dataset.
-      labels: optional list of legend labels, one per dataset.
-      legend: show legend when labels are provided (default True).
+    Parameters
+    ----------
+    bands : np.ndarray or sequence of np.ndarray
+        Band energies of shape ``(nbands, nkpts)``, or a list of such arrays
+        overlaid on the k axis of the first.
+    sym_points : tuple of (list of int, list of str) or None
+        k-point indices and labels of the high-symmetry points; ``None`` hides
+        the k axis.
+    title : str or None
+        Figure title (default ``'Band Structure'``).
+    label : str or None
+        y-axis label (default :math:`\\epsilon(\\mathbf{k})` (eV)).
+    y_lim : tuple of float or None
+        Energy range ``(y_min, y_max)``; ``None`` keeps the automatic range.
+    col : color or list of colors or None
+        One color, or one per dataset.
+    labels : sequence of str or None, optional
+        Legend labels, one per dataset.
+    legend : bool, optional
+        Show the legend when labels are given (default ``True``).
+    show : bool, optional
+        Call ``plt.show()`` (default ``True``). With ``False`` the figure stays
+        open, so that more data can be drawn on the returned axes.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes of the band plot. Shows the figure when ``show`` is ``True``.
     """
     import numpy as np
 
@@ -250,7 +283,9 @@ def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=
     if legend and any(l is not None for l in labels):
         ax.legend()
 
-    plt.show()
+    if show:
+        plt.show()
+    return ax
 
 
 def plot_dos_beside_bands(
