@@ -8,8 +8,10 @@ def add_ext_field(data_controller):
         Required arrays: ``HRs`` (shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``),
         ``Efield`` (shape ``(3,)``), ``Bfield`` (shape ``(3,)``),
         ``Sj`` (shape ``(3, nawf, nawf)``), ``HubbardU`` (shape ``(nawf,)``),
-        ``tau`` (shape ``(natoms, 3)`` in Bohr radii).
-        Required attribute: ``natoms``.
+        and the orbital centres: ``basis`` (projections) or ``tau`` (bohr for DFT runs, alat
+        units for models, ``tau_units = 'alat'``), see
+        :func:`PAOFLOW.hamiltonian.orbital_centres.orbital_centres_bohr`.
+        Required attribute: ``alat``.
 
     Returns
     -------
@@ -44,14 +46,17 @@ def add_ext_field(data_controller):
 
           H^R_{nn}(0) \\leftarrow H^R_{nn}(0) - U_n / 2
 
-    Atomic positions are assumed to be uniform across orbitals within the same
-    atom.  The array ``HRs`` is temporarily reshaped to
+    Each orbital takes the position of its own centre. Until 16 Nov 2026 the function gave
+    ``nawf // natoms`` consecutive orbitals to each atom and read ``tau`` as bohr also for the
+    models, which store it in alat units: there the field was too small by the factor ``alat``.
+    The array ``HRs`` is temporarily reshaped to
     ``(nawf, nawf, nk1*nk2*nk3, nspin)`` during processing and restored to its
     original shape on exit.
     """
     import numpy as np
 
     from ..utils.constants import ANGSTROM_AU
+    from .orbital_centres import orbital_centres_bohr
 
     arrays = data_controller.data_arrays
     attributes = data_controller.data_attributes
@@ -59,18 +64,9 @@ def add_ext_field(data_controller):
     nawf, _, nk1, nk2, nk3, nspin = arrays['HRs'].shape
     arrays['HRs'] = np.reshape(arrays['HRs'], (nawf, nawf, nk1 * nk2 * nk3, nspin), order='C')
 
-    l = 0
-    natoms = attributes['natoms']
-    nwf = nawf // natoms
-    tau_wf = np.zeros((nawf, 3), dtype=float)
-    for n in range(attributes['natoms']):
-        for i in range(nwf):
-            tau_wf[l, :] = arrays['tau'][n, :]
-            l += 1
-
-    tau_wf /= ANGSTROM_AU
-
     if arrays['Efield'].any() != 0.0:
+        # orbital centres in angstrom (bohr for DFT runs, alat units for models)
+        tau_wf = orbital_centres_bohr(arrays, attributes) / ANGSTROM_AU
         for n in range(nawf):
             arrays['HRs'][n, n, 0, :] -= arrays['Efield'].dot(tau_wf[n, :])
 

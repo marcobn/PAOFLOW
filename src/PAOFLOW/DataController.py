@@ -802,6 +802,48 @@ class DataController:
                     )
         self.comm.Barrier()
 
+    def write_berry_bands(self, fname: str, phases, kpts=None) -> None:
+        """Write the eigenphases of Wilson loops (``berry_phase(eigvals=True)``) to ``<fname>.dat``.
+
+        Parameters
+        ----------
+        fname : str
+            File stem, written to the output directory.
+        phases : array_like, shape ``(nloops, nphases)``
+            Eigenphases of each loop (radians): one row per loop, i.e. per point of the
+            transverse coordinate in ``'track'`` mode, a single row in ``'path'`` mode.
+        kpts : array_like, shape ``(nloops,)``, optional
+            Transverse coordinate of each loop; the loop index when omitted.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        Columns: the transverse coordinate, then the phases :math:`\\varphi_n` (radians). The
+        hybrid Wannier centres along the loop are :math:`\\varphi_n/2\\pi` modulo 1, in units of
+        the lattice vector spanned by the loop.
+        """
+        if self.rank == 0:
+            from os.path import join
+
+            import numpy as np
+
+            phases = np.atleast_2d(np.asarray(phases, dtype=float))
+            nloops, nphases = phases.shape
+            kpts = np.arange(nloops, dtype=float) if kpts is None else np.asarray(kpts, dtype=float)
+            header = '\t'.join(f'phi_{n + 1}' for n in range(nphases))
+            rows = (
+                f'{kpts[ik]: 2.8f}\t' + '\t'.join(f'{p: 2.12f}' for p in phases[ik]) + '\n'
+                for ik in range(nloops)
+            )
+            with open(join(self.data_attributes['opath'], fname + '.dat'), 'w') as f:
+                f.write('# Wilson-loop eigenphases (rad); Wannier centres = phi / 2 pi mod 1\n')
+                f.write(f'# k\t{header}\n')
+                f.writelines(rows)
+        self.comm.Barrier()
+
     def write_kpnts_path(self, fname, path, kpnts, b_vectors):
         """
         Write the k-path through the BZ

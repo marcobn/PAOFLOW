@@ -3761,9 +3761,9 @@ def build_from_hoppings(data_controller: DataController, model: HoppingModel) ->
     None
         Sets ``arrays['HRs', 'a_vectors', 'b_vectors', 'tau', 'Dnm', 'naw', 'atoms']`` and
         ``attributes['nawf', 'bnd', 'nbnds', 'natoms', 'nspin', 'alat', 'omega', 'nelec', 'Efermi',
-        'shift', 'dftSO', 'adhoc_SO', 'do_spin_orbit', 'nk1', 'nk2', 'nk3', 'nkpnts']``
-        (``nelec`` only when the model has one); every orbital is its own site, so ``tau`` holds
-        the orbital centres (Cartesian, alat units) and ``Dnm`` their differences
+        'shift', 'dftSO', 'adhoc_SO', 'do_spin_orbit', 'tau_units', 'nk1', 'nk2', 'nk3',
+        'nkpnts']`` (``nelec`` only when the model has one); every orbital is its own site, so
+        ``tau`` holds the orbital centres (Cartesian, alat units: ``tau_units = 'alat'``) and ``Dnm`` their differences
         :math:`\tau_n - \tau_m` (Cartesian, bohr, as the QE route) used by
         ``gradient_and_momenta``. Spinful models also get the spin operators
         ``arrays['Sj']`` (:math:`\sigma/2` in the block order of :class:`HoppingModel`).
@@ -3776,6 +3776,7 @@ def build_from_hoppings(data_controller: DataController, model: HoppingModel) ->
     arrays['a_vectors'] = lattice_vectors
     arrays['b_vectors'] = np.linalg.inv(lattice_vectors).T
     arrays['tau'] = np.asarray(model.orbital_positions, dtype=float) @ lattice_vectors
+    attributes['tau_units'] = 'alat'  # DFT runs keep tau in bohr
     centres_bohr = float(model.alat) * arrays['tau']
     arrays['Dnm'] = centres_bohr[:, None, :] - centres_bohr[None, :, :]
     arrays['naw'] = np.ones(norb, dtype=int)
@@ -3873,3 +3874,5 @@ def build_TB_model(data_controller: DataController, params: dict) -> None:
             sys.exit()
     if model_name.upper().endswith('_PYTHTB') and params.get('nelec') is not None:
         data_controller.data_attributes['nelec'] = float(params['nelec'])
+    # every builtin model keeps tau in alat units (DFT runs: bohr)
+    data_controller.data_attributes['tau_units'] = 'alat'

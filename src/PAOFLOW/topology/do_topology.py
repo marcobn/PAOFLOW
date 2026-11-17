@@ -25,7 +25,7 @@ def do_topology(data_controller):
         Writes one or more output files to ``opath`` depending on the
         flags set in ``data_attributes``:
 
-        - ``Z2.dim`` — 2-D and 3-D Z2 topological invariants
+        - ``Z2.dim`` — 2-D and 3-D Z2 topological invariants, legacy (see Notes)
           (when ``nspin == 1`` and ``spin_Hall`` is ``True``).
         - Berry curvature, Chern numbers, or spin Hall conductivity files
           (controlled by ``Berry`` and ``spin_Hall`` flags).
@@ -40,6 +40,14 @@ def do_topology(data_controller):
     conductivity are evaluated via the Kubo-formula approach.  Momentum
     matrix elements are computed using the Fourier-differentiated Hamiltonian
     with the Dnm correction for non-primitive bases.
+
+    The Pfaffian Z2 written to ``Z2.dim`` is a legacy output, kept unchanged: it takes the
+    eigenvectors of each TRIM from independent diagonalizations, so the branch of
+    :math:`\\sqrt{\\det w}` is not fixed by a continuous gauge, and for ``adhoc_SO`` the
+    time-reversal matrix pairs the orbitals :math:`(i, i+1)` instead of PAOFLOW's block-ordered
+    spinors. Compute Z2 indices with Z2Pack (``mirror_chern_number``, whose fallback is the Z2
+    index over half the zone, or ``z2pack`` on the ``hamiltonian.dat`` of ``write_Hamiltonian``)
+    or from the Wilson-loop flows of ``berry_phase(eigvals=True)``.
     """
     from mpi4py import MPI
 

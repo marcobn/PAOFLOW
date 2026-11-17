@@ -1786,7 +1786,8 @@ class PAOFLOW:
         Arguments:
             eff_mass (bool): If True calculate the Effective Mass Tensor
             Berry (bool): If True calculate the Berry Curvature
-            spin_Hall (bool): If True calculate Spin Hall Conductivity
+            spin_Hall (bool): If True calculate Spin Hall Conductivity (and the legacy Pfaffian
+                Z2 in Z2.dim; use Z2Pack, e.g. mirror_chern_number, or berry_phase flows instead)
             adhoc_SO (bool): If True the calculation includes spin_orbit effects for topology.
             spol (int): Spin polarization
             ipol (int): In plane dimension 1
@@ -4639,14 +4640,20 @@ class PAOFLOW:
             berry_high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
             nk (int): Number of k-points to include in the path
             closed (bool, optional): whether or not to include the connection of the last and first points in the loop
-            method (str, {'berry','zak'}): 'berry' returns the usual berry phase. 'zak' includes the Zak phase for 1D systems which takes into account the Bloch factor exp(-iG.r)
-            accumulated over a Brillouin zone. See J. Zak, Phys. Rev. Lett. 62, 2747 (1989)
+            method (str, {'berry','zak'}): 'berry' uses the eigenvectors of H(k) in PAOFLOW's lattice gauge
+                (H(k + G) = H(k)): invariants are right, positions lack the orbital centres. 'zak' uses the
+                cell-centred states exp(-2 pi i k.s_n) c_n(k) (s_n the crystal coordinates of orbital n) and
+                closes the loop with the state at k_0 + G: across the zone, phase / 2 pi is the Wannier
+                centre along the loop. See J. Zak, Phys. Rev. Lett. 62, 2747 (1989)
 
             sub (None or list of int, optional): index of selected bands to calculate the Berry phase
-            occupied (bool, optional): calculate the Berry phase over all occupied bands (if set to True, sub is set to None)
+            occupied (bool, optional): calculate the Berry phase over all occupied bands (if set to True, sub is set to None):
+                the lowest nelec / spin factor bands (nelec electrons; spin factor 2 without spin-orbit
+                coupling for nspin = 1, else 1; nspin = 2: the bands of channel 0 below the Fermi level)
             kxlim (tuple, float): start and end points in x direction for sampling the BZ, used when kspace_method='square' .
             kylim (tuple, float): start and end points in y direction for sampling the BZ, used when kspace_method='square' .
-            eigvals (bool, optional): write overlap matrix eigenvalues
+            eigvals (bool, optional): return and write the eigenphases of the loop (the hybrid Wannier
+                centres x 2 pi) to <fname>.dat ('path': one row; 'track': one row per transverse point)
             eigvecs (bool, optional): write overlap matrix eigenvectors
             save_prd (bool, optional): save overlap matrix
             fname (str, optional): filename to save the berry phase results
