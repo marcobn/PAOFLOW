@@ -98,7 +98,10 @@ def do_orbital_texture(data_controller):
             )
 
     oktxtaux = np.take(np.diagonal(oktxtaux, axis1=2, axis2=3), ind_plot, axis=2)
-    oktxt = gather_full(np.ascontiguousarray(oktxtaux), attributes['npool'])
+    # keep the rank-local k slice for downstream k-summed routines (REE);
+    # the gathered full-grid array is only used for writing files on rank 0
+    oktxt_local = np.ascontiguousarray(oktxtaux)
+    oktxt = gather_full(oktxt_local, attributes['npool'])
     oktxtaux = None
 
     if rank == 0:
@@ -125,6 +128,6 @@ def do_orbital_texture(data_controller):
                     orbitalband=oktxt[:, :, :, :, ib],
                 )
 
-    arrays['oktxt'] = oktxt
+    arrays['oktxt'] = oktxt_local
     oktxt = None
     E_k_full = None

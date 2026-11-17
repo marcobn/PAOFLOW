@@ -82,6 +82,9 @@ class PAOFLOW:
     pao_hamiltonian(shift_type, insulator, write_binary, expand_wedge, symmetrize, …)
         Build the real-space Hamiltonian ``H(R)`` (stored as ``HRs``) and the
         k-space Hamiltonian ``H(k)`` (stored as ``Hks``).
+    remove_semicore(emin, weight_threshold)
+        Drop the semicore orbitals and project ``H(k)`` onto the valence ones,
+        keeping every eigenvalue above ``emin``.
     add_external_fields(Efield, Bfield, HubbardU)
         Apply electric field, magnetic field, or Hubbard-U corrections to ``HRs``.
     write_Hamiltonian(fname)
@@ -95,6 +98,9 @@ class PAOFLOW:
         Double the supercell in one or more directions.
     cutting_Hamiltonian(x, y, z)
         Trim periodic images from ``HRs`` along selected axes.
+    supercell_Hamiltonian(nx, ny, nz, cut_x, cut_y, cut_z, max_range, build_Dnm)
+        Build an ``nx x ny x nz`` supercell (any sizes) in one step on its own,
+        smaller lattice-vector grid, optionally finite along some directions.
     adhoc_spin_orbit(naw, phi, theta, lambda_p, lambda_d, soc_strengh, soc_species)
         Add phenomenological spin-orbit coupling to ``HRs`` without a DFT+SOC run.
 
@@ -950,6 +956,132 @@ class PAOFLOW:
                 raise e
         self.report_module_time('k -> R')
 
+    def remove_semicore(self, emin: float = -20.0, weight_threshold: float = 0.5) -> None:
+        """Remove the semicore states from the PAO Hamiltonian.
+
+        The orbitals that carry the states below ``emin`` (semicore shells of the
+        pseudopotentials, e.g. Te 4d or Zr 4s4p) are dropped, and ``H(k)`` is
+        projected onto the remaining valence orbitals so that every eigenvalue above
+        ``emin`` is reproduced exactly on the k grid and ``HRs`` stays short ranged.
+        All later steps (doubling, supercells, bands, transport, spin and orbital
+        operators) then work in the smaller basis.
+
+        Call it right after :meth:`pao_hamiltonian` and before
+        :meth:`doubling_Hamiltonian`, :meth:`interpolated_hamiltonian`,
+        :meth:`adhoc_spin_orbit` or any property calculation.
+
+        Parameters
+        ----------
+        emin : float, default -20.0
+            Energy (eV, same reference as the PAO bands) below which the states are
+            removed. It must lie in a gap between the semicore and valence bands.
+        weight_threshold : float, default 0.5
+            Minimum k-averaged weight of an orbital in the states below ``emin`` for
+            it to be classified as semicore. Semicore orbitals have a weight close to
+            1 and valence orbitals close to 0.
+
+        Returns
+        -------
+        None
+            Replaces ``HRs`` (on all ranks) and ``Hks`` (rank 0, if present) by the
+            valence Hamiltonian, and removes the semicore orbitals from ``basis``,
+            ``Dnm``, ``Sj``, ``Lj``, ``naw``, ``shells``, ``jchia``, ``sh_l``,
+            ``sh_j`` and the semicore bands from ``my_eigsmat``. Updates ``nawf``,
+            ``nelec``, ``nbnds`` and ``bnd``.
+
+        Raises
+        ------
+        RuntimeError
+            If called at the wrong point of the workflow, with a non-orthogonal
+            basis or the ad hoc spin-orbit model, or if ``emin`` splits a shell or
+            does not lie in a gap.
+
+        Notes
+        -----
+        See :mod:`PAOFLOW.hamiltonian.semicore_removal` for the projection. The
+        smallest singular value printed at the end measures how much the valence
+        states mixed with the semicore orbitals (1 means not at all).
+
+        Examples
+        --------
+        ::
+
+            pf.read_atomic_proj_QE()
+            pf.projectability()
+            pf.pao_hamiltonian()
+            pf.remove_semicore(emin=-20.0)
+            pf.doubling_Hamiltonian(nx=2, ny=0, nz=0)
+        """
+        from .hamiltonian.semicore_removal import (
+            check_semicore_prerequisites,
+            find_semicore_orbitals,
+            project_valence_hamiltonian,
+            update_orbital_metadata,
+        )
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        try:
+            # every rank checks its own copy of the data (they are identical)
+            check_semicore_prerequisites(self.data_controller)
+            nawf_before, nelec_before = attr['nawf'], attr['nelec']
+
+            # semicore orbitals: found on rank 0, shared with every rank
+            is_semicore = (
+                find_semicore_orbitals(self.data_controller, emin, weight_threshold)
+                if self.rank == 0
+                else None
+            )
+            is_semicore = self.comm.bcast(is_semicore, root=0)
+            nsemicore = int(is_semicore.sum())
+
+            if nsemicore == 0:
+                if self.rank == 0:
+                    print('remove_semicore: no states below %.2f eV, nothing to do' % emin)
+            else:
+                # shells being removed, for the report (before the basis is reduced)
+                removed_shells = sorted(
+                    {
+                        '%s %s' % (orbital['atom'], orbital['label'])
+                        for orbital, semicore in zip(arrays['basis'], is_semicore)
+                        if semicore
+                    }
+                )
+
+                # valence Hamiltonian: projected on rank 0, then broadcast like pao_hamiltonian
+                smallest_singular_value = (
+                    project_valence_hamiltonian(self.data_controller, is_semicore, emin)
+                    if self.rank == 0
+                    else None
+                )
+                smallest_singular_value = self.comm.bcast(smallest_singular_value, root=0)
+                self.data_controller.broadcast_single_array('HRs')
+
+                # orbital lists, operators and counts: the same update on every rank
+                update_orbital_metadata(self.data_controller, is_semicore)
+
+                if self.rank == 0:
+                    print(
+                        'remove_semicore: removed %d states below %.2f eV (%s)'
+                        % (nsemicore, emin, ', '.join(removed_shells))
+                    )
+                    print(
+                        'remove_semicore: nawf %d -> %d, nelec %g -> %g, min valence overlap %.4f'
+                        % (
+                            nawf_before,
+                            attr['nawf'],
+                            nelec_before,
+                            attr['nelec'],
+                            smallest_singular_value,
+                        )
+                    )
+        except Exception as e:
+            self.report_exception('remove_semicore')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Remove semicore')
+
     def minimal(self, first_band=None, R=False):
         from .projection.do_minimal import do_minimal
 
@@ -1501,6 +1633,7 @@ class PAOFLOW:
                 'naw',
                 'Dnm',
                 'a_vectors',
+                'b_vectors',
                 'tau',
                 'atoms',
                 'sh',
@@ -1595,6 +1728,159 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('cutting_Hamiltonian')
+
+    def supercell_Hamiltonian(
+        self,
+        nx: int = 1,
+        ny: int = 1,
+        nz: int = 1,
+        cut_x: bool = False,
+        cut_y: bool = False,
+        cut_z: bool = False,
+        max_range: tuple[int | None, int | None, int | None] = (None, None, None),
+        build_Dnm: bool = True,
+    ) -> None:
+        """Replace the PAO Hamiltonian by that of an ``nx x ny x nz`` supercell.
+
+        One-step alternative to :meth:`doubling_Hamiltonian` followed by
+        :meth:`cutting_Hamiltonian`. The repetitions can be any positive integers (not
+        only powers of two), and the supercell is built directly on its own grid of
+        lattice vectors, which shrinks as the cell grows, so the memory of ``HRs``
+        scales as ``N nawf**2`` per stored vector instead of ``N**2 nawf**2 nk1 nk2
+        nk3``. Directions can be made finite (ribbons, slabs, wires) without ever
+        allocating their periodic images, and ``max_range`` keeps only the nearest
+        supercell vectors along a direction (a transport principal layer needs only
+        ``H(0)`` and ``H(1)``). Atoms, orbitals, operators, lattice, k grid and
+        ``Hks`` are updated consistently.
+
+        Call it after :meth:`pao_hamiltonian` (and :meth:`remove_semicore`, if used)
+        and before :meth:`interpolated_hamiltonian` or any property calculation.
+
+        Parameters
+        ----------
+        nx, ny, nz : int, default 1
+            Number of primitive cells along the first, second and third lattice
+            vector.
+        cut_x, cut_y, cut_z : bool, default False
+            Remove the periodicity along this lattice vector (only the supercell
+            vector 0 is kept): finite ribbons, slabs or wires.
+        max_range : tuple of int or None, length 3, default ``(None, None, None)``
+            Keep only the supercell vectors with :math:`|R_i| \\le` ``max_range[i]``
+            along each direction; ``None`` keeps every vector that holds a hopping.
+            For a transport principal layer along z use ``(None, None, 1)`` with
+            ``nz`` large enough that the primitive hoppings beyond ``nz`` cells are
+            negligible.
+        build_Dnm : bool, default True
+            Rebuild the orbital-distance matrix ``Dnm`` (``3 (N nawf)**2`` floats),
+            needed by the velocity and gradient steps. If False it is removed, which
+            saves memory for transport.
+
+        Returns
+        -------
+        None
+            Replaces ``HRs`` (on all ranks) and ``Hks`` (rank 0, if present) by the
+            supercell Hamiltonian; repeats ``tau``, ``basis``, ``atoms``, ``naw``,
+            ``sh_l``, ``sh_j`` and the other per-atom arrays over the cells; makes
+            ``Sj`` and ``Lj`` block diagonal; rebuilds ``Dnm``; scales ``a_vectors``,
+            ``b_vectors``, ``omega``, ``nawf``, ``natoms``, ``nelec``, ``nbnds`` and
+            ``bnd``; sets the k grid (``nk1``, ``nk2``, ``nk3``, ``nkpnts``,
+            ``kpnts``) of the new ``HRs``. Removes the primitive-cell arrays ``U``,
+            ``my_eigsmat`` and ``equiv_atom``.
+
+        Raises
+        ------
+        ValueError
+            If a repetition is not a positive integer.
+        RuntimeError
+            If called before :meth:`pao_hamiltonian` or after the interpolation or
+            property steps, or with a non-orthogonal basis.
+
+        Notes
+        -----
+        Block :math:`(c, d)` of the supercell Hamiltonian at supercell vector
+        :math:`\\mathbf{R}'` is the primitive hopping between cells :math:`c` and
+        :math:`d`,
+
+        .. math::
+
+            H^{\\rm sc}_{cd}(\\mathbf{R}') = H\\big(\\mathbf{n} \\circ \\mathbf{R}'
+            + \\mathbf{c}_d - \\mathbf{c}_c\\big),
+
+        with cells ordered with the first direction fastest (as in
+        :meth:`doubling_Hamiltonian`). On an even primitive grid the zone-boundary
+        hopping is split evenly between :math:`\\pm n_k/2`, which keeps the supercell
+        Hamiltonian Hermitian. See :mod:`PAOFLOW.hamiltonian.supercell`.
+
+        Examples
+        --------
+        A ribbon 10 cells wide along x, finite in x, with the principal layer of 4
+        cells along z for transport::
+
+            pf.read_atomic_proj_QE()
+            pf.projectability()
+            pf.pao_hamiltonian()
+            pf.remove_semicore(emin=-20.0)
+            pf.supercell_Hamiltonian(nx=10, nz=4, cut_x=True,
+                                     max_range=(None, None, 1), build_Dnm=False)
+        """
+        from .hamiltonian.supercell import (
+            build_supercell_real_space_hamiltonian,
+            check_supercell_prerequisites,
+            update_supercell_k_grid,
+            update_supercell_metadata,
+        )
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        try:
+            # repetitions must be positive integers
+            repetitions = (nx, ny, nz)
+            if any(int(n) != n or n < 1 for n in repetitions):
+                raise ValueError(
+                    'supercell_Hamiltonian: nx, ny, nz must be positive integers, got %s'
+                    % (repetitions,)
+                )
+            repetitions = tuple(int(n) for n in repetitions)
+            finite_directions = (cut_x, cut_y, cut_z)
+
+            # every rank checks its own copy of the data (they are identical)
+            check_supercell_prerequisites(self.data_controller)
+            nawf_before = attr['nawf']
+
+            # supercell HRs: built on rank 0, then broadcast like pao_hamiltonian
+            if self.rank == 0:
+                arrays['HRs'] = build_supercell_real_space_hamiltonian(
+                    arrays['HRs'], repetitions, finite_directions, max_range
+                )
+            self.data_controller.broadcast_single_array('HRs')
+
+            # atoms, orbitals, operators, lattice and counts: the same update on every rank
+            update_supercell_metadata(self.data_controller, repetitions, build_Dnm)
+
+            # k grid of the new HRs, and Hks where pao_hamiltonian left it (rank 0)
+            update_supercell_k_grid(self.data_controller)
+
+            if self.rank == 0:
+                print(
+                    'supercell_Hamiltonian: %dx%dx%d cells, finite along %s, nawf %d -> %d, '
+                    'R grid %dx%dx%d, HRs %.2f GB'
+                    % (
+                        *repetitions,
+                        ''.join('xyz'[i] for i in range(3) if finite_directions[i]) or 'none',
+                        nawf_before,
+                        attr['nawf'],
+                        attr['nk1'],
+                        attr['nk2'],
+                        attr['nk3'],
+                        arrays['HRs'].nbytes / 1e9,
+                    )
+                )
+        except Exception as e:
+            self.report_exception('supercell_Hamiltonian')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Supercell Hamiltonian')
 
     def spin_operator(self, adhoc_SO=False, sh_l=None, sh_j=None):
         """

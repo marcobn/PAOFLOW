@@ -47,3 +47,24 @@ def test_compute_surface_transfer_matrices_singular_increments_fail_counter():
     np.testing.assert_allclose(tott, 0.0)
     assert niter == 0
     assert fail_counter['nfail'] == 1
+
+
+@pytest.mark.unit
+def test_complex_surface_green_matches_finite_chain() -> None:
+    """Complex hopping and on-site SOC must agree with direct lead inversion."""
+    onsite = np.array([[0.2, 0.04j], [-0.04j, -0.1]])
+    hopping = np.array([[-0.3, 0.07 + 0.02j], [-0.01j, -0.2]])
+    energy, broadening, cells = 1.3, 0.03, 40
+    effective = energy * np.eye(2) - onsite
+    transfer, _, iterations = compute_surface_transfer_matrices(
+        effective, np.eye(2), hopping, broadening, transfer_thr=1e-26
+    )
+    assert iterations < 100
+    surface = np.linalg.inv(effective + 1j * broadening * np.eye(2) - hopping @ transfer)
+    finite = (
+        np.kron(np.eye(cells), onsite)
+        + np.kron(np.diag(np.ones(cells - 1), 1), hopping)
+        + np.kron(np.diag(np.ones(cells - 1), -1), hopping.conj().T)
+    )
+    direct = np.linalg.inv((energy + 1j * broadening) * np.eye(2 * cells) - finite)[:2, :2]
+    np.testing.assert_allclose(surface, direct, rtol=1e-12, atol=1e-13)

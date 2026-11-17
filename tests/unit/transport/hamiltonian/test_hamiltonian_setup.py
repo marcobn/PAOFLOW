@@ -47,3 +47,23 @@ def test_hamiltonian_setup_applies_shifts_and_sgm():
     assert blc_00C.ie == 0
     assert blc_00C.ik == 0
     assert blc_00C.ie_buff == 0
+
+
+@pytest.mark.unit
+def test_hamiltonian_setup_preserves_complex_onsite_block() -> None:
+    """On-site spin-orbit entries retain their sign in E*S - H."""
+    block = OperatorBlock('blc_00C')
+    block.allocate(dim1=2, dim2=2, nkpnts=1, ne_sgm=0, lhave_corr=False)
+    hamiltonian = np.array([[0.2, 0.3j], [-0.3j, -0.4]])
+    overlap = np.array([[1.0, 0.05j], [-0.05j, 1.0]])
+    block.H[:, :, 0], block.S[:, :, 0] = hamiltonian, overlap
+    hamiltonian_setup(
+        ik=0,
+        ie_g=0,
+        egrid=np.array([0.7]),
+        shift_L=0.0,
+        shift_C=0.1,
+        shift_R=0.0,
+        blc_blocks={'blc_00C': block},
+    )
+    np.testing.assert_allclose(block.aux[:, :, 0], 0.6 * overlap - hamiltonian)
