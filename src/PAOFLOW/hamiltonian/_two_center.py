@@ -43,13 +43,15 @@ import numpy as np
 import scipy.integrate
 import scipy.special
 
-LMAX_REAL_YLM = 6
+LMAX_REAL_YLM = 7
 r"""Maximum supported angular momentum in :func:`real_spherical_harmonic`.
 
-Must be at least :math:`2\,l_\mathrm{max}^\mathrm{orbital}` so that the
-Gaunt triangle :math:`L \le l_A + l_B` is representable.  PAO basis sets
-and UPF projectors go up to :math:`l=3` (f-channels), giving
-:math:`L_\max = 6`.
+Must be at least :math:`2\,l_\mathrm{max}^\mathrm{orbital} + 1` so that the
+Gaunt triangle :math:`L \le l_A + l_B + 1` of the position (dipole) integrals
+:math:`\langle \phi_A | \mathbf r | \phi_B \rangle` is representable.  PAO
+basis sets and UPF projectors go up to :math:`l=3` (f-channels), giving
+:math:`L_\max = 7` (6 failed for two f orbitals, 17 Nov 2026).  The
+sphere quadrature integrates the products exactly up to degree 13.
 """
 
 

@@ -3,7 +3,7 @@
       restart_mode='from_scratch',
       prefix='al5',
       pseudo_dir = './',
-      outdir = './output/qe'
+      outdir = './'
       wf_collect = .TRUE.
    /
    &SYSTEM

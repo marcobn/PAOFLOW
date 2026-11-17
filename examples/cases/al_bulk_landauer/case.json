@@ -5,13 +5,14 @@
  "answers": {
   "savedir": "al5.save",
   "prefix": "al5",
-  "projector": "projwfc",
+  "projector": "internal",
   "calculation": "bulk",
   "transport_direction": "z",
   "emin": -7.0,
   "emax": 2.0,
   "ne": 901,
-  "delta": 0.0005
+  "delta": 0.0005,
+  "basis": "standard"
  },
  "pseudopotentials": [
   "library/Al.pbe-rrkj.UPF"
@@ -26,11 +27,6 @@
    "program": "pw.x",
    "input": "nscf.in",
    "label": "Non-self-consistent run on the full k grid"
-  },
-  {
-   "program": "projwfc.x",
-   "input": "proj.in",
-   "label": "Projections on the atomic wavefunctions"
   }
  ],
  "tags": [

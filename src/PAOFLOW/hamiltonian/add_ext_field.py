@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+import numpy as np
+
+
 def add_ext_field(data_controller, efield=None, bfield=None, hubbard_u=None) -> None:
     """Add external electric field, magnetic field, and Hubbard U corrections to the real-space Hamiltonian.
 
@@ -113,3 +118,54 @@ def add_ext_field(data_controller, efield=None, bfield=None, hubbard_u=None) -> 
             arrays['HRs'][n, n, 0, :] -= hubbard_u[n] / 2.0
 
     arrays['HRs'] = np.reshape(arrays['HRs'], (nawf, nawf, nk1, nk2, nk3, nspin), order='C')
+
+
+def hubbard_shifts_from_labels(arrays: dict, shifts: dict) -> np.ndarray:
+    """Per-orbital U of the internal projection basis from manifold labels.
+
+    Parameters
+    ----------
+    arrays : dict
+        Data-controller arrays with ``atomic_basis`` (the records of the internal projections:
+        species ``atom`` and shell ``label`` of every orbital).
+    shifts : dict
+        ``{'Al-3p': 0.1, 'P-3p': 2.31}``: species and shell (as ACBN0 names a manifold, any case)
+        and U (eV).
+
+    Returns
+    -------
+    ndarray, shape (nawf,)
+        U of every orbital of the basis (0 for the others).
+
+    Raises
+    ------
+    ValueError
+        Without an internal basis (``projwfc.x`` projections have no shell labels: give one U per
+        orbital), or for a label that names no orbital of the basis (the message lists the
+        manifolds).
+
+    Notes
+    -----
+    The labels are resolved against the basis of the run, so the same dictionary shifts the same
+    manifolds in a run on the ``standard`` basis and in one on the ``extended`` basis, where the
+    orbital indices differ.
+    """
+    basis = arrays.get('atomic_basis')
+    if basis is None or len(basis) == 0:
+        raise ValueError(
+            'Hubbard shifts by manifold label need the internal projections (projections()); '
+            'with projwfc.x projections give one U per orbital'
+        )
+    names = ['%s-%s' % (str(r['atom']).strip(), str(r['label']).strip()) for r in basis]
+    wanted = {str(key).strip().lower(): float(value) for key, value in shifts.items()}
+    values = np.zeros(len(basis))
+    for index, name in enumerate(names):
+        values[index] = wanted.get(name.lower(), 0.0)
+    known = {name.lower() for name in names}
+    missing = sorted(key for key in wanted if key not in known)
+    if missing:
+        raise ValueError(
+            'no orbital of the basis is in %s; the manifolds of this basis are %s'
+            % (', '.join(missing), ', '.join(sorted(set(names), key=names.index)))
+        )
+    return values

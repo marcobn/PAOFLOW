@@ -998,9 +998,10 @@ class PAOFLOW:
                 tesla and the orbital term). Needs a spinor basis (fully relativistic, adhoc
                 spin-orbit, spinful models, or spinor_basis()); the spin operator is built if
                 missing; a collinear run (nspin = 2) takes B along z only
-            HubbardU (ndarray): Hubbard corrections, -U_n / 2 on each orbital (eV), in the order
-                of the basis; a shorter list covers the first orbitals and leaves the others
-                alone
+            HubbardU (ndarray or dict): Hubbard corrections, -U_n / 2 on each orbital (eV), in the
+                order of the basis (a shorter list covers the first orbitals and leaves the
+                others alone); or a dict of manifolds, {'Al-3p': 0.1, 'P-3p': 2.31}, resolved
+                on the internal projection basis of the run
 
         Returns:
             None
@@ -1014,7 +1015,13 @@ class PAOFLOW:
 
         efield = np.array(Efield, dtype=float) if any(v != 0.0 for v in Efield) else np.zeros(3)
         bfield = np.array(Bfield, dtype=float) if any(v != 0.0 for v in Bfield) else np.zeros(3)
-        hubbard = np.array(HubbardU, dtype=float) if any(v != 0.0 for v in HubbardU) else None
+        if isinstance(HubbardU, dict):
+            from .hamiltonian.add_ext_field import hubbard_shifts_from_labels
+
+            hubbard = hubbard_shifts_from_labels(arry, HubbardU) if HubbardU else None
+            hubbard = hubbard if hubbard is not None and hubbard.any() else None
+        else:
+            hubbard = np.array(HubbardU, dtype=float) if any(v != 0.0 for v in HubbardU) else None
 
         try:
             if hubbard is not None:
@@ -5315,16 +5322,17 @@ class PAOFLOW:
         -------
         None
             Writes ``jdos.dat`` (``jdos_0.dat`` and ``jdos_1.dat`` for a collinear magnet): photon
-            energy and JDOS.
+            energy and JDOS, normalized as a distribution of the transitions.
 
         Notes
         -----
         .. math::
 
-            J(\\omega) = \\sum_{nm\\mathbf{k}} w_{\\mathbf{k}} f_{n\\mathbf{k}}
-            (1 - f_{m\\mathbf{k}}) \\, \\delta(E_{m\\mathbf{k}} - E_{n\\mathbf{k}} - \\hbar\\omega)
+            J(\\omega) \\propto \\sum_{nm\\mathbf{k}} w_{\\mathbf{k}} (f_{n\\mathbf{k}}
+            - f_{m\\mathbf{k}}) \\, \\delta(E_{m\\mathbf{k}} - E_{n\\mathbf{k}} - \\hbar\\omega)
 
-        on the full k grid: call it after :meth:`pao_eigh`.
+        over the eigenvalues, k-points and weights of the DFT save (all its bands), not the PAO
+        bands: the interpolation does not change it, and a model, which has no save, cannot use it.
         """
         from .response.do_epsilon import do_jdos
 

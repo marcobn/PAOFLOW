@@ -152,6 +152,19 @@ LANDAUER_ITEMS: tuple = (
         section=CONDUCTOR,
     ),
     Question(
+        'basis',
+        'Basis of the internal projections (minimal: the orbitals of the pseudopotentials)',
+        kind='choice',
+        choices=lambda a, c: ['minimal', 'standard', 'extended'],
+        default='standard',
+        when=lambda a, c: a.get('projector', 'internal') != 'projwfc',
+        label='Basis',
+        help='The Green functions scale as the cube of the number of orbitals: minimal is the '
+        'cheapest, extended the most accurate above the Fermi level.',
+        section=CONDUCTOR,
+        level='advanced',
+    ),
+    Question(
         'principal_layers',
         'Atomic layers of the principal layer from the start of the cell (0: the whole cell)',
         kind='int',
@@ -426,6 +439,7 @@ def assemble_landauer(answers: Answers, context: Context) -> dict:
     cfg['calculation'] = answers['calculation']
     cfg['transport_direction'] = answers['transport_direction']
     cfg['lead_layers'] = int(answers['lead_layers']) if conductor else 0
+    cfg['basis'] = answers.get('basis', 'standard')
     cfg['principal_layers'] = 0 if conductor else int(answers.get('principal_layers', 0))
     cfg['doublings'] = int(answers.get('doublings', 0))
     cfg['transverse_nk'] = tuple(answers.get('transverse_nk') or (0, 0))

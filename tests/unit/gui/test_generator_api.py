@@ -379,7 +379,7 @@ def test_example_cases_listed_and_copied(client, make_client, gui_root):
     assert case['workflow'] == 'run' and case['pseudopotentials'] == [
         'Si.pbe-tm-new-gipaw-v2.1.UPF'
     ]
-    assert [step['input'] for step in case['qe']] == ['scf.in', 'nscf.in', 'proj.in']
+    assert [step['input'] for step in case['qe']] == ['scf.in', 'nscf.in']
     status, copied, _ = client.post(
         '/api/cases/copy', {'name': 'si_bands_transport', 'folder': 'cases/si'}
     )

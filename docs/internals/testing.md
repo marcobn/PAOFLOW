@@ -26,6 +26,26 @@ different layout) and a test that borrows their files breaks, or silently skips,
 CI runs `tests/unit` in the `unit-tests` job (`-m "not slow and not integration"`), split into
 groups that run in parallel.
 
+### Three tiers
+
+- **Properties on model Hamiltonians** (`tests/unit/closed_forms`, and the model tests of each
+  subpackage): every property against a closed form. Examples: the van Hove DOS of a chain, the
+  Drude weight, the Wiedemann-Franz and Mott laws, the f-sum rule of the interband dielectric
+  function, the quantized anomalous Hall conductivity of a Chern insulator, the Weyl nodes of the
+  lattice Weyl model, the spin of a Rashba gas, the degenerate electron gas of `doping`. Seconds
+  each, nothing to download, and nothing stored that could carry a bug forward.
+- **Projections on small QE saves** (`tests/integration/projections`): the readers, projwfc.x and
+  the internal bases, the PAO Hamiltonian, checked against the DFT eigenvalues of the saves. One
+  tarball of a few saves, rebuilt on a laptop with
+  `.github/assets_generation/projections/build_assets.sh`.
+- **Generated drivers** (`tests/unit/gen/test_driver_smoke.py`): a property `main.py` written by the
+  generator runs end to end on the silicon save of `tests/data`, including the restart branch and
+  `plot.py --all`.
+
+The QE regression jobs (`qe-integration-tests`, reference outputs of the examples) still run; they
+compare against stored outputs, which also store any bug present when they were made (the Hubbard
+reference of example06 and the acoustic channel of example10 did).
+
 ## Running Tests
 
 ```bash

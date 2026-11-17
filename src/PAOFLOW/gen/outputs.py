@@ -153,6 +153,8 @@ def workflow_outputs(
         return system_folder_files(cfg)
     driver = GeneratedFile(out or DRIVER_NAMES[name], text=_driver_text(name, cfg))
     files = [driver]
+    if name in ('run', 'landauer') and cfg.get('projector') == 'projwfc':
+        files.append(GeneratedFile(PROJWFC_INPUT, text=projwfc_input(cfg)))
     wants_plot = plot or bool(cfg.get('plot', PLOT_DEFAULTS.get(name, False)))
     if name in ('run', 'tb_model') and wants_plot:
         files.append(GeneratedFile(plot_out or 'plot.py', text=pd.build_plot_script(cfg)))
@@ -194,6 +196,49 @@ def workflow_outputs(
             if wants_plot:
                 files.append(GeneratedFile('plot.raman.py', text=pd.build_raman_plot_script(cfg)))
     return files
+
+
+#: The ``projwfc.x`` input written for the projwfc projector of the run and Landauer workflows.
+PROJWFC_INPUT = 'proj.in'
+
+
+def projwfc_input(cfg: dict) -> str:
+    """``projwfc.x`` input of the save of ``cfg``: the projections with the overlaps PAOFLOW reads.
+
+    Parameters
+    ----------
+    cfg : dict
+        Configuration with ``prefix`` and ``savedir`` (``outdir`` is the folder of the save).
+
+    Returns
+    -------
+    str
+        A ``&projwfc`` namelist with ``lwrite_overlaps = .true.`` and ``lbinary_data = .false.``
+        (``read_atomic_proj_QE`` reads the XML ``atomic_proj.xml`` with the overlap matrices).
+    """
+    import os
+
+    prefix = cfg.get('prefix') or 'pwscf'
+    outdir = os.path.dirname(os.path.normpath(cfg.get('savedir') or '')) or '.'
+    return (
+        ' &projwfc\n'
+        "    prefix = '%s'\n"
+        "    outdir = '%s/'\n"
+        "    filpdos = '%s.pdos'\n"
+        '    lwrite_overlaps = .true.\n'
+        '    lbinary_data = .false.\n'
+        ' /\n' % (prefix, outdir.rstrip('/'), prefix)
+    )
+
+
+def _projwfc_step() -> RunStep:
+    return RunStep(
+        'Projections on the atomic wavefunctions (projwfc.x)',
+        ('projwfc.x', '-in', PROJWFC_INPUT),
+        mpi=True,
+        stdout='proj.out',
+        note='after pw.x (scf, nscf): atomic_proj.xml with the overlaps, in the save',
+    )
 
 
 def _driver_text(name: str, cfg: dict) -> str:
@@ -383,6 +428,8 @@ def run_plan(name: str, cfg: dict, files: list[GeneratedFile] | None = None) -> 
         return _elphon_plan(cfg)
     driver = names[0]
     steps: list[RunStep] = []
+    if name in ('run', 'landauer') and PROJWFC_INPUT in names:
+        steps.append(_projwfc_step())
     if name == 'run':
         steps.append(RunStep('PAOFLOW properties', ('python', driver), mpi=True))
     elif name == 'landauer':

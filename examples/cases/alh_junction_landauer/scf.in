@@ -2,7 +2,7 @@
     calculation='scf',
     restart_mode='from_scratch',
     pseudo_dir = './',
-    outdir='./output/qe',
+    outdir='./',
     tprnfor = .TRUE.
     prefix='alh'
     wf_collect = .TRUE.

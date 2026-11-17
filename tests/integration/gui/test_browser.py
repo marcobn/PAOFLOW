@@ -1145,5 +1145,6 @@ def test_start_from_an_example(browser, studio):
     assert answers['calculation'] == 'conductor' and answers['eigenchannels'] == 4
     assert (work.parent / 'alh' / 'H.pbe-van_bm.UPF').is_file()
     plan = browser.execute_script('return window.paoflowApp.runs.plan')
-    assert [step['argv'][0] for step in plan[:3]] == ['pw.x', 'pw.x', 'projwfc.x']
+    assert [step['argv'][0] for step in plan[:2]] == ['pw.x', 'pw.x']
+    assert plan[2]['action'] == 'setup:landauer'
     assert _errors(browser) == []

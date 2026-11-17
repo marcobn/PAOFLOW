@@ -91,14 +91,7 @@ def do_z2_invariant(
                          'adhoc_spin_orbit)')  # fmt: skip
     nocc = int(round(attr['nelec'])) if nbnd_occ == 'auto' else int(nbnd_occ)
     planes = tuple(float(k3) for k3 in k3_planes)
-    rebuilt = 'Hks' not in arry  # a model keeps HRs only; write_HRs reads Hks = FFT(HRs)
-    if rebuilt:
-        arry['Hks'] = np.fft.fftn(arry['HRs'], axes=(2, 3, 4))
-    try:
-        data_controller.write_HRs(hr_file)
-    finally:
-        if rebuilt:
-            del arry['Hks']
+    data_controller.write_HRs(hr_file)
     if rank != 0:
         return comm.bcast(None, root=0)
 

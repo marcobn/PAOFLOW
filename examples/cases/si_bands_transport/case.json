@@ -1,11 +1,11 @@
 {
  "title": "Si: bands, DOS and Boltzmann transport",
- "summary": "Bulk silicon with projwfc.x projections: band structure, total and projected DOS, conductivity, Seebeck coefficient and electronic thermal conductivity.",
+ "summary": "Bulk silicon on the internal projections: band structure, total and projected DOS, conductivity, Seebeck coefficient and electronic thermal conductivity.",
  "workflow": "run",
  "answers": {
   "savedir": "silicon.save",
   "prefix": "silicon",
-  "projector": "projwfc",
+  "projector": "internal",
   "properties": [
    "bands",
    "dos",
@@ -17,7 +17,8 @@
   "emax": 2.2,
   "ne": 1000,
   "interpolate": true,
-  "nfft": 24
+  "nfft": 24,
+  "std_basis": "standard"
  },
  "pseudopotentials": [
   "library/Si.pbe-tm-new-gipaw-v2.1.UPF"
@@ -32,11 +33,6 @@
    "program": "pw.x",
    "input": "nscf.in",
    "label": "Non-self-consistent run on the full k grid"
-  },
-  {
-   "program": "projwfc.x",
-   "input": "proj.in",
-   "label": "Projections on the atomic wavefunctions"
   }
  ],
  "tags": [

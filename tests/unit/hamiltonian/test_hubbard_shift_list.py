@@ -36,3 +36,24 @@ def test_too_long_a_list_raises(tmp_path, monkeypatch):
     nawf = p.data_controller.data_arrays['HRs'].shape[0]
     with pytest.raises(ValueError, match='orbitals'):
         p.add_external_fields(HubbardU=[0.1] * (nawf + 1))
+
+
+def test_shifts_by_manifold_label():
+    """A dict of manifolds resolves on the internal basis records (any case), not on indices."""
+    from PAOFLOW.hamiltonian.add_ext_field import hubbard_shifts_from_labels
+
+    records = [{'atom': atom, 'label': label} for atom, label in
+               [('Al', '3S'), ('Al', '3P'), ('Al', '3P'), ('Al', '3P'), ('P', '3S'), ('P', '3P')]]  # fmt: skip
+    values = hubbard_shifts_from_labels({'atomic_basis': records}, {'al-3p': 0.1, 'P-3P': 2.31})
+    np.testing.assert_allclose(values, [0.0, 0.1, 0.1, 0.1, 0.0, 2.31])
+    with pytest.raises(ValueError, match='Al-3S, Al-3P, P-3S, P-3P'):
+        hubbard_shifts_from_labels({'atomic_basis': records}, {'Al-3d': 1.0})
+    with pytest.raises(ValueError, match='internal projections'):
+        hubbard_shifts_from_labels({}, {'Al-3p': 1.0})
+
+
+def test_label_dict_on_a_model_without_basis_is_refused(tmp_path, monkeypatch):
+    p = _model_run(tmp_path, monkeypatch)
+    p.data_controller.data_attributes['abort_on_exception'] = True
+    with pytest.raises(ValueError, match='internal projections'):
+        p.add_external_fields(HubbardU={'C-2p': 0.1})

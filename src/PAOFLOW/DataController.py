@@ -1105,7 +1105,12 @@ class DataController:
 
                 arry, attr = self.data_dicts()
 
-                HRS = np.fft.ifftn(arry['Hks'], axes=(2, 3, 4))
+                # a model keeps only HRs (the Fourier transform of the Hks of a DFT run)
+                HRS = (
+                    np.fft.ifftn(arry['Hks'], axes=(2, 3, 4))
+                    if 'Hks' in arry
+                    else np.array(arry['HRs'])
+                )
 
                 nawf, _, nk1, nk2, nk3, nspin = HRS.shape
                 # how to pad HR to make sure it's odd

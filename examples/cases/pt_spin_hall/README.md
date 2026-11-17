@@ -14,7 +14,8 @@ Platinum with spin-orbit coupling from fully relativistic pseudopotentials: spin
 
 1. Self-consistent run: `pw.x -in scf.in`
 2. Non-self-consistent run on the full k grid: `pw.x -in nscf.in`
-3. Projections on the atomic wavefunctions: `projwfc.x -in proj.in`
-4. PAOFLOW: `mpirun -np 4 python main.py`, then `python plot.py` (or the Plots tab)
+3. PAOFLOW: `mpirun -np 4 python main.py`, then `python plot.py` (or the Plots tab)
+
+Projections: PAOFLOW's internal projections on the `minimal` basis of the pseudopotentials (generated at run time in `BASIS_PS`); pick *projwfc* in the form for QE's projwfc.x, and Studio adds `proj.in` and the projwfc.x run.
 
 Pseudopotentials (from `PSEUDOS/library`): `Pt.rel-pz-n-rrkjus_psl.0.1.UPF`.

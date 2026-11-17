@@ -14,7 +14,8 @@ The number of conducting channels of bulk aluminium along z, T(E), and the DOS o
 
 1. Self-consistent run: `pw.x -in scf.in`
 2. Non-self-consistent run on the full k grid: `pw.x -in nscf.in`
-3. Projections on the atomic wavefunctions: `projwfc.x -in proj.in`
-4. PAOFLOW: `mpirun -np 4 python main.landauer.py`, then `python plot.py` (or the Plots tab)
+3. PAOFLOW: `mpirun -np 4 python main.landauer.py`, then `python plot.landauer.py` (or the Plots tab)
+
+Projections: PAOFLOW's internal projections on the `standard` basis of the pseudopotentials (generated at run time in `BASIS_PS`); pick *projwfc* in the form for QE's projwfc.x, and Studio adds `proj.in` and the projwfc.x run.
 
 Pseudopotentials (from `PSEUDOS/library`): `Al.pbe-rrkj.UPF`.

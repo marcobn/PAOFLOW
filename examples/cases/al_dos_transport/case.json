@@ -5,7 +5,7 @@
  "answers": {
   "savedir": "al.save",
   "prefix": "al",
-  "projector": "projwfc",
+  "projector": "internal",
   "properties": [
    "dos",
    "transport"
@@ -16,7 +16,8 @@
   "emax": 3.0,
   "ne": 1000,
   "interpolate": true,
-  "nfft": 24
+  "nfft": 24,
+  "std_basis": "standard"
  },
  "pseudopotentials": [
   "library/Al.pbe-mt_fhi.UPF"
@@ -31,11 +32,6 @@
    "program": "pw.x",
    "input": "nscf.in",
    "label": "Non-self-consistent run on the full k grid"
-  },
-  {
-   "program": "projwfc.x",
-   "input": "proj.in",
-   "label": "Projections on the atomic wavefunctions"
   }
  ],
  "tags": [

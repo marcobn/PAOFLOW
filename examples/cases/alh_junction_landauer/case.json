@@ -5,7 +5,7 @@
  "answers": {
   "savedir": "alh.save",
   "prefix": "alh",
-  "projector": "projwfc",
+  "projector": "internal",
   "calculation": "conductor",
   "lead_layers": 3,
   "transport_direction": "z",
@@ -14,7 +14,8 @@
   "ne": 901,
   "delta": 0.0005,
   "eigenchannels": 4,
-  "eigenchannel_energy": "0.0"
+  "eigenchannel_energy": "0.0",
+  "basis": "standard"
  },
  "pseudopotentials": [
   "library/Al.pbe-rrkj.UPF",
@@ -30,11 +31,6 @@
    "program": "pw.x",
    "input": "nscf.in",
    "label": "Non-self-consistent run on the full k grid"
-  },
-  {
-   "program": "projwfc.x",
-   "input": "proj.in",
-   "label": "Projections on the atomic wavefunctions"
   }
  ],
  "tags": [

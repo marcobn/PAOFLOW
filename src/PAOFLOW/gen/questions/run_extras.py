@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from collections.abc import Callable
 
 from .common import save_summary
@@ -91,29 +92,32 @@ def _properties(answers: Answers) -> list[str]:
     return answers.get('properties') or []
 
 
+def _internal(answers: Answers) -> bool:
+    return answers.get('projector', 'internal') != 'projwfc'
+
+
 def _chosen(key: str) -> Callable[[Answers, Context], bool]:
     return lambda answers, context: key in _properties(answers)
 
 
 # ---------------------------------------------------------------------------------- parsers
-def hubbard_row(line: str) -> tuple[int, int, float]:
-    """``'2 4 0.1'`` -> ``(2, 4, 0.1)``: first and last orbital (1-based) and U (eV).
+def hubbard_row(line: str) -> tuple[str, float]:
+    """``'Al-3p 0.1'`` -> ``('Al-3p', 0.1)``: a manifold (species and shell, as ACBN0 names it) and U.
 
     Raises
     ------
     ValueError
-        Unless two positive orbital numbers in order and a number are given.
+        Unless a ``<species>-<n><l>`` label and a number are given.
     """
     parts = line.replace(',', ' ').split()
-    if len(parts) != 3:
-        raise ValueError('a row is the first orbital, the last orbital and U (eV)')
+    if len(parts) != 2:
+        raise ValueError('a row is the manifold (e.g. Al-3p) and U (eV)')
+    if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*-[0-9][spdfSPDF]', parts[0]):
+        raise ValueError('a manifold is <species>-<shell>, e.g. Al-3p or Mn-3d: %r' % parts[0])
     try:
-        first, last, value = int(parts[0]), int(parts[1]), float(parts[2])
+        return (parts[0], float(parts[1]))
     except ValueError:
-        raise ValueError('orbitals are integers and U a number: %r' % line) from None
-    if first < 1 or last < first:
-        raise ValueError('orbitals are numbered from 1, the last one not before the first')
-    return (first, last, value)
+        raise ValueError('U of %s is not a number' % parts[0]) from None
 
 
 def soc_row(line: str) -> tuple[str, float, float]:
@@ -378,12 +382,18 @@ RUN_EXTRA_ITEMS = (
     *(_tau_question(*parameter) for parameter in TAU_PARAMETERS),
     # ---- Hamiltonian changes
     Question(
-        'hubbard_shifts', 'Hubbard shifts: first orbital, last orbital (from 1), U (eV)',
-        kind='rows', default=[], parse=hubbard_row, row_prompt='  orbitals and U (blank to end)',
-        columns=('first', 'last', 'U (eV)'), when=_chosen('hamiltonian_changes'),
-        label='Hubbard shifts', help='-U/2 on each orbital of the range, in the order of the basis '
-        '(printed by projectability).', section=HAMILTONIAN,
+        'hubbard_shifts', 'Hubbard shifts: manifold (e.g. Al-3p) and U (eV)', kind='rows',
+        default=[], parse=hubbard_row, row_prompt='  manifold and U (blank to end)',
+        columns=('manifold', 'U (eV)'),
+        when=lambda a, c: 'hamiltonian_changes' in _properties(a) and _internal(a),
+        label='Hubbard shifts', help='-U/2 on every orbital of the manifold, resolved on the basis of '
+        'each run (the standard and the extended basis shift the same shells).', section=HAMILTONIAN,
         doc='PAOFLOW.PAOFLOW.PAOFLOW.add_external_fields:HubbardU',
+    ),
+    Note(
+        '  Hubbard shifts by manifold need the internal projections (projwfc.x has no shell labels).',
+        when=lambda a, c: 'hamiltonian_changes' in _properties(a) and not _internal(a),
+        section=HAMILTONIAN,
     ),
     Question(
         'efield', 'Uniform electric field Ex Ey Ez (V/A; blank: none)', default='',
@@ -494,7 +504,8 @@ def assemble_run_extras(cfg: dict, answers: Answers) -> dict:
                 tau[key] = list(value) if key == 'hwlo' else value
         cfg['tau_parameters'] = tau
     if 'hamiltonian_changes' in props:
-        cfg['hubbard_shifts'] = [tuple(row) for row in answers.get('hubbard_shifts') or []]
+        rows = (answers.get('hubbard_shifts') or []) if _internal(cfg) else []
+        cfg['hubbard_shifts'] = [tuple(row) for row in rows]
         cfg['efield'] = answers.get('efield')
         cfg['zeeman'] = answers.get('zeeman')
         rows = [] if cfg.get('spin_orbit') else answers.get('adhoc_soc') or []

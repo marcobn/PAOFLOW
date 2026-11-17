@@ -17,6 +17,8 @@ Cases: ./cases/  (start here)
   pd_spin_susceptibility.
 - Landauer transport: al_bulk_landauer, alh_junction_landauer (eigenchannels).
 - ACBN0 / eACBN0: gaas_acbn0, mgo_acbn0, mno_acbn0 (antiferromagnetic), si_acbn0, zno_acbn0.
+- The cases use PAOFLOW's internal projections on the bases generated from their pseudopotentials;
+  projwfc.x stays an option in the form (Studio then writes proj.in and adds the projwfc.x run).
 - The reference outputs of the cases are in the integration-test tarballs (the releases tagged
   integration-assets-*), not in the repository.
 

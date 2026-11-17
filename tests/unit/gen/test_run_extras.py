@@ -20,7 +20,7 @@ from PAOFLOW.gen.questions.run_extras import (
     soc_row,
     top_valence_band,
 )
-from PAOFLOW.gen.run_extras_driver import hubbard_vector
+from PAOFLOW.gen.run_extras_driver import hubbard_shifts
 
 pytestmark = pytest.mark.unit
 
@@ -47,22 +47,22 @@ def test_menu_numbers_stay():
 
 
 def test_parsers():
-    assert hubbard_row('2 4 0.1') == (2, 4, 0.1)
+    assert hubbard_row('Al-3p 0.1') == ('Al-3p', 0.1)
     assert soc_row('Pt, 0.0, 0.553') == ('Pt', 0.0, 0.553)
     assert optional_vector('') is None and optional_vector('0 0 0') is None
     assert optional_vector('0 0 0.1') == (0.0, 0.0, 0.1)
     assert int_triplet('1, 0, 0') == (1, 0, 0) and float_tuple('0, 0.5') == (0.0, 0.5)
-    for parse, text in ((hubbard_row, '4 2 1'), (hubbard_row, '0 1 1'), (soc_row, 'Pt 1'),
+    for parse, text in ((hubbard_row, 'Al 0.1'), (hubbard_row, 'Al-3p x'), (soc_row, 'Pt 1'),
                         (optional_vector, '1 2'), (int_triplet, '1 -1 0'), (float_tuple, '')):  # fmt: skip
         with pytest.raises(ValueError):
             parse(text)
 
 
-def test_hubbard_vector():
-    assert hubbard_vector([]) is None
-    assert hubbard_vector([(2, 4, 0.1), (6, 6, 1.5), (4, 4, 0.3)]) == [
-        0.0, 0.1, 0.1, 0.3, 0.0, 1.5,
-    ]  # fmt: skip
+def test_hubbard_shifts():
+    assert hubbard_shifts([]) is None
+    assert hubbard_shifts([('Al-3p', 0.1), ('P-3p', 2.31), ('Al-3p', 0.2)]) == {
+        'Al-3p': 0.2, 'P-3p': 2.31,
+    }  # fmt: skip
 
 
 def test_top_valence_band(workdir):
@@ -77,7 +77,7 @@ def test_every_extra_in_main_and_plot(workdir):
         'properties': EVERYTHING,
         'site_atoms': ['2'],
         'scattering': ['acoustic', 'impurity'],
-        'hubbard_shifts': [['2', '4', '0.1']],
+        'hubbard_shifts': [['Si-3p', '0.1']],
         'adhoc_soc': [['Si', '0.0', '0.1']],
         'doubling': '1 0 0',
     }
@@ -97,7 +97,7 @@ def test_every_extra_in_main_and_plot(workdir):
         'mirror = p.mirror_chern_number()',
         'def run_doped_transport():',
         "ADHOC_SOC = {'Si': [0.0, 0.1]}",
-        'HUBBARD_U = [0.0, 0.1, 0.1, 0.1]',
+        "HUBBARD_U = {'Si-3p': 0.1}",
         'p.restart_dump(fname_prefix=RESTART)',
     ):
         assert line in main, line

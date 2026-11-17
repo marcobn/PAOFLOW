@@ -14,7 +14,8 @@ Search of the Brillouin zone for touchings of the highest valence and lowest con
 
 1. Self-consistent run: `pw.x -in scf.in`
 2. Non-self-consistent run on the full k grid: `pw.x -in nscf.in`
-3. Projections on the atomic wavefunctions: `projwfc.x -in proj.in`
-4. PAOFLOW: `mpirun -np 4 python main.py`, then `python plot.py` (or the Plots tab)
+3. PAOFLOW: `mpirun -np 4 python main.py`, then `python plot.py` (or the Plots tab)
+
+Projections: PAOFLOW's internal projections on the `minimal` basis of the pseudopotentials (generated at run time in `BASIS_PS`); pick *projwfc* in the form for QE's projwfc.x, and Studio adds `proj.in` and the projwfc.x run.
 
 Pseudopotentials (from `PSEUDOS/library`): `Mo.rel-pbe-n-nc.UPF`, `P.rel-pbe-n-nc.UPF`.

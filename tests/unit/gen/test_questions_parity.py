@@ -608,7 +608,7 @@ RUN_NEW_SCENARIOS = {
     # are the properties, the atoms of the site projection and the scattering channels
     'extras_everything': {
         'Enter a comma': ['15 16 17 18 19 20 21 22 23', '2', '1 3 5'],
-        'orbitals and U (blank to end)': ['2 4 0.1', '6 6 1.5', ''],
+        'manifold and U (blank to end)': ['Si-3p 0.1', 'Si-3s 1.5', ''],
         'species and strengths (blank to end)': ['Si 0.0 0.2', ''],
         'Uniform electric field': '0 0 0.01',
         'Supercell doubling': '1 0 0',

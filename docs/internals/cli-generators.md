@@ -80,6 +80,9 @@ The launch commands asked by the CLI (MPI commands of `pw.x`, python and the Har
 bin paths) are the defaults of `main.acbn0.py`; the launch variables below override them, with
 `PAOFLOW_QE_OPTIONS` passed to `ACBN0(qe_options=...)`.
 
+With the projector `projwfc`, the run and Landauer workflows also write `proj.in` (`lwrite_overlaps = .true.`)
+and put `projwfc.x -in proj.in` before the driver in the Runs plan; the default is the internal projections.
+
 **Workflow B — Property runs:** Pick from band structure, DOS, transport, Fermi surface, spin texture, spin Hall conductivity, orbital Hall conductivity, anomalous Hall effects, topology, optical properties, and more. The generated `plot.py` includes only the visualization routines for the properties you chose.
 
 The property `linear_response` (appended last to the menu, 14 November 2026) is one Kubo hook for the linear
@@ -137,7 +140,8 @@ are unchanged (the parity tests run as before; coverage scenarios `extras_everyt
 - **Site-projected bands** (`site_projected_bands`): the atoms to project on, a menu of the atoms of the save (or
   of the `pw.x` input); the band path questions follow, and `bands` is added. `p.site_projected_bands(site_proj=SITE_ATOMS)`
   after `bands`; `plot.py` "Site-projected bands" (`GPAO.plot_weighted_bands`).
-- **Joint density of states** (`jdos`): `p.jdos(...)` after `pao_eigh` (photon energies 0..`JDOS_EMAX`).
+- **Joint density of states** (`jdos`): `p.jdos(...)` (photon energies 0..`JDOS_EMAX`), from the DFT
+  eigenvalues and k-points of the save, all its bands; the interpolation does not change it.
 - **Rashba–Edelstein** (`rashba_edelstein`): `p.rashba_edelstein(emin=EMIN, emax=EMAX, ne=NE)`; needs spin-orbit.
 - **Weyl points** (`weyl_points`): `write_Hamiltonian()` (read by Z2Pack for the chirality) and
   `find_weyl_points(search_grid=WEYL_GRID, symmetrize=...)` on the DFT-grid Hamiltonian; `weyl_points.dat`.
@@ -151,8 +155,9 @@ are unchanged (the parity tests run as before; coverage scenarios `extras_everyt
   the carrier count starts 1 eV under the lowest band of the save; `doped_transport_<n|p><conc>.dat` holds T, μ,
   σ, ρ and S; results kind `doped_transport`.
 - **Hamiltonian changes** (`hamiltonian_changes`): `def modify_hamiltonian(p)`, called after every
-  `pao_hamiltonian()` of `main.py` (property, optical, non-linear, doped runs): Hubbard shifts as orbital ranges
-  (`HUBBARD_U`, a list that `add_external_fields` pads to the basis), a uniform electric field, ad hoc spin-orbit
+  `pao_hamiltonian()` of `main.py` (property, optical, non-linear, doped runs): Hubbard shifts by manifold
+  (`HUBBARD_U = {'Al-3p': 0.1}`, resolved on the basis of each run, so the standard and the extended basis shift
+  the same shells; internal projections only), a uniform electric field, ad hoc spin-orbit
   (species, λ_p, λ_d, axis), a Zeeman field after it, and `doubling_Hamiltonian`. Every `pao_eigh()` then gets
   `bval=TOP_VALENCE_BAND` (from the save): with Hubbard shifts `pao_eigh` puts the top of band `bval` at zero, and
   its default 0 is the lowest band.
@@ -165,7 +170,8 @@ are unchanged (the parity tests run as before; coverage scenarios `extras_everyt
 **Workflow H — Landauer** (`landauer`, 15 November 2026; `PAOFLOW.gen.questions.landauer`): bulk transmission or a
 conductor whose first and last atomic layers are the leads, the transverse k mesh, the energy grid, the current
 from the zero-bias transmission and the self-consistent finite-bias current. Since 16 November also the principal
-layer of a bulk cell longer than it (`principal_layers` → `define_partition(central_layers=...)`) and the
+layer of a bulk cell longer than it (`principal_layers` → `define_partition(central_layers=...)`), the basis
+of the internal projections (`basis`: minimal, standard, extended; the Green functions scale as its cube) and the
 eigenchannels of a conductor (`eigenchannels`, and an energy for their wavefunctions →
 `configure_eigenchannels`). The outputs are in the results catalogue, so the Studio shows them from any run
 folder:

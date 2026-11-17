@@ -5,7 +5,7 @@
  "answers": {
   "savedir": "Bi.save",
   "prefix": "Bi",
-  "projector": "projwfc",
+  "projector": "internal",
   "properties": [
    "bands",
    "site_projected_bands"
@@ -47,7 +47,8 @@
    "22",
    "23",
    "24"
-  ]
+  ],
+  "std_basis": "minimal"
  },
  "pseudopotentials": [
   "library/Bi.rel-pbe-dn-kjpaw_psl.1.0.0.UPF"
@@ -57,11 +58,6 @@
    "program": "pw.x",
    "input": "scf.in",
    "label": "Self-consistent run"
-  },
-  {
-   "program": "projwfc.x",
-   "input": "proj.in",
-   "label": "Projections on the atomic wavefunctions"
   }
  ],
  "tags": [

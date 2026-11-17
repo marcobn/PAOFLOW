@@ -5,7 +5,7 @@
  "answers": {
   "savedir": "pt.save",
   "prefix": "pt",
-  "projector": "projwfc",
+  "projector": "internal",
   "properties": [
    "bands",
    "spin_Hall"
@@ -41,7 +41,8 @@
   "nfft": 10,
   "shc_atoms": [
    "1"
-  ]
+  ],
+  "std_basis": "minimal"
  },
  "pseudopotentials": [
   "library/Pt.rel-pz-n-rrkjus_psl.0.1.UPF"
@@ -51,11 +52,6 @@
    "program": "pw.x",
    "input": "scf.in",
    "label": "Self-consistent run"
-  },
-  {
-   "program": "projwfc.x",
-   "input": "proj.in",
-   "label": "Projections on the atomic wavefunctions"
   }
  ],
  "tags": [

@@ -53,7 +53,9 @@ def build_landauer_script(cfg: dict) -> str:
         _format_upfs_line(cfg['upfs']),
         'BASISPATH = os.path.join(HERE, {!r}) + os.sep'.format(cfg['basisdir']),
         'OUTPUTDIR = {!r}'.format(cfg['outputdir']),
-        "BASIS = 'standard'   # configuration of the pseudo-atomic basis",
+        'BASIS = {!r}   # configuration of the pseudo-atomic basis'.format(
+            cfg.get('basis', 'standard')
+        ),
         'PTHR = 0.95   # projectability threshold',
         '',
         '# Partition along the transport direction. bulk: the cell is the principal layer of the crystal;',

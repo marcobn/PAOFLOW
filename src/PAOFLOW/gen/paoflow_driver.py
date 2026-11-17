@@ -504,8 +504,8 @@ def _projection_lines(
     """
     if _uses_projwfc(cfg):
         return [
-            indent + '# QE projwfc.x projections: run projwfc.x with',
-            indent + '# lwrite_overlaps=.true. into <prefix>.save before this step.',
+            indent + '# QE projwfc.x projections: run projwfc.x -in proj.in (written with this',
+            indent + '# script, lwrite_overlaps=.true.) after pw.x, before this step.',
             f'{indent}{var}.read_atomic_proj_QE()',
         ]
     return [f'{indent}{var}.projections(basispath={basispath}, configuration={configuration})']

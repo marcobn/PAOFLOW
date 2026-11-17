@@ -14,27 +14,19 @@ RUN_MODIFIERS = ('hamiltonian_changes', 'restart')
 TOPOLOGY_SEARCHES = ('weyl_points', 'z2_invariant', 'mirror_chern')
 
 
-def hubbard_vector(rows: list[tuple[int, int, float]]) -> list[float] | None:
-    """Per-orbital U values up to the last shifted orbital (``add_external_fields(HubbardU=...)``).
+def hubbard_shifts(rows: list[tuple[str, float]]) -> dict[str, float] | None:
+    """``HUBBARD_U`` of ``main.py``: U of each manifold (later rows win), None without rows.
 
     Parameters
     ----------
-    rows : list of (int, int, float)
-        First and last orbital (1-based, inclusive) and U (eV).
+    rows : list of (str, float)
+        Manifold (``'Al-3p'``) and U (eV).
 
     Returns
     -------
-    list of float or None
-        U of orbitals 1, 2, ... up to the last one in ``rows`` (later rows win); None without
-        rows.
+    dict or None
     """
-    if not rows:
-        return None
-    values = [0.0] * max(last for _first, last, _value in rows)
-    for first, last, value in rows:
-        for orbital in range(first - 1, last):
-            values[orbital] = float(value)
-    return values
+    return {label: float(value) for label, value in rows} or None
 
 
 def extra_constant_lines(cfg: dict) -> list[str]:
@@ -99,8 +91,8 @@ def extra_constant_lines(cfg: dict) -> list[str]:
         soc = {species: [lp, ld] for species, lp, ld in cfg['adhoc_soc']}
         lines += [
             '# Hamiltonian changes (modify_hamiltonian, after every pao_hamiltonian):',
-            '# -U/2 (eV) on each orbital, in the order of the basis; None: no shift.',
-            'HUBBARD_U = {!r}'.format(hubbard_vector(cfg['hubbard_shifts'])),
+            '# -U/2 (eV) on every orbital of each manifold (species-shell); None: no shift.',
+            'HUBBARD_U = {!r}'.format(hubbard_shifts(cfg['hubbard_shifts'])),
             'EFIELD = {!r}   # uniform electric field (V/A); None: none'.format(
                 list(cfg['efield']) if cfg['efield'] else None
             ),

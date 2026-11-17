@@ -5,12 +5,13 @@
  "answers": {
   "savedir": "MoP2.save",
   "prefix": "MoP2",
-  "projector": "projwfc",
+  "projector": "internal",
   "properties": [
    "weyl_points"
   ],
   "spin_orbit": true,
-  "weyl_grid": "8 8 8"
+  "weyl_grid": "8 8 8",
+  "std_basis": "minimal"
  },
  "pseudopotentials": [
   "library/Mo.rel-pbe-n-nc.UPF",
@@ -26,11 +27,6 @@
    "program": "pw.x",
    "input": "nscf.in",
    "label": "Non-self-consistent run on the full k grid"
-  },
-  {
-   "program": "projwfc.x",
-   "input": "proj.in",
-   "label": "Projections on the atomic wavefunctions"
   }
  ],
  "tags": [

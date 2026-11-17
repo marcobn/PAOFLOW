@@ -65,15 +65,15 @@ def test_case_is_consistent(case, tmp_path):
 def test_plan_and_copy_conflicts(tmp_path):
     case = find_case('si_bands_transport')
     plan = case_plan(case)
-    assert [step.argv for step in plan[:3]] == [
+    assert [step.argv for step in plan[:2]] == [
         ('pw.x', '-in', 'scf.in'),
         ('pw.x', '-in', 'nscf.in'),
-        ('projwfc.x', '-in', 'proj.in'),
     ]
     assert plan[0].stdout == 'scf.out' and plan[-1].action == 'setup:run' and plan[-1].manual
+    assert len(plan) == 3  # internal projections: no projwfc.x
     written = copy_case(case, tmp_path)
     assert sorted(str(p) for p in written) == [
-        'README.md', 'Si.pbe-tm-new-gipaw-v2.1.UPF', 'nscf.in', 'proj.in', 'scf.in',
+        'README.md', 'Si.pbe-tm-new-gipaw-v2.1.UPF', 'nscf.in', 'scf.in',
     ]  # fmt: skip
     assert not (tmp_path / 'silicon.save').exists() and not (tmp_path / 'case.json').exists()
     assert copy_case(case, tmp_path) == []  # identical files are left alone
@@ -84,3 +84,33 @@ def test_plan_and_copy_conflicts(tmp_path):
     assert copy_case(case, tmp_path, overwrite=True) == [type(written[0])('scf.in')]
     with pytest.raises(KeyError, match='si_bands_transport'):
         find_case('no_such_case')
+
+
+@pytest.mark.parametrize('case', CASES, ids=[case.name for case in CASES])
+def test_cases_use_the_internal_projections(case):
+    assert case.answers.get('projector', 'internal') == 'internal'
+    assert all(step['program'] == 'pw.x' for step in case.qe)
+    assert not (case.folder / 'proj.in').exists()
+
+
+def test_projwfc_chosen_in_the_form_writes_proj_in(tmp_path):
+    """projwfc stays an option: the files then hold proj.in and the plan runs projwfc.x first."""
+    from PAOFLOW.gen.outputs import run_plan
+
+    case = find_case('si_bands_transport')
+    copy_case(case, tmp_path)
+    answers = dict(case.answers, projector='projwfc')
+    form = resolve_form(WORKFLOWS['run'], answers, Context(workdir=str(tmp_path)))
+    files = workflow_outputs('run', form.config)
+    proj = next(f for f in files if f.path == 'proj.in').content()
+    assert "prefix = 'silicon'" in proj and 'lwrite_overlaps = .true.' in proj
+    assert "outdir = './'" in proj
+    plan = run_plan('run', form.config, files)
+    assert plan[0].argv == ('projwfc.x', '-in', 'proj.in') and plan[1].argv[:2] == (
+        'python',
+        'main.py',
+    )
+    internal = workflow_outputs(
+        'run', resolve_form(WORKFLOWS['run'], case.answers, Context(workdir=str(tmp_path))).config
+    )
+    assert 'proj.in' not in [f.path for f in internal]
