@@ -162,7 +162,7 @@ Non-goals:
 | plotting | `GPAO.py` (about 30 `plot_*` methods: read file, then call `graphics/plot_functions.py`); `inputs/read_pao_output.py` (5 readers); the generated `plot.py` holds the de facto discovery logic (`_one`, `_many` with the prefix fallback, `_spin_channels`) | readers to share; discovery to move into the library |
 | Fermi surface | `gen/fermi_plotter.py`: the geometry (`read_fermi_bxsf`, `brillouin_zone`, `fold_into_bz`, `fermi_velocity_field`, `tile_mesh`, `field_direction`) is separate from the Mayavi drawing | WebGL mesh without Mayavi |
 | experiment data | `agentic/thermo_optics/datasets.py` (`read_dataset` with provenance header), `metrics.py` (`curve_deviation`) | experiment overlay in the viewer |
-| fixtures | `examples/*/Reference/` (for example `qe_examples/example01/Reference`: bands, DOS, 18 PDOS, σ, S, κ, PF), elphon example folders | discovery and reader tests |
+| fixtures | `tests/data/` (`silicon/Reference`: bands, DOS, 18 PDOS, σ, S, κ, PF; `platinum/Reference`: BXSF grids; see its README), elphon example folders | discovery and reader tests |
 | tests | `tests/unit/gen/test_paoflow_driver.py` (feeds `input` via `monkeypatch`), `test_elphon_system.py`, `test_sscha_driver.py` | the parity harness of section 4.4 |
 | environment | the `work` env has `plotly` 6.0.1, which ships `plotly/package_data/plotly.min.js` (4.6 MB) | Plotly.js offline, nothing vendored in the repo |
 
@@ -699,7 +699,7 @@ nothing added to `DataController`.
 - **Server.** Token, Host and Origin checks; path escapes (`..`, symlinks out of the root); `--read-only`; overwrite
   confirmation; SSE. The server starts on an ephemeral port in a thread and is driven with `urllib`.
 - **Jobs.** A whitelisted test command (`python -c ...`), cancel and reattach.
-- **Results.** Discovery on the `examples/*/Reference/` folders and the elphon examples. Each reader gives the same
+- **Results.** Discovery on the `tests/data/*/Reference/` fixtures and the elphon examples. Each reader gives the same
   numbers as today's readers. Figure specs: trace counts, axis titles, units, spin overlay. The report renders
   offline (no external URLs).
 - **End to end** (`@pytest.mark.slow`, not in CI). Headless Chrome through Selenium, which is installed in `work`:

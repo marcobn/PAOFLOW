@@ -68,6 +68,15 @@ def build_landauer_script(cfg: dict) -> str:
         'TRANSVERSE_NK = ({}, {})   # (0, 0): the transverse DFT mesh'.format(
             *cfg['transverse_nk']
         ),
+        *(
+            [
+                'PRINCIPAL_LAYERS = {}   # bulk: atomic layers of the repeated unit, from the start'.format(
+                    cfg['principal_layers']
+                )
+            ]
+            if cfg.get('principal_layers')
+            else []
+        ),
         '',
         '# Energy grid of T(E) and of the conductor DOS (eV, relative to E_F) and the broadening.',
         'EMIN, EMAX, NE, DELTA = {}, {}, {}, {}'.format(
@@ -79,6 +88,14 @@ def build_landauer_script(cfg: dict) -> str:
         'BIAS_MAX, NBIAS = {}, {}   # volt'.format(cfg['bias_max'], cfg['nbias']),
         'TEMPERATURE = {}   # K'.format(cfg['temperature']),
     ]
+    if cfg.get('eigenchannels'):
+        lines += [
+            '',
+            '# Transmission eigenchannels kept, and the energy (eV) of the eigenchannel wavefunctions',
+            '# (None: no wavefunctions; written under OUTPUTDIR/eigenchannels).',
+            'EIGENCHANNELS = {}'.format(cfg['eigenchannels']),
+            'EIGENCHANNEL_ENERGY = {!r}'.format(cfg.get('eigenchannel_energy')),
+        ]
     if conductor:
         lines += [
             '',
@@ -130,11 +147,26 @@ def build_landauer_script(cfg: dict) -> str:
         '        t.define_partition(central_atoms="ALL", left_lead_layers=LEAD_LAYERS,',
         '                           right_lead_layers=LEAD_LAYERS, transport_direction=TRANSPORT_DIRECTION)',
         '    else:',
-        '        t.define_partition(central_atoms="ALL", transport_direction=TRANSPORT_DIRECTION)',
+        (
+            '        t.define_partition(central_atoms="ALL", central_layers=PRINCIPAL_LAYERS,\n'
+            '                           transport_direction=TRANSPORT_DIRECTION)'
+            if cfg.get('principal_layers')
+            else '        t.define_partition(central_atoms="ALL", transport_direction=TRANSPORT_DIRECTION)'
+        ),
         "    t.configure_outputs(output_dir=os.path.join(HERE, OUTPUTDIR), postfix='_' + CALCULATION)",
         '    t.configure_energy_grid(emin=EMIN, emax=EMAX, ne=NE, delta=DELTA, nk=TRANSVERSE_NK)',
         '    t.build_hamiltonian_blocks(calculation_type=CALCULATION, use_sym=False,',
         '                               do_overlap_transformation=False)',
+        *(
+            [
+                '    plot_energy = EIGENCHANNEL_ENERGY is not None',
+                '    index = round((EIGENCHANNEL_ENERGY - EMIN) / (EMAX - EMIN) * (NE - 1)) if plot_energy else 0',
+                '    t.configure_eigenchannels(do_eigenchannels=True, neigchnx=EIGENCHANNELS,',
+                '                              do_eigplot=plot_energy, ie_eigplot=index, ik_eigplot=0)',
+            ]
+            if cfg.get('eigenchannels')
+            else []
+        ),
         '    t.compute_transmission()   # conductance_<calculation>.dat: E, T(E)',
         '    t.compute_dos()            # doscond_<calculation>.dat',
         '    if CURRENT:',

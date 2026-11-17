@@ -8,7 +8,7 @@ needed for what was plotted.  It only holds with a margin of several smearing
 widths between ``elo`` and the plotted range, which is exactly why
 ``interior_window`` clamps rather than trusting the caller.
 
-Requires the example01 QE data; skipped when absent.
+Runs on the silicon fixture of ``tests/data`` (the example01 QE data).
 """
 
 import os
@@ -16,16 +16,7 @@ import os
 import numpy as np
 import pytest
 
-EXAMPLE = os.path.abspath(
-    os.path.join(
-        os.path.dirname(__file__), '..', '..', '..', 'examples', 'qe_examples', 'example01'
-    )
-)
-
-pytestmark = pytest.mark.skipif(
-    not os.path.isdir(os.path.join(EXAMPLE, 'silicon.save')),
-    reason='example01 QE data not available',
-)
+EXAMPLE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'silicon'))
 
 MESH = 4  # 4^3 = 64 k-points: enough for a DoS, cheap enough for a test
 

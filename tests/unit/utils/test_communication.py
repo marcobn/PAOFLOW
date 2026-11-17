@@ -23,7 +23,7 @@ from PAOFLOW.utils import communication as cm
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SI_ONCV_DIR = REPO_ROOT / 'examples' / 'qe_examples' / 'example16' / 'Si_ONCV'
+SI_ONCV_DIR = REPO_ROOT / 'PSEUDOS' / 'library'
 
 
 def test_steps_cover_the_buffer_in_pieces():

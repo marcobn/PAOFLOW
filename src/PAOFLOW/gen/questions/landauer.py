@@ -17,7 +17,7 @@ self-consistent finite-bias current (non-equilibrium density and Poisson equatio
 from __future__ import annotations
 
 from .common import COMMON_ITEMS, COMMON_OVERRIDES, assemble_common
-from .model import Answers, Context, Note, Question, Workflow
+from .model import Answers, Context, Note, Question, Workflow, optional_number
 
 CONDUCTOR = 'Conductor'
 GRID = 'Energy grid'
@@ -152,6 +152,20 @@ LANDAUER_ITEMS: tuple = (
         section=CONDUCTOR,
     ),
     Question(
+        'principal_layers',
+        'Atomic layers of the principal layer from the start of the cell (0: the whole cell)',
+        kind='int',
+        default=0,
+        when=lambda a, c: not _conductor(a),
+        validate=lambda v, a, c: None if v >= 0 else '  0 or more.',
+        label='Principal layer',
+        help='A cell longer than the principal layer (a lead cut from a junction): the first N atomic '
+        'layers along the transport direction are the repeated unit.',
+        doc=TRANSPORT + 'define_partition:central_layers',
+        section=CONDUCTOR,
+        level='advanced',
+    ),
+    Question(
         'doublings',
         'Doublings of the cell along the transport direction (0: none)',
         kind='int',
@@ -206,6 +220,32 @@ LANDAUER_ITEMS: tuple = (
         default=1.0e-3,
         unit='eV',
         doc=TRANSPORT + 'configure_energy_grid:delta',
+        section=GRID,
+        level='advanced',
+    ),
+    Question(
+        'eigenchannels',
+        'Transmission eigenchannels kept (0: none)',
+        kind='int',
+        default=0,
+        when=lambda a, c: _conductor(a),
+        validate=lambda v, a, c: None if v >= 0 else '  0 or more.',
+        label='Eigenchannels',
+        help='The eigenvalues of t†t at each energy: how many channels carry the transmission.',
+        doc=TRANSPORT + 'configure_eigenchannels:neigchnx',
+        section=GRID,
+        level='advanced',
+    ),
+    Question(
+        'eigenchannel_energy',
+        'Energy of the eigenchannel wavefunctions (blank: none)',
+        default='',
+        parse=optional_number,
+        when=lambda a, c: _conductor(a) and bool(a.get('eigenchannels')),
+        unit='eV',
+        label='Eigenchannel plot energy',
+        help='Writes the eigenchannels at the grid energy closest to this one (first transverse k).',
+        doc=TRANSPORT + 'configure_eigenchannels:ie_eigplot',
         section=GRID,
         level='advanced',
     ),
@@ -386,11 +426,16 @@ def assemble_landauer(answers: Answers, context: Context) -> dict:
     cfg['calculation'] = answers['calculation']
     cfg['transport_direction'] = answers['transport_direction']
     cfg['lead_layers'] = int(answers['lead_layers']) if conductor else 0
+    cfg['principal_layers'] = 0 if conductor else int(answers.get('principal_layers', 0))
     cfg['doublings'] = int(answers.get('doublings', 0))
     cfg['transverse_nk'] = tuple(answers.get('transverse_nk') or (0, 0))
     for key in ('emin', 'emax', 'delta'):
         cfg[key] = float(answers[key])
     cfg['ne'] = int(answers['ne'])
+    cfg['eigenchannels'] = int(answers.get('eigenchannels', 0)) if conductor else 0
+    cfg['eigenchannel_energy'] = (
+        answers.get('eigenchannel_energy') if cfg['eigenchannels'] else None
+    )
     cfg['current'] = bool(answers['current'])
     cfg['bias_max'] = float(answers.get('bias_max', 1.0))
     cfg['nbias'] = int(answers.get('nbias', 41))

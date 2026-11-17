@@ -387,16 +387,55 @@ def _extremal_orbits(
             if len(chain) < min_chain:
                 continue
             frequencies = chain.F.to_numpy()
-            for k in range(1, len(frequencies) - 1):
-                if (frequencies[k] - frequencies[k - 1]) * (
-                    frequencies[k + 1] - frequencies[k]
-                ) < 0:
-                    orbit = chain.iloc[k]
-                    extrema.append(dict(F=float(frequencies[k]), mstar=orbit.mstar, carrier=orbit.carrier,
-                                        bands=orbit.bands, n_tunnel=int(orbit.n_tunnel),
-                                        uses_open=bool(orbit.uses_open), R=orbit.R,
-                                        max_tunnel_gap=orbit.max_tunnel_gap, chain_len=len(chain)))  # fmt: skip
+            for k in turning_points(frequencies):
+                orbit = chain.iloc[k]
+                extrema.append(dict(F=float(frequencies[k]), mstar=orbit.mstar, carrier=orbit.carrier,
+                                    bands=orbit.bands, n_tunnel=int(orbit.n_tunnel),
+                                    uses_open=bool(orbit.uses_open), R=orbit.R,
+                                    max_tunnel_gap=orbit.max_tunnel_gap, chain_len=len(chain)))  # fmt: skip
     return extrema
+
+
+def turning_points(values: np.ndarray, rtol: float = 1.0e-9) -> list[int]:
+    """Interior maxima and minima of a sequence, a flat top or bottom counted once.
+
+    Parameters
+    ----------
+    values : ndarray, shape (n,)
+        The frequencies of a chain of slices, in slice order.
+    rtol : float, optional
+        Values closer than ``rtol`` times the largest one are equal.
+
+    Returns
+    -------
+    list of int
+        Index of each turning point; for a plateau of equal values, the middle one.
+
+    Notes
+    -----
+    Equal values form one run; a run is a turning point when the steps into and out of it have
+    opposite signs. Without ties this is the test
+    :math:`(F_k - F_{k-1})(F_{k+1} - F_k) < 0`. With it alone the flat top of a symmetric
+    orbit (two slices with the same frequency) has a zero product and is lost; which slice wins
+    then depends on the rounding of the interpolation.
+    """
+    values = np.asarray(values, dtype=float)
+    if values.size < 3:
+        return []
+    tolerance = rtol * float(np.max(np.abs(values)))
+    runs = []
+    first = 0
+    for i in range(1, values.size + 1):
+        if i == values.size or abs(values[i] - values[i - 1]) > tolerance:
+            runs.append((first, i - 1))
+            first = i
+    points = []
+    for j in range(1, len(runs) - 1):
+        step_in = values[runs[j][0]] - values[runs[j - 1][1]]
+        step_out = values[runs[j + 1][0]] - values[runs[j][1]]
+        if step_in * step_out < 0:
+            points.append((runs[j][0] + runs[j][1]) // 2)
+    return points
 
 
 def group_network_copies(extrema: pd.DataFrame, sweep_angle: str = 'polar') -> pd.DataFrame:

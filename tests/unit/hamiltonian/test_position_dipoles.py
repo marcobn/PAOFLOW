@@ -36,7 +36,7 @@ from PAOFLOW.hamiltonian.position_dipoles import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SI_ONCV_DIR = REPO_ROOT / 'examples' / 'qe_examples' / 'example16' / 'Si_ONCV'
+SI_ONCV_DIR = REPO_ROOT / 'PSEUDOS' / 'library'
 SI_ONCV_UPF = 'Si_ONCV_PBE_sr.UPF'
 
 

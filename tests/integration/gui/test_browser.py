@@ -20,7 +20,10 @@ pytestmark = [pytest.mark.integration, pytest.mark.slow]
 webdriver = pytest.importorskip('selenium.webdriver')
 By = pytest.importorskip('selenium.webdriver.common.by').By
 
-EXAMPLE = Path(__file__).resolve().parents[3] / 'examples' / 'qe_examples' / 'example01'
+REPO_ROOT = Path(__file__).resolve().parents[3]
+EXAMPLE = REPO_ROOT / 'tests' / 'data' / 'silicon'
+PLATINUM = REPO_ROOT / 'tests' / 'data' / 'platinum' / 'Reference'
+PSEUDO_LIBRARY = REPO_ROOT / 'PSEUDOS' / 'library'
 
 
 @pytest.fixture(scope='module')
@@ -50,7 +53,9 @@ def studio(tmp_path):
     work.mkdir()
     shutil.copytree(EXAMPLE / 'silicon.save', work / 'silicon.save')
     shutil.copy(EXAMPLE / 'scf.in', work / 'scf.in')
-    shutil.copy(EXAMPLE / 'Si.pbe-tm-new-gipaw-v2.1.UPF', work / 'Si.pbe-tm-new-gipaw-v2.1.UPF')
+    shutil.copy(
+        PSEUDO_LIBRARY / 'Si.pbe-tm-new-gipaw-v2.1.UPF', work / 'Si.pbe-tm-new-gipaw-v2.1.UPF'
+    )
     shutil.copytree(EXAMPLE / 'Reference', work / 'output')
     app = GuiApp(tmp_path, start='Si', max_ranks=2)
     server, _ = start_in_thread(app)
@@ -668,7 +673,7 @@ def test_fermi_surface_band_selection(browser, studio):
     server, work = studio
     pt = work.parent / 'Pt'
     pt.mkdir()
-    shutil.copy(EXAMPLE.parent / 'example08' / 'Reference' / 'FermiSurf_0.bxsf', pt)
+    shutil.copy(PLATINUM / 'FermiSurf_0.bxsf', pt)
     _open(browser, server, 'results')
     browser.execute_script("window.paoflowApp.results.open('Pt')")
     item = _wait(
@@ -1106,4 +1111,39 @@ def test_electron_phonon_run_from_a_model_crystal(browser, studio, tmp_path):
     text = (work / 'main.ep_model.py').read_text()
     assert 'light_atom_metal_model(**MODEL_PARAMETERS)' in text
     assert 'workflows.superconductivity(' in text and 'workflows.migdal_eliashberg(' in text
+    assert _errors(browser) == []
+
+
+def test_start_from_an_example(browser, studio):
+    """Examples…: a case is copied into a new folder; the form takes its answers, Runs its QE steps."""
+    server, work = studio
+    _open(browser, server, 'setup')
+    next(
+        b
+        for b in browser.find_elements(By.CSS_SELECTOR, '#view-setup button')
+        if b.text == 'Examples…'
+    ).click()
+    search = _wait(lambda: browser.find_elements(By.CSS_SELECTOR, 'dialog input[type="search"]'))[0]
+    search.send_keys('junction')
+    items = _wait(lambda: browser.find_elements(By.CSS_SELECTOR, 'dialog .case-item'))
+    assert len(items) == 1 and 'Al-H-Al junction' in items[0].text
+    items[0].click()
+    folder = browser.find_element(By.CSS_SELECTOR, 'dialog input[type="text"]')
+    assert folder.get_attribute('value').endswith('alh_junction_landauer')
+    folder.clear()
+    folder.send_keys('alh')
+    browser.find_element(By.XPATH, "//dialog//button[text()='Copy']").click()
+    _wait(lambda: browser.execute_script('return window.paoflowApp.setup.workdir') == 'alh')
+    _wait(
+        lambda: browser.execute_script(
+            "const item = document.querySelector('.workflow-item.selected[data-name]');"
+            'return item && item.dataset.name;'
+        )
+        == 'landauer'
+    )
+    answers = browser.execute_script('return window.paoflowApp.setup.form.answers')
+    assert answers['calculation'] == 'conductor' and answers['eigenchannels'] == 4
+    assert (work.parent / 'alh' / 'H.pbe-van_bm.UPF').is_file()
+    plan = browser.execute_script('return window.paoflowApp.runs.plan')
+    assert [step['argv'][0] for step in plan[:3]] == ['pw.x', 'pw.x', 'projwfc.x']
     assert _errors(browser) == []

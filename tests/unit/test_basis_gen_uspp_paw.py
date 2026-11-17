@@ -2,8 +2,8 @@
 
 Two reference UPFs already shipped with the repository are used:
 
-* USPP scalar-rel : ``examples/qe_examples/example03/Pt.pz-n-rrkjus_psl.0.1.UPF``
-* PAW scalar-rel  : ``examples/acbn0_examples/GaAs/As.pbe-n-kjpaw_psl.1.0.0.UPF``
+* USPP scalar-rel : ``PSEUDOS/library/Pt.pz-n-rrkjus_psl.0.1.UPF``
+* PAW scalar-rel  : ``PSEUDOS/library/As.pbe-n-kjpaw_psl.1.0.0.UPF``
 
 These tests pin down:
 
@@ -35,8 +35,8 @@ from PAOFLOW.basis_gen.radial import _default_j, _interp_to_uniform, _select_pro
 from PAOFLOW.inputs.read_upf import UPF
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_PT_USPP = _REPO_ROOT / 'examples/qe_examples/example03/Pt.pz-n-rrkjus_psl.0.1.UPF'
-_AS_PAW = _REPO_ROOT / 'examples/acbn0_examples/GaAs/As.pbe-n-kjpaw_psl.1.0.0.UPF'
+_PT_USPP = _REPO_ROOT / 'PSEUDOS/library/Pt.pz-n-rrkjus_psl.0.1.UPF'
+_AS_PAW = _REPO_ROOT / 'PSEUDOS/library/As.pbe-n-kjpaw_psl.1.0.0.UPF'
 
 
 @pytest.fixture(scope='module')
@@ -171,7 +171,7 @@ def test_as_paw_lowest_state_overlaps_pswfc(as_paw, label, n, l):
     assert ov > 0.80, f'As {label}: overlap = {ov:.3f}'
 
 
-_GA_PAW = _REPO_ROOT / 'examples/qe_examples/example10/Ga.pbe-dn-kjpaw_psl.1.0.0.UPF'
+_GA_PAW = _REPO_ROOT / 'PSEUDOS/library/Ga.pbe-dn-kjpaw_psl.1.0.0.UPF'
 
 
 @pytest.fixture(scope='module')

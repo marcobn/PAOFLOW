@@ -2,7 +2,7 @@
     calculation = 'scf'
     restart_mode='from_scratch',
     prefix='pt',
-   pseudo_dir = '../pseudos/',
+    pseudo_dir = '../../../../PSEUDOS/library/',
     outdir='./'
  /
  &system
@@ -25,3 +25,4 @@ ATOMIC_POSITIONS
 Pt  0.0000000   0.00000000   0.0
 K_POINTS AUTOMATIC
 6 6 6 0 0 0
+

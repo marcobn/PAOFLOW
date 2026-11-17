@@ -30,7 +30,7 @@ from PAOFLOW.utils.get_R_grid_fft import get_R_grid_fft
 
 pytestmark = pytest.mark.unit
 
-EXAMPLES = Path(__file__).resolve().parents[3] / 'examples' / 'unfold_examples' / 'siliconSC'
+EXAMPLES = Path(__file__).resolve().parents[2] / 'data' / 'siliconSC'
 ONSITE = {'s': -5.19278, 'px': 1.05825, 'py': 1.05825, 'pz': 1.05825}
 HOPPINGS = {'sss': -2.36233, 'sps': 1.86401, 'pps': 2.85882, 'ppp': -0.94687}
 FCC = [[-0.5, 0.0, 0.5], [0.0, 0.5, 0.5], [-0.5, 0.5, 0.0]]

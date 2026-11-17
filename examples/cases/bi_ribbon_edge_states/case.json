@@ -1,0 +1,74 @@
+{
+ "title": "Bi bilayer nanoribbon: bands projected on the edges",
+ "summary": "A zigzag Bi(111) bilayer ribbon with spin-orbit coupling: the weight of the six outermost atoms on each side picks out the helical edge states.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "Bi.save",
+  "prefix": "Bi",
+  "projector": "projwfc",
+  "properties": [
+   "bands",
+   "site_projected_bands"
+  ],
+  "ibrav": 0,
+  "spin_orbit": true,
+  "nk": 200,
+  "band_path": "xX-G-X",
+  "high_sym": [
+   [
+    "xX",
+    "-0.5",
+    "0",
+    "0"
+   ],
+   [
+    "G",
+    "0",
+    "0",
+    "0"
+   ],
+   [
+    "X",
+    "0.5",
+    "0",
+    "0"
+   ]
+  ],
+  "site_atoms": [
+   "1",
+   "2",
+   "3",
+   "4",
+   "5",
+   "6",
+   "19",
+   "20",
+   "21",
+   "22",
+   "23",
+   "24"
+  ]
+ },
+ "pseudopotentials": [
+  "library/Bi.rel-pbe-dn-kjpaw_psl.1.0.0.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "projwfc.x",
+   "input": "proj.in",
+   "label": "Projections on the atomic wavefunctions"
+  }
+ ],
+ "tags": [
+  "1D",
+  "edge states",
+  "site projection",
+  "spin-orbit"
+ ],
+ "source": "examples/qe_examples/example12/qe-soc"
+}

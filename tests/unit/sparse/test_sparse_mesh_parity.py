@@ -12,7 +12,7 @@ k-points where the band at the ``bnd`` truncation boundary is degenerate
 with the next one are excluded from the velocity comparison (the diagonal
 there is gauge-dependent in both codes).
 
-Requires the example01 QE data; skipped when absent.
+Runs on the silicon fixture of ``tests/data`` (the example01 QE data).
 """
 
 import os
@@ -20,15 +20,7 @@ import os
 import numpy as np
 import pytest
 
-EXAMPLE = os.path.join(
-    os.path.dirname(__file__), '..', '..', '..', 'examples', 'qe_examples', 'example01'
-)
-EXAMPLE = os.path.abspath(EXAMPLE)
-
-pytestmark = pytest.mark.skipif(
-    not os.path.isdir(os.path.join(EXAMPLE, 'silicon.save')),
-    reason='example01 QE data not available',
-)
+EXAMPLE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'silicon'))
 
 
 @pytest.fixture(

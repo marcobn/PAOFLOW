@@ -1,0 +1,54 @@
+{
+ "title": "GaAs: n-type transport with scattering models",
+ "summary": "The chemical potential of GaAs doped with 3.5e17 electrons per cm^3 between 380 and 812 K, then conductivity, resistivity and Seebeck coefficient with acoustic, polar-optical, piezoelectric and ionized-impurity scattering (internal projections on PAW pseudopotentials).",
+ "workflow": "run",
+ "answers": {
+  "savedir": "GaAs.save",
+  "prefix": "GaAs",
+  "projector": "internal",
+  "properties": [
+   "doped_transport"
+  ],
+  "std_basis": "extended",
+  "interpolate": true,
+  "nfft": 40,
+  "doping_conc": -3.5e+17,
+  "doping_tmin": 380.0,
+  "doping_tmax": 812.0,
+  "doping_nt": 28,
+  "doping_emin": -20.0,
+  "doping_emax": 2.0,
+  "doping_ne": 8000,
+  "scattering": [
+   "acoustic",
+   "polar_optical",
+   "impurity",
+   "polar_acoustic"
+  ],
+  "tau_hwlo": "0.03536"
+ },
+ "pseudopotentials": [
+  "library/Ga.pbe-dn-kjpaw_psl.1.0.0.UPF",
+  "library/As.pbe-n-kjpaw_psl.1.0.0.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "tags": [
+  "doping",
+  "transport",
+  "scattering",
+  "semiconductor",
+  "PAW"
+ ],
+ "source": "examples/qe_examples/example10"
+}

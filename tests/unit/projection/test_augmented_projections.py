@@ -20,10 +20,10 @@ from PAOFLOW.projection.do_atwfc_proj import loewdin_factor, ortho_atwfc_k
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PAW = {
-    'Ga': REPO_ROOT / 'examples' / 'qe_examples' / 'example10' / 'Ga.pbe-dn-kjpaw_psl.1.0.0.UPF',
-    'As': REPO_ROOT / 'examples' / 'qe_examples' / 'example10' / 'As.pbe-n-kjpaw_psl.1.0.0.UPF',
+    'Ga': REPO_ROOT / 'PSEUDOS' / 'library' / 'Ga.pbe-dn-kjpaw_psl.1.0.0.UPF',
+    'As': REPO_ROOT / 'PSEUDOS' / 'library' / 'As.pbe-n-kjpaw_psl.1.0.0.UPF',
 }
-NC = REPO_ROOT / 'examples' / 'qe_examples' / 'example16' / 'Si_ONCV' / 'Si_ONCV_PBE_sr.UPF'
+NC = REPO_ROOT / 'PSEUDOS' / 'library' / 'Si_ONCV_PBE_sr.UPF'
 
 
 def _random_rows(rng, n, npw):
@@ -86,7 +86,7 @@ def test_k_plus_g_vectors_matches_the_atomic_wavefunction_construction():
     assert np.allclose(k_plus_g_vectors(gk), expected)
 
 
-@pytest.mark.skipif(not all(p.exists() for p in PAW.values()), reason='example10 UPFs missing')
+@pytest.mark.skipif(not all(p.exists() for p in PAW.values()), reason='Ga/As PAW UPFs missing')
 def test_paw_projectors_carry_block_diagonal_augmentation_charges():
     upfs = {name: UPF(str(path)) for name, path in PAW.items()}
     assert all(is_augmented(u) for u in upfs.values())
@@ -110,7 +110,7 @@ def test_paw_projectors_carry_block_diagonal_augmentation_charges():
     assert np.all(np.isfinite(beta))
 
 
-@pytest.mark.skipif(not NC.exists(), reason='example16 UPF missing')
+@pytest.mark.skipif(not NC.exists(), reason='Si ONCV UPF missing')
 def test_norm_conserving_projectors_have_no_charges():
     upf = UPF(str(NC))
     assert not is_augmented(upf)

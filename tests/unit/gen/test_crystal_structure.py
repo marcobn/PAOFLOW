@@ -18,7 +18,7 @@ from PAOFLOW.gen.crystal_structure import (
 
 pytestmark = pytest.mark.unit
 
-EXAMPLE = Path(__file__).resolve().parents[3] / 'examples' / 'qe_examples' / 'example01'
+EXAMPLE = Path(__file__).resolve().parents[3] / 'tests' / 'data' / 'silicon'
 
 HEADER = """&control
   calculation = 'scf'

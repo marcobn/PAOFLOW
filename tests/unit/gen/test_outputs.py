@@ -118,9 +118,7 @@ def test_drivers_abort_every_rank_on_an_error():
     from PAOFLOW.gen.questions.model import Context
     from PAOFLOW.gen.questions.resolve import resolve_form
 
-    si = os.path.join(
-        os.path.dirname(__file__), '..', '..', '..', 'examples', 'qe_examples', 'example01'
-    )
+    si = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'silicon')
     answers = {
         'run': {'properties': ['bands']},
         'acbn0': {'hubbard': [['Si-3p', '0.5']]},
@@ -162,9 +160,7 @@ def test_acbn0_launch_settings_come_from_the_runs_tab(monkeypatch):
     from PAOFLOW.gen.questions.model import Context
     from PAOFLOW.gen.questions.resolve import resolve_form
 
-    si = os.path.join(
-        os.path.dirname(__file__), '..', '..', '..', 'examples', 'qe_examples', 'example01'
-    )
+    si = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'silicon')
     answers = {'hubbard': [['Si-3p', '0.5']], 'mpi_qe': 'srun -n 64'}  # a GUI cannot set it
     form = resolve_form(WORKFLOWS['acbn0'], answers, Context(workdir=os.path.abspath(si)))
     launch = ('mpi_qe', 'mpi_py', 'mpi_hartree', 'qe_path', 'py_path')
@@ -206,11 +202,7 @@ def test_every_qe_run_takes_the_runs_tab_settings():
     from PAOFLOW.gen.questions.model import Context
     from PAOFLOW.gen.questions.resolve import resolve_form
 
-    si = os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__), '..', '..', '..', 'examples', 'qe_examples', 'example01'
-        )
-    )
+    si = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'silicon'))
 
     def resolved(name, answers):
         form = resolve_form(WORKFLOWS[name], answers, Context(workdir=si))

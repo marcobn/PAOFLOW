@@ -203,8 +203,8 @@ def main() -> None:
     p.add_argument(
         '--qe-root',
         type=Path,
-        default=repo_root / 'examples' / 'qe_examples',
-        help='Path to examples/qe_examples (default: examples/qe_examples)',
+        default=repo_root / 'tests' / 'integration' / 'qe',
+        help='Folder of the QE jobs (default: tests/integration/qe)',
     )
     p.add_argument(
         '--reference-root',

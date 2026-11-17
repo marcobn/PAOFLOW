@@ -66,15 +66,42 @@ def default_band_path(
 
 
 def _cell_in_alat(workdir: str, savedir: str | None) -> tuple[float, np.ndarray] | None:
+    """``alat`` (bohr) and the lattice vectors in units of it: from the save, or before ``pw.x``
+    has run, from the ``pw.x`` input of the folder."""
     from .system_summary import read_save_summary
 
-    if not savedir:
+    summary = read_save_summary(os.path.join(workdir, savedir)) if savedir else None
+    if summary is not None and summary.get('alat_bohr'):
+        alat = float(summary['alat_bohr'])
+        return alat, np.asarray(summary['cell_bohr'], dtype=float) / alat
+    return _cell_of_pw_input(workdir)
+
+
+def _cell_of_pw_input(workdir: str) -> tuple[float, np.ndarray] | None:
+    """``alat`` and the vectors of the ``pw.x`` input of ``workdir`` (``celldm(1)`` or ``A``)."""
+    from .crystal_structure import (
+        BOHR_ANGSTROM,
+        _namelist_number,
+        structure_from_pw_input,
+    )
+    from .paoflow_driver import detect_pw_input
+
+    name = detect_pw_input(workdir)
+    if name is None:
         return None
-    summary = read_save_summary(os.path.join(workdir, savedir))
-    if summary is None or not summary.get('alat_bohr'):
+    path = os.path.join(workdir, name)
+    structure = structure_from_pw_input(path)
+    try:
+        with open(path, encoding='utf-8', errors='replace') as handle:
+            text = handle.read()
+    except OSError:
         return None
-    alat = float(summary['alat_bohr'])
-    return alat, np.asarray(summary['cell_bohr'], dtype=float) / alat
+    celldm = _namelist_number(text, 'celldm', r'celldm\(\s*1\s*\)')
+    a = _namelist_number(text, 'A')
+    alat = celldm if celldm else (a / BOHR_ANGSTROM if a else None)
+    if structure is None or not alat:
+        return None
+    return alat, np.asarray(structure['cell'], dtype=float) / BOHR_ANGSTROM / alat
 
 
 def saves_in(workdir: str) -> list[str]:

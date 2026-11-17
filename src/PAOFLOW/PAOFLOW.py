@@ -998,7 +998,9 @@ class PAOFLOW:
                 tesla and the orbital term). Needs a spinor basis (fully relativistic, adhoc
                 spin-orbit, spinful models, or spinor_basis()); the spin operator is built if
                 missing; a collinear run (nspin = 2) takes B along z only
-            HubbardU (ndarray): Hubbard corrections, -U_n / 2 on each orbital (eV)
+            HubbardU (ndarray): Hubbard corrections, -U_n / 2 on each orbital (eV), in the order
+                of the basis; a shorter list covers the first orbitals and leaves the others
+                alone
 
         Returns:
             None
@@ -1015,6 +1017,13 @@ class PAOFLOW:
         hubbard = np.array(HubbardU, dtype=float) if any(v != 0.0 for v in HubbardU) else None
 
         try:
+            if hubbard is not None:
+                nawf = arry['HRs'].shape[0]
+                if hubbard.size > nawf:
+                    raise ValueError(
+                        'HubbardU has %d values for %d orbitals' % (hubbard.size, nawf)
+                    )
+                hubbard = np.concatenate([hubbard, np.zeros(nawf - hubbard.size)])
             if efield.any() or bfield.any() or hubbard is not None:
                 from .hamiltonian.add_ext_field import add_ext_field
 
@@ -1556,16 +1565,20 @@ class PAOFLOW:
         if 'Lj' not in arry:
             raise ValueError('orbital_operator did not build Lj for this basis')
 
-    def write_Hamiltonian(self, fname='hamiltonian.dat'):
-        """
-        Write 'HRs' to file for use with Z2 Pack
+    def write_Hamiltonian(self, fname: str = 'hamiltonian.dat') -> None:
+        """Write the real-space Hamiltonian in the Wannier90 ``_hr.dat`` format.
 
-        Arguments:
-            fname (str): File name for the Hamiltonian in the Z2 Pack format
+        Parameters
+        ----------
+        fname : str, optional
+            File name, in the output directory.
 
-        Returns:
-            None
-
+        Returns
+        -------
+        None
+            Writes ``fname``: the matrix elements :math:`H_{\\mu\\nu}(\\mathbf{R})` (eV) on the
+            lattice vectors of the k mesh, which ``tbmodels.Model.from_wannier_files`` reads (the
+            tight-binding models of Z2Pack, :meth:`find_weyl_points`, :meth:`mirror_chern_number`).
         """
         try:
             self.data_controller.write_HRs(fname)
@@ -1996,6 +2009,61 @@ class PAOFLOW:
         self.report_module_time('mirror_chern_number')
         return result
 
+    def z2_invariant(
+        self,
+        nbnd_occ: int | str = 'auto',
+        k3_planes: tuple[float, ...] = (0.0,),
+        surface_kwargs: dict | None = None,
+    ) -> dict | None:
+        """Z2 index of the occupied bands from the Wannier charge centres (Z2Pack).
+
+        Parameters
+        ----------
+        nbnd_occ : int or 'auto', optional
+            Number of occupied bands (``'auto'``: the number of electrons).
+        k3_planes : tuple of float, optional
+            Time-reversal-invariant planes ``k3 = const`` (crystal units): ``(0.0,)`` for a 2D
+            layer with vacuum along ``c``, ``(0.0, 0.5)`` for a 3D crystal.
+        surface_kwargs : dict, optional
+            Overrides of the ``z2pack.surface.run`` sampling (``pos_tol``, ``iterator``, ...).
+
+        Returns
+        -------
+        dict or None
+            ``nocc``, ``planes`` and ``z2`` (one index per plane); None on an error with
+            ``abort_on_exception`` off. Writes ``z2_HRs.dat`` and ``z2_wcc_k3_<k3>.dat`` (the
+            Wannier charge centres along the pumping parameter).
+
+        Notes
+        -----
+        Needs spin-orbit coupling (fully relativistic save or :meth:`adhoc_spin_orbit`) and the
+        optional ``z2pack`` and ``tbmodels`` packages; call after :meth:`pao_hamiltonian`. For a 3D
+        crystal the indices of the planes :math:`k_3 = 0` and :math:`k_3 = 1/2` are two of the
+        weak indices; their sum (mod 2) with those of the other directions gives the strong one.
+        """
+        from .topology.z2_invariant import do_z2_invariant
+
+        attr = self.data_controller.data_attributes
+        result = None
+        try:
+            result = do_z2_invariant(
+                self.data_controller,
+                nbnd_occ=nbnd_occ,
+                k3_planes=tuple(k3_planes),
+                surface_kwargs=surface_kwargs,
+            )
+            if self.rank == 0:
+                for k3, z2 in zip(result['planes'], result['z2']):
+                    print(
+                        'Z2 invariant (k3 = %g, %d occupied bands): %d' % (k3, result['nocc'], z2)
+                    )
+        except Exception as e:
+            self.report_exception('z2_invariant')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('z2_invariant')
+        return result
+
     def wave_function_projection(self, dimension=3):
         """
         Marcio, can you write something here please?
@@ -2020,24 +2088,33 @@ class PAOFLOW:
 
         self.report_module_time('wave_function_projection')
 
-    def site_projected_bands(self, site_proj=[0]):
-        """
-        This routine calculates the wavefunction square wheights to produce a site projected band
-        structure.
+    def site_projected_bands(self, site_proj: list[int] = [0]) -> None:
+        """Weight of chosen atoms in every state of the band path (site-projected bands).
 
-        Arguments:
-            site_proj (list of ints): Incides of the atomic site to project the bands
+        Parameters
+        ----------
+        site_proj : list of int, optional
+            Atoms to project on, 0-based in the order of the save (or of the model).
 
-        Returns:
-            None
+        Returns
+        -------
+        None
+            Writes ``site-projected-bands_<spin>.dat``: k-point index along the path, band energy
+            (eV) and the weight of the chosen atoms, band after band.
+
+        Notes
+        -----
+        The weight of state :math:`n\\mathbf{k}` is
+        :math:`\\sum_{\\mu \\in \\mathrm{sites}} |\\langle \\mu | n\\mathbf{k} \\rangle|^2`
+        over the PAO orbitals of the chosen atoms (both spin blocks with ad hoc spin-orbit). Call it
+        after :meth:`bands`, which leaves the eigenvectors of the path.
         """
 
         from .spectrum.do_site_projected_bands import site_projeted_bands
 
         arry, attr = self.data_controller.data_dicts()
 
-        if 'site_proj' not in arry:
-            arry['site_proj'] = site_proj
+        arry['site_proj'] = np.atleast_1d(np.asarray(site_proj, dtype=int))
 
         if 'naw' not in arry:
             self.data_controller.build_arrays_adhoc_soc()
@@ -2051,18 +2128,42 @@ class PAOFLOW:
 
         self.report_module_time('site_projeted_bands')
 
-    def doubling_Hamiltonian(self, nx, ny, nz):
-        """
-        Marcio, can you write something here please?
-        Please check the argument descriptions also
+    def doubling_Hamiltonian(self, nx: int, ny: int, nz: int) -> None:
+        """Real-space Hamiltonian of a supercell made by doubling the cell along its lattice vectors.
 
-        Arguments:
-            nx (bool): Number of doubles in first dimension
-            ny (bool): Number of doubles in second dimension
-            nz (bool): Number of doubles in third dimension
+        Parameters
+        ----------
+        nx : int
+            Number of doublings along the first lattice vector: the supercell holds ``2**nx``
+            copies of the cell along it. 0 leaves the direction alone.
+        ny : int
+            Number of doublings along the second lattice vector.
+        nz : int
+            Number of doublings along the third lattice vector.
 
-        Returns:
-            None
+        Returns
+        -------
+        None
+            ``HRs``, ``tau``, ``atoms``, ``a_vectors`` and the per-atom arrays (``naw``, ``sh``,
+            ``nl``, the spin operator, the ad hoc spin-orbit strengths) describe the supercell, on
+            every rank.
+
+        Notes
+        -----
+        Each doubling along :math:`\\mathbf{a}_i` builds the Hamiltonian of the cell
+        :math:`(\\mathbf{a}_i \\to 2\\mathbf{a}_i)` from the blocks of the original one,
+
+        .. math::
+
+            H'(\\mathbf{R}') = \\begin{pmatrix}
+                H(2\\mathbf{R}') & H(2\\mathbf{R}' + \\mathbf{a}_i) \\\\
+                H(2\\mathbf{R}' - \\mathbf{a}_i) & H(2\\mathbf{R}')
+            \\end{pmatrix},
+
+        so the bands of the supercell are those of the cell folded into the smaller Brillouin
+        zone. Call it after :meth:`pao_hamiltonian` (and after :meth:`adhoc_spin_orbit`), before
+        the band structure and the interpolation; the k mesh of ``HRs`` is kept, so the supercell
+        samples a denser k grid of the original crystal.
         """
         from .hamiltonian.do_doubling import doubling_HRs
 
@@ -3443,6 +3544,9 @@ class PAOFLOW:
             fermi_up (float): The upper limit of the occupied energy range
             fermi_dw (float): The lower limit of the occupied energy range
             s_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
+            shc_proj (list of int): atoms (0-based, in the order of the save) whose orbitals the spin
+                current operator is projected on, (P j_s + j_s P) / 2: the contribution of a layer
+                or a site; None gives the whole cell
 
         Returns:
             None
@@ -3891,33 +3995,53 @@ class PAOFLOW:
 
     def doping(
         self,
-        tmin=300,
-        tmax=300,
-        nt=1,
-        delta=0.01,
-        emin=-1.0,
-        emax=1.0,
-        ne=1000,
-        doping_conc=None,
-        core_electrons=0.0,
-        fname='doping_',
-    ):
-        """
-        Calculate the chemical potential that corresponds to specified doping for different temperatures
+        tmin: float = 300,
+        tmax: float = 300,
+        nt: int = 1,
+        delta: float = 0.01,
+        emin: float = -1.0,
+        emax: float = 1.0,
+        ne: int = 1000,
+        doping_conc: float | None = None,
+        core_electrons: float = 0.0,
+        fname: str = 'doping_',
+    ) -> np.ndarray:
+        """Chemical potential of a doped crystal at each temperature.
 
-        Arguments:
-            tmin (float): The minimum temperature in the range
-            tmax (float): The maximum temperature in the range
-            nt (float): The number of temperature increments
-            emin (float): The minimum energy in the range
-            emax (float): The maximum energy in the range
-            ne (float): The number of energy increments
-            doping_conc(float): The amount of doping in 1/cm^3. Positive value for p type and negative value for n type
-            core_electrons(float): The number of core electrons in a system. Adding this to integrated dos allows for integration over a narrower energy window
-            fname (str): Prefix for the filename containg Doping vs Temperature
+        Parameters
+        ----------
+        tmin, tmax : float, optional
+            Temperature range (K).
+        nt : int, optional
+            Number of temperatures in ``[tmin, tmax]``.
+        delta : float, optional
+            Gaussian width of the DOS (eV) when the run has no adaptive smearing
+            (``smearing=None``).
+        emin, emax : float, optional
+            Energy window of the DOS (eV, relative to the PAOFLOW zero). It must hold every
+            valence band, or ``core_electrons`` must count the electrons below it.
+        ne : int, optional
+            Number of energies; the spacing must resolve ``delta`` (below ``delta / 3``).
+        doping_conc : float, optional
+            Carrier concentration (cm⁻³): negative for electrons (n type), positive for holes
+            (p type). None keeps the value of an earlier call (0 at first).
+        core_electrons : float, optional
+            Electrons per cell in the bands below ``emin``.
+        fname : str, optional
+            Prefix of the output file.
 
-        Returns:
-            None
+        Returns
+        -------
+        ndarray, shape (nt,)
+            :math:`\\mu(T)` (eV), on every rank. Also writes ``<fname><n|p><|doping_conc|>.dat``:
+            temperature and :math:`\\mu`.
+
+        Notes
+        -----
+        :math:`\\mu(T)` solves
+        :math:`\\int g(E) f(E; \\mu, T)\\,dE = N_\\mathrm{elec} - n\\,\\Omega` with the DOS
+        :math:`g` of the full k grid (call after :meth:`pao_eigh`), :math:`n` the carrier
+        concentration and :math:`\\Omega` the cell volume.
         """
         from .boltzmann.do_doping import do_doping
         from .spectrum.do_dos import do_dos, do_dos_adaptive
@@ -3940,9 +4064,104 @@ class PAOFLOW:
             do_dos(self.data_controller, emin, emax, ne, delta)
         else:
             do_dos_adaptive(self.data_controller, emin, emax, ne)
-        do_doping(self.data_controller, temps, ene, fname)
+        mu = do_doping(self.data_controller, temps, ene, fname)
 
         self.report_module_time('Doping')
+        return mu
+
+    def doped_transport(
+        self,
+        doping_conc: float,
+        tmin: float = 300.0,
+        tmax: float = 300.0,
+        nt: int = 1,
+        delta: float = 0.01,
+        emin: float = -10.0,
+        emax: float = 2.0,
+        ne: int = 4000,
+        core_electrons: float = 0.0,
+        scattering_channels: list | None = None,
+        tau_dict: dict | None = None,
+        fname: str = 'doped_transport_',
+    ) -> np.ndarray:
+        """Boltzmann transport of a doped semiconductor along its temperature curve.
+
+        Parameters
+        ----------
+        doping_conc : float
+            Carrier concentration (cm⁻³): negative for electrons (n type), positive for holes.
+        tmin, tmax : float, optional
+            Temperature range (K).
+        nt : int, optional
+            Number of temperatures.
+        delta, emin, emax, ne, core_electrons : optional
+            DOS of the carrier count, as in :meth:`doping`.
+        scattering_channels : list, optional
+            Relaxation-time models combined by Matthiessen's rule, as in :meth:`transport`:
+            built-in names (``'acoustic'``, ``'optical'``, ``'polar_optical'``,
+            ``'polar_acoustic'``, ``'impurity'``), ``TauModel`` or ``ScatteringChannel`` objects.
+            Empty: the constant-relaxation-time tensors (per second of relaxation time).
+        tau_dict : dict, optional
+            Material parameters of the built-in models (:mod:`PAOFLOW.boltzmann.do_tau_models`).
+            ``doping_conc`` and, unless given, ``Ef`` (the polar-optical screening, set to
+            :math:`|\\mu(T)|` at each temperature) are filled in.
+        fname : str, optional
+            Prefix of the output file.
+
+        Returns
+        -------
+        ndarray, shape (nt, 9)
+            Rows ``T, mu, sigma_xx, sigma_yy, sigma_zz, rho, S_xx, S_yy, S_zz``, on every rank:
+            conductivity in S/m (S/(m s) without channels), resistivity
+            :math:`\\rho = 3 / \\mathrm{tr}\\,\\sigma` in Ω cm (Ω cm s without channels), Seebeck
+            coefficient in µV/K. Also writes them to ``<fname><n|p><|doping_conc|>.dat`` and
+            :meth:`doping` writes :math:`\\mu(T)`.
+
+        Notes
+        -----
+        :meth:`doping` gives :math:`\\mu(T)`; :meth:`transport` then evaluates the tensors at
+        that single chemical potential, one temperature at a time. Call after
+        :meth:`gradient_and_momenta` (and :meth:`adaptive_smearing` for the adaptive kernel).
+        """
+        from os.path import join
+
+        arrays, attr = self.data_controller.data_dicts()
+        if attr['nspin'] != 1:
+            raise ValueError(
+                'doped_transport needs one spin channel (spin-degenerate or spin-orbit run); '
+                'call doping and transport per channel for a collinear magnet'
+            )
+        channels = list(scattering_channels or [])
+        params = dict(tau_dict or {})
+        params.setdefault('doping_conc', doping_conc)
+        fixed_ef = 'Ef' in params
+        temps = np.linspace(tmin, tmax, nt)
+        mu = self.doping(
+            tmin=tmin, tmax=tmax, nt=nt, delta=delta, emin=emin, emax=emax, ne=ne,
+            doping_conc=doping_conc, core_electrons=core_electrons,
+        )  # fmt: skip
+        rows = np.zeros((nt, 9))
+        for i, (temp, mu_t) in enumerate(zip(temps, mu)):
+            if not fixed_ef:
+                params['Ef'] = abs(float(mu_t))
+            self.transport(
+                tmin=temp, tmax=temp, nt=1, emin=mu_t, emax=mu_t, ne=1,
+                scattering_channels=channels, tau_dict=params, save_tensors=True,
+                write_to_file=False,
+            )  # fmt: skip
+            sigma = np.diag(arrays['sigma'][:, :, 0])
+            seebeck = np.diag(arrays['S'][:, :, 0]) * 1.0e6
+            rho = 3.0e2 / np.sum(sigma) if np.sum(sigma) != 0.0 else np.inf
+            rows[i] = [temp, mu_t, *sigma, rho, *seebeck]
+        if self.rank == 0:
+            name = '%s%s%s.dat' % (fname, 'n' if doping_conc < 0 else 'p', np.abs(doping_conc))
+            header = (
+                'T (K), mu (eV), sigma_xx, sigma_yy, sigma_zz (S/m; S/(m s) without scattering '
+                'channels), rho (Ohm cm), S_xx, S_yy, S_zz (muV/K); doping %g cm^-3' % doping_conc
+            )
+            np.savetxt(join(attr['opath'], name), rows, fmt='%14.6e', header=header)
+        self.report_module_time('Doped transport')
+        return rows
 
     def transport(
         self,
@@ -4166,8 +4385,8 @@ class PAOFLOW:
         Notes
         -----
         Benchmarked against ``epsilon.x`` on Si (insulator) and Al fcc
-        (metal); see ``examples/qe_examples/example15_Si_epsilon`` and
-        ``example17_Al_epsilon``. Plasmon frequencies agree to within a
+        (metal); the case ``examples/cases/si_optics`` has the ``epsilon.x``
+        input of Si (``eps.in``). Plasmon frequencies agree to within a
         few percent on a converged 16x16x16 k-grid.
 
         **Adaptive interband broadening** (Yates *et al.*, Phys. Rev. B
@@ -5069,19 +5288,43 @@ class PAOFLOW:
         self.report_module_time('Coupled Optical Response')
         return results
 
-    def jdos(self, delta=0.1, emin=0.0, emax=10.0, ne=501, jdos_smeartype='gauss'):
-        """
-        Calculate the Dielectric Tensor
+    def jdos(
+        self,
+        delta: float = 0.1,
+        emin: float = 0.0,
+        emax: float = 10.0,
+        ne: int = 501,
+        jdos_smeartype: str = 'gauss',
+    ) -> None:
+        """Joint density of states: the number of vertical transitions at each photon energy.
 
-        Arguments:
-            delta (float): broadening parameter in eV
-            emin (float): The minimum value of energy
-            emax (float): The maximum value of energy
-            ne (float): Number of energy values between emin and emax
-            jdos_smeartype: 'gauss' or "lorentz"
+        Parameters
+        ----------
+        delta : float, optional
+            Broadening of each transition (eV), used unless a broadening is already set.
+        emin : float, optional
+            Lowest photon energy (eV).
+        emax : float, optional
+            Highest photon energy (eV).
+        ne : int, optional
+            Number of photon energies between ``emin`` and ``emax``.
+        jdos_smeartype : str, optional
+            Line shape of a transition: ``'gauss'`` or ``'lorentz'``.
 
-        Returns:
-            None
+        Returns
+        -------
+        None
+            Writes ``jdos.dat`` (``jdos_0.dat`` and ``jdos_1.dat`` for a collinear magnet): photon
+            energy and JDOS.
+
+        Notes
+        -----
+        .. math::
+
+            J(\\omega) = \\sum_{nm\\mathbf{k}} w_{\\mathbf{k}} f_{n\\mathbf{k}}
+            (1 - f_{m\\mathbf{k}}) \\, \\delta(E_{m\\mathbf{k}} - E_{n\\mathbf{k}} - \\hbar\\omega)
+
+        on the full k grid: call it after :meth:`pao_eigh`.
         """
         from .response.do_epsilon import do_jdos
 
@@ -5099,7 +5342,39 @@ class PAOFLOW:
 
         self.report_module_time('Joint density of states')
 
-    def find_weyl_points(self, symmetrize=None, test_rad=0.01, search_grid=[8, 8, 8]):
+    def find_weyl_points(
+        self,
+        symmetrize: bool | None = None,
+        test_rad: float = 0.01,
+        search_grid: list[int] = [8, 8, 8],
+    ) -> None:
+        """Search the Brillouin zone for Weyl points: touchings of the highest occupied band and the
+        next one.
+
+        Parameters
+        ----------
+        symmetrize : bool, optional
+            Expand the candidates to their symmetry images (the symmetry operations of the save).
+            None keeps the setting of :meth:`pao_hamiltonian`.
+        test_rad : float, optional
+            Radius of the sphere of the chirality check (fractional units); the check uses 0.005.
+        search_grid : list of int, optional
+            Number of boxes along each reciprocal vector for the gap minimisation.
+
+        Returns
+        -------
+        None
+            Writes ``weyl_points.dat``: each point in Cartesian coordinates (2π/alat), its
+            chirality (the Chern number on a small sphere, ``?`` without Z2Pack) and its energy.
+
+        Notes
+        -----
+        The gap :math:`E_{N+1}(\\mathbf{k}) - E_N(\\mathbf{k})` (:math:`N` the number of electrons)
+        is minimised from every box of the search grid; minima below the tolerance are candidates.
+        With the optional ``z2pack`` and ``tbmodels`` packages each candidate gets the Chern number
+        of the occupied bands on a sphere around it, read from the ``hamiltonian.dat`` that
+        :meth:`write_Hamiltonian` writes: call that first.
+        """
         from .topology.do_find_Weyl import find_weyl
 
         try:

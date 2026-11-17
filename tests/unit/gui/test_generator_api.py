@@ -369,3 +369,40 @@ def test_ep_model_run_needs_no_save(client, gui_root):
     text = driver.read_text()
     assert 'cubic_metal_model(**MODEL_PARAMETERS)' in text and 'workflows.migdal_eliashberg' in text
     assert written['plan'][0]['argv'] == ['python', 'main.ep_model.py']
+
+
+def test_example_cases_listed_and_copied(client, make_client, gui_root):
+    status, body, _ = client.get('/api/cases')
+    assert status == 200 and body['writable'] is True
+    cases = {case['name']: case for case in body['cases']}
+    case = cases['si_bands_transport']
+    assert case['workflow'] == 'run' and case['pseudopotentials'] == [
+        'Si.pbe-tm-new-gipaw-v2.1.UPF'
+    ]
+    assert [step['input'] for step in case['qe']] == ['scf.in', 'nscf.in', 'proj.in']
+    status, copied, _ = client.post(
+        '/api/cases/copy', {'name': 'si_bands_transport', 'folder': 'cases/si'}
+    )
+    assert status == 200, copied
+    assert copied['folder'] == 'cases/si' and copied['workflow'] == 'run'
+    assert copied['answers']['properties'] == ['bands', 'dos', 'transport']
+    assert copied['plan'][0]['argv'] == ['pw.x', '-in', 'scf.in']
+    assert (gui_root / 'cases' / 'si' / 'Si.pbe-tm-new-gipaw-v2.1.UPF').is_file()
+    (gui_root / 'cases' / 'si' / 'scf.in').write_text('edited\n')
+    status, body, _ = client.post(
+        '/api/cases/copy', {'name': 'si_bands_transport', 'folder': 'cases/si'}
+    )
+    assert status == 409 and body['conflicts'] == ['scf.in']
+    status, body, _ = client.post(
+        '/api/cases/copy', {'name': 'si_bands_transport', 'folder': 'cases/si', 'overwrite': True}
+    )
+    assert status == 200 and body['written'] == ['scf.in']
+    assert client.post('/api/cases/copy', {'name': 'nope', 'folder': 'x'})[0] == 404
+    assert (
+        client.post('/api/cases/copy', {'name': 'si_bands_transport', 'folder': '../out'})[0] == 403
+    )
+    read_only = make_client(read_only=True)
+    assert read_only.get('/api/cases')[1]['writable'] is False
+    assert (
+        read_only.post('/api/cases/copy', {'name': 'si_bands_transport', 'folder': 'y'})[0] == 403
+    )

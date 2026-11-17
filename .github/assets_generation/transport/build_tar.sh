@@ -36,11 +36,11 @@ resolve_examples_root() {
   local script_dir repo_root
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
   repo_root="$(cd "$script_dir/../../.." && pwd)"
-  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "$SLURM_SUBMIT_DIR/examples/transport_examples" ]]; then
-    echo "$SLURM_SUBMIT_DIR/examples/transport_examples"
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "$SLURM_SUBMIT_DIR/tests/integration/transport" ]]; then
+    echo "$SLURM_SUBMIT_DIR/tests/integration/transport"
     return
   fi
-  echo "$repo_root/examples/transport_examples"
+  echo "$repo_root/tests/integration/transport"
 }
 
 resolve_tests_root() {
@@ -63,8 +63,8 @@ normalize_example_selector() {
     selector="${selector#"$EXAMPLES_ROOT"/}"
   fi
 
-  if [[ "$selector" == examples/transport_examples/* ]]; then
-    selector="${selector#examples/transport_examples/}"
+  if [[ "$selector" == tests/integration/transport/* ]]; then
+    selector="${selector#tests/integration/transport/}"
   fi
 
   printf '%s\n' "${selector%%/*}"
@@ -171,7 +171,7 @@ fi
 
 EXAMPLES_ROOT="$(resolve_examples_root)"
 TESTS_ROOT="$(resolve_tests_root)"
-REPO_ROOT="$(cd "$EXAMPLES_ROOT/../.." && pwd)"
+REPO_ROOT="$(cd "$EXAMPLES_ROOT/../../.." && pwd)"  # EXAMPLES_ROOT: <repo>/tests/integration/<family>
 LOG_DIR="$EXAMPLES_ROOT/logs"
 mkdir -p "$LOG_DIR"
 

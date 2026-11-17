@@ -1,0 +1,42 @@
+{
+ "title": "MoP2: Weyl points",
+ "summary": "Search of the Brillouin zone for touchings of the highest valence and lowest conduction bands; with Z2Pack the chirality of each point.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "MoP2.save",
+  "prefix": "MoP2",
+  "projector": "projwfc",
+  "properties": [
+   "weyl_points"
+  ],
+  "spin_orbit": true,
+  "weyl_grid": "8 8 8"
+ },
+ "pseudopotentials": [
+  "library/Mo.rel-pbe-n-nc.UPF",
+  "library/P.rel-pbe-n-nc.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  },
+  {
+   "program": "projwfc.x",
+   "input": "proj.in",
+   "label": "Projections on the atomic wavefunctions"
+  }
+ ],
+ "tags": [
+  "Weyl",
+  "topology",
+  "spin-orbit"
+ ],
+ "source": "examples/qe_examples/example09"
+}

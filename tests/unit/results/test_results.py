@@ -18,9 +18,9 @@ from PAOFLOW.results.figures import figure_spec
 from PAOFLOW.results.loaders import load, read_kpath
 from PAOFLOW.results.model import MAX_ORDINAL, ordinal_roles, spread
 
-EXAMPLES = Path(__file__).resolve().parents[3] / 'examples'
-SI = EXAMPLES / 'qe_examples' / 'example01' / 'Reference'
-PT = EXAMPLES / 'qe_examples' / 'example08' / 'Reference'
+DATA = Path(__file__).resolve().parents[2] / 'data'
+SI = DATA / 'silicon' / 'Reference'
+PT = DATA / 'platinum' / 'Reference'
 
 
 def _by_kind(folder):

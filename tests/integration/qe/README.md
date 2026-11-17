@@ -35,7 +35,9 @@ QE_BIN=/path/to/qe/bin .github/assets_generation/qe/create_assets.sh --all
 
 This creates:
 
-- trimmed QE `*.save/` folders under `examples/qe_examples/...`
+- trimmed QE `*.save/` folders in the job folders of `tests/integration/qe/...` (their `scf.in`,
+  `nscf.in` and `proj.in` are the inputs of the published saves; the pseudopotentials come from
+  `PSEUDOS/library`)
 - staged PAOFLOW test outputs under `tests/integration/qe/_assets/staging/...`
 
 Notes:

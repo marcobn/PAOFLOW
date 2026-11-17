@@ -3,10 +3,14 @@ minimum_pre_commit_version: "2.20.0"
 default_language_version:
   python: python3
 
+# data kept byte for byte: the UPFs of PSEUDOS/library (up to 5 MB, the copies the examples carried)
+# and the unit-test fixtures of tests/data
 exclude: |
   (?x)^(?:
     BASIS/|
-    examples
+    examples|
+    PSEUDOS/library/|
+    tests/data/
   )
 
 repos:

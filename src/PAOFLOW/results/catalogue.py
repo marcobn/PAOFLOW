@@ -308,6 +308,20 @@ KINDS: tuple[Kind, ...] = (
         y=('Chemical potential μ', 'eV'),
     ),
     Kind(
+        'doped_transport',
+        'Doped semiconductor {type}{conc}',
+        TRANSPORT,
+        r'doped_transport_(?P<type>[np])(?P<conc>.+)\.dat',
+        'columns',
+        x=TEMPERATURE,
+        columns=(
+            ('Resistivity ρ', 'Ω cm', (5,)),
+            ('Conductivity σ', 'S/m', (2, 3, 4)),
+            ('Seebeck coefficient S', 'μV/K', (6, 7, 8)),
+            ('Chemical potential μ', 'eV', (1,)),
+        ),
+    ),
+    Kind(
         'conductivity_component',
         'Conductivity σ_{component}',
         TRANSPORT,
@@ -396,6 +410,16 @@ KINDS: tuple[Kind, ...] = (
         series=('rest', 'component'),
     ),
     Kind('weyl_points', 'Weyl points', HALL, r'weyl_points\.dat', 'text'),
+    Kind(
+        'z2_wcc',
+        'Z2: Wannier charge centres, k3 = {k3}',
+        HALL,
+        r'z2_wcc_k3_(?P<k3>[-+.\deE]+)\.dat',
+        'columns',
+        x=('k₂', 'fraction of b₂'),
+        y=('Wannier charge centre', 'fraction of a₁'),
+    ),
+    Kind('mirror_chern', 'Mirror Chern number', HALL, r'mirror_chern\.json', 'text'),
     Kind(
         'spin_susceptibility',
         'Spin susceptibility',

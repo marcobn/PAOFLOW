@@ -5,6 +5,7 @@ from __future__ import annotations
 from .common import COMMON_ITEMS, COMMON_OVERRIDES, assemble_common, from_save
 from .linear_response import assemble_linear_response, linear_response_items
 from .model import Answers, Context, Note, Question, Workflow, gated
+from .run_extras import RUN_EXTRA_ITEMS, SHC_ATOMS, assemble_run_extras
 from .spin_response import assemble_spin_response, spin_response_items
 
 PROPERTIES = 'Properties'
@@ -16,6 +17,12 @@ COUPLED = 'Coupled optical response'
 
 def _properties(answers: Answers) -> list[str]:
     return answers.get('properties') or []
+
+
+def _band_path(answers: Answers) -> bool:
+    """The run computes a band path (the bands, or the site-projected bands that need them)."""
+    props = _properties(answers)
+    return 'bands' in props or 'site_projected_bands' in props
 
 
 def _needs_energy_window(answers: Answers, context: Context) -> bool:
@@ -424,7 +431,7 @@ RUN_ITEMS = (
         'Band path k-points (NK)',
         kind='int',
         default=400,
-        when=lambda a, c: 'bands' in _properties(a),
+        when=lambda a, c: _band_path(a),
         section=GRIDS,
         doc='PAOFLOW.PAOFLOW.PAOFLOW.bands:nk',
     ),
@@ -434,7 +441,7 @@ RUN_ITEMS = (
         kind='rows',
         default=lambda a, c: _path_defaults(a, c)[1],
         parse=point_row,
-        when=lambda a, c: 'bands' in _properties(a),
+        when=lambda a, c: _band_path(a),
         columns=('label', 'k1', 'k2', 'k3'),
         label='High-symmetry points',
         help='Crystal coordinates (units of the reciprocal vectors). The defaults are the points '
@@ -447,7 +454,7 @@ RUN_ITEMS = (
         'band_path',
         'Band path (labels joined by "-", segments split by "|")',
         default=lambda a, c: _path_defaults(a, c)[0],
-        when=lambda a, c: 'bands' in _properties(a),
+        when=lambda a, c: _band_path(a),
         validate=_validate_path,
         label='Band path',
         help='e.g. gG-X-W-K-gG-L|U-X; gG is Γ. The points are in the advanced table below.',
@@ -512,12 +519,12 @@ RUN_ITEMS = (
         when=lambda a, c: bool(a.get('interpolate')),
         section=GRIDS,
     ),
-    interpolation_question(
-        lambda a, c: 'bands' in _properties(a) or bool(a.get('interpolate')), GRIDS
-    ),
+    interpolation_question(lambda a, c: _band_path(a) or bool(a.get('interpolate')), GRIDS),
     *gated(NONLINEAR_ITEMS, lambda a, c: 'nonlinear' in _properties(a)),
     *linear_response_items(lambda a, c: bool(a.get('spin_orbit'))),
     *spin_response_items(lambda a, c: 'spin_susceptibility' in _properties(a)),
+    SHC_ATOMS,
+    *RUN_EXTRA_ITEMS,
     Question(
         'plot',
         'Also generate a plotting script (plot.py)?',
@@ -612,6 +619,8 @@ def assemble_run_from_common(common: dict, answers: Answers) -> dict:
     dict
     """
     props = list(answers['properties'])
+    if 'site_projected_bands' in props and 'bands' not in props:
+        props.insert(0, 'bands')  # the projection reads the eigenvectors of the band path
     cfg = dict(common)
     cfg['properties'] = props
     cfg['std_basis'] = answers.get('std_basis', 'standard')
@@ -646,6 +655,7 @@ def assemble_run_from_common(common: dict, answers: Answers) -> dict:
         assemble_linear_response(cfg, answers, bool(answers['spin_orbit']))
     if 'spin_susceptibility' in props:
         assemble_spin_response(cfg, answers)
+    assemble_run_extras(cfg, answers)
     cfg['plot'] = answers['plot']
     return cfg
 

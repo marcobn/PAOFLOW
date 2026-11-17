@@ -13,17 +13,7 @@ from PAOFLOW.gen.questions import collect
 from PAOFLOW.gen.system_summary import is_two_dimensional, read_pw_input_summary, read_upf_header
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SNTE_XML = os.path.join(
-    HERE,
-    '..',
-    '..',
-    '..',
-    'examples',
-    'qe_examples',
-    'example17',
-    'SnTe.save',
-    'data-file-schema.xml',
-)
+SNTE_XML = os.path.join(HERE, '..', '..', 'data', 'snte', 'data-file-schema.xml')
 
 UPF_V2 = '<UPF version="2.0.1">\n<PP_HEADER element="{el}" pseudo_type="{kind}" relativistic="scalar"\n z_valence="{z}" functional="PBE"/>\n</UPF>\n'
 

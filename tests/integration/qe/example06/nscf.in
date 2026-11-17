@@ -2,13 +2,13 @@
     calculation='nscf'
     restart_mode='from_scratch',
     prefix='alp',
-   pseudo_dir = '../pseudos/',
+    pseudo_dir = '../../../../PSEUDOS/library/',
     outdir='./'
  /
  &system
     ibrav=  2, celldm(1) =10.3746, nat= 2, ntyp= 2,
     ecutwfc =25.0, ecutrho=250.0,
-    nbnd = 34,
+    nbnd = 34, 
  /
  &electrons
     conv_thr =  1.0d-8

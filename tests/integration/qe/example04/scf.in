@@ -3,7 +3,7 @@ Iron
  &control
     calculation='scf'
     restart_mode='from_scratch',
-   pseudo_dir = '../pseudos/',
+    pseudo_dir = '../../../../PSEUDOS/library/',
     outdir='./',
     prefix='fe'
  /

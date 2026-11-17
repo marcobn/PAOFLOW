@@ -150,8 +150,9 @@ def read_save_summary(savedir: str) -> dict[str, Any] | None:
         header), ``alat_bohr``, ``cell_bohr``, ``bravais_index``, ``lsda``, ``noncolin``,
         ``spinorbit``, ``nbnd``, ``nelec``, ``fermi_energy_ev``, ``homo_ev``, ``lumo_ev``,
         ``gap_ev``, ``occupations``, ``kgrid``, ``nks``, ``functional``, ``metal``,
-        ``two_dimensional`` and ``augmented`` (any US/PAW pseudopotential); ``None`` when the
-        file is missing or not a QE schema.
+        ``two_dimensional``, ``augmented`` (any US/PAW pseudopotential), ``atoms`` (the species
+        label of every atom, in the order of the save) and ``lowest_band_ev`` (the bottom of the
+        lowest band, eV); ``None`` when the file is missing or not a QE schema.
     """
     path = os.path.join(savedir, 'data-file-schema.xml')
     try:
@@ -198,6 +199,11 @@ def read_save_summary(savedir: str) -> dict[str, Any] | None:
         else None
     )
     gap = (lumo - homo) * HARTREE_EV if homo is not None and lumo is not None else None
+    lowest = [
+        float(values.text.split()[0])
+        for values in bands.findall('ks_energies/eigenvalues')
+        if values.text and values.text.split()
+    ]
     smearing = output.find('band_structure/smearing')
     return {
         'prefix': os.path.splitext(os.path.basename(os.path.normpath(savedir)))[0],
@@ -228,6 +234,8 @@ def read_save_summary(savedir: str) -> dict[str, Any] | None:
         'augmented': any(
             (s['pseudo'] or {}).get('pseudo_type') in AUGMENTED_TYPES for s in species
         ),
+        'atoms': names,
+        'lowest_band_ev': min(lowest) * HARTREE_EV if lowest else None,
     }
 
 

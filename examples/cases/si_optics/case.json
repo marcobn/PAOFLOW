@@ -1,0 +1,40 @@
+{
+ "title": "Si: dielectric function and joint density of states",
+ "summary": "Norm-conserving Si with the internal projections: the dielectric function with the complete velocity (position dipoles) and the joint density of states; eps.in runs the epsilon.x of QE for comparison.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "silicon.save",
+  "prefix": "silicon",
+  "projector": "internal",
+  "properties": [
+   "optical",
+   "jdos"
+  ],
+  "interpolate": true,
+  "nfft": 24,
+  "jdos_emax": 4.0,
+  "jdos_ne": 801
+ },
+ "pseudopotentials": [
+  "library/Si_ONCV_PBE_sr.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "tags": [
+  "optics",
+  "dielectric",
+  "JDOS",
+  "semiconductor"
+ ],
+ "source": "examples/qe_examples/example15"
+}

@@ -1,0 +1,32 @@
+{
+ "title": "Si: eACBN0 Hubbard U and intersite V",
+ "summary": "Self-consistent on-site U and intersite V Hubbard parameters from the PAO density (ACBN0 runs pw.x and projwfc.x itself), then the corrected bands.",
+ "workflow": "acbn0",
+ "answers": {
+  "savedir": "Si.save",
+  "prefix": "Si",
+  "projector": "internal",
+  "use_intersite_v": true,
+  "hubbard": [
+   [
+    "Si-3s",
+    "0.5"
+   ],
+   [
+    "Si-3p",
+    "0.5"
+   ]
+  ]
+ },
+ "pseudopotentials": [
+  "library/Si.pbe-tm-new-gipaw-v2.1.UPF"
+ ],
+ "qe": [],
+ "tags": [
+  "ACBN0",
+  "Hubbard U",
+  "intersite V",
+  "semiconductor"
+ ],
+ "source": "examples/acbn0_examples/Si"
+}

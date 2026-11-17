@@ -1,0 +1,47 @@
+{
+ "title": "Al: DOS and transport of a free-electron metal",
+ "summary": "fcc aluminium: density of states and Boltzmann transport tensors (per relaxation time) over a wide energy window.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "al.save",
+  "prefix": "al",
+  "projector": "projwfc",
+  "properties": [
+   "dos",
+   "transport"
+  ],
+  "ibrav": 2,
+  "do_pdos": false,
+  "emin": -12.0,
+  "emax": 3.0,
+  "ne": 1000,
+  "interpolate": true,
+  "nfft": 24
+ },
+ "pseudopotentials": [
+  "library/Al.pbe-mt_fhi.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  },
+  {
+   "program": "projwfc.x",
+   "input": "proj.in",
+   "label": "Projections on the atomic wavefunctions"
+  }
+ ],
+ "tags": [
+  "dos",
+  "transport",
+  "metal"
+ ],
+ "source": "examples/qe_examples/example02"
+}

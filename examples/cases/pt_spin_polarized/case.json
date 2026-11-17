@@ -1,0 +1,51 @@
+{
+ "title": "Pt (ultrasoft, nspin = 2): bands, DOS and transport",
+ "summary": "Spin-polarised platinum with an ultrasoft pseudopotential and Methfessel-Paxton smearing: one set of bands, DOS and tensors per spin channel.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "pt.save",
+  "prefix": "pt",
+  "projector": "projwfc",
+  "properties": [
+   "bands",
+   "dos",
+   "transport"
+  ],
+  "ibrav": 2,
+  "smearing": "m-p",
+  "emin": -8.0,
+  "emax": 4.0,
+  "ne": 1000,
+  "interpolate": true,
+  "nfft": 24
+ },
+ "pseudopotentials": [
+  "library/Pt.pz-n-rrkjus_psl.0.1.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  },
+  {
+   "program": "projwfc.x",
+   "input": "proj.in",
+   "label": "Projections on the atomic wavefunctions"
+  }
+ ],
+ "tags": [
+  "bands",
+  "dos",
+  "transport",
+  "metal",
+  "spin-polarized",
+  "ultrasoft"
+ ],
+ "source": "examples/qe_examples/example03"
+}

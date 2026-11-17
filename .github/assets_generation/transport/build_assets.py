@@ -90,8 +90,8 @@ def main() -> None:
     p.add_argument(
         '--transport-root',
         type=Path,
-        default=repo_root / 'examples' / 'transport_examples',
-        help='Path to examples/transport_examples (default: examples/transport_examples)',
+        default=repo_root / 'tests' / 'integration' / 'transport',
+        help='Folder of the transport jobs (default: tests/integration/transport)',
     )
     p.add_argument(
         '--reference-root',

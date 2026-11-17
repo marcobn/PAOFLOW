@@ -15,7 +15,7 @@ from PAOFLOW.gen.questions.resolve import resolve_form
 
 pytestmark = pytest.mark.unit
 
-PT = Path(__file__).resolve().parents[3] / 'examples' / 'qe_examples' / 'example08' / 'Reference'
+PT = Path(__file__).resolve().parents[2] / 'data' / 'platinum' / 'Reference'
 
 
 def _resolve(workdir, answers):

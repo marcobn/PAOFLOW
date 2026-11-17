@@ -15,7 +15,7 @@ Usage
     python examples/clean_runs.py --apply
 
     # Restrict to one or more example subtrees:
-    python examples/clean_runs.py --apply qe_examples/example01 vasp_examples
+    python examples/clean_runs.py --apply cases/si_bands_transport recipes/vasp
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from pathlib import Path
 
 # Files kept by exact basename (case-sensitive on POSIX).
 KEEP_NAMES = {
+    'case.json',  # cases/: workflow and answers of the case
     'inputfile.xml',
     'POTCAR',
     'INCAR',

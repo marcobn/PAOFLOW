@@ -226,3 +226,7 @@ examples/nlo_examples/*/BASIS_PS/
 examples/nlo_examples/*/*.save/
 examples/nlo_examples/*/*.wfc*
 examples/nlo_examples/*/*.out
+
+# unit-test fixtures: tracked, the QE save and its XML files included (see tests/data/README.md)
+!tests/data/**/*.save/
+!tests/data/**/*.xml

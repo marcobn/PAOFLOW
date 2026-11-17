@@ -77,9 +77,12 @@ def _ref_L(dc, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
     return L
 
 
-def _ref_hall(dc, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
-    from sympy import Eijk
+def _levi_civita(p, q, r):
+    """epsilon_pqr for p, q, r in {0, 1, 2} (sympy's Eijk, without sympy)."""
+    return (p - q) * (q - r) * (r - p) // 2
 
+
+def _ref_hall(dc, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
     a, t = dc.data_dicts()
     esize = ene.size
     snktot = a['E_k'].shape[0]
@@ -116,7 +119,7 @@ def _ref_hall(dc, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
                     for q in range(3):
                         for r in range(3):
                             sig_hall[i, j, p, :, n, ispin] += (
-                                int(Eijk(p, q, r))
+                                _levi_civita(p, q, r)
                                 * velkp[:, i, n, ispin]
                                 * velkp[:, r, n, ispin]
                                 * M_inv[j, q, :, n, ispin]

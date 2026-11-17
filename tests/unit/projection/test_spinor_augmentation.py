@@ -20,12 +20,10 @@ from PAOFLOW.elphon.pseudopotential_terms import (
 from PAOFLOW.inputs.read_upf import UPF
 from PAOFLOW.projection.augmentation import AugmentedOverlap
 
-EXAMPLE17 = os.path.join(
-    os.path.dirname(__file__), '..', '..', '..', 'examples', 'qe_examples', 'example17'
-)
+PSEUDO_LIBRARY = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'PSEUDOS', 'library')
 UPFS = {
-    'Sn': os.path.join(EXAMPLE17, 'Sn.rel-pbe-dn-kjpaw_psl.1.0.0.UPF'),
-    'Te': os.path.join(EXAMPLE17, 'Te.rel-pbe-dn-kjpaw_psl.1.0.0.UPF'),
+    'Sn': os.path.join(PSEUDO_LIBRARY, 'Sn.rel-pbe-dn-kjpaw_psl.1.0.0.UPF'),
+    'Te': os.path.join(PSEUDO_LIBRARY, 'Te.rel-pbe-dn-kjpaw_psl.1.0.0.UPF'),
 }
 
 
@@ -183,10 +181,14 @@ def test_spinor_overlap_matches_the_explicit_formula(projectors):
         aug.becp(beta, a[:, :npw])
 
 
-SNTE_SAVE = os.path.join(EXAMPLE17, 'SnTe.save')
+# The SnTe monolayer save (FR PAW, about 1 GB) is not a tracked fixture: point the variable at
+# it (a pw.x run of the SnTe inputs) to run the end-to-end check.
+SNTE_SAVE = os.environ.get('PAOFLOW_TEST_SNTE_SAVE', '')
 
 
-@pytest.mark.skipif(not os.path.isdir(SNTE_SAVE), reason='example17 QE data not available')
+@pytest.mark.skipif(
+    not os.path.isdir(SNTE_SAVE), reason='set PAOFLOW_TEST_SNTE_SAVE to a SnTe.save folder'
+)
 def test_snte_bands_are_orthonormal_in_the_spinor_metric(tmp_path):
     """End to end on the SnTe monolayer (FR PAW, ``npol = 2``): ``<psi|S|psi> = 1`` for the
     stored bands with the spinor charges, and far from it with the plain overlap."""

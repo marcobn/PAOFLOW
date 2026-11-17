@@ -426,6 +426,13 @@ main {
 .workflow-item:hover {
   border-color: var(--faint);
 }
+.case-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 55vh;
+  overflow: auto;
+}
 .workflow-item.selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent) inset;

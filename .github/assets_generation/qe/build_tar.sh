@@ -41,11 +41,11 @@ resolve_examples_root() {
   local script_dir repo_root
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
   repo_root="$(cd "$script_dir/../../.." && pwd)"
-  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "$SLURM_SUBMIT_DIR/examples/qe_examples" ]]; then
-    echo "$SLURM_SUBMIT_DIR/examples/qe_examples"
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "$SLURM_SUBMIT_DIR/tests/integration/qe" ]]; then
+    echo "$SLURM_SUBMIT_DIR/tests/integration/qe"
     return
   fi
-  echo "$repo_root/examples/qe_examples"
+  echo "$repo_root/tests/integration/qe"
 }
 
 resolve_tests_root() {
@@ -68,8 +68,8 @@ normalize_example_selector() {
     selector="${selector#"$SELECTOR_ROOT"/}"
   fi
 
-  if [[ "$selector" == examples/qe_examples/* ]]; then
-    selector="${selector#examples/qe_examples/}"
+  if [[ "$selector" == tests/integration/qe/* ]]; then
+    selector="${selector#tests/integration/qe/}"
   fi
 
   if [[ "$selector" == .github/assets_generation/qe/_assets/* ]]; then
@@ -205,7 +205,7 @@ fi
 
 EXAMPLES_ROOT="$(resolve_examples_root)"
 TESTS_ROOT="$(resolve_tests_root)"
-REPO_ROOT="$(cd "$EXAMPLES_ROOT/../.." && pwd)"
+REPO_ROOT="$(cd "$EXAMPLES_ROOT/../../.." && pwd)"  # EXAMPLES_ROOT: <repo>/tests/integration/<family>
 ASSETS_DIR="$REPO_ROOT/.github/assets_generation/qe/_assets"
 SELECTOR_ROOT="$EXAMPLES_ROOT"
 if [[ "$repack_qe_test" = true ]]; then

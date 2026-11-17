@@ -96,6 +96,12 @@ Other options:
    electrons, gap or metal, k-grid, pseudopotential types, 2D slab. The folder is shared by every tab (see
    [One folder for every tab](#one-folder-for-every-tab)).
 
+   **Examples…** starts from a case of `examples/cases` instead (a source checkout of PAOFLOW): filter the
+   cases by system, property or workflow, pick one and the folder to create. Studio copies the QE inputs, the
+   README and the pseudopotentials (from `PSEUDOS/library`), opens the folder with the form of the case filled
+   in, and gives Runs its steps: `pw.x` (scf, nscf) and `projwfc.x` where the case needs them, then the
+   drivers. Files of the case that differ in the folder are replaced only after you confirm.
+
    Under it, **Crystal structure** draws the cell, the atoms and the bonds of a save or of a `pw.x` input, chosen
    in its menu. A save shows the structure after the run, so a relaxation shows the relaxed cell. The cell can
    be repeated up to 3×3×3, and the card can be hidden. Hover an atom for its coordinates; the cell lengths,

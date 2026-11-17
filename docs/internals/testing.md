@@ -12,6 +12,20 @@ Testing is a first-class part of contributing to PAOFLOW. Good tests protect eve
 
 **Integration tests** (`tests/integration/`) run a minimal end-to-end workflow and compare output against known-good reference data. We keep them fast by using lower accuracy settings (reduced grid sizes and k-points) and staging large prerequisites as release assets rather than committing them to the repository.
 
+### Unit-test data
+
+Unit tests never read `examples/`. Examples change for their users (new inputs, other grids, a
+different layout) and a test that borrows their files breaks, or silently skips, when they do.
+
+- Small data files live in `tests/data/` (a QE save of bulk Si, reference outputs, BXSF grids,
+  model parameters); `tests/data/README.md` lists each fixture, its source and its readers.
+- Pseudopotentials live once in `PSEUDOS/library/`, which the example cases share.
+- Data too large to track (a 1 GB save, a 5 GB MPI buffer) sit behind an environment variable and
+  the test skips with the variable's name, so a missing file is never mistaken for a pass.
+
+CI runs `tests/unit` in the `unit-tests` job (`-m "not slow and not integration"`), split into
+groups that run in parallel.
+
 ## Running Tests
 
 ```bash

@@ -21,18 +21,18 @@ from PAOFLOW.gen.questions import WORKFLOWS
 from PAOFLOW.gen.questions.model import Context
 from PAOFLOW.gen.questions.resolve import resolve_form
 
-SI = os.path.join(
-    os.path.dirname(__file__), '..', '..', '..', 'examples', 'qe_examples', 'example01'
-)
+SI = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'silicon')
 
 
-def test_default_paths():
+def test_default_paths(tmp_path):
     path, points = default_band_path(SI, 'silicon.save', 2, False)
     assert path == 'gG-X-W-K-gG-L-U-W-L-K|U-X'
     assert points[0] == ('gG', 0.0, 0.0, 0.0) and {p[0] for p in points} == set(path_labels(path))
     assert default_band_path(SI, 'silicon.save', 4, True)[0] == 'gG-M-K-gG'
     assert default_band_path(SI, 'silicon.save', 0, False) == ('', [])
-    assert default_band_path(SI, 'missing.save', 2, False) == ('', [])
+    # before pw.x has run, the cell of the pw.x input gives the same path
+    assert default_band_path(SI, 'missing.save', 2, False) == (path, points)
+    assert default_band_path(str(tmp_path), 'missing.save', 2, False) == ('', [])
 
 
 def test_path_checks():

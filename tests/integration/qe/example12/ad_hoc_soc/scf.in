@@ -1,19 +1,19 @@
 &control
    calculation = 'scf'
    prefix = 'Bi',
-   pseudo_dir = '../../pseudos/'
+   pseudo_dir = '../../../../../PSEUDOS/library/'
    outdir = './'
    verbosity = "high"
    wf_collect=.true.
 /
 &system
    ibrav=  0,
-   nat=  24,
+   nat=  24, 
    ntyp= 1,
-   celldm(1) = 1.8897261249935,
+   celldm(1) = 1.8897261249935, 
    ecutwfc =45.0,
    ecutrho =300.0,
-   occupations='smearing',
+   occupations='smearing', 
    smearing = 'gaussian',
    degauss=0.001
    lspinorb=  .false.
@@ -24,8 +24,8 @@
    conv_thr =  1.0d-8
 /
 ATOMIC_SPECIES
-Bi 0.0  Bi.pbe-dn-kjpaw_psl.1.0.0.UPF
-ATOMIC_POSITIONS crystal
+Bi 0.0  Bi.pbe-dn-kjpaw_psl.1.0.0.UPF 
+ATOMIC_POSITIONS crystal 
 Bi     0.000000000         0.152169824         0.462253392
 Bi     0.500000000         0.175824434         0.571495950
 Bi     0.500000000         0.217313558         0.447532356

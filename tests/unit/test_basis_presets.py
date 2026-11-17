@@ -148,16 +148,16 @@ def test_extended_augmentation_empty_minimal():
 
 
 # ---------------------------------------------------------------------------
-# minimal_shells_from_upf — real UPF file from examples/
+# minimal_shells_from_upf — real UPF file from PSEUDOS/library
 # ---------------------------------------------------------------------------
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-GAAS_DIR = REPO_ROOT / 'examples' / 'acbn0_examples' / 'GaAs'
+GAAS_DIR = REPO_ROOT / 'PSEUDOS' / 'library'
 
 
 @pytest.mark.unit
-@pytest.mark.skipif(not GAAS_DIR.exists(), reason='GaAs example pseudopotentials not present')
+@pytest.mark.skipif(not GAAS_DIR.exists(), reason='Ga/As PAW UPFs missing from PSEUDOS/library')
 def test_minimal_shells_from_upf_real_pseudopotential():
     dc = _FakeDataController(
         arry={
@@ -238,7 +238,7 @@ def test_resolve_configuration_preset_is_case_insensitive():
 
 
 @pytest.mark.unit
-@pytest.mark.skipif(not GAAS_DIR.exists(), reason='GaAs example pseudopotentials not present')
+@pytest.mark.skipif(not GAAS_DIR.exists(), reason='Ga/As PAW UPFs missing from PSEUDOS/library')
 def test_resolve_configuration_minimal_end_to_end():
     dc = _FakeDataController(
         arry={
@@ -257,7 +257,7 @@ def test_resolve_configuration_minimal_end_to_end():
 
 
 @pytest.mark.unit
-@pytest.mark.skipif(not GAAS_DIR.exists(), reason='GaAs example pseudopotentials not present')
+@pytest.mark.skipif(not GAAS_DIR.exists(), reason='Ga/As PAW UPFs missing from PSEUDOS/library')
 def test_resolve_configuration_extended_unions_and_filters(tmp_path):
     # Build a fake BASIS/ tree that contains the augmenting shells the
     # rule will request for Ga and As (both p-block, nmax depends on the
@@ -303,7 +303,7 @@ def test_resolve_configuration_extended_warns_when_basis_missing(tmp_path, recwa
     # No <basispath>/As directory exists → expect a warning and a
     # fall-back to the minimal valence list.
     if not GAAS_DIR.exists():
-        pytest.skip('GaAs example pseudopotentials not present')
+        pytest.skip('Ga/As PAW UPFs missing from PSEUDOS/library')
     dc_arry = {'atoms': ['As'], 'species': [('As', 'As.pbe-n-kjpaw_psl.1.0.0.UPF')]}
     dc_attr = {'fpath': str(GAAS_DIR), 'basispath': str(tmp_path) + os.sep}
 

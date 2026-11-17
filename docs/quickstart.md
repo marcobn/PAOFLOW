@@ -32,6 +32,10 @@ Download the precomputed tutorial assets from the [PAOFLOW Releases page](https:
 silicon.save/          # Pre-computed QE output (atomic projections + data)
 ```
 
+To make `silicon.save` yourself instead, `paoflow-gen --example si_bands_transport` copies the QE
+inputs and the pseudopotential of this run into `./si_bands_transport` and writes its `main.py`;
+run `pw.x` (scf, nscf) and `projwfc.x` there as its README says.
+
 ---
 
 ## Step 2 — Examine the driver script
@@ -117,8 +121,11 @@ After the run, an `output/` directory is created containing:
 | `kappagauss_0.dat`   | Electronic thermal conductivity tensor vs. energy |
 
 :::{tip} Comparing to the reference
-The `Reference/` subdirectory contains expected output files.
-You can diff your results against them to confirm a correct installation.
+The expected output files are not in the repository: they ship with the integration tests
+(`example01/Reference/` in `qe_test_assets.tar.gz` of the
+[integration-assets release](https://github.com/marcobn/PAOFLOW/releases/tag/integration-assets-v1)).
+`pytest "tests/integration/qe/test_qe_examples.py::test_qe_example[example01]"` downloads it, runs
+this example and compares the outputs.
 :::
 
 ---
@@ -131,8 +138,11 @@ You can diff your results against them to confirm a correct installation.
   paoflow-gen
   ```
 - See the [API Reference](internals/api-reference.md) for the full list of methods on the `PAOFLOW` class.
-- The repository `examples/` folder has one folder per topic: `qe_examples` and `vasp_examples`
-  (the property workflows), `elphon` (electron-phonon: superconductivity, optics, transport,
-  ARPES, one system folder each), `nlo_examples` (shift current and second-harmonic
-  generation), `acbn0_examples`, `transport_examples` (Landauer), `TBmodel_examples`,
-  `unfold_examples`, `pyskeaf_examples` and `qo_analysis_examples`.
+- Start from an example case: `examples/cases/` holds one folder per calculation (QE inputs, a
+  README and the answers of the generator form), from this silicon run to spin Hall, Weyl points,
+  Z2, doped transport, Landauer junctions and ACBN0. In PAOFLOW Studio use *Examples…* in the
+  Setup tab; on the command line `paoflow-gen --example list`, then
+  `paoflow-gen --example si_bands_transport`. `examples/recipes/` has scripts for what the
+  generator does not write (VASP, basis presets, the sparse backend); `examples/elphon`,
+  `nlo_examples`, `TBmodel_examples`, `unfold_examples`, `pyskeaf_examples` and
+  `qo_analysis_examples` keep their topic folders.

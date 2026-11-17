@@ -151,6 +151,15 @@ export class SetupView {
           },
           'Change…',
         ),
+        h(
+          'button',
+          {
+            class: 'btn small',
+            title: 'Copy an example case (inputs, pseudopotentials, answers) into a new folder',
+            onclick: () => this.chooseExample(),
+          },
+          'Examples…',
+        ),
       ),
     );
     const summary = d.save_summary;
@@ -221,6 +230,126 @@ export class SetupView {
         h('div', { class: 'callout warn', style: { marginTop: '8px' } }, warning),
       );
     this.renderCrystal();
+  }
+
+  // ------------------------------------------------------------------ examples
+  // The cases of examples/cases: pick one and a folder; the server copies the inputs and the
+  // pseudopotentials, the form gets the answers of the case and Runs its QE steps.
+  async chooseExample() {
+    let listing;
+    try {
+      listing = await api.get('/api/cases');
+    } catch (error) {
+      toast(error.message, 'bad');
+      return;
+    }
+    if (!listing.cases.length) {
+      toast(
+        'No example cases: they come with a source checkout of PAOFLOW (examples/cases)',
+        'warn',
+      );
+      return;
+    }
+    let chosen = null;
+    const filter = h('input', {
+      type: 'search',
+      style: { width: '100%' },
+      placeholder: 'Filter: system, property or workflow (e.g. spin Hall, 2D, landauer)',
+    });
+    const target = h('input', { type: 'text', class: 'grow', placeholder: 'folder to create' });
+    const list = h('div', { class: 'case-list' });
+    const render = () => {
+      clear(list);
+      const words = filter.value.toLowerCase().split(/\s+/).filter(Boolean);
+      for (const item of listing.cases) {
+        const text = [item.name, item.title, item.summary, item.workflow, ...item.tags]
+          .join(' ')
+          .toLowerCase();
+        if (words.some((word) => !text.includes(word))) continue;
+        list.append(
+          h(
+            'button',
+            {
+              type: 'button',
+              class: `workflow-item case-item${chosen === item ? ' selected' : ''}`,
+              onclick: () => {
+                chosen = item;
+                target.value = joinPath(this.workdir, item.name);
+                render();
+              },
+            },
+            h('div', { class: 'title' }, item.title, h('span', { class: 'chip' }, item.workflow)),
+            h('div', { class: 'desc' }, item.summary),
+            h(
+              'div',
+              { class: 'desc' },
+              `${item.qe.map((step) => step.input).join(' → ') || 'no QE step'} · ${item.pseudopotentials.join(', ')}`,
+            ),
+          ),
+        );
+      }
+      if (!list.children.length) list.append(h('div', { class: 'muted' }, 'No case matches.'));
+    };
+    filter.addEventListener('input', render);
+    render();
+    const body = h(
+      'div',
+      { class: 'stack' },
+      filter,
+      list,
+      h('div', { class: 'row' }, h('span', {}, 'Copy into'), target),
+    );
+    const folder = await dialog({
+      title: 'Start from an example',
+      body,
+      wide: true,
+      actions: [
+        { label: 'Cancel', value: null },
+        { label: 'Copy', kind: 'primary', value: () => target.value.trim() },
+      ],
+    });
+    if (!folder) return;
+    if (!chosen) {
+      toast('Pick a case first', 'warn');
+      return;
+    }
+    await this.copyExample(chosen, folder);
+  }
+
+  async copyExample(item, folder, overwrite = false) {
+    let result;
+    try {
+      result = await api.post('/api/cases/copy', { name: item.name, folder, overwrite });
+    } catch (error) {
+      if (error.status === 409 && !overwrite) {
+        const conflicts = (error.details.conflicts || []).join(', ');
+        const replace = await dialog({
+          title: 'Replace files?',
+          body: h('div', {}, `These files of the case differ in ${folder}: ${conflicts}.`),
+          actions: [
+            { label: 'Cancel', value: false },
+            { label: 'Replace', kind: 'danger', value: true },
+          ],
+        });
+        if (replace) await this.copyExample(item, folder, true);
+        return;
+      }
+      toast(error.message, 'bad');
+      return;
+    }
+    const root = this.session.root;
+    storage(`workflow:${root}:${result.folder}`, result.workflow);
+    storage(`answers:${root}:${result.folder}:${result.workflow}`, {
+      answers: result.answers,
+      options: {},
+    });
+    this.app.runs?.setPlan?.(result.folder, result.plan, result.workflow);
+    await this.openFolder(result.folder);
+    toast(
+      `${result.title}: copied into ${result.folder}. Run the QE steps in Runs, then write the drivers here.`,
+      'ok',
+      9000,
+    );
   }
 
   // ------------------------------------------------------------------- crystal

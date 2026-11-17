@@ -9,7 +9,9 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-EXAMPLE = Path(__file__).resolve().parents[3] / 'examples' / 'qe_examples' / 'example01'
+REPO_ROOT = Path(__file__).resolve().parents[3]
+EXAMPLE = REPO_ROOT / 'tests' / 'data' / 'silicon'
+PSEUDO_LIBRARY = REPO_ROOT / 'PSEUDOS' / 'library'
 
 
 def test_supercell_displacements_from_the_primitive_save(tmp_path):
@@ -24,7 +26,7 @@ def test_supercell_displacements_from_the_primitive_save(tmp_path):
     pseudos = tmp_path / 'pseudo'
     pseudos.mkdir()
     (pseudos / 'Si.pbe-tm-new-gipaw-v2.1.UPF').write_bytes(
-        (EXAMPLE / 'Si.pbe-tm-new-gipaw-v2.1.UPF').read_bytes()
+        (PSEUDO_LIBRARY / 'Si.pbe-tm-new-gipaw-v2.1.UPF').read_bytes()
     )
     result = write_supercell_displacements(
         str(EXAMPLE / 'silicon.save'), str(fd), (2, 2, 2), prefix='silicon', kgrid=(4, 4, 4),

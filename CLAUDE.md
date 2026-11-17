@@ -81,14 +81,19 @@ user-invocable: true
       defs/               Back-compat shim that aliases legacy PAOFLOW.defs.* imports and emits FutureWarning
     rust/paoflow_rs/      Optional Rust (PyO3 + rayon) kernels for ACBN0 ERIs, epsilon/JDOS and the e-ph absorption
                           kernel; one pool tied to the MPI core budget. Parity < 1e-12
-    tests/unit/           Fast unit tests, organized by subpackage
-    tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data
-    examples/             qe_examples, transport_examples, acbn0_examples, TBmodel_examples, elphon (one folder per
-                          system: system.py, qe/, phonons/ coupling/ superconductivity/ optics/ transport/ arpes/),
-                          pyskeaf_examples, qo_analysis_examples, unfold_examples, vasp_examples,
+    tests/unit/           Fast unit tests, organized by subpackage; they read only tests/data and PSEUDOS/library
+    tests/data/           Tracked unit-test fixtures (Si save + outputs, Pt BXSF, ...; README lists each)
+    tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data; the qe/ and
+                          transport/ job folders hold the QE inputs of the published asset saves
+    examples/             cases/ (one folder per calculation: QE inputs, README, case.json = workflow + answers;
+                          Studio 'Examples…', `paoflow-gen --example`), recipes/ (VASP, basis presets, sparse
+                          backend, low-level Transport), elphon (one folder per system: system.py, qe/,
+                          phonons/ coupling/ superconductivity/ optics/ transport/ arpes/), TBmodel_examples,
+                          pyskeaf_examples, qo_analysis_examples, unfold_examples,
                           nlo_examples (Graphene TB, GaAs, GeS: shift current / SHG, REPORT.md, figures)
     BASIS/                Per-element radial orbital tables (e.g. BASIS/Si/3P.dat) for internal projections
-    PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard)
+    PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard); library/: one
+                          copy of every UPF the cases and the tests use
     agentic/              Agentic workflows run on top of the library (not installed). skeaf/: playbook,
                           prompts, templates, git-ignored projects/; has its own AGENTS.md / CLAUDE.md
                           thermo_optics/: same layout, optics-vs-experiment playbook (PAOFLOW.agentic.*)
@@ -102,7 +107,8 @@ user-invocable: true
     ```
 
 5. **Architecture and design rules**
-    - Standard workflow in `main.py` (see `examples/qe_examples/example01/main.py`):
+    - Standard workflow in `main.py` (see `tests/integration/qe/example01/main.py`, or the driver
+      `paoflow-gen --example si_bands_transport` writes):
       `PAOFLOW(savedir=...)` → `read_atomic_proj_QE()` → `projectability()` → `pao_hamiltonian()` → `bands()` / `interpolated_hamiltonian()` → `pao_eigh()` → `gradient_and_momenta()` → `adaptive_smearing()` → `dos()` / `transport()` / ... → `finish_execution()`
     - Transport workflow: after building the PAO Hamiltonian, run `Transport(paoflow.data_controller)` → `define_partition` → `build_hamiltonian_blocks` → `configure_*` → `compute_leads_self_energy` → `compute_greens_functions` → `compute_transmission` / `compute_dos` / `compute_current`
     - Orchestrators (`PAOFLOW.py`, `Transport.py`, `SparsePAOFLOW.py`) expose physics-named methods and call procedural backend functions in the subpackages. `main.py` must read as a physics workflow and must not reach into internal arrays
@@ -117,6 +123,8 @@ user-invocable: true
     - Run all tests with `pytest`, or select with `pytest -m unit`, `pytest -m integration`, `pytest -q tests/unit/<pkg>`, `pytest tests/... -k exampleNN`. Integration tests that take minutes on a 4-core runner carry `@pytest.mark.slow`; CI runs `-m "integration and not slow"` and splits the electron-phonon suite into three parallel groups (core, workflows, arpes)
     - Integration tests only run PAOFLOW; they do not run QE. The `*.save/` and `Reference/` inputs are downloaded as release-asset tarballs (see `tests/integration/qe/README.md` and `tests/integration/transport/README.md`). The generators live in `.github/assets_generation/`
     - New features ship with tests. Keep them fast by using reduced grids and k-points
+    - Unit tests never read `examples/`: small data go to `tests/data/` (with a line in its README), UPFs to
+      `PSEUDOS/library/`. CI runs `tests/unit` in the `unit-tests` job (groups solvers, response, core)
 
 7. **Style, CI and branches**
     - Ruff lint and format run through pre-commit: line length 100, single quotes. Run `pre-commit run --all-files` before committing. `BASIS/` and `examples/` are excluded

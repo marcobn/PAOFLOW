@@ -37,6 +37,19 @@ import glob
 import os
 import re
 import sys
+from pathlib import Path
+
+from .questions.run_extras import EXTRA_PROPERTY_MENU
+from .run_extras_driver import (
+    RUN_MODIFIERS,
+    apply_modifications,
+    doped_transport_run_lines,
+    extra_constant_lines,
+    extra_plot_entries,
+    modify_hamiltonian_lines,
+    topology_search_lines,
+    with_restart,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -365,6 +378,7 @@ PROPERTY_MENU = [
         'spin_susceptibility',
         'Spin susceptibility (Pauli, Stoner, LSDA grid) and Stoner instability',
     ),
+    *EXTRA_PROPERTY_MENU,
 ]
 SPIN_PROPERTIES = {'spin_texture', 'spin_Hall'}
 # Properties that read an explicit (emin, emax) energy window.
@@ -375,6 +389,7 @@ ENERGY_WINDOW_PROPERTIES = {
     'orbital_Hall',
     'anomalous_Hall',
     'linear_response',
+    'rashba_edelstein',
 }
 
 
@@ -666,8 +681,9 @@ def _nonlinear_call_lines(cfg):
 def build_run_script(cfg):
     """Assemble a full property-run main.py from the collected config."""
     props = cfg['properties']
-    separate = ('optical', 'emissivity', 'nonlinear', 'spin_susceptibility')
-    standard_props = [p for p in props if p not in separate]
+    separate = ('optical', 'emissivity', 'nonlinear', 'spin_susceptibility', 'doped_transport')
+    standard_props = [p for p in props if p not in separate and p not in RUN_MODIFIERS]
+    has_doped = 'doped_transport' in props
     has_optical = 'optical' in props or 'emissivity' in props
     has_emissivity = 'emissivity' in props
     has_nonlinear = 'nonlinear' in props
@@ -715,11 +731,15 @@ def build_run_script(cfg):
         lines.append('TMIN, TMAX, NT = 300.0, 300.0, 1   # temperature grid (K) for transport')
     lines.append('')
     lines.append('# Double-grid interpolation (denser FFT grid). Set to None to skip.')
-    if cfg['interpolate']:
+    if cfg['interpolate'] and cfg.get('is_2d'):
+        # a slab: one k-point across the vacuum, nothing to interpolate there
+        lines.append('NFFT = ({n}, {n}, 1)'.format(n=cfg['nfft']))
+    elif cfg['interpolate']:
         lines.append('NFFT = ({n}, {n}, {n})'.format(n=cfg['nfft']))
     else:
         lines.append('NFFT = None')
     lines.append('')
+    lines.extend(extra_constant_lines(cfg))
     if has_nonlinear:
         lines.extend(_nonlinear_constant_lines(cfg))
     if has_spin_response:
@@ -729,27 +749,30 @@ def build_run_script(cfg):
     lines.append(BASIS_GEN_BLOCK)
     if needs_energy_window:
         lines.append(ENERGY_RANGE_BLOCK)
+    lines.extend(modify_hamiltonian_lines(cfg))
 
     # ---- standard property run ---------------------------------------- #
     if standard_props:
         lines.append('')
         lines.append('def run_properties():')
         lines.append('    """Standard properties on the {} basis."""'.format(cfg['std_basis']))
-        lines.append('    p = PAOFLOW.PAOFLOW(')
-        lines.append('        workpath=HERE,')
-        lines.append('        outputdir=OUTPUTDIR,')
-        lines.append('        savedir=SAVEDIR,')
-        lines.append('        smearing=SMEARING,')
-        lines.append('        npool=NPOOL,')
-        lines.append('        save_overlaps=SAVE_OVERLAPS,')
-        lines.append('        verbose=False,')
-        lines.append('    )')
-        lines.append('')
-        lines.extend(_projection_lines(cfg, configuration='STD_BASIS'))
-        lines.append('    p.projectability(pthr=PTHR)')
-        lines.append('    p.pao_hamiltonian()')
-        lines.append('')
-        lines.extend(_emit_standard_properties(standard_props, needs_spin, cfg))
+        body = ['    p = PAOFLOW.PAOFLOW(']
+        body.append('        workpath=HERE,')
+        body.append('        outputdir=OUTPUTDIR,')
+        body.append('        savedir=SAVEDIR,')
+        body.append('        smearing=SMEARING,')
+        body.append('        npool=NPOOL,')
+        body.append('        save_overlaps=SAVE_OVERLAPS,')
+        body.append('        verbose=False,')
+        body.append('    )')
+        body.append('')
+        body.extend(_projection_lines(cfg, configuration='STD_BASIS'))
+        body.append('    p.projectability(pthr=PTHR)')
+        body.append('    p.pao_hamiltonian()')
+        body.append('')
+        body.extend(topology_search_lines(cfg))
+        body.extend(_emit_standard_properties(standard_props, needs_spin, cfg))
+        lines.extend(with_restart(body, cfg))
         lines.append('')
         lines.append('    p.finish_execution()')
         lines.append('')
@@ -816,6 +839,13 @@ def build_run_script(cfg):
     if has_spin_response:
         lines.extend(_spin_response_parts(cfg)[1])
 
+    # ---- doped semiconductor (smearing=None) ---------------------------- #
+    lines.extend(
+        doped_transport_run_lines(
+            cfg, _projection_lines(cfg, configuration='STD_BASIS'), _interpolation_argument(cfg)
+        )
+    )
+
     # ---- main --------------------------------------------------------- #
     lines.append('')
     lines.append('def main():')
@@ -836,7 +866,9 @@ def build_run_script(cfg):
         lines.append('    run_nonlinear()')
     if has_spin_response:
         lines.append('    run_spin_response()')
-    if not standard_props and not has_optical and not has_nonlinear and not has_spin_response:
+    if has_doped:
+        lines.append('    run_doped_transport()')
+    if not (standard_props or has_optical or has_nonlinear or has_spin_response or has_doped):
         lines.append('    pass  # no properties selected')
     lines.append('')
     lines.append('')
@@ -847,7 +879,7 @@ def build_run_script(cfg):
     lines.append('    run_main(main)')
     lines.append('')
 
-    return '\n'.join(lines)
+    return '\n'.join(apply_modifications(lines, cfg))
 
 
 def _linear_response_lines(cfg):
@@ -928,6 +960,8 @@ def _emit_standard_properties(props, needs_spin, cfg):
             body.append(
                 "    p.bands(ibrav=IBRAV, nk=NK, fname='bands'%s)" % _interpolation_argument(cfg)
             )
+    if 'site_projected_bands' in selected:
+        body.append('    p.site_projected_bands(site_proj=SITE_ATOMS)')
 
     if 'topology' in selected:
         body.append('    p.topology(Berry=True, eff_mass=True, spol=2, ipol=0, jpol=1)')
@@ -940,6 +974,9 @@ def _emit_standard_properties(props, needs_spin, cfg):
     )
     body.append('    p.pao_eigh()')
     body.append('')
+    if 'jdos' in selected:
+        body.append('    p.jdos(delta=JDOS_DELTA, emin=0.0, emax=JDOS_EMAX, ne=JDOS_NE)')
+        body.append('')
 
     if selected & ENERGY_WINDOW_PROPERTIES:
         body.append('    # Print the full PAO band range as a suggested energy window.')
@@ -966,7 +1003,12 @@ def _emit_standard_properties(props, needs_spin, cfg):
     if 'spin_Hall' in selected:
         # Do not pre-build the spin operator here: spin_Hall builds it
         # internally with the correct do_spin_orbit flag from the DFT data.
-        body.append('    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]])')
+        if cfg.get('shc_atoms'):
+            body.append(
+                '    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]], shc_proj=SHC_ATOMS)'
+            )
+        else:
+            body.append('    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]])')
     if 'orbital_Hall' in selected:
         # The orbital (L) operator is built inside orbital_Hall from the PAO shells;
         # [[0, 1, 2]] is sigma^{L_z}_{xy}, the counterpart of the spin Hall element.
@@ -981,6 +1023,8 @@ def _emit_standard_properties(props, needs_spin, cfg):
             body.append('                ne=NE, do_hall=True, write_to_file=True)')
         else:
             body.append('                ne=NE, write_to_file=True)')
+    if 'rashba_edelstein' in selected:
+        body.append('    p.rashba_edelstein(emin=EMIN, emax=EMAX, ne=NE)')
 
     return body
 
@@ -2402,6 +2446,8 @@ def build_plot_script(cfg):
         )
         menu.append(('Fermi surface (XCrySDen)', 'plot_fermi_surface'))
 
+    funcs, menu = extra_plot_entries(cfg, funcs, menu)
+
     if 'spin_texture' in props:
         funcs += _plot_func(
             'plot_spin_texture',
@@ -3388,6 +3434,73 @@ def collect_acbn0(common):
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+def start_from_example(args: argparse.Namespace) -> int:
+    """``paoflow-gen --example NAME``: copy a case, write its drivers, print the steps.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        ``example`` (a case name, or ``list``), ``workdir`` (the destination when not ``.``),
+        ``force`` (replace files that differ).
+
+    Returns
+    -------
+    int
+        Exit status.
+    """
+    from .cases import case_plan, copy_case, find_case, list_cases
+    from .outputs import workflow_outputs
+    from .questions import WORKFLOWS
+    from .questions.model import Context
+    from .questions.resolve import resolve_form
+
+    if args.example == 'list':
+        cases = list_cases()
+        if not cases:
+            print('No example cases: they come with a source checkout of PAOFLOW (examples/cases).')
+            return 1
+        width = max(len(case.name) for case in cases)
+        for case in cases:
+            print('%-*s  %s  [%s]' % (width, case.name, case.title, case.workflow))
+        return 0
+    try:
+        case = find_case(args.example)
+    except KeyError as error:
+        sys.stderr.write('%s\n' % error.args[0])
+        return 1
+    destination = os.path.abspath(
+        os.path.expanduser(args.workdir if args.workdir != '.' else case.name)
+    )
+    try:
+        written = copy_case(case, Path(destination), overwrite=args.force)
+    except FileExistsError as error:
+        sys.stderr.write(
+            'Files of the case differ in %s: %s (use --force to replace them).\n'
+            % (destination, ', '.join(error.args[1]))
+        )
+        return 1
+    print('%s\n%s\n' % (case.title, case.summary))
+    print('Copied %d file(s) into %s' % (len(written), destination))
+    form = resolve_form(WORKFLOWS[case.workflow], case.answers, Context(workdir=destination))
+    if not form.complete:
+        sys.stderr.write('The answers of the case do not resolve: %s\n' % form.errors)
+        return 1
+    for generated in workflow_outputs(case.workflow, form.config):
+        target = os.path.join(destination, generated.path)
+        if os.path.exists(target) and not args.force:
+            print('Kept %s (use --force to rewrite it)' % generated.path)
+            continue
+        print('Wrote %s' % generated.write(destination))
+    print('\nSteps, in %s:' % destination)
+    for index, step in enumerate(case_plan(case)[:-1], 1):
+        print('  %d. %s: %s' % (index, step.label, step.command(4)))
+    print(
+        '  %d. the drivers written above (see README.md), e.g. mpirun -np 4 python main.py'
+        % (len(case.qe) + 1)
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the interactive generator.
 
@@ -3446,7 +3559,16 @@ def main(argv: list[str] | None = None) -> int:
         action='store_true',
         help='Open the same questions in the browser (paoflow-studio on the working directory)',
     )
+    parser.add_argument(
+        '--example',
+        default=None,
+        metavar='NAME',
+        help='Copy the example case NAME (examples/cases) into ./NAME, or into -d/--workdir when '
+        'given, write its drivers and print the steps; --example list shows the cases',
+    )
     args = parser.parse_args(argv)
+    if args.example:
+        return start_from_example(args)
 
     workdir = os.path.abspath(os.path.expanduser(args.workdir))
     if args.gui:

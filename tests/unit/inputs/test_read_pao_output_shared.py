@@ -12,11 +12,14 @@ import pytest
 
 from PAOFLOW.inputs import read_pao_output as reader
 
-EXAMPLES = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'examples')
+DATA = os.path.join(os.path.dirname(__file__), '..', '..', 'data')
 
 
 def _files(pattern):
-    return sorted(glob.glob(os.path.join(EXAMPLES, '**', 'Reference', pattern), recursive=True))
+    """Output files of the fixtures: the Reference folders and the format samples."""
+    found = glob.glob(os.path.join(DATA, '**', 'Reference', pattern), recursive=True)
+    found += glob.glob(os.path.join(DATA, 'output_formats', pattern))
+    return sorted(found)
 
 
 @pytest.mark.parametrize(

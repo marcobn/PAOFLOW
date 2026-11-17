@@ -24,7 +24,8 @@ def _cfg(**kw):
 
 def test_menu_appends_the_property():
     keys = [key for key, _ in d.PROPERTY_MENU]
-    assert keys[-1] == 'spin_susceptibility' and keys.index('linear_response') == 12
+    # menu numbers are what CLI users type: entries are only ever appended
+    assert keys.index('spin_susceptibility') == 13 and keys.index('linear_response') == 12
 
 
 def test_methods_are_parsed_and_checked():

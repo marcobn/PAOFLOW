@@ -473,6 +473,7 @@ BUILDER_ONLY_KEYS: dict[str, set[str]] = {
     'sscha': set(),
     # a model has no coupled response and no molecule (keys of the shared non-linear builder)
     'tb_model': {
+        'shc_atoms',  # atoms of a save (the spin Hall projection of the run workflow)
         'coupled_components',
         'coupled_emax',
         'coupled_emin',
@@ -603,11 +604,33 @@ RUN_NEW_SCENARIOS = {
         'methods (comma separated': 'bare, stoner, alda',
         'also look for an ordered moment': 'y',
     },
+    # the properties of the example cases (16 November 2026): every new menu entry; the menus
+    # are the properties, the atoms of the site projection and the scattering channels
+    'extras_everything': {
+        'Enter a comma': ['15 16 17 18 19 20 21 22 23', '2', '1 3 5'],
+        'orbitals and U (blank to end)': ['2 4 0.1', '6 6 1.5', ''],
+        'species and strengths (blank to end)': ['Si 0.0 0.2', ''],
+        'Uniform electric field': '0 0 0.01',
+        'Supercell doubling': '1 0 0',
+        'Carrier concentration': '-3.5e17',
+    },
+    'extras_spin_orbit': {
+        'Enter a comma': ['1 6 19 22', '2'],
+        'Spin-orbit (noncollinear)': 'y',
+        'Zeeman (exchange) field': '0 0 0.05',
+    },
 }
 
 #: The Landauer workflow (15 November 2026; no frozen prompts, coverage only).
 LANDAUER_SCENARIOS = {
     'bulk_defaults': {'Calculation (bulk': 'bulk'},
+    # 16 November 2026: the principal layer of a lead cut from a junction, the eigenchannels
+    'bulk_principal_layer': {'Calculation (bulk': 'bulk', 'principal layer from the start': '3'},
+    'conductor_eigenchannels': {
+        'Calculation (bulk': 'conductor',
+        'eigenchannels kept': '4',
+        'eigenchannel wavefunctions': '0.0',
+    },
     'conductor_3d_finite_bias': {
         'Calculation (bulk': 'conductor',
         'Self-consistent finite-bias': 'y',

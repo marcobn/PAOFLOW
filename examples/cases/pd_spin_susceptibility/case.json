@@ -1,0 +1,36 @@
+{
+ "title": "Pd: spin susceptibility and Stoner enhancement",
+ "summary": "Paramagnetic Pd close to ferromagnetism: bare (Pauli), on-site Stoner and LSDA-on-the-grid spin susceptibilities, to compare with the QE fixed-spin-moment ladder of the README.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "Pd.save",
+  "prefix": "Pd",
+  "projector": "internal",
+  "properties": [
+   "dos",
+   "spin_susceptibility"
+  ],
+  "ibrav": 2
+ },
+ "pseudopotentials": [
+  "library/Pd_ONCV_PBE_sr.upf"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "tags": [
+  "spin susceptibility",
+  "Stoner",
+  "metal"
+ ],
+ "source": "examples/qe_examples/example18"
+}

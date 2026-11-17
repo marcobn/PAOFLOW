@@ -215,7 +215,7 @@ def solve_for_mu(
         return mu
 
 
-def do_doping(data_controller, temps, ene, fname):
+def do_doping(data_controller, temps, ene, fname) -> np.ndarray:
     """Compute the temperature-dependent chemical potential for a doped system.
 
     Parameters
@@ -236,8 +236,9 @@ def do_doping(data_controller, temps, ene, fname):
 
     Returns
     -------
-    None
-        Writes a two-column file ``{fname}{sign}{|doping|}.dat`` via
+    ndarray, shape (nT,)
+        :math:`\\mu(T)` (eV), the same on every rank. Also writes a two-column file
+        ``{fname}{sign}{|doping|}.dat`` via
         :meth:`DataController.write_file_row_col` with columns
         temperature and :math:`\\mu(T)`.
 
@@ -272,3 +273,4 @@ def do_doping(data_controller, temps, ene, fname):
 
     fdope = '%s%s%s.dat' % (fname, 'n' if doping < 0 else 'p', np.abs(doping))
     data_controller.write_file_row_col(fdope, temps, mu)
+    return mu

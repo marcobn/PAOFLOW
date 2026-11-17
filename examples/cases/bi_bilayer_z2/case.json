@@ -1,0 +1,67 @@
+{
+ "title": "Bi bilayer: Z2 invariant",
+ "summary": "The Bi(111) bilayer, a two-dimensional topological insulator: Z2 = 1 from the Wannier charge centres of the occupied bands (Z2Pack).",
+ "workflow": "run",
+ "answers": {
+  "savedir": "Bi.save",
+  "prefix": "Bi",
+  "projector": "projwfc",
+  "properties": [
+   "bands",
+   "z2_invariant"
+  ],
+  "ibrav": 0,
+  "is_2d": true,
+  "spin_orbit": true,
+  "nk": 200,
+  "band_path": "M-G-K-M",
+  "high_sym": [
+   [
+    "M",
+    "0",
+    "0.5",
+    "0"
+   ],
+   [
+    "G",
+    "0",
+    "0",
+    "0"
+   ],
+   [
+    "K",
+    "0.3333333",
+    "0.3333333",
+    "0"
+   ]
+  ],
+  "z2_planes": "0"
+ },
+ "pseudopotentials": [
+  "library/Bi.rel-pbe-dn-kjpaw_psl.1.0.0.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  },
+  {
+   "program": "projwfc.x",
+   "input": "proj.in",
+   "label": "Projections on the atomic wavefunctions"
+  }
+ ],
+ "tags": [
+  "2D",
+  "Z2",
+  "topological insulator",
+  "spin-orbit"
+ ],
+ "source": "examples/qe_examples/example13/qe-soc"
+}

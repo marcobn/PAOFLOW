@@ -26,7 +26,7 @@ The production runs are in `~/Workspace/PAOFLOW/validation/spin_response_2026-11
 | `response.spin_response.static_spin_susceptibility` | the grid route, `'alda'` above |
 
 The property also appears in `paoflow-gen` and in the Studio, under the name "Spin susceptibility". It writes a
-`run_spin_response()` block into `main.py`. The example is `examples/qe_examples/example18` (Pd).
+`run_spin_response()` block into `main.py`. The example is the case `examples/cases/pd_spin_susceptibility` (Pd).
 
 ### Conventions
 

@@ -122,3 +122,23 @@ def test_plot_script_and_run_step(save_dir):
     steps = run_plan('landauer', form.config, files)
     assert steps[0].argv == ('python', 'main.landauer.py') and steps[0].mpi
     assert any(step.argv == ('python', 'plot.landauer.py') for step in steps)
+
+
+def test_principal_layer_and_eigenchannels(save_dir):
+    """A lead cut from a junction (bulk on its first layers) and the eigenchannels of a conductor;
+    without them the script keeps its default lines."""
+    form, shown = _form(save_dir, principal_layers=3)
+    assert 'principal_layers' in shown and 'eigenchannels' not in shown
+    _, text = _driver(form)
+    compile(text, 'main.landauer.py', 'exec')
+    assert 'PRINCIPAL_LAYERS = 3' in text and 'central_layers=PRINCIPAL_LAYERS' in text
+    form, shown = _form(
+        save_dir, calculation='conductor', eigenchannels=4, eigenchannel_energy='0.0'
+    )
+    assert 'principal_layers' not in shown and 'eigenchannel_energy' in shown
+    _, text = _driver(form)
+    compile(text, 'main.landauer.py', 'exec')
+    assert 'EIGENCHANNELS = 4' in text and 'EIGENCHANNEL_ENERGY = 0.0' in text
+    assert 't.configure_eigenchannels(do_eigenchannels=True, neigchnx=EIGENCHANNELS,' in text
+    _, plain = _driver(_form(save_dir, calculation='conductor')[0])
+    assert 'EIGENCHANNELS' not in plain and 'PRINCIPAL_LAYERS' not in plain

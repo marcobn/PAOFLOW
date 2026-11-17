@@ -160,7 +160,8 @@ $6\times10^{-6}$ (0.73 with the plain overlap), 32 of 38 bands project above 0.9
 minimal basis, and the symmetry of the Hamiltonian on the scf grid is exact ($10^{-13}$ eV).
 Tests: `tests/unit/projection/test_spinor_augmentation.py` (the $f$ matrices are projectors on
 the $j$ subspaces that sum to the identity; `Q_so` against the QE loop; the spinor overlap; the
-SnTe metric, skipped without `examples/qe_examples/example17/SnTe.save`).
+SnTe metric, skipped unless `PAOFLOW_TEST_SNTE_SAVE` points to a `SnTe.save` of the case
+`examples/cases/snte_mirror_chern`).
 
 ## VASP input: POTCAR datasets, the augmented metric and the generated basis
 
@@ -233,7 +234,7 @@ augmented metric; with spin-orbit coupling this mixed route goes through
 `build_mixed_basis_with_tables` (scalar pseudo-orbitals in both $j$ blocks, j-resolved tables when
 present), where `build_basis_from_sources` used to refuse it and every shell came from the tables.
 
-Si (example01 of `examples/vasp_examples`, 18 bands): `minimal` 8 orbitals, 4 bands above
+Si (example01 of `examples/recipes/vasp`, 18 bands): `minimal` 8 orbitals, 4 bands above
 0.95; `standard` 26 orbitals, 12 bands; `extended` 44 orbitals, 16 bands (the shipped
 all-electron tables with `3S 3P 3D 4S 4P 4D`: 36 orbitals, 15 bands). Pt with spin-orbit
 coupling (example02): the spinor metric with the scalar datasets couples the spins diagonally,

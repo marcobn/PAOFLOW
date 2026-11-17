@@ -26,6 +26,13 @@ Converts an AFLOW database entry into a ready-to-run Quantum ESPRESSO `scf` inpu
 
 Generates a PAOFLOW property-calculation driver (`main.py`) from a completed QE run, along with an optional plotting script (`plot.py`) that visualizes the properties you selected.
 
+`paoflow-gen --example <name>` starts from an example case instead (`examples/cases/<name>`, listed by
+`paoflow-gen --example list`): it copies the QE inputs, the README and the pseudopotentials of the case into
+`./<name>` (or `-d/--workdir`), writes the drivers from the answers in its `case.json` without a prompt and
+prints the QE steps. Files that differ are kept unless `--force`. The cases are tested in
+`tests/unit/gen/test_cases.py`: their pseudopotentials exist, their answers resolve to a complete form and
+the drivers they give compile.
+
 The questions of every workflow are data: the `Question` and `Note` lists of `PAOFLOW.gen.questions` (one module
 per workflow), plus an `assemble` function that turns the answers into the configuration the script builders
 read. The terminal prompts (`paoflow-gen`) and the browser form (`paoflow-gen --gui`, or the Setup tab of
@@ -124,8 +131,44 @@ questions). Each is off by default and leaves the generated files byte-identical
   - `plot.py` gets "Nernst coefficient" next to "Hall coefficient".
   - Results kinds `hall_coefficient` and `nernst` (N_xyz/τ). R_H carries the electron charge since the same day.
 
-The Landauer (`Transport`) module has no generator workflow. Its outputs are in the results catalogue, so the Studio
-shows them from any run folder:
+Added on 16 November 2026, menu entries 15–23 of workflow B (`PAOFLOW.gen.questions.run_extras`,
+`PAOFLOW.gen.run_extras_driver`). Each block is asked only when its entry is chosen, so earlier prompts and files
+are unchanged (the parity tests run as before; coverage scenarios `extras_everything`, `extras_spin_orbit`).
+- **Site-projected bands** (`site_projected_bands`): the atoms to project on, a menu of the atoms of the save (or
+  of the `pw.x` input); the band path questions follow, and `bands` is added. `p.site_projected_bands(site_proj=SITE_ATOMS)`
+  after `bands`; `plot.py` "Site-projected bands" (`GPAO.plot_weighted_bands`).
+- **Joint density of states** (`jdos`): `p.jdos(...)` after `pao_eigh` (photon energies 0..`JDOS_EMAX`).
+- **Rashba–Edelstein** (`rashba_edelstein`): `p.rashba_edelstein(emin=EMIN, emax=EMAX, ne=NE)`; needs spin-orbit.
+- **Weyl points** (`weyl_points`): `write_Hamiltonian()` (read by Z2Pack for the chirality) and
+  `find_weyl_points(search_grid=WEYL_GRID, symmetrize=...)` on the DFT-grid Hamiltonian; `weyl_points.dat`.
+- **Z2 invariant** (`z2_invariant`): `PAOFLOW.z2_invariant(k3_planes=Z2_PLANES)` (Wannier charge centres, Z2Pack;
+  planes `0` for a layer, `0, 0.5` for a crystal); `z2_wcc_k3_<k3>.dat`, results kind `z2_wcc`.
+- **Mirror Chern number** (`mirror_chern`): `mirror_chern_number()`, the summary in `mirror_chern.json`.
+- **Doped semiconductor** (`doped_transport`): a separate `run_doped_transport()` with `smearing=None` (the carrier
+  count on 0.01 eV Gaussians, the transport on the Fermi–Dirac derivative) that calls `PAOFLOW.doped_transport`:
+  `doping` gives μ(T), `transport` runs at each (T, μ) with the built-in relaxation-time models chosen
+  (`SCATTERING`) and their material parameters (`TAU_PARAMETERS`, only those of the chosen models). The window of
+  the carrier count starts 1 eV under the lowest band of the save; `doped_transport_<n|p><conc>.dat` holds T, μ,
+  σ, ρ and S; results kind `doped_transport`.
+- **Hamiltonian changes** (`hamiltonian_changes`): `def modify_hamiltonian(p)`, called after every
+  `pao_hamiltonian()` of `main.py` (property, optical, non-linear, doped runs): Hubbard shifts as orbital ranges
+  (`HUBBARD_U`, a list that `add_external_fields` pads to the basis), a uniform electric field, ad hoc spin-orbit
+  (species, λ_p, λ_d, axis), a Zeeman field after it, and `doubling_Hamiltonian`. Every `pao_eigh()` then gets
+  `bval=TOP_VALENCE_BAND` (from the save): with Hubbard shifts `pao_eigh` puts the top of band `bval` at zero, and
+  its default 0 is the lowest band.
+- **Restart point** (`restart`): `run_properties` builds everything up to `gradient_and_momenta`, then
+  `restart_dump`; a later run with the same number of MPI ranks finds `paoflow_dump_0.json` and starts from
+  `restart_load`.
+- **Spin Hall on atoms** (`shc_atoms`, GUI only): `spin_Hall(..., shc_proj=SHC_ATOMS)`.
+- For 2D runs the dense grid is `NFFT = (n, n, 1)`: nothing to interpolate across the vacuum.
+
+**Workflow H — Landauer** (`landauer`, 15 November 2026; `PAOFLOW.gen.questions.landauer`): bulk transmission or a
+conductor whose first and last atomic layers are the leads, the transverse k mesh, the energy grid, the current
+from the zero-bias transmission and the self-consistent finite-bias current. Since 16 November also the principal
+layer of a bulk cell longer than it (`principal_layers` → `define_partition(central_layers=...)`) and the
+eigenchannels of a conductor (`eigenchannels`, and an energy for their wavefunctions →
+`configure_eigenchannels`). The outputs are in the results catalogue, so the Studio shows them from any run
+folder:
 - `conductance`, `doscond` and `current` (unit 2e/h·eV per cell; positive for μ_L > μ_R since 15 November 2026);
 - the finite-bias files of `compute_current_self_consistent`:
   - `finite_bias_current`;

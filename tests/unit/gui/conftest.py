@@ -11,7 +11,9 @@ import pytest
 
 from PAOFLOW.gui.server import GuiApp, start_in_thread
 
-EXAMPLE = Path(__file__).resolve().parents[3] / 'examples' / 'qe_examples' / 'example01'
+REPO_ROOT = Path(__file__).resolve().parents[3]
+EXAMPLE = REPO_ROOT / 'tests' / 'data' / 'silicon'
+PSEUDO_LIBRARY = REPO_ROOT / 'PSEUDOS' / 'library'
 
 
 class Client:
@@ -54,7 +56,9 @@ def gui_root(tmp_path):
     work.mkdir(parents=True)
     shutil.copytree(EXAMPLE / 'silicon.save', work / 'silicon.save')
     shutil.copy(EXAMPLE / 'scf.in', work / 'scf.in')
-    shutil.copy(EXAMPLE / 'Si.pbe-tm-new-gipaw-v2.1.UPF', work / 'Si.pbe-tm-new-gipaw-v2.1.UPF')
+    shutil.copy(
+        PSEUDO_LIBRARY / 'Si.pbe-tm-new-gipaw-v2.1.UPF', work / 'Si.pbe-tm-new-gipaw-v2.1.UPF'
+    )
     return root
 
 

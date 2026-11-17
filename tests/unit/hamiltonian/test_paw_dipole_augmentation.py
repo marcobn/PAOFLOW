@@ -12,13 +12,13 @@ from PAOFLOW.hamiltonian import position_dipoles as pd
 from PAOFLOW.inputs.read_upf import UPF
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-GA_PAW = REPO_ROOT / 'examples' / 'qe_examples' / 'example10' / 'Ga.pbe-dn-kjpaw_psl.1.0.0.UPF'
+GA_PAW = REPO_ROOT / 'PSEUDOS' / 'library' / 'Ga.pbe-dn-kjpaw_psl.1.0.0.UPF'
 
 
 @pytest.fixture(scope='module')
 def ga():
     if not GA_PAW.exists():
-        pytest.skip('example10 Ga PAW file missing')
+        pytest.skip('Ga PAW file missing from PSEUDOS/library')
     return UPF(str(GA_PAW))
 
 

@@ -1,0 +1,47 @@
+{
+ "title": "Tellurium: Rashba-Edelstein response",
+ "summary": "Left-handed trigonal Te: the spin density induced by a charge current (current-induced spin polarization) near the valence-band top.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "Te-L.save",
+  "prefix": "Te-L",
+  "projector": "projwfc",
+  "properties": [
+   "spin_texture",
+   "rashba_edelstein"
+  ],
+  "spin_orbit": true,
+  "emin": -0.5,
+  "emax": 0.0,
+  "ne": 501,
+  "interpolate": true,
+  "nfft": 20
+ },
+ "pseudopotentials": [
+  "library/Te.rel-pbe-dn-kjpaw_psl.0.2.2.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  },
+  {
+   "program": "projwfc.x",
+   "input": "proj.in",
+   "label": "Projections on the atomic wavefunctions"
+  }
+ ],
+ "tags": [
+  "Rashba-Edelstein",
+  "spin texture",
+  "spin-orbit",
+  "chiral"
+ ],
+ "source": "examples/qe_examples/example11"
+}

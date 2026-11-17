@@ -581,6 +581,78 @@ def basis_command(app: 'GuiApp', payload: dict) -> dict:
     }
 
 
+def cases_list(app: 'GuiApp') -> dict:
+    """The example cases of the checkout (:func:`PAOFLOW.gen.cases.list_cases`).
+
+    Parameters
+    ----------
+    app : GuiApp
+        The application.
+
+    Returns
+    -------
+    dict
+        ``cases`` (title, summary, workflow, tags, QE steps, pseudopotentials of each) and
+        ``writable`` (the session may copy one).
+    """
+    from ..gen.cases import list_cases
+
+    return {
+        'cases': [case.to_json() for case in list_cases()],
+        'writable': not app.read_only,
+    }
+
+
+def case_copy(app: 'GuiApp', payload: dict) -> dict:
+    """Copy an example case into a folder of the root (:func:`PAOFLOW.gen.cases.copy_case`).
+
+    Parameters
+    ----------
+    app : GuiApp
+        The application.
+    payload : dict
+        ``name`` (the case), ``folder`` (destination, relative to the root; created) and
+        ``overwrite`` (bool).
+
+    Returns
+    -------
+    dict
+        ``folder``, ``written`` (relative to it), ``workflow`` and ``answers`` (for the Setup form)
+        and ``plan`` (the QE runs, then the drivers).
+
+    Raises
+    ------
+    HttpError
+        404 for an unknown case, 409 (with ``conflicts``) when files of the case differ in the
+        folder, 400 without a folder.
+    """
+    from ..gen.cases import case_plan, copy_case, find_case
+
+    app.require_writable()
+    folder = str(payload.get('folder') or '').strip()
+    if not folder:
+        raise HttpError(400, 'give the folder to copy the case into')
+    destination = app.resolve(folder)
+    try:
+        case = find_case(str(payload.get('name') or ''))
+    except KeyError as exc:
+        raise HttpError(404, exc.args[0]) from None
+    try:
+        written = copy_case(case, destination, overwrite=bool(payload.get('overwrite')))
+    except FileExistsError as exc:
+        raise HttpError(409, 'files of the case differ in the folder', {'conflicts': exc.args[1]})
+    except FileNotFoundError as exc:
+        raise HttpError(500, str(exc)) from None
+    return {
+        'folder': app.sandbox.relative(destination),
+        'written': [str(path) for path in written],
+        'workflow': case.workflow,
+        'answers': case.answers,
+        'title': case.title,
+        'plan': [step.to_json() for step in case_plan(case)],
+    }
+
+
 def register(app: 'GuiApp') -> None:
     """Register the generator endpoints.
 
@@ -630,6 +702,14 @@ def register(app: 'GuiApp') -> None:
     @app.route('POST', '/api/gen/qe-input/plan')
     def qe_plan(request: Request) -> Response:
         return json_response(qe_input_run_plan(app, request.json()))
+
+    @app.route('GET', '/api/cases')
+    def cases(request: Request) -> Response:
+        return json_response(cases_list(app))
+
+    @app.route('POST', '/api/cases/copy')
+    def copy(request: Request) -> Response:
+        return json_response(case_copy(app, request.json()))
 
     @app.route('POST', '/api/gen/bandpath')
     def band_path(request: Request) -> Response:
