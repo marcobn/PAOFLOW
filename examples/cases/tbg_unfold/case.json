@@ -1,0 +1,41 @@
+{
+ "title": "Twisted bilayer graphene: moiré bands unfolded onto the graphene zone",
+ "summary": "The commensurate (3,2) cell of twisted bilayer graphene (76 atoms, 13.17°) with a distance-dependent EDTB model of carbon: moiré bands folded in the supercell zone and unfolded onto the zone of the bilayer cell, first with dense diagonalisation, then with the sparse shift-invert Lanczos solver meant for large moiré cells. No DFT run; a few minutes.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Moiré cell, bands and unfolding (dense solver)",
+   "command": [
+    "python",
+    "TBG.py",
+    "3",
+    "2"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "(n, m) = (3, 2): 76 atoms, 13.17°; writes geom_tbg_*.json, Carbon_tbg_3_2/ and the figures tbg_3_2_*.png; about 3 minutes (4 MPI ranks are not faster at this size)"
+  },
+  {
+   "label": "The same with the sparse Lanczos solver",
+   "command": [
+    "python",
+    "TBG_sparse.py",
+    "3",
+    "2"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "joblib workers within the core budget (LOKY_MAX_CPU_COUNT caps them); the 120 bands nearest the Dirac point; writes Carbon_tbg/, Carbon_tbg_3_2_sparse/ and tbg_3_2_*_sparse.png; under a minute with 4 workers"
+  }
+ ],
+ "tags": [
+  "band unfolding",
+  "tight-binding model",
+  "moiré",
+  "2D",
+  "sparse"
+ ],
+ "source": "examples/unfold_examples/TBG"
+}

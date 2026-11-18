@@ -11,7 +11,7 @@ Each entry: **symptom → cause → what to do**, with the instance.
 | 1 | Tc "agrees" after μ* was changed | μ* is the one free parameter; Tc moves by 10–20 % between 0.10 and 0.13 | Quote Tc at the run's μ* and over 0.10–0.13 (`tc(mu_star)`); a μ* tuned to Tc is a diagnostic, stated | Pb, MgB₂ examples at μ* = 0.1. |
 | 2 | Two "Tc" of the same run differ | Linearised kernel versus Δ²(T) → 0 extrapolation; McMillan versus Allen–Dynes | Quote the definition with every Tc; the kernel and Δ² values agree to 0.02 K when the temperature grid brackets Tc | Pb: 5.69 vs 5.71 K. |
 | 3 | The model gap is 2 % smaller than "the gap" in the paper | Δ(iω₀) (order parameter) versus the real-axis gap edge (Padé / analytic continuation) versus a coherence-peak position | Match the definition (`gaps('imag'|'pade'|'acon')`); Padé and acon agree to 10⁻³ meV | Pb: 1.016 vs 1.037 meV at 0.3 K. |
-| 4 | Measured λ 1.55 vs model 1.2 for Pb | Scalar-relativistic PBE; spin-orbit raises λ (Heid *et al.* 2010); the tunnelling inversion has its own μ* | Say so; the FR run is a proposed run with cost; compare α²F shapes, not only λ | `examples/elphon/Pb/README.md`. |
+| 4 | Measured λ 1.55 vs model 1.2 for Pb | Scalar-relativistic PBE; spin-orbit raises λ (Heid *et al.* 2010); the tunnelling inversion has its own μ* | Say so; the FR run is a proposed run with cost; compare α²F shapes, not only λ | `examples/cases/pb_elphon/README.md`. |
 | 5 | A specific-heat λ disagrees with the e-ph λ | 1 + λ from γ needs the band N_F of the same calculation; spin fluctuations and SOC enter γ | Use the calculation's N_F (`fs_coupling.npz`, `dos_ef` of the anisotropic run) and state it | Pb N_F 0.251 (PAO) vs 0.235 (Wannier) /eV/spin. |
 | 6 | The gap ratio exceeds BCS | Strong coupling: 2Δ/k_BTc = 3.53 [1 + 12.5 (Tc/ω_log)² ln(ω_log/2Tc)] | Quote the strong-coupling ratio as the baseline, not 3.53 | Pb ≈ 4.3–4.5. |
 
@@ -19,7 +19,7 @@ Each entry: **symptom → cause → what to do**, with the instance.
 
 | # | Symptom | Cause | What to do | Instance |
 |---|---|---|---|---|
-| 7 | λ scatters ±8 % between dense k-grids | 50 meV fixed smearing is far below the level spacing \|v_F\| dk | `--adaptive-smearing` (flat from 24³ to 72³ for Pb); quote both | Pb table in `examples/elphon/Pb/README.md` §5. |
+| 7 | λ scatters ±8 % between dense k-grids | 50 meV fixed smearing is far below the level spacing \|v_F\| dk | `--adaptive-smearing` (flat from 24³ to 72³ for Pb); quote both | Pb table in `examples/cases/pb_elphon/README.md` §5. |
 | 8 | λ follows N_F | N_F at σ = 0.05 eV needs ≥ 40³ k (MgB₂: 18 % high at 24³, 8 % low at 32³, settled from 48³) | Converge N_F first; quote N_F with λ | MgB₂ "Reference results". |
 | 9 | The anisotropic solution has 75 % of the Fermi surface losing its gap at 30 K while the rest keeps it to 41 K | Unequal dense grids (k 40³ / q 20³): k+q reaches a sublattice, the equations split | Equal grids (`--nk N --nq N`); the drivers warn | MgB₂ tutorial grids. |
 | 10 | Anisotropic gaps and Tc change by 30 % between 24³ and 32³ | The σ sheets are small; not converged in k | ≥ 40³ equal grids (2.5 h on 20 cores) or a larger smearing; say "not converged" | MgB₂: 1.9 … 4.9 (24³) vs 1.1 … 4.9 meV (32³). |

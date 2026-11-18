@@ -11,7 +11,7 @@ save.  This module writes what such a run needs beyond the usual QE inputs:
   when no Wannier functions are wanted (only the ``.epb`` files are used);
 * a minimal ``epw.in``;
 * the ``pw.x`` scf / nscf and ``ph.x`` inputs of the two run directories
-  (``qe/phonon/`` and ``qe/nscf/``, as in ``examples/elphon/<System>``), derived
+  (``qe/phonon/`` and ``qe/nscf/``, as in ``examples/cases/<system>_elphon``), derived
   from a ``pw.x`` input of the system.
 """
 

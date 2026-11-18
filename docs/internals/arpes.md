@@ -107,7 +107,7 @@ or a callable `f(w, energies, kpoints, bands)` evaluated per k-block. Sources:
 
 ## Examples
 
-One generic driver, `arpes/arpes.py` of every system folder (`examples/elphon/<System>`, a
+One generic driver, `arpes/arpes.py` of every system folder (`examples/cases/<system>_elphon`, a
 copy of `src/PAOFLOW/gen/elphon_templates/arpes/arpes.py` built on
 `PAOFLOW.elphon.workflows.arpes`), with the per-system settings in the `ARPES` dictionary of
 `system.py` and `--self-energy {isotropic, anisotropic, fan-migdal}`: Pb (metal: the kink from

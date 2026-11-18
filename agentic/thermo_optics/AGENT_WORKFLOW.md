@@ -1,6 +1,6 @@
 # Thermo-optics workflow: playbook for the agent
 
-This is the operating manual for an AI agent (or a person) comparing PAOFLOW's **temperature-dependent optical response** (absorption, free carriers, refractive index, emissivity) with **experimental data of any form** for **any material**. The model is an electron-phonon *system folder* (`examples/elphon/<System>` layout; see "The model pipeline" below). The stages are not specific to these observables: the sibling workflows (`agentic/transport/`, `agentic/superconductivity/`, `agentic/arpes/`) reuse them with their own adapters, and another observable needs only a new model adapter (Stage 4). It distils a complete study into stages, decision rules and checks: Si phonon-assisted absorption and thermal emissivity against five figures from three papers (October 2026).
+This is the operating manual for an AI agent (or a person) comparing PAOFLOW's **temperature-dependent optical response** (absorption, free carriers, refractive index, emissivity) with **experimental data of any form** for **any material**. The model is an electron-phonon *system folder* (`examples/cases/<system>_elphon` layout; see "The model pipeline" below). The stages are not specific to these observables: the sibling workflows (`agentic/transport/`, `agentic/superconductivity/`, `agentic/arpes/`) reuse them with their own adapters, and another observable needs only a new model adapter (Stage 4). It distils a complete study into stages, decision rules and checks: Si phonon-assisted absorption and thermal emissivity against five figures from three papers (October 2026).
 
 The tooling is `PAOFLOW.agentic.thermo_optics`. A study has three scripts, each started from `templates/`:
 
@@ -22,7 +22,7 @@ Read `LESSONS_LEARNED.md` once before starting.
 
 ## The model pipeline (electron-phonon system folder)
 
-The calculation is a folder of the `examples/elphon/<System>` layout (`paoflow-gen elphon`, or a copy of an
+The calculation is a folder of the `examples/cases/<system>_elphon` layout (`paoflow-gen elphon`, or a copy of an
 example with `system.py` pointing at the QE data): `system.py` holds the configuration (prefix, coupling
 source, coarse grids, PAO basis, long-range model, cache) and the per-workflow defaults; each workflow folder
 holds thin drivers over `PAOFLOW.elphon.workflows` and writes its own `output/`. The coarse vertex is cached

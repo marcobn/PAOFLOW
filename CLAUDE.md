@@ -72,7 +72,8 @@ user-invocable: true
                           generate_basis_shells in memory)
       gen/                Generators: QE input from AFLOW/C2DB (paoflow-gen-qe), main.py driver (paoflow-gen),
                           elphon_system.py + elphon_templates/ (paoflow-gen elphon writes a system folder; the
-                          templates are the thin drivers copied into examples/elphon), fermi_plotter
+                          templates are the thin drivers copied into the cases examples/cases/<system>_elphon),
+                          fermi_plotter
       graphics/           Color and plotting utilities
       writers/            BXSF / XSF / BoltzTraP2 writers
       utils/              Constants, MPI communication, FFT grids, smearing, pyints (Gaussian integrals),
@@ -85,12 +86,14 @@ user-invocable: true
     tests/data/           Tracked unit-test fixtures (Si save + outputs, Pt BXSF, ...; README lists each)
     tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data; the qe/ and
                           transport/ job folders hold the QE inputs of the published asset saves
-    examples/             cases/ (one folder per calculation: QE inputs, README, case.json = workflow + answers;
-                          Studio 'Examples…', `paoflow-gen --example`), recipes/ (VASP, basis presets, sparse
-                          backend, low-level Transport), elphon (one folder per system: system.py, qe/,
-                          phonons/ coupling/ superconductivity/ optics/ transport/ arpes/), TBmodel_examples,
-                          pyskeaf_examples, qo_analysis_examples, unfold_examples,
-                          nlo_examples (Graphene TB, GaAs, GeS: shift current / SHG, REPORT.md, figures)
+    examples/             cases/: every example, one folder per calculation (inputs, README, case.json; Studio
+                          'Examples…', `paoflow-gen --example`). Generator cases: the workflow + answers of
+                          paoflow-gen (QE property runs, Landauer, ACBN0). Scripts cases ("workflow": "scripts",
+                          their drivers and steps in case.json): <system>_elphon system folders (system.py, qe/,
+                          phonons/ coupling/ superconductivity/ optics/ transport/ arpes/), NLO (gaas_nlo with
+                          REPORT.md, ges_nlo, *_nlo_model), TB models (*_tb_model, si_slater_koster_model),
+                          unfolding, bi_pyskeaf, nbsn2_qo_analysis, vasp_*, *_basis_presets, si_sparse_backend,
+                          al_transport_defect. README lists them; clean_runs.py cleans runs made in place
     BASIS/                Per-element radial orbital tables (e.g. BASIS/Si/3P.dat) for internal projections
     PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard); library/: one
                           copy of every UPF the cases and the tests use

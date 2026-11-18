@@ -1,7 +1,8 @@
 """``paoflow-gen elphon``: write an electron-phonon system folder from a ``pw.x`` input.
 
-The folder has the layout of ``examples/elphon/<System>``: ``system.py`` (the only file with
-values, an :class:`~PAOFLOW.elphon.workflows.ElphonSystem` plus the per-workflow defaults),
+The folder has the layout of the electron-phonon examples
+(``examples/cases/<system>_elphon``): ``system.py`` (the only file with values, an
+:class:`~PAOFLOW.elphon.workflows.ElphonSystem` plus the per-workflow defaults),
 ``qe/`` (scf, ``ph.x``, nscf and, optionally, optics-nscf inputs with ``run_qe.sh``) and one
 subfolder per selected workflow (``phonons/``, ``coupling/``, ``superconductivity/``,
 ``optics/``, ``transport/``, ``arpes/``, ``thermal/``) holding copies of the drivers of

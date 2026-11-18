@@ -6,7 +6,7 @@
 Read AGENT_WORKFLOW.md and LESSONS_LEARNED.md in PAOFLOW's agentic/nlo/ folder, then start the non-linear optics
 workflow for <SYSTEM / PROPERTY> (e.g. "SHG and shift current of GaAs", "sheet shift current of monolayer GeS").
 
-Model (read-only): an output folder of PAOFLOW.nonlinear_optics (examples/nlo_examples/<System> layout)
+Model (read-only): an output folder of PAOFLOW.nonlinear_optics (layout of the cases examples/cases/gaas_nlo, ges_nlo)
 - folder: <path>; outputs to compare: output/<label> ...; main.py settings: <nk, eta, scissor, components, twoD,
   degeneracy_tol, basis>; nscf with nosym: <yes/no>; older runs: <names or "none">
 - what it computes and its known limits: <independent particles with a scissor, no excitons / local fields, ...>

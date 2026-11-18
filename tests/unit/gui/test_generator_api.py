@@ -385,6 +385,7 @@ def test_example_cases_listed_and_copied(client, make_client, gui_root):
     )
     assert status == 200, copied
     assert copied['folder'] == 'cases/si' and copied['workflow'] == 'run'
+    assert copied['scripts'] is False
     assert copied['answers']['properties'] == ['bands', 'dos', 'transport']
     assert copied['plan'][0]['argv'] == ['pw.x', '-in', 'scf.in']
     assert (gui_root / 'cases' / 'si' / 'Si.pbe-tm-new-gipaw-v2.1.UPF').is_file()
@@ -401,6 +402,14 @@ def test_example_cases_listed_and_copied(client, make_client, gui_root):
     assert (
         client.post('/api/cases/copy', {'name': 'si_bands_transport', 'folder': '../out'})[0] == 403
     )
+    scripts = [item for item in cases.values() if item['scripts']]
+    if scripts:  # a case whose drivers come with it: its steps, no Setup step
+        status, copied, _ = client.post(
+            '/api/cases/copy', {'name': scripts[0]['name'], 'folder': 'cases/scripts'}
+        )
+        assert status == 200 and copied['scripts'] is True, copied
+        assert copied['plan'] and not any(step.get('action') for step in copied['plan'])
+        assert len(copied['plan']) == len(scripts[0]['qe']) + len(scripts[0]['steps'])
     read_only = make_client(read_only=True)
     assert read_only.get('/api/cases')[1]['writable'] is False
     assert (

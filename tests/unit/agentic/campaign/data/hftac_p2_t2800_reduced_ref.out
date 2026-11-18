@@ -1,0 +1,47 @@
+     lattice parameter (alat)  =      12.0449  a.u.
+     number of atoms/cell      =           80
+     number of Kohn-Sham states=         1600
+     charge density cutoff     =     328.0000  Ry
+               a(1) = (  -1.000000   0.000000   0.000000 )  
+               a(2) = (   0.000000  -1.413065   0.000000 )  
+               a(3) = (   0.500000   0.706533   2.499994 )  
+     No symmetry found
+     number of k points=    19  Fermi-Dirac smearing, width (Ry)=  0.0177
+     Dense  grid:   619011 G-vectors     FFT dimensions: (  72, 100, 192)
+     total cpu time spent up to now is       91.2 secs
+     iteration #  1     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     1107.8 secs
+     estimated scf accuracy    <      23.71610033 Ry
+     iteration #  2     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     1407.2 secs
+     estimated scf accuracy    <       8.49740879 Ry
+     iteration #  3     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     1706.9 secs
+     estimated scf accuracy    <       0.22436435 Ry
+     iteration #  4     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     2190.9 secs
+     estimated scf accuracy    <       0.07642600 Ry
+     iteration #  5     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     2661.9 secs
+     estimated scf accuracy    <       0.00154458 Ry
+     iteration #  6     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     3170.1 secs
+     estimated scf accuracy    <       0.00031174 Ry
+     iteration #  7     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     3582.7 secs
+     estimated scf accuracy    <       0.00004839 Ry
+     iteration #  8     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     3930.6 secs
+     estimated scf accuracy    <       0.00000159 Ry
+     iteration #  9     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     4228.7 secs
+     estimated scf accuracy    <       0.00000018 Ry
+     iteration # 10     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     4527.2 secs
+     estimated scf accuracy    <       0.00000007 Ry
+     iteration # 11     ecut=    82.00 Ry     beta= 0.30
+     total cpu time spent up to now is     4827.2 secs
+     estimated scf accuracy    <          6.4E-10 Ry
+     convergence has been achieved in  11 iterations
+     PWSCF        :   4805.04s CPU   4925.79s WALL
+   JOB DONE.

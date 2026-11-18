@@ -1,6 +1,6 @@
 # PAOFLOW agentic workflows
 
-Each folder here is a self-contained workflow that an AI coding agent (Claude Code, Codex, or similar) runs on top of PAOFLOW's library code. The library code lives in `src/PAOFLOW/`. The workflows only import it, and their files are never installed with the package. The transport, superconductivity, ARPES and non-linear optics workflows share the data toolkit of `thermo_optics` (`datasets`, `units`, `ingest`, `digitize`, `metrics`, `plotting`) and read the same electron-phonon *system folders* (`examples/elphon/<System>` layout) through their own adapters.
+Each folder here is a self-contained workflow that an AI coding agent (Claude Code, Codex, or similar) runs on top of PAOFLOW's library code. The library code lives in `src/PAOFLOW/`. The workflows only import it, and their files are never installed with the package. The transport, superconductivity, ARPES and non-linear optics workflows share the data toolkit of `thermo_optics` (`datasets`, `units`, `ingest`, `digitize`, `metrics`, `plotting`) and read the same electron-phonon *system folders* (`examples/cases/<system>_elphon` layout) through their own adapters.
 
 | Folder | Workflow | Library code |
 |---|---|---|

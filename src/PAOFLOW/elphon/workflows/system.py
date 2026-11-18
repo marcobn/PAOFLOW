@@ -1,6 +1,6 @@
 """One configuration per system: :class:`ElphonSystem`, its electrons and its coupling arguments.
 
-A system folder (``examples/elphon/<System>``) holds the QE runs under ``qe/`` and one
+A system folder (``examples/cases/<system>_elphon``) holds the QE runs under ``qe/`` and one
 ``system.py`` that builds an :class:`ElphonSystem`; the workflow drivers of its
 subfolders (``superconductivity/``, ``optics/``, ``transport/``, ``arpes/``, ...) load that
 file with :func:`load_system` and call the functions of this subpackage.  The physics stays

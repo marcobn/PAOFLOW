@@ -1,0 +1,24 @@
+{
+ "title": "Graphene: band structure of the tight-binding model",
+ "summary": "The nearest-neighbour honeycomb model of graphene (label 'graphene', t = 2.7 eV, no gap): its band structure along G-M-K-G with the Dirac cone at K. No DFT run; seconds. The README lists every model PAOFLOW(model=...) accepts.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Band structure of graphene",
+   "command": [
+    "python",
+    "graphene.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "writes output/bands_0.dat and output/kpath_points.txt"
+  }
+ ],
+ "tags": [
+  "tight-binding model",
+  "bands",
+  "2D"
+ ],
+ "source": "examples/TBmodel_examples/Graphene"
+}

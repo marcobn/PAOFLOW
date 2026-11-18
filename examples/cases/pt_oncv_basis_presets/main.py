@@ -1,0 +1,141 @@
+"""Pt (fully-relativistic ONCV) — ``minimal`` vs ``standard`` vs
+``extended`` projection presets.
+
+Self-contained driver: assumes ``pw.x`` has already produced
+``pt.save/`` in this directory (run ``scf.in`` then ``nscf.in``).
+The pseudopotential is noncollinear + spin-orbit
+(``Pt_ONCV_PBE_fr.upf``), so PAOFLOW takes the SO branch of the
+AE-basis builder.
+
+The pseudo-atom radial basis ``BASIS_PS/`` is generated on the fly
+from the local UPF via :func:`PAOFLOW.basis_gen.generate_basis_for_pseudo`,
+which produces *j-resolved* radials for every ``l >= 1`` channel.  No
+external ``BASIS/`` database is needed.
+
+For each preset it runs
+
+    projections -> projectability -> pao_hamiltonian -> bands
+
+and writes ``output_<preset>/bands_0.dat``.  If matplotlib is
+available, an overlay
+``bands_minimal_vs_standard_vs_extended.png`` is also produced.
+"""
+
+import os
+import sys
+
+import numpy as np
+
+from PAOFLOW import PAOFLOW
+from PAOFLOW.basis_gen import generate_basis_for_pseudo
+
+try:
+    from mpi4py import MPI
+
+    RANK = MPI.COMM_WORLD.Get_rank()
+except ImportError:
+    RANK = 0
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SAVEDIR = os.path.join(HERE, 'pt.save')
+UPF = os.path.join(HERE, 'Pt_ONCV_PBE_fr.upf')
+BASISPATH = os.path.join(HERE, 'BASIS_PS') + os.sep
+
+IBRAV = 2  # fcc
+NK = 400
+
+
+def _run(preset):
+    outdir = f'output_{preset}'
+    paoflow = PAOFLOW.PAOFLOW(
+        workpath=HERE,
+        outputdir=outdir,
+        savedir=SAVEDIR,
+        smearing=None,
+        npool=1,
+        verbose=False,
+    )
+    arry, attr = paoflow.data_controller.data_dicts()
+
+    paoflow.projections(basispath=BASISPATH, configuration=preset)
+    paoflow.projectability(pthr=0.95)
+    nawf = attr['nawf']
+    nbnd = attr['bnd']
+
+    paoflow.pao_hamiltonian()
+    paoflow.bands(ibrav=IBRAV, nk=NK, fname='bands')
+    bands_path = os.path.join(HERE, outdir, 'bands_0.dat')
+
+    paoflow.finish_execution()
+    return nawf, nbnd, bands_path
+
+
+def _maybe_plot(results):
+    if os.environ.get('PAOFLOW_SKIP_PLOT'):
+        return
+    try:
+        import matplotlib
+
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return
+
+    colors = {'minimal': 'tab:blue', 'standard': 'tab:green', 'extended': 'tab:red'}
+    styles = {'minimal': '-', 'standard': '-.', 'extended': '--'}
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    for preset, (nawf, nbnd, path) in results.items():
+        if not os.path.exists(path):
+            continue
+        data = np.loadtxt(path)
+        ik = data[:, 0]
+        bands = data[:, 1:]
+        ax.plot(
+            ik,
+            bands[:, 0],
+            color=colors[preset],
+            linestyle=styles[preset],
+            linewidth=0.9,
+            label=f'{preset} (nawf={nawf}, Pn>0.95: {nbnd})',
+        )
+        if bands.shape[1] > 1:
+            ax.plot(ik, bands[:, 1:], color=colors[preset], linestyle=styles[preset], linewidth=0.9)
+
+    ax.set_xlabel('k-point index')
+    ax.set_ylabel('Energy (eV)')
+    ax.set_title('Pt (SO) — minimal vs standard vs extended PAO bands')
+    ax.set_ylim(-11, 14)
+    ax.legend(loc='upper right', fontsize=9)
+    fig.tight_layout()
+    out = os.path.join(HERE, 'bands_minimal_vs_standard_vs_extended.png')
+    fig.savefig(out, dpi=150)
+    print(f'Wrote {out}')
+
+
+def main():
+    if not os.path.isdir(SAVEDIR):
+        print(f'pt.save not found at {SAVEDIR}.')
+        print('Run scf.in then nscf.in with pw.x in this directory first.')
+        sys.exit(1)
+
+    if RANK == 0 and not os.path.isdir(BASISPATH):
+        print(f'Generating pseudo-atom basis under {BASISPATH} ...')
+        generate_basis_for_pseudo(UPF, BASISPATH.rstrip(os.sep),
+                                  preset='extended', verbose=True)
+    if 'MPI' in globals():
+        MPI.COMM_WORLD.Barrier()
+
+    print('--- Pt (SO): minimal vs standard vs extended ---')
+    results = {}
+    for preset in ('minimal', 'standard', 'extended'):
+        nawf, nbnd, path = _run(preset)
+        print(f'  [{preset:8s}] nawf = {nawf:3d}   Pn>0.95 bands = {nbnd:3d}')
+        results[preset] = (nawf, nbnd, path)
+
+    if RANK == 0:
+        _maybe_plot(results)
+
+
+if __name__ == '__main__':
+    main()

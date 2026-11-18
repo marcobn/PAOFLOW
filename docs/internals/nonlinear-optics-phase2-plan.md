@@ -1,7 +1,7 @@
 # Non-linear optics, phase 2: position dipoles, degenerate bands, symmetry reduction
 
 *Plan written on October 27 2026 after the phase-1 validation
-([nonlinear-optics.md](nonlinear-optics.md), `examples/nlo_examples/REPORT.md`). Status: planned, not
+([nonlinear-optics.md](nonlinear-optics.md), `examples/cases/gaas_nlo/REPORT.md`). Status: planned, not
 implemented. Three independent work packages, in the order they should be done.*
 
 ## Starting point
@@ -24,7 +24,7 @@ the U(N)-covariant treatment only if the dropped pairs form consistent clusters;
 k-point of the dense grid is computed, and the symmetry of the crystal is neither exploited nor
 enforced. (The 2–5 % spread between equivalent components of the first GaAs runs was a problem of the
 internal projections with PAW pseudopotentials, fixed with the augmented metric of
-`projection/augmentation.py`, see `examples/nlo_examples/REPORT.md` §3.2. What remains with an
+`projection/augmentation.py`, see `examples/cases/gaas_nlo/REPORT.md` §3.2. What remains with an
 exactly symmetric Hamiltonian is the gauge of exactly degenerate bands on the Λ lines in the SHG
 and injection kernels, 10 % / 2 % between χ_xyz and χ_yzx at 40³ and a non-zero circular
 injection current in T_d, while the shift current is exact to 1e-10: that is C2, and C3 would
@@ -205,5 +205,5 @@ the full result; GaAs 40³: full vs IBZ run, identical after symmetrisation, wal
 C3 first because it makes the C1/C2 validation runs cheap and projects out whatever residual
 asymmetry is left (the PAW-projection error bar itself is removed at the source by norm-conserving
 pseudopotentials or the `projwfc.x` projections, which the C1/C2 validation runs will use). Each package ships with its tests, a docs paragraph in
-[nonlinear-optics.md](nonlinear-optics.md), the `examples/nlo_examples` drivers updated, the
+[nonlinear-optics.md](nonlinear-optics.md), the drivers of the non-linear optics cases (`examples/cases/*_nlo*`) updated, the
 report tables extended, and the `agentic/nlo` lessons where a pitfall was found.

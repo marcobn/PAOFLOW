@@ -22,7 +22,7 @@ adapters and baselines:
   residual + Fermi liquid for metals; energy-resolved e-ph + impurities for
   semiconductors).
 
-Both adapters open an electron-phonon system folder (``examples/elphon/<System>``
+Both adapters open an electron-phonon system folder (``examples/cases/<system>_elphon``
 layout) with ``from_system(folder, output=...)`` and record its ``system.py`` for
 ``describe()``.
 """

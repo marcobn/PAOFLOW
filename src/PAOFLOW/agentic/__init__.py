@@ -38,7 +38,7 @@ Each subpackage serves the workflow of the same name in the repository folder
 The last four reuse the data toolkit of :mod:`PAOFLOW.agentic.thermo_optics`
 (datasets with provenance, units, PDF/raster ingestion and digitising, metrics,
 publication plots) and open electron-phonon system folders
-(``examples/elphon/<System>`` layout) through ``from_system``.
+(``examples/cases/<system>_elphon`` layout) through ``from_system``.
 
 The modules are ordinary library code and can be used without an agent.
 """

@@ -4,13 +4,15 @@ default_language_version:
   python: python3
 
 # data kept byte for byte: the UPFs of PSEUDOS/library (up to 5 MB, the copies the examples carried)
-# and the unit-test fixtures of tests/data
+# and the unit-test fixtures of tests/data and of the data/ folders of tests/unit (pw.x output excerpts,
+# dynamical matrices)
 exclude: |
   (?x)^(?:
     BASIS/|
     examples|
     PSEUDOS/library/|
-    tests/data/
+    tests/data/|
+    tests/unit/(?:[^/]+/)*data/
   )
 
 repos:

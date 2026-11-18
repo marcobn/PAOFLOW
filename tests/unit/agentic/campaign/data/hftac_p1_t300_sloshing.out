@@ -1,0 +1,42 @@
+     lattice parameter (alat)  =      49.6129  a.u.
+     number of atoms/cell      =           80
+     number of Kohn-Sham states=         1600
+     charge density cutoff     =     328.0000  Ry
+               a(1) = (   0.121444  -0.070116   0.990119 )  
+               a(2) = (   0.000000   0.140232   0.990119 )  
+               a(3) = (  -0.121444  -0.070116   0.990119 )  
+     No symmetry found
+     number of k points=    36  Methfessel-Paxton smearing, width (Ry)=  0.0200
+     Dense  grid:   619663 G-vectors     FFT dimensions: ( 288, 288, 288)
+     total cpu time spent up to now is     2069.5 secs
+     iteration #  1     ecut=    82.00 Ry     beta= 0.70
+     total cpu time spent up to now is    13929.6 secs
+     estimated scf accuracy    <      24.97821759 Ry
+     iteration #  2     ecut=    82.00 Ry     beta= 0.70
+     total cpu time spent up to now is    20188.5 secs
+     estimated scf accuracy    <     999.65904702 Ry
+     iteration #  3     ecut=    82.00 Ry     beta= 0.70
+     total cpu time spent up to now is    26858.6 secs
+     estimated scf accuracy    <    2795.04819270 Ry
+     iteration #  4     ecut=    82.00 Ry     beta= 0.70
+     total cpu time spent up to now is    34039.7 secs
+     estimated scf accuracy    <    9276.61161534 Ry
+     iteration #  5     ecut=    82.00 Ry     beta= 0.70
+     total cpu time spent up to now is    41027.7 secs
+     estimated scf accuracy    <      26.69941716 Ry
+     iteration #  6     ecut=    82.00 Ry     beta= 0.70
+     total cpu time spent up to now is    46933.5 secs
+     estimated scf accuracy    <     116.29981254 Ry
+     iteration #  7     ecut=    82.00 Ry     beta= 0.70
+     total cpu time spent up to now is    52728.2 secs
+     estimated scf accuracy    <      15.77925063 Ry
+     iteration #  8     ecut=    82.00 Ry     beta= 0.70
+     total cpu time spent up to now is    58506.5 secs
+     estimated scf accuracy    <       2.67490029 Ry
+     iteration #  9     ecut=    82.00 Ry     beta= 0.70
+     total cpu time spent up to now is    64310.7 secs
+     estimated scf accuracy    <       1.92059285 Ry
+     iteration # 10     ecut=    82.00 Ry     beta= 0.70
+     total cpu time spent up to now is    69990.1 secs
+     estimated scf accuracy    <       1.21238365 Ry
+     iteration # 11     ecut=    82.00 Ry     beta= 0.70

@@ -617,8 +617,9 @@ def case_copy(app: 'GuiApp', payload: dict) -> dict:
     Returns
     -------
     dict
-        ``folder``, ``written`` (relative to it), ``workflow`` and ``answers`` (for the Setup form)
-        and ``plan`` (the QE runs, then the drivers).
+        ``folder``, ``written`` (relative to it), ``workflow`` and ``answers`` (for the Setup form),
+        ``scripts`` (the drivers come with the case: no form) and ``plan`` (the QE runs, then the
+        drivers).
 
     Raises
     ------
@@ -648,6 +649,7 @@ def case_copy(app: 'GuiApp', payload: dict) -> dict:
         'written': [str(path) for path in written],
         'workflow': case.workflow,
         'answers': case.answers,
+        'scripts': case.scripts,
         'title': case.title,
         'plan': [step.to_json() for step in case_plan(case)],
     }

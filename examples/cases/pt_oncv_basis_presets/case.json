@@ -1,0 +1,42 @@
+{
+ "title": "Pt (fully relativistic ONCV): minimal, standard and extended projection bases",
+ "summary": "Fcc platinum with spin-orbit coupling and a fully relativistic norm-conserving ONCV pseudopotential: the PAO Hamiltonian and bands on the three basis presets, with j-resolved radial tables generated from the UPF.",
+ "workflow": "scripts",
+ "pseudopotentials": [
+  "library/Pt_ONCV_PBE_fr.upf"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "steps": [
+  {
+   "label": "PAO bands with the minimal, standard and extended bases",
+   "command": [
+    "python",
+    "main.py"
+   ],
+   "cwd": ".",
+   "mpi": true,
+   "interactive": false,
+   "note": "generates BASIS_PS/ from the UPF at the first run; writes output_<preset>/bands_0.dat and bands_minimal_vs_standard_vs_extended.png"
+  }
+ ],
+ "tags": [
+  "basis presets",
+  "internal projections",
+  "bands",
+  "norm-conserving",
+  "spin-orbit",
+  "metal"
+ ],
+ "source": "examples/recipes/basis_presets/Pt_ONCV"
+}

@@ -13,7 +13,7 @@ Keep the fixtures small. Large QE data belong in the integration-test tarballs
 | `silicon/Reference/` | bands, DOS, PDOS and Boltzmann outputs of the example01 `main.py`, as PAOFLOW wrote them in May 2026 (commit bb1b243e): legacy PDOS names (`0_pdosdk_0.dat`, ...), 500 transport energies. Kept for the readers, not as numbers of the current code (see below) | example01 `Reference/` | results, output readers |
 | `platinum/Reference/` | `FermiSurf_0.bxsf`, `Spin_Berry_z_xy.bxsf` (every 2nd point of the 141 × 141 × 2 grid), `Fermi_surf_band_1/2.bxsf` (every 4th point) | example08 `Reference/` (Pt slab), subsampled | results (Fermi-surface meshes, BXSF slices), pyskeaf workflow |
 | `output_formats/` | one file of each two-column output family: `ahcEf_xy.dat`, `epsi_xx.dat`, `epsr_xx.dat`, `shcEf_z_xy.dat` | examples 04, 06, 08 `Reference/` | output readers |
-| `siliconSC/` | Slater-Koster parameters and geometry of Si | `examples/unfold_examples/siliconSC` | models (builder conventions) |
+| `siliconSC/` | Slater-Koster parameters and geometry of Si | `examples/cases/si_supercell_unfold` (was `examples/unfold_examples/siliconSC`) | models (builder conventions) |
 | `snte/` | `data-file-schema.xml` of the SnTe monolayer (2D, spin-orbit) | `examples/qe_examples/example17` | gen (smart defaults) |
 
 `silicon/Reference/dosdk_0.dat` and the `pdosdk` files differ from the current code by up to 1.7 % of the

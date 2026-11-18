@@ -16,6 +16,9 @@ own copies.
 | `As.pbe-n-kjpaw_psl.1.0.0.UPF` | As | PAW | scalar | PBE | pslibrary 1.0.0 |
 | `Sn.rel-pbe-dn-kjpaw_psl.1.0.0.UPF` | Sn | PAW | full | PBE | pslibrary 1.0.0 |
 | `Te.rel-pbe-dn-kjpaw_psl.1.0.0.UPF` | Te | PAW | full | PBE | pslibrary 1.0.0 |
+| `Ge_PseudoDojo05_PBE_sr.upf` | Ge | NC (ONCVPSP 3.3.0) | scalar | PBE | PseudoDojo nc-sr-05 PBE standard (was `Ge.upf` of `PSEUDOS/nc-sr-05_pbe_standard_upf`, GeS NLO case) |
+| `S_PseudoDojo05_PBE_sr.upf` | S | NC (ONCVPSP 4.0.1) | scalar | PBE | PseudoDojo nc-sr-05 PBE standard (was `S.upf` of `PSEUDOS/nc-sr-05_pbe_standard_upf`, GeS NLO case) |
+| `Bi_PseudoDojo05_PBE_sr.upf` | Bi | NC (ONCVPSP 4.0.1) | scalar | PBE | PseudoDojo nc-sr-05 PBE standard (was `Bi.upf` of `PSEUDOS/nc-sr-05_pbe_standard_upf`, `bi_pyskeaf` case) |
 
 The files are byte-identical to the copies in the examples they came from. Add a file only when a
 test or a case needs it, under its distributed name (rename only to make a bare `X.upf`

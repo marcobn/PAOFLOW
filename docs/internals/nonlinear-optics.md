@@ -258,9 +258,9 @@ nm µA/V² and sheet susceptibilities in pm²/V.
 Literature targets for the examples: GaAs $\chi_{xyz}$ with a 0.86 eV scissor (Wang *et al.* 2017,
 Fig. 4; Rashkeev *et al.* 1998; Nastos *et al.* 2005) and $\sigma_{xyz}$ (Ibañez-Azpiroz *et al.* 2018);
 monolayer GeS shift current and SHG (Wang *et al.* 2017, Fig. 1; Rangel *et al.* 2017); the
-Rice–Mele shift vector (Fregoso, Morimoto and Moore 2017). The examples are in
-`examples/nlo_examples/` (`Graphene`, `GaAs`, `GeS`; the graphene one is also in `examples/TBmodel_examples/Graphene_nonlinear`),
-with the report `examples/nlo_examples/REPORT.md`.
+Rice–Mele shift vector (Fregoso, Morimoto and Moore 2017). The examples are the cases
+`examples/cases/graphene_nlo_model`, `gaas_nlo` and `ges_nlo` (and the models `mos2_nlo_model`,
+`kane_mele_nlo_model`), with the report `examples/cases/gaas_nlo/REPORT.md`.
 
 ## Performance
 
@@ -286,7 +286,7 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   does **not** change this. The cause is the Löwdin re-orthonormalisation of the PAW
   pseudo-wavefunctions in the internal projections (the raw projections and the `projwfc.x`
   ones obey the symmetry to 1e-10; the symmetry expansion, the Wigner–Seitz images, the band
-  selection and the Hamiltonian construction were ruled out, see `examples/nlo_examples/REPORT.md`
+  selection and the Hamiltonian construction were ruled out, see `examples/cases/gaas_nlo/REPORT.md`
   §3.2). With the PseudoDojo norm-conserving Ga/As set the same basis gives projections
   symmetric to 1e-10, H(k) symmetric to 3e-9 eV at every grid point, an interpolation spread of
   3e-8 meV and a real-space Hamiltonian 15 times better localised. **Fixed** (October 2026):
@@ -316,7 +316,7 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   current code (augmented projections, covariant kernels) and the position dipoles the static
   $\chi_{xyz}$ is 178 pm/V (norm-conserving) / 156 pm/V (PAW) against 103 / 120 pm/V with the
   tight-binding position operator: the dipoles close most of the gap to the measured 166–180 pm/V
-  (`examples/nlo_examples/REPORT.md` §3.2).
+  (`examples/cases/gaas_nlo/REPORT.md` §3.2).
 - **GeS numbers** (monolayer, nosym 18×18×1 nscf, 200² dense grid, η = 0.05 eV, PBE gap 1.68 eV,
   sheet units with the 18 Å cell): shift-current peaks $\sigma^{xxx} = 46$, $\sigma^{xyy} = 48$,
   $\sigma^{yxy} = 26$ nm µA/V² (about 75 µA/V² for a 0.6 nm layer, the order of magnitude of Rangel

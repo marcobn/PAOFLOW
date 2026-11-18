@@ -106,7 +106,7 @@ UPF basis already, nor with spin-orbit). On PAW GaAs (example10, 62 orbitals):
 | `BASIS_PS` extended (generator) | 17 | 1.00 | 0.99 | 0.99 → 0.89 |
 
 The all-electron polarisation shells are more complete than the box states of the generator,
-so the default route is the first; the GaAs example of `examples/nlo_examples` uses it with
+so the default route is the first; the GaAs case `examples/cases/gaas_nlo` uses it with
 `pthr = 0.95`.
 
 ## The generator with ultrasoft / PAW pseudopotentials
@@ -239,10 +239,10 @@ of a j-resolved shell take the radial function of their own $j$ (`spinor_record_
 bilayer on the grid, up to 0.4 eV between grid points), and the pseudo-orbitals of a fully
 relativistic UPF keep both $j$ functions (both blocks took the $j = l - 1/2$ one).
 
-Si (example01 of `examples/recipes/vasp`, 18 bands): `minimal` 8 orbitals, 4 bands above
+Si (the case `examples/cases/vasp_si_bands`, 18 bands): `minimal` 8 orbitals, 4 bands above
 0.95; `standard` 26 orbitals, 12 bands; `extended` 44 orbitals, 16 bands (the shipped
 all-electron tables with `3S 3P 3D 4S 4P 4D`: 36 orbitals, 15 bands). Pt with spin-orbit
-coupling (example02): the spinor metric with the scalar datasets couples the spins diagonally,
+coupling (`vasp_pt_spin_hall`): the spinor metric with the scalar datasets couples the spins diagonally,
 $\langle\psi|S|\psi\rangle - 1 = 2\times10^{-6}$, 12 of 20 bands above 0.95 with `5D 6S 6P 7S 7P`.
 Tests: `tests/unit/inputs/test_read_potcar.py`, `tests/unit/test_basis_gen_potcar.py`,
 `tests/unit/projection/test_vasp_augmented_projections.py`,

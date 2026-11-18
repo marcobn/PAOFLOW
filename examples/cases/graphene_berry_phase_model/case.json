@@ -1,0 +1,25 @@
+{
+ "title": "Gapped graphene model: Berry phase and Berry flux at K",
+ "summary": "The honeycomb model with a sublattice gap (t = -1, delta = -0.2 eV): bands, the Berry phase of each band and of both on a circle around K, and the Berry flux on a square patch around K, with a map of the Berry curvature. No DFT run; seconds.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Bands, Berry phase and Berry flux around K",
+   "command": [
+    "python",
+    "graphene2.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "writes output/ and the Berry-curvature map output/berry_phase_k.pdf"
+  }
+ ],
+ "tags": [
+  "tight-binding model",
+  "Berry phase",
+  "topology",
+  "2D"
+ ],
+ "source": "examples/TBmodel_examples/Graphene2"
+}

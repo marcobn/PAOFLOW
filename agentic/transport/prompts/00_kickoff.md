@@ -6,7 +6,7 @@
 Read AGENT_WORKFLOW.md and LESSONS_LEARNED.md in PAOFLOW's agentic/transport/ folder, then start the transport
 workflow for <SYSTEM / PROPERTY> (e.g. "phonon-limited mobility of Si vs T", "resistivity and emissivity of Pb").
 
-Model (read-only): an electron-phonon system folder (examples/elphon/<System> layout)
+Model (read-only): an electron-phonon system folder (examples/cases/<system>_elphon layout)
 - system folder: <path>; runs to compare: transport/<tag> (mobility.dat or resistivity.dat) and
   superconductivity/output (eliashberg.npz); older runs: <names or "none">
 - what it computes and its known limits: <e.g. phonon-limited SERTA/MRTA drift mobilities, intrinsic statistics,

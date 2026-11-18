@@ -1,8 +1,8 @@
 """Adapter: PAOFLOW optical-absorption and thermal-emissivity outputs as model curves.
 
 Reads the ``absorption.npz`` and ``emissivity.npz`` written by the optics workflow of an
-electron-phonon system folder (``examples/elphon/<System>``: ``optics/absorption.py``, with
-``--emissivity`` and the extended-basis dielectric function of ``optics/dielectric.py``;
+electron-phonon system folder (``examples/cases/<system>_elphon``: ``optics/absorption.py``,
+with ``--emissivity`` and the extended-basis dielectric function of ``optics/dielectric.py``;
 ``optics/emissivity.py`` recomputes the emissivity of a finished run; backend
 :mod:`PAOFLOW.elphon.phonon_assisted_absorption`) and evaluates the observables at
 experimental conditions.  :meth:`OpticsModel.from_system` opens the ``optics/output`` of a
@@ -87,7 +87,7 @@ class OpticsModel:
         Parameters
         ----------
         system_dir : str or Path
-            A folder holding ``system.py`` (``examples/elphon/<System>`` layout).
+            A folder holding ``system.py`` (``examples/cases/<system>_elphon`` layout).
         output : str, optional
             Output directory of the optics driver, relative to the workflow folder
             (``optics/absorption.py --tag`` / ``optics/emissivity.py --outdir`` runs use

@@ -20,7 +20,7 @@ Decisions (user, 7 November 2026):
   - `DataController.write_bxsf(..., skeaf_sheets=True)` gained the flag, and the three Hall writers pass `False`;
   - the writer file names are unchanged, for backward compatibility;
   - the stale Berry-curvature `Fermi_surf_band_{1,2}.bxsf` files in the `Reference/` folders of `qe_examples` 04,
-    05, 07, 08 and 14, `new_examples` 04 and 05 and `TBmodel_examples/Kane_mele` were left in place (the
+    05, 07, 08 and 14, `new_examples` 04 and 05 and `TBmodel_examples/Kane_mele` (now the case `kane_mele_tb_model`) were left in place (the
     comparisons read `*.dat` only).
 
 ## 0. As built (7 November 2026)

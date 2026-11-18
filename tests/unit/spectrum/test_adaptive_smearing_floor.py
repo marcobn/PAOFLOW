@@ -51,9 +51,13 @@ def _model(nk=12):
 
 
 def _raw_widths(dc, velocities, afac=0.7):
+    """Yates widths; the numerical zeros (below ZERO_WIDTH) are stored as ZERO_WIDTH / 2."""
+    from PAOFLOW.spectrum.do_dos import ZERO_WIDTH
+
     _, attr = dc.data_dicts()
     dk = (8.0 * np.pi**3 / attr['omega'] / attr['nkpnts']) ** (1.0 / 3.0)
-    return afac * dk * np.abs(velocities)
+    raw = afac * dk * np.abs(velocities)
+    return np.where(raw < ZERO_WIDTH, 0.5 * ZERO_WIDTH, raw)
 
 
 def test_floor_and_cap_bound_the_widths():
@@ -73,11 +77,14 @@ def test_floor_and_cap_bound_the_widths():
 
 @pytest.mark.parametrize('min_width', [None, 0.0])
 def test_no_floor_keeps_raw_widths(min_width):
+    """The raw widths, apart from the numerical zeros: a finite ZERO_WIDTH / 2 (the flat band)."""
+    from PAOFLOW.spectrum.do_dos import ZERO_WIDTH
+
     dc, velocities = _model()
     do_adaptive_smearing(dc, 'gauss', None, min_width=min_width)
     widths = dc.data_dicts()[0]['deltakp'][:, :, 0]
-    assert np.allclose(widths, _raw_widths(dc, velocities))
-    assert np.all(widths[:, 0] == 0.0)
+    assert np.allclose(widths, _raw_widths(dc, velocities), rtol=0, atol=1e-15)
+    assert np.all(widths[:, 0] == 0.5 * ZERO_WIDTH)
 
 
 def test_cap_alone():
@@ -126,8 +133,10 @@ def test_unfloored_dos_counts_the_zero_width_states():
     """
     dc, _ = _model()
     nawf = dc.data_dicts()[1]['nawf']
+    from PAOFLOW.spectrum.do_dos import ZERO_WIDTH
+
     do_adaptive_smearing(dc, 'gauss', None, max_width=0.5)
-    assert np.count_nonzero(dc.data_dicts()[0]['deltakp'] == 0.0) > 0
+    assert np.count_nonzero(dc.data_dicts()[0]['deltakp'] == 0.5 * ZERO_WIDTH) > 0
     dos, count = _adaptive_count(dc)
     assert np.isfinite(dos).all()
     assert count == pytest.approx(nawf, abs=1e-3)

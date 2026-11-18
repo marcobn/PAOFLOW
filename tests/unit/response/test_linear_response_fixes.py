@@ -143,9 +143,17 @@ def test_orbital_Hall_without_spin_orbit(tmp_path):
     p.orbital_Hall(o_tensor=[[0, 1, 2]], emin=-2.0, emax=2.0, ne=kc.NE)
     got = _read(p, 'ohcEf_z_xy.dat')
     arry, attr = p.data_controller.data_dicts()
+    from PAOFLOW.utils.perturb_split import perturb_split
+
     E, V, dH = arry['E_k'][:, :, 0], arry['v_k'][:, :, :, 0], arry['dHksp'][:, :, :, :, 0]
     Lz = arry['Lj'][2]
     jx = 0.5 * (Lz @ dH[:, 0] + dH[:, 0] @ Lz)
+    # the basis of the route inside degenerate subspaces (the one perturb_split fixes): the plain
+    # eigh basis there depends on the LAPACK build, and so would the per-band occupations
+    V = np.stack(
+        [perturb_split(jx[k], dH[k, 1], V[k], arry['degen'][0][k], True)[2] if arry['degen'][0][k]
+         else V[k] for k in range(V.shape[0])]
+    )  # fmt: skip
     a = np.einsum('kin,kij,kjm->knm', V.conj(), jx, V)
     b = np.einsum('kin,kij,kjm->knm', V.conj(), dH[:, 1], V)
     denominator = (E[:, None, :] - E[:, :, None]) ** 2 + 0.05**2
@@ -157,6 +165,4 @@ def test_orbital_Hall_without_spin_orbit(tmp_path):
     want = 2.0 * np.einsum('ekn,kn->e', occupation, omega) / attr['nkpnts']
     want *= conductivity_conversion(p.data_controller, False)
     assert np.abs(want).max() > 10.0
-    # 1e-6: inside degenerate subspaces the adaptive widths differ band by band, so the occupations
-    # see the gauge of perturb_split (used by the route) and of this plain projection
     assert np.allclose(got[:, 1], want, rtol=1e-6, atol=1e-6 * np.abs(want).max())

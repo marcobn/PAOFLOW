@@ -1,0 +1,26 @@
+{
+ "title": "Kane-Mele model: shift current across the topological transition",
+ "summary": "The shift current of the Kane-Mele model with a staggered potential, spin-orbit and Rashba coupling, on both sides of the quantum-spin-Hall / trivial transition (delta = 0.5 and 1.5 times 3 sqrt(3) lambda_SO). No DFT run.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Shift current in the QSH and trivial phases",
+   "command": [
+    "python",
+    "kane_mele_nonlinear.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "two 300 x 300 runs; writes output_qsh/ and output_trivial/"
+  }
+ ],
+ "tags": [
+  "tight-binding model",
+  "non-linear optics",
+  "shift current",
+  "topology",
+  "2D"
+ ],
+ "source": "examples/TBmodel_examples/Kane_Mele_nonlinear"
+}

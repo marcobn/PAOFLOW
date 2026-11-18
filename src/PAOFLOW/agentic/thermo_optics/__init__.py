@@ -26,7 +26,7 @@ Modules:
   matching;
 * :mod:`~PAOFLOW.agentic.thermo_optics.paoflow_optics` -- adapter for PAOFLOW's
   optical absorption and thermal-emissivity outputs (``optics/output`` of an
-  electron-phonon system folder, ``examples/elphon/<System>`` layout);
+  electron-phonon system folder, ``examples/cases/<system>_elphon`` layout);
 * :mod:`~PAOFLOW.agentic.thermo_optics.paoflow_transport` -- adapter for the
   phonon-limited mobilities, carrier densities, conductivities and Seebeck
   coefficient of ``transport/output``;

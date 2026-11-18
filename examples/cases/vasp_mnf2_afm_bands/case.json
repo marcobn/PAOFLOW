@@ -1,0 +1,26 @@
+{
+ "title": "VASP MnF2: bands of a collinear antiferromagnet",
+ "summary": "Rutile MnF2, collinear antiferromagnet, from a spin-polarized VASP run: the PAO Hamiltonian (Mn 3P 3D 4S 4P 4D 4F, F 2P 3S 3P 3D 4S) and the up and down band structures. Needs your own VASP runs and POTCAR.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "MnF2 spin-polarized bands",
+   "command": [
+    "python",
+    "main.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "needs the VASP runs of nscf/ (vasprun.xml, WAVECAR, POTCAR); writes output/ and MnF2_VASP.png"
+  }
+ ],
+ "tags": [
+  "VASP",
+  "bands",
+  "antiferromagnet",
+  "magnetic",
+  "PAW"
+ ],
+ "source": "examples/recipes/vasp/example04"
+}

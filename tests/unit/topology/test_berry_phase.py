@@ -32,8 +32,18 @@ pytestmark = pytest.mark.unit
 pytest.importorskip('pythtb')
 
 
+def _skip_without_pythtb2(model) -> None:
+    """The *_pythtb labels build PythTB 2 models (pythtb.Lattice; PythTB 2 needs Python >= 3.12)."""
+    if isinstance(model, dict) and str(model.get('label', '')).endswith('_pythtb'):
+        pythtb = pytest.importorskip('pythtb')
+        if not hasattr(pythtb, 'Lattice'):
+            pytest.skip('the *_pythtb models need PythTB 2 (Python >= 3.12)')
+
+
 def _model(spec, tmp_path):
     from PAOFLOW import PAOFLOW
+
+    _skip_without_pythtb2(spec)
 
     with contextlib.redirect_stdout(io.StringIO()):
         return PAOFLOW.PAOFLOW(model=spec, outputdir=str(tmp_path), verbose=False)

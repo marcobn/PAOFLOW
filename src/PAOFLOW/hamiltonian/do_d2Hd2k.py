@@ -221,8 +221,12 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
                 # a degenerate subspace of the curvature needs equal energies AND equal velocities:
                 # bands that only share a velocity component (e.g. zero on a symmetry plane) are
                 # not degenerate, and diagonalising them together swapped their curvatures
+                # only groups below bnd: the curvature is stored for the first bnd bands
                 vel_degen_by_spin.append(
-                    energy_and_velocity_degenerate_groups(vel_degen_by_kp[0][0], degen[ispin][ik])
+                    energy_and_velocity_degenerate_groups(
+                        vel_degen_by_kp[0][0],
+                        [group for group in degen[ispin][ik] if group.max() < bnd],
+                    )
                 )
 
                 isp_tmp.append(dvec)

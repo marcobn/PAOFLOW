@@ -190,12 +190,12 @@ examples/**/*.log
 !examples/**/*.md
 !examples/**/README*
 !examples/**/*.UPF
-!examples/**/POTCAR
 !examples/**/INCAR
 !examples/**/KPOINTS
 !examples/**/POSCAR
-# Experimental input images of the quantum-oscillation examples
-!examples/qo_analysis_examples/**/data/*.png
+# Experimental input images of the quantum-oscillation analysis; the BXSF inputs of the pyskeaf case
+!examples/cases/nbsn2_qo_analysis/data/*.png
+!examples/cases/bi_pyskeaf/bxsf/Fermi_surf_band_*.bxsf
 # Keep curated Reference directories (expected outputs for tests/comparison)
 !examples/**/Reference/
 !examples/**/Reference/**
@@ -210,22 +210,31 @@ examples/**/*.log
 SHA*
 **/_assets
 
-examples/elphon/*/cache/*
-!examples/elphon/*/cache/.gitkeep
-examples/elphon/*/*/output*/
-examples/elphon/*/qe/*/*.save/
-examples/elphon/*/qe/*/_ph0/
-examples/elphon/*/qe/*/*.dyn*
-examples/elphon/*/qe/*/*.out
-examples/elphon/*/qe/*.upf
-examples/elphon/*/qe/*.UPF
-examples/elphon/*/BASIS_PS/
+# electron-phonon system folders (examples/cases/<system>_elphon)
+examples/cases/*_elphon/cache/*
+!examples/cases/*_elphon/cache/.gitkeep
+examples/cases/*_elphon/*/output*/
+examples/cases/*_elphon/qe/*/*.save/
+examples/cases/*_elphon/qe/*/_ph0/
+examples/cases/*_elphon/qe/*/*.dyn*
+examples/cases/*_elphon/qe/*/*.out
+examples/cases/*_elphon/qe/*/output/
+examples/cases/*_elphon/qe/phonon/quadrupoles/
+examples/cases/*_elphon/thermal/zg/
 
-# non-linear optics examples: generated basis tables and QE saves
-examples/nlo_examples/*/BASIS_PS/
-examples/nlo_examples/*/*.save/
-examples/nlo_examples/*/*.wfc*
-examples/nlo_examples/*/*.out
+# cases run in place: generated basis tables, pseudopotentials copied next to the inputs, run outputs
+examples/cases/*/BASIS_PS/
+examples/cases/**/*.upf
+examples/cases/**/*.UPF
+examples/cases/tbg_unfold/geom_tbg_*.json
+examples/cases/tbg_unfold/Carbon_tbg*/
+examples/cases/nbsn2_qo_analysis/qo_analysis_*/
+examples/cases/bi_pyskeaf/bxsf/paoflow_outputs.json
+# VASP pseudopotentials are licensed: never tracked
+examples/**/POTCAR
+
+# pw.x output excerpts read by the campaign tests (the global *.out rule kept them out of CI)
+!tests/unit/agentic/campaign/data/*.out
 
 # unit-test fixtures: tracked, the QE save and its XML files included (see tests/data/README.md)
 !tests/data/**/*.save/

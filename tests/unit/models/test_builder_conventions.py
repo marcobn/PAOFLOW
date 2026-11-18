@@ -58,7 +58,16 @@ def _quiet():
         yield
 
 
+def _skip_without_pythtb2(model) -> None:
+    """The *_pythtb labels build PythTB 2 models (pythtb.Lattice; PythTB 2 needs Python >= 3.12)."""
+    if isinstance(model, dict) and str(model.get('label', '')).endswith('_pythtb'):
+        pythtb = pytest.importorskip('pythtb')
+        if not hasattr(pythtb, 'Lattice'):
+            pytest.skip('the *_pythtb models need PythTB 2 (Python >= 3.12)')
+
+
 def _load(model, tmp_path, name='run'):
+    _skip_without_pythtb2(model)
     with _quiet():
         return PAOFLOW.PAOFLOW(
             model=model, outputdir=str(tmp_path / name), smearing='gauss', verbose=False

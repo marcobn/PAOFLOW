@@ -55,4 +55,4 @@ Open an agent (e.g. Claude Code) in `agentic/skeaf/` and paste `prompts/00_kicko
 
 ## Example
 
-`examples/qo_analysis_examples/NbSn2/` contains the complete NbSn2 analysis on bundled, compressed data (SOC and scalar-relativistic runs, digitised torque rotation): `main.py`, `main_sr.py` and `expected_results.json`.
+`examples/cases/nbsn2_qo_analysis/` contains the complete NbSn2 analysis on bundled, compressed data (SOC and scalar-relativistic runs, digitised torque rotation): `main.py`, `main_sr.py` and `expected_results.json`. It is the example case `nbsn2_qo_analysis`: `paoflow-gen --example nbsn2_qo_analysis` (or *Examples…* in PAOFLOW Studio) copies it into a working folder.

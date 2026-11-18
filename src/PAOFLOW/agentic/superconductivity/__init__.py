@@ -23,7 +23,7 @@ baselines:
   :math:`\\alpha^2F`, McMillan and Allen-Dynes Tc and their inversion, the BCS
   gap and its universal :math:`\\Delta(T)`, the strong-coupling gap ratio.
 
-The adapters open an electron-phonon system folder (``examples/elphon/<System>``
+The adapters open an electron-phonon system folder (``examples/cases/<system>_elphon``
 layout) with ``from_system(folder, output=...)`` and record its ``system.py`` for
 ``describe()``.
 """

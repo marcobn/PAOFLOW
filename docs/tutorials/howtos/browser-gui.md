@@ -100,7 +100,9 @@ Other options:
    cases by system, property or workflow, pick one and the folder to create. Studio copies the QE inputs, the
    README and the pseudopotentials (from `PSEUDOS/library`), opens the folder with the form of the case filled
    in, and gives Runs its steps: `pw.x` (scf, nscf) and `projwfc.x` where the case needs them, then the
-   drivers. Files of the case that differ in the folder are replaced only after you confirm.
+   drivers. A case marked *scripts* brings its own drivers (a model Hamiltonian, an analysis, an
+   electron–phonon system folder, a recipe): Studio copies it and opens Runs on its steps, with no form to fill.
+   Files of the case that differ in the folder are replaced only after you confirm.
 
    Under it, **Crystal structure** draws the cell, the atoms and the bonds of a save or of a `pw.x` input, chosen
    in its menu. A save shows the structure after the run, so a relaxation shows the relaxed cell. The cell can

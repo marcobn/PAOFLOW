@@ -1,0 +1,25 @@
+{
+ "title": "Si: Slater-Koster sp3 tight-binding bands",
+ "summary": "A Slater-Koster model of silicon (two atoms, s and p orbitals, the parameters of Papaconstantopoulos) built by PAOFLOW(model={'label': 'Slater_Koster', ...}): its band structure along L-G-X. No DFT run; seconds.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Slater-Koster band structure of Si",
+   "command": [
+    "python",
+    "slater_koster.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "writes output/bands_0.dat and the figure output/bands.pdf"
+  }
+ ],
+ "tags": [
+  "tight-binding model",
+  "Slater-Koster",
+  "bands",
+  "semiconductor"
+ ],
+ "source": "examples/TBmodel_examples/slater_koster.py"
+}

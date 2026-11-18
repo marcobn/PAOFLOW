@@ -283,7 +283,13 @@ export class SetupView {
             h(
               'div',
               { class: 'desc' },
-              `${item.qe.map((step) => step.input).join(' → ') || 'no QE step'} · ${item.pseudopotentials.join(', ')}`,
+              `${
+                item.scripts
+                  ? [...item.qe.map((step) => step.input), ...item.steps.map((step) => step.label)]
+                      .slice(0, 4)
+                      .join(' → ') + (item.qe.length + item.steps.length > 4 ? ' → …' : '')
+                  : item.qe.map((step) => step.input).join(' → ') || 'no QE step'
+              } · ${item.pseudopotentials.join(', ')}`,
             ),
           ),
         );
@@ -335,6 +341,17 @@ export class SetupView {
         return;
       }
       toast(error.message, 'bad');
+      return;
+    }
+    if (result.scripts) {
+      // The drivers come with the case: no form to fill, the Runs tab lists its steps.
+      await this.openFolder(result.folder);
+      this.app.showRuns(result.folder, result.plan, result.workflow);
+      toast(
+        `${result.title}: copied into ${result.folder}. Its steps are in the Runs tab (see README.md).`,
+        'ok',
+        9000,
+      );
       return;
     }
     const root = this.session.root;

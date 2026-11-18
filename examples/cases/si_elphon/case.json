@@ -1,0 +1,209 @@
+{
+ "title": "Si: phonon-assisted absorption, emissivity, carrier mobility and ARPES",
+ "summary": "Electron-phonon system folder of silicon: PAOFLOW builds the coarse coupling from the ph.x dvscf files (no EPW) and interpolates it in the PAO basis: phonon-assisted (indirect) absorption and the thermal emissivity of a wafer, phonon-limited electron and hole mobilities, Fan-Migdal linewidths with the ARPES band maps, the phonon dispersion and the dynamical quadrupoles.",
+ "workflow": "scripts",
+ "pseudopotentials": [
+  "nc-sr-05_pbe_standard_upf/Si.upf"
+ ],
+ "pseudo_dir": "qe",
+ "qe": [],
+ "steps": [
+  {
+   "label": "Quantum ESPRESSO: scf, ph.x, nscf, optics nscf",
+   "command": [
+    "bash",
+    "run_qe.sh"
+   ],
+   "cwd": "qe",
+   "ranks_env": "NP",
+   "qe_launch": true,
+   "note": "qe/phonon: scf and ph.x on the 3^3 q-grid (fildvscf, epsil); qe/nscf: the 6^3 nscf; qe/optics: the 60-band nscf of the extended basis. Each nscf starts from a copy of the scf charge density (run_qe.sh does it); NP ranks, 8 by default"
+  },
+  {
+   "label": "Pseudo-atom basis",
+   "command": [
+    "paoflow-genbasis-ps",
+    "--pseudo",
+    "qe/Si.upf",
+    "--out",
+    "BASIS_PS"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "note": "BASIS_PS: 26 orbitals (standard)"
+  },
+  {
+   "label": "Phonon-assisted absorption",
+   "command": [
+    "python",
+    "absorption.py"
+   ],
+   "cwd": "optics",
+   "mpi": true,
+   "note": "12^3 k, 6^3 q, 300 K; the first run builds the coarse vertex in cache/"
+  },
+  {
+   "label": "Figures (absorption)",
+   "command": [
+    "python",
+    "plot_absorption.py",
+    "--temp",
+    "300"
+   ],
+   "cwd": "optics",
+   "mpi": false,
+   "interactive": true,
+   "note": "or the Results tab"
+  },
+  {
+   "label": "Direct dielectric function (extended basis)",
+   "command": [
+    "python",
+    "dielectric.py"
+   ],
+   "cwd": "optics",
+   "mpi": false,
+   "note": "-> qe/optics/output"
+  },
+  {
+   "label": "Thermal emissivity of a 500 um wafer",
+   "command": [
+    "python",
+    "absorption.py",
+    "--emissivity",
+    "--direct-dielectric",
+    "../qe/optics/output",
+    "--nk",
+    "24",
+    "--nq",
+    "12",
+    "--omega-min",
+    "0.01",
+    "--omega-step",
+    "0.01",
+    "--degauss-ev",
+    "0.01",
+    "--temps",
+    "300",
+    "400",
+    "500",
+    "600",
+    "700",
+    "900",
+    "1100",
+    "1300",
+    "1500"
+   ],
+   "cwd": "optics",
+   "mpi": true,
+   "note": "2 min on 8 ranks"
+  },
+  {
+   "label": "Figures (emissivity)",
+   "command": [
+    "python",
+    "plot_absorption.py"
+   ],
+   "cwd": "optics",
+   "mpi": false,
+   "interactive": true,
+   "note": "or the Results tab"
+  },
+  {
+   "label": "Carrier mobility",
+   "command": [
+    "python",
+    "mobility.py"
+   ],
+   "cwd": "transport",
+   "mpi": true,
+   "note": "48^3 k = q, 200-500 K, intrinsic (3.5 min on 20 ranks)"
+  },
+  {
+   "label": "Figures (mobility)",
+   "command": [
+    "python",
+    "plot_mobility.py"
+   ],
+   "cwd": "transport",
+   "mpi": false,
+   "interactive": true,
+   "note": "or the Results tab"
+  },
+  {
+   "label": "Phonon linewidths and ARPES maps",
+   "command": [
+    "python",
+    "arpes.py"
+   ],
+   "cwd": "arpes",
+   "mpi": true,
+   "note": "Fan-Migdal self-energy along Gamma-X at 10, 300 and 600 K"
+  },
+  {
+   "label": "Phonon dispersion",
+   "command": [
+    "python",
+    "phonons.py"
+   ],
+   "cwd": "phonons",
+   "mpi": false,
+   "note": "q2r + matdyn in PAOFLOW -> phonons/output"
+  },
+  {
+   "label": "Quadrupoles: ph.x inputs",
+   "command": [
+    "python",
+    "quadrupoles.py",
+    "--write-inputs"
+   ],
+   "cwd": "coupling",
+   "mpi": false,
+   "note": "twelve single-q ph.x inputs and run.sh under qe/phonon/quadrupoles"
+  },
+  {
+   "label": "Quadrupoles: ph.x runs",
+   "command": [
+    "bash",
+    "run.sh"
+   ],
+   "cwd": "qe/phonon/quadrupoles",
+   "mpi": false,
+   "ranks_env": "NP",
+   "note": "ph.x with fildrho on each q (needs the scf wavefunctions of qe/phonon)"
+  },
+  {
+   "label": "Quadrupoles: fit",
+   "command": [
+    "python",
+    "quadrupoles.py",
+    "--extract"
+   ],
+   "cwd": "coupling",
+   "mpi": false,
+   "note": "Z* check and Q -> coupling/quadrupole.fmt"
+  },
+  {
+   "label": "Long-range check",
+   "command": [
+    "python",
+    "long_range_check.py",
+    "--quadrupoles",
+    "quadrupole.fmt"
+   ],
+   "cwd": "coupling",
+   "mpi": true,
+   "note": "|g(Gamma, q)| along Gamma-X with and without the quadrupole term"
+  }
+ ],
+ "tags": [
+  "electron-phonon",
+  "phonon-assisted absorption",
+  "emissivity",
+  "mobility",
+  "ARPES",
+  "quadrupoles",
+  "semiconductor"
+ ],
+ "source": "examples/elphon/Si"
+}

@@ -3,8 +3,8 @@
 One :class:`ElphonSystem` per crystal (``system.py`` of the system folder) and one
 physics-named function per property, called by the thin drivers of the workflow folders
 (``phonons/``, ``coupling/``, ``superconductivity/``, ``optics/``, ``transport/``,
-``arpes/``, ``thermal/``).  See ``docs/internals/Electron-Phonon-Coupling.md`` and
-``examples/elphon/README.md``.
+``arpes/``, ``thermal/``).  See ``docs/internals/Electron-Phonon-Coupling.md`` (section
+"Electron-phonon system folders") and the cases ``examples/cases/<system>_elphon``.
 """
 
 from .coupling import long_range_path, quadrupole_inputs, quadrupole_run_dir, quadrupoles

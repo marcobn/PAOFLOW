@@ -82,6 +82,14 @@ def do_adaptive_smearing(
     band extremum has a vanishing width and is lost from every sum over an
     energy grid.
 
+    Numerically zero widths (below :data:`PAOFLOW.spectrum.do_dos.ZERO_WIDTH`, 1e-6 eV: the
+    velocity vanishes by symmetry on a grid point) are set to half that value before the bounds.
+    A width of 1e-16 eV made every occupation and delta of such a state a step decided by
+    round-off: on a model whose band energies fall on the energy grid (the X point of a square
+    lattice), a 1e-14 eV shift changed an anomalous Hall conductivity by 24 % of its maximum, and
+    the results differed from one LAPACK build to another. The DOS and PDOS give these states the
+    spacing of their energy grid (:func:`PAOFLOW.spectrum.do_dos.resolvable_widths`).
+
     Reference: J. R. Yates, X. Wang, D. Vanderbilt, I. Souza,
     Phys. Rev. B **75**, 195121 (2007).
     """
@@ -138,6 +146,11 @@ def do_adaptive_smearing(
         raise ValueError(
             'max_width (%g eV) must not be below min_width (%s eV)' % (max_width, min_width)
         )
+    from .do_dos import ZERO_WIDTH
+
+    # numerically zero widths: a finite floor below ZERO_WIDTH (see Notes)
+    deltakp[deltakp < ZERO_WIDTH] = 0.5 * ZERO_WIDTH
+    deltakp2[deltakp2 < ZERO_WIDTH] = 0.5 * ZERO_WIDTH
     if min_width is not None:
         np.maximum(deltakp, min_width, out=deltakp)
         np.maximum(deltakp2, min_width, out=deltakp2)

@@ -1,9 +1,10 @@
 """The augmented (PAW) metric of the projections for VASP input.
 
 The WAVECAR bands of a VASP run are orthonormal in ``S = 1 + sum q_ij |p_i><p_j|`` built from
-the POTCAR datasets (reciprocal-space projector tables). Needs the Si example
-(``../example01/nscf_nspin1`` next to the repository, or ``PAOFLOW_VASP_EXAMPLES/example01/
-nscf_nspin1``) and the ``potpaw_PBE`` library; skipped without them.
+the POTCAR datasets (reciprocal-space projector tables). Needs the VASP run ``nscf_nspin1`` of
+the Si case ``examples/cases/vasp_si_bands`` (as ``../example01/nscf_nspin1`` next to the
+repository, or ``PAOFLOW_VASP_EXAMPLES/example01/nscf_nspin1``) and the ``potpaw_PBE`` library;
+skipped without them.
 """
 
 from __future__ import annotations

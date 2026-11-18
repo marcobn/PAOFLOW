@@ -1,0 +1,27 @@
+{
+ "title": "VASP: notebook of the seven VASP cases",
+ "summary": "VASP_examples.ipynb walks through the seven VASP cases (Si, Pt, Fe, MnF2, Mn3Ir, FeRh, CrI3) cell by cell, with interactive plots and stored figures, and lists the rules for VASP input to PAOFLOW. It reads the VASP runs of the cases from the folders next to its own.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Open the notebook",
+   "command": [
+    "jupyter",
+    "lab",
+    "VASP_examples.ipynb"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": true,
+   "note": "reads ../vasp_si_bands/nscf_nspin1/, ...: the seven VASP cases copied next to this folder under their names, with their VASP runs done"
+  }
+ ],
+ "tags": [
+  "VASP",
+  "notebook",
+  "bands",
+  "spin-orbit",
+  "magnetic"
+ ],
+ "source": "examples/recipes/vasp"
+}

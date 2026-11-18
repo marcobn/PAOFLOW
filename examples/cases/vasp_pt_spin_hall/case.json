@@ -1,0 +1,26 @@
+{
+ "title": "VASP Pt: spin-orbit bands and spin Hall conductivity",
+ "summary": "Fcc platinum from a VASP run with spin-orbit coupling: the PAO Hamiltonian (5D 6S 6P 7S 7P), its band structure and the spin Hall conductivity sigma^z_xy as a function of the Fermi level. Needs your own VASP runs and POTCAR.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Pt bands and spin Hall conductivity",
+   "command": [
+    "python",
+    "main.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "needs the VASP runs of nscf/ (vasprun.xml, WAVECAR, POTCAR); writes output/ (shcEf_z_xy.dat), Pt_soc_VASP.png and Pt_shc_VASP.png"
+  }
+ ],
+ "tags": [
+  "VASP",
+  "spin-orbit",
+  "spin Hall",
+  "metal",
+  "PAW"
+ ],
+ "source": "examples/recipes/vasp/example02"
+}

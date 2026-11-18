@@ -1,8 +1,9 @@
 """Smoke test of the example workflow drivers on the Si DFPT asset (6^3 k, 3^3 q, small dense grids).
 
 Builds a system folder with the drivers of ``PAOFLOW/gen/elphon_templates`` (the files of
-``examples/elphon/<System>``) whose ``system.py`` points at the asset, and runs every workflow
-in-process (``runpy`` under ``sys.argv``), the way a user runs ``python <workflow>/<driver>.py``.
+the cases ``examples/cases/<system>_elphon``) whose ``system.py`` points at the asset, and
+runs every workflow in-process (``runpy`` under ``sys.argv``), the way a user runs
+``python <workflow>/<driver>.py``.
 The dense grids are tiny, so the numbers are not converged; the test checks that each driver
 runs end to end on the shared cache and writes its output files.
 """

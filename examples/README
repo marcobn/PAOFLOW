@@ -1,13 +1,22 @@
 PAOFLOW examples
 
-Cases: ./cases/  (start here)
+Every example is a case: ./cases/<name>/
 
-- One folder per calculation: the Quantum ESPRESSO inputs, a README and case.json (the workflow
-  of paoflow-gen and the answers of its form). The pseudopotentials live once in
-  ../PSEUDOS/library and are copied in with the case.
-- PAOFLOW Studio: Setup tab, "Examples...", pick a case and a folder: Studio copies it, fills the
-  form and lists the QE runs in the Runs tab. Command line: `paoflow-gen --example <name>`
-  (`paoflow-gen --example list` shows the cases).
+- One folder per calculation: its inputs (Quantum ESPRESSO, VASP or a model Hamiltonian), a
+  README.md and case.json. The pseudopotentials live once in ../PSEUDOS (mostly ../PSEUDOS/library)
+  and are copied in with the case.
+- PAOFLOW Studio: Setup tab, "Examples...", pick a case and a folder: Studio copies it and lists
+  its runs in the Runs tab. Command line: `paoflow-gen --example <name>` (`paoflow-gen --example
+  list` shows the cases).
+- Two kinds of case. A *generator* case gives the workflow of paoflow-gen and the answers of its
+  form: Studio fills the form, and the drivers (main.py, plot.py) are written from it. A *scripts*
+  case brings its own drivers (models, analyses, multi-stage folders, recipes): Studio opens Runs
+  on its steps, with no form.
+- The reference outputs of the generator cases are in the integration-test tarballs (the releases
+  tagged integration-assets-*), not in the repository.
+
+Generator cases
+
 - Property runs: si_bands_transport, al_dos_transport, pt_spin_polarized (nspin = 2),
   fe_anomalous_hall, pt_spin_hall, alp_hubbard_optics (Hubbard shifts + dielectric tensor),
   pt_adhoc_soc (ad hoc spin-orbit), snte_spin_texture (2D), mop2_weyl_points,
@@ -17,44 +26,35 @@ Cases: ./cases/  (start here)
   pd_spin_susceptibility.
 - Landauer transport: al_bulk_landauer, alh_junction_landauer (eigenchannels).
 - ACBN0 / eACBN0: gaas_acbn0, mgo_acbn0, mno_acbn0 (antiferromagnetic), si_acbn0, zno_acbn0.
-- The cases use PAOFLOW's internal projections on the bases generated from their pseudopotentials;
-  projwfc.x stays an option in the form (Studio then writes proj.in and adds the projwfc.x run).
-- The reference outputs of the cases are in the integration-test tarballs (the releases tagged
-  integration-assets-*), not in the repository.
+- These cases use PAOFLOW's internal projections on the bases generated from their
+  pseudopotentials; projwfc.x stays an option in the form (Studio then writes proj.in and adds the
+  projwfc.x run).
 
-Recipes: ./recipes/
+Scripts cases
 
-- Scripts for what the generator does not write: VASP runs (recipes/vasp), the basis presets
-  on NC and ultrasoft, scalar and fully relativistic pseudopotentials, the sparse backend on a
-  doubled cell, the low-level Transport calls of a conductor with a defect.
+- Electron-phonon system folders (system.py, qe/, phonons/, coupling/, superconductivity/,
+  optics/, transport/, arpes/; the layout `paoflow-gen elphon` writes): si_elphon
+  (phonon-assisted absorption, emissivity, mobility, ARPES), pb_elphon (Eliashberg function, Tc,
+  Migdal-Eliashberg gap, resistivity, infrared optics, ARPES kink, special displacements),
+  mgb2_elphon (anisotropic two-gap Migdal-Eliashberg), sic_elphon (polar crystal: Frohlich
+  coupling, quadrupoles, mobility).
+- Non-linear optics: gaas_nlo (PAW GaAs, with REPORT.md: the comparison with the literature),
+  ges_nlo (monolayer GeS), graphene_nlo_model, kane_mele_nlo_model, mos2_nlo_model (shift and
+  injection currents, second-harmonic generation).
+- Tight-binding models run through PAOFLOW(model=...): graphene_tb_model (with the list of the
+  model labels), graphene_berry_phase_model, cubium_tb_model, kane_mele_tb_model,
+  si_slater_koster_model. The model runs of paoflow-gen / Studio (workflow tb_model) cover the
+  built-in models.
+- Band unfolding: si_supercell_unfold, tbg_unfold (twisted bilayer graphene, dense and sparse).
+- Quantum oscillations: bi_pyskeaf (extremal orbits with pyskeaf), nbsn2_qo_analysis (computed
+  frequencies against measured quantum oscillations).
+- VASP: vasp_overview (the notebook of all seven systems) and vasp_si_bands, vasp_pt_spin_hall,
+  vasp_fe_anomalous_hall, vasp_mnf2_afm_bands, vasp_mn3ir_noncollinear_bands, vasp_ferh_bands,
+  vasp_cri3_monolayer_bands.
+- Basis presets on norm-conserving and ultrasoft, scalar and fully relativistic pseudopotentials:
+  si_oncv_basis_presets, si_uspp_basis_presets, pt_oncv_basis_presets, pt_uspp_basis_presets.
+- Sparse backend on a doubled cell: si_sparse_backend.
+- Low-level Transport calls of a conductor with a defect: al_transport_defect.
 
-Electron-phonon coupling: ./elphon/
-
-- One system folder each (system.py, qe/, phonons/, coupling/, superconductivity/, optics/,
-  transport/, arpes/): Si (phonon-assisted absorption, emissivity, mobility, ARPES), Pb
-  (Eliashberg function, Tc, Migdal-Eliashberg gap, resistivity, infrared optics, ARPES kink),
-  MgB2 (anisotropic two-gap Migdal-Eliashberg), SiC (polar crystal: Frohlich coupling,
-  quadrupoles, mobility). The same layout is written by `paoflow-gen elphon`.
-
-Non-linear optics: ./nlo_examples/
-
-- Shift current, injection currents and second-harmonic generation: gapped graphene
-  (tight-binding model), GaAs (PAW) and monolayer GeS; REPORT.md compares with the literature.
-
-Tight-binding models: ./TBmodel_examples/
-
-- Analytical tight-binding model Hamiltonians (Kane-Mele, graphene, cubium, Slater-Koster);
-  the model runs of paoflow-gen / Studio (workflow tb_model) cover the built-in models.
-
-Band unfolding: ./unfold_examples/
-
-- Supercell band structures unfolded to the primitive cell (DFT-PAO and tight-binding)
-
-Quantum oscillations: ./pyskeaf_examples/ and ./qo_analysis_examples/
-
-- Extremal Fermi-surface orbits with pyskeaf (de Haas-van Alphen frequencies and masses) and the
-  comparison of the computed frequencies with measured quantum oscillations
-
-The property drivers (main.py, plot.py) of every case are written by paoflow-gen / the Setup tab
-of paoflow-studio; the Results and Plots tabs show their outputs. clean_runs.py removes the
-outputs of every example folder.
+The Results and Plots tabs of paoflow-studio show the outputs of any case. clean_runs.py removes
+the outputs of runs made in place, keeping inputs, data and references.

@@ -39,7 +39,7 @@ K_POINTS {automatic}
   8 8 8  0 0 0
 """
 
-EXAMPLES = Path(__file__).resolve().parents[3] / 'examples' / 'elphon'
+CASES = Path(__file__).resolve().parents[3] / 'examples' / 'cases'
 
 
 def _cfg(**kw):
@@ -224,12 +224,13 @@ def test_write_system_folder_copies_the_templates_and_every_driver_parses_help(
 
 
 def test_examples_are_copies_of_the_templates():
-    if not EXAMPLES.is_dir():
-        pytest.skip('examples/elphon not present')
+    """The drivers of the electron-phonon cases (``examples/cases/<system>_elphon``) are the
+    templates of the generator."""
+    systems = sorted(folder.parent for folder in CASES.glob('*_elphon/system.py'))
+    if not systems:
+        pytest.skip('examples/cases/<system>_elphon not present')
     checked = 0
-    for system in sorted(EXAMPLES.iterdir()):
-        if not system.is_dir() or system.name.startswith('_'):
-            continue
+    for system in systems:
         for rel in list(sum(es.WORKFLOWS.values(), ())) + list(es.QE_HELPERS):
             example = system / rel
             if example.is_file():

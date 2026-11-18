@@ -138,11 +138,10 @@ this example and compares the outputs.
   paoflow-gen
   ```
 - See the [API Reference](internals/api-reference.md) for the full list of methods on the `PAOFLOW` class.
-- Start from an example case: `examples/cases/` holds one folder per calculation (QE inputs, a
-  README and the answers of the generator form), from this silicon run to spin Hall, Weyl points,
-  Z2, doped transport, Landauer junctions and ACBN0. In PAOFLOW Studio use *Examples…* in the
-  Setup tab; on the command line `paoflow-gen --example list`, then
-  `paoflow-gen --example si_bands_transport`. `examples/recipes/` has scripts for what the
-  generator does not write (VASP, basis presets, the sparse backend); `examples/elphon`,
-  `nlo_examples`, `TBmodel_examples`, `unfold_examples`, `pyskeaf_examples` and
-  `qo_analysis_examples` keep their topic folders.
+- Start from an example case: `examples/cases/` holds every example, one folder per calculation,
+  from this silicon run to spin Hall, Weyl points, Z2, doped transport, Landauer junctions and
+  ACBN0 (cases that fill the form of a generator workflow), and to the electron–phonon system
+  folders, non-linear optics, tight-binding models, band unfolding, quantum oscillations, VASP runs,
+  the basis presets and the sparse backend (*scripts* cases, which bring their own drivers). In
+  PAOFLOW Studio use *Examples…* in the Setup tab; on the command line
+  `paoflow-gen --example list`, then `paoflow-gen --example si_bands_transport`.

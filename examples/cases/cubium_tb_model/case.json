@@ -1,0 +1,23 @@
+{
+ "title": "Cubium: band structure of the one-band cubic model",
+ "summary": "The simplest tight-binding model of PAOFLOW(model=...): one s band on the simple-cubic lattice (label 'cubium', t = 1 eV), its band structure along G-X-M-G-R. No DFT run; seconds.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Band structure of cubium",
+   "command": [
+    "python",
+    "cubium.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "writes output/bands_0.dat and output/kpath_points.txt"
+  }
+ ],
+ "tags": [
+  "tight-binding model",
+  "bands"
+ ],
+ "source": "examples/TBmodel_examples/Cubium"
+}

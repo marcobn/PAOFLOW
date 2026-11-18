@@ -6,7 +6,7 @@
 Read AGENT_WORKFLOW.md and LESSONS_LEARNED.md in PAOFLOW's agentic/arpes/ folder, then start the ARPES workflow
 for <SYSTEM / PROPERTY> (e.g. "the electron-phonon kink of Pb along Gamma-X", "phonon linewidths of Si vs T").
 
-Model (read-only): an electron-phonon system folder (examples/elphon/<System> layout)
+Model (read-only): an electron-phonon system folder (examples/cases/<system>_elphon layout)
 - system folder: <path>; runs to compare: arpes/<output folder(s)>; self-energies present: <isotropic | anisotropic |
   fan-migdal>; older runs: <names or "none">
 - what it computes and its known limits: <e.g. isotropic Sigma from alpha^2F at 10 K on a segment across k_F, 2 meV

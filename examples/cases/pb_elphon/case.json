@@ -1,0 +1,175 @@
+{
+ "title": "Pb: Eliashberg superconductivity, resistivity, ARPES kink and ZG supercells",
+ "summary": "Electron-phonon system folder of lead: the coarse coupling from the ph.x dvscf files, interpolated in the PAO basis: alpha^2F, lambda, Tc and the Migdal-Eliashberg gap, the resistivity, infrared optics and emissivity of the metal, the ARPES kink, and thermal band structures from special-displacement (ZG) supercells.",
+ "workflow": "scripts",
+ "pseudopotentials": [
+  "nc-sr-05_pbe_standard_upf/Pb.upf"
+ ],
+ "pseudo_dir": "qe",
+ "qe": [],
+ "steps": [
+  {
+   "label": "Quantum ESPRESSO: scf, ph.x, nscf, optics nscf",
+   "command": [
+    "bash",
+    "run_qe.sh"
+   ],
+   "cwd": "qe",
+   "ranks_env": "NP",
+   "qe_launch": true,
+   "note": "qe/phonon: scf and ph.x on the 6^3 q-grid (fildvscf); qe/nscf: the 6^3 nscf; qe/optics: the 40-band nscf of the extended basis. Each nscf starts from a copy of the scf charge density (run_qe.sh does it); NP ranks, 8 by default"
+  },
+  {
+   "label": "Pseudo-atom basis",
+   "command": [
+    "paoflow-genbasis-ps",
+    "--pseudo",
+    "qe/Pb.upf",
+    "--out",
+    "BASIS_PS"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "note": "BASIS_PS: 18 orbitals (standard)"
+  },
+  {
+   "label": "Eliashberg function",
+   "command": [
+    "python",
+    "eliashberg.py",
+    "--transport"
+   ],
+   "cwd": "superconductivity",
+   "mpi": true,
+   "note": "48^3 k, 24^3 q; --transport adds alpha^2F_tr and the plasma frequency for the resistivity (2 min on 8 ranks)"
+  },
+  {
+   "label": "Migdal-Eliashberg (isotropic)",
+   "command": [
+    "python",
+    "me.py"
+   ],
+   "cwd": "superconductivity",
+   "mpi": false,
+   "note": "serial, seconds"
+  },
+  {
+   "label": "Figures (gap)",
+   "command": [
+    "python",
+    "plot_me.py"
+   ],
+   "cwd": "superconductivity",
+   "mpi": false,
+   "interactive": true,
+   "note": "or the Results tab"
+  },
+  {
+   "label": "Resistivity, infrared optics, emissivity",
+   "command": [
+    "python",
+    "resistivity.py"
+   ],
+   "cwd": "transport",
+   "mpi": false
+  },
+  {
+   "label": "Figures (resistivity)",
+   "command": [
+    "python",
+    "plot_resistivity.py"
+   ],
+   "cwd": "transport",
+   "mpi": false,
+   "interactive": true,
+   "note": "or the Results tab"
+  },
+  {
+   "label": "Interband dielectric function (extended basis)",
+   "command": [
+    "python",
+    "dielectric.py"
+   ],
+   "cwd": "optics",
+   "mpi": false,
+   "note": "-> qe/optics/output (intraband=False)"
+  },
+  {
+   "label": "Resistivity with the interband part",
+   "command": [
+    "python",
+    "resistivity.py",
+    "--interband-dielectric",
+    "../qe/optics/output"
+   ],
+   "cwd": "transport",
+   "mpi": false
+  },
+  {
+   "label": "ARPES kink",
+   "command": [
+    "python",
+    "arpes.py"
+   ],
+   "cwd": "arpes",
+   "mpi": true,
+   "note": "isotropic self-energy from superconductivity/output/eliashberg.npz"
+  },
+  {
+   "label": "Phonon dispersion",
+   "command": [
+    "python",
+    "phonons.py"
+   ],
+   "cwd": "phonons",
+   "mpi": false,
+   "note": "phonons/output/pb.fc, read by thermal/zg.py"
+  },
+  {
+   "label": "ZG supercell inputs",
+   "command": [
+    "python",
+    "zg.py",
+    "--write"
+   ],
+   "cwd": "thermal",
+   "mpi": false,
+   "note": "3^3 cells at 0, 100 and 300 K, 5 seeds and the undisplaced cell"
+  },
+  {
+   "label": "ZG supercell scf runs",
+   "command": [
+    "bash",
+    "run_zg.sh"
+   ],
+   "cwd": "thermal/zg",
+   "mpi": false,
+   "ranks_env": "NP",
+   "qe_launch": true,
+   "note": "pw.x on each 27-atom cell (minutes per cell)"
+  },
+  {
+   "label": "Unfolded spectral functions",
+   "command": [
+    "python",
+    "zg.py",
+    "--spectral",
+    "--plot"
+   ],
+   "cwd": "thermal",
+   "mpi": true,
+   "note": "thermal band shifts and widths along Gamma-X -> thermal/output"
+  }
+ ],
+ "tags": [
+  "electron-phonon",
+  "superconductivity",
+  "Eliashberg",
+  "Migdal-Eliashberg",
+  "resistivity",
+  "ARPES",
+  "special displacement",
+  "metal"
+ ],
+ "source": "examples/elphon/Pb"
+}

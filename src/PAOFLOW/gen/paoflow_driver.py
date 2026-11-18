@@ -19,10 +19,11 @@ Two further workflows generate multi-phase driver scripts:
 
 3. **Harmonic phonons** (``main.phonon.py``) -- finite-displacement phonons via
    phonopy (generate supercells -> run pw.x -> analyse forces).
-4. **Electron-phonon** (``paoflow-gen elphon``) -- writes a *system folder* in the layout
-   of ``examples/elphon/<System>``: ``system.py`` (the only file with values, an
-   ``ElphonSystem`` plus per-workflow defaults), ``qe/`` (scf, ph.x with ``fildvscf``,
-   the nscf on the irreducible wedge, ``run_qe.sh``; EPW inputs for the EPW source) and
+4. **Electron-phonon** (``paoflow-gen elphon``) -- writes an electron-phonon *system
+   folder* (the layout of ``examples/cases/<system>_elphon``): ``system.py`` (the only file
+   with values, an ``ElphonSystem`` plus per-workflow defaults), ``qe/`` (scf, ph.x with
+   ``fildvscf``, the nscf on the irreducible wedge, ``run_qe.sh``; EPW inputs for the EPW
+   source) and
    one subfolder per selected workflow (``phonons/``, ``coupling/``,
    ``superconductivity/``, ``optics/``, ``transport/``, ``arpes/``) with the drivers of
    ``PAOFLOW/gen/elphon_templates`` (the same thin drivers the examples use, built on
@@ -3481,6 +3482,11 @@ def start_from_example(args: argparse.Namespace) -> int:
         return 1
     print('%s\n%s\n' % (case.title, case.summary))
     print('Copied %d file(s) into %s' % (len(written), destination))
+    if case.scripts:
+        print('\nSteps, in %s (see README.md):' % destination)
+        for index, step in enumerate(case_plan(case), 1):
+            print('  %d. %s: %s' % (index, step.label, step.command(4)))
+        return 0
     form = resolve_form(WORKFLOWS[case.workflow], case.answers, Context(workdir=destination))
     if not form.complete:
         sys.stderr.write('The answers of the case do not resolve: %s\n' % form.errors)
@@ -3492,12 +3498,15 @@ def start_from_example(args: argparse.Namespace) -> int:
             continue
         print('Wrote %s' % generated.write(destination))
     print('\nSteps, in %s:' % destination)
-    for index, step in enumerate(case_plan(case)[:-1], 1):
+    plan = case_plan(case)
+    for index, step in enumerate(plan[: len(case.qe)], 1):
         print('  %d. %s: %s' % (index, step.label, step.command(4)))
     print(
         '  %d. the drivers written above (see README.md), e.g. mpirun -np 4 python main.py'
         % (len(case.qe) + 1)
     )
+    for index, step in enumerate(plan[len(case.qe) + 1 :], len(case.qe) + 2):
+        print('  %d. %s: %s' % (index, step.label, step.command(4)))
     return 0
 
 

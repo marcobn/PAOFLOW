@@ -12,7 +12,7 @@ from PAOFLOW.agentic.qo_analysis import QuantumOscillationAnalysis
 
 pytestmark = pytest.mark.integration
 
-EXAMPLE = Path(__file__).resolve().parents[4] / 'examples' / 'qo_analysis_examples' / 'NbSn2'
+EXAMPLE = Path(__file__).resolve().parents[4] / 'examples' / 'cases' / 'nbsn2_qo_analysis'
 EXPECTED = json.loads((EXAMPLE / 'expected_results.json').read_text()) if EXAMPLE.exists() else {}
 DIRECTIONS = [
     dict(label='[001]', hkl=[0, 0, 1], azimuthal=29.95, polar=0.0, day=3),

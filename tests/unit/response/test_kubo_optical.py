@@ -156,7 +156,10 @@ def test_flat_band_does_not_poison_the_occupations(tmp_path):
     p.pao_eigh()
     p.gradient_and_momenta()
     p.adaptive_smearing()
-    assert np.min(p.data_controller.data_arrays['deltakp']) == 0.0  # the remote band
+    from PAOFLOW.spectrum.do_dos import ZERO_WIDTH
+
+    # the remote band: zero velocity, stored as the finite ZERO_WIDTH / 2
+    assert np.min(p.data_controller.data_arrays['deltakp']) == 0.5 * ZERO_WIDTH
     o = p.kubo_optical_response(
         'charge_current', ['xx'], eta=0.05, omega_max=1.0, nomega=5, mu=-1.0, write=False
     )

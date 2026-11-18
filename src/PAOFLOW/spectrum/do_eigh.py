@@ -54,7 +54,8 @@ def get_degeneracies(E_k, bnd):
         containing the band indices that belong to a degenerate group at
         k-point ``ik`` and spin channel ``ispin``.  Groups involving at
         least two bands are reported; singletons are omitted. The groups are
-        disjoint (:func:`merge_overlapping_groups`).
+        disjoint (:func:`merge_overlapping_groups`). A group with a band below ``bnd``
+        is reported whole, also its bands from ``bnd`` on.
 
     Notes
     -----
@@ -81,7 +82,10 @@ def get_degeneracies(E_k, bnd):
             for i in range(len(eV)):
                 inds = np.where(np.isclose(E_k_round[ik, :, ispin], eV[i], atol=1.0e-5))[0]
 
-                if len(inds) > 1 and np.all(inds < bnd):
+                # a group that reaches above bnd is kept whole: the states that the projectability
+                # filter pins at the shift are degenerate, and a group straddling bnd left without
+                # its rotation gave velocities chosen by LAPACK (Pt slab: 1.4 % of its spin Hall)
+                if len(inds) > 1 and inds.min() < bnd:
                     by_kp.append(inds)
 
             by_spin.append(merge_overlapping_groups(by_kp))

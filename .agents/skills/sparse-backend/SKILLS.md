@@ -382,7 +382,9 @@ Ask, in order:
 
 ```bash
 python -m pytest tests/unit/sparse -q          # component + parity tests
-cd examples/qe_examples/example01
+paoflow-gen --example si_sparse_backend -d /tmp/si_sparse   # the case: QE inputs + main_sparse.py
+cd /tmp/si_sparse                               # pw.x scf/nscf + projwfc.x, or copy tests/data/silicon/silicon.save
+cp <repo>/tests/integration/qe/example01/main.py .
 python main.py                                  # clean dense reference -> output/
 mpirun -n 4 python main_sparse.py               # sparse -> output_sparse/
 # open compare_sparse.ipynb, run all cells, judge visually
