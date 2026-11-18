@@ -30,7 +30,7 @@ Tutorials and how-tos keep the physics to what the reader needs to run the workf
 2. **Find the equation the code evaluates** for each step that gets an equation. Write it down from the source, signs, factors, unit conversions and normalisations included. If it differs from the textbook form, the page shows what the code does and you report the discrepancy to the user. Never write the textbook version silently, and never change the code to match the page.
 3. **Write the script and run it** (see "Running the code" and "Assets and budgets"): the notebook of a tutorial, the `main.py` and `figures.py` of a how-to. Every number, table and figure on the page comes from that run, and the asserts check the numbers the conclusions rest on. A theory page has no run; it skips this step and the page test of step 5.
 4. **Plan the figures, then write the page** from the template, in the style below. Decide first what the reader must see at each step and draw it (see "Where a picture carries the explanation"); the text then says what the figure cannot. When the draft is done, review it in two passes. First, for each paragraph, state its point in one sentence; if you cannot, rewrite the paragraph. Then read the first sentences of each section alone and check that they outline its argument (see "Connecting the facts"). Finally, read the page paragraph by paragraph and ask whether a figure would carry that paragraph better.
-5. **Register it**: a tutorial gets a grid card plus a toctree entry, a how-to or a theory page a list entry (a link with its title) plus a toctree entry (see the templates). When a tutorial or how-to links to a theory page, add it to the "Used in" list of that theory page. The page test collects the new page by itself; add its name (`tutorialNN`, or the how-to's `<task>`) to the `page` matrix of the `docs-page-tests` job in `.github/workflows/ci.yaml`, which runs one page per job.
+5. **Register it**: every page gets a list entry in the `index.md` of its folder, a link whose text is the page title, as `- [Tutorial NN: <title>](tutorialNN.ipynb)`. A how-to or a theory page also gets a toctree entry (see the templates); the tutorial toctree picks up `tutorial*` by itself. When a tutorial or how-to links to a theory page, add it to the "Used in" list of that theory page. The page test collects the new page by itself; add its name (`tutorialNN`, or the how-to's `<task>`) to the `page` matrix of the `docs-page-tests` job in `.github/workflows/ci.yaml`, which runs one page per job.
 6. **Run the checks** at the end of this file and fix what they report. They are a floor, not the whole review.
 7. **Report** briefly: what you wrote, every place where code and textbook physics disagree, every number or reference you could not confirm, every cell left for the user to run, the run time of the page, every concept whose home page or internals page is missing (see "Say it once" and "Building the explanation"), and every place where a figure would help but you did not make one, with the reason (no data from the run, a heavy run still pending).
 
@@ -149,6 +149,7 @@ Avoiding jargon is not the same as simplifying the physics. Do not explain what 
 - Restating the section heading as the first sentence of the section.
 - Marketing adjectives ("efficient", "fast", "flexible", "easy") without a number or a comparison behind them.
 - Hedging filler ("can be used to", "is designed to", "allows you to"). Say what it does.
+- Signposts: a sentence whose only content is that something is explained elsewhere on the page or comes later ("The settings PAOFLOW depends on are explained in the sections that use them"). The reader finds the explanation when they get to it, so the sentence adds nothing; delete it. A forward link inside a sentence that already says something (see "Order") is not a signpost.
 
 ## Connecting the facts
 
@@ -165,6 +166,8 @@ A page written as one true sentence after another still leaves the reader to reb
 Before: "Defect supercells, slabs, interfaces and heterostructures therefore exhaust the memory of a node. The sparse backend never forms these arrays."
 
 After: "Defect supercells, slabs, interfaces and heterostructures therefore exhaust the memory of a node. To avoid this, the sparse backend never forms these arrays."
+
+**Complete statements.** Each sentence names everything it is about. A noun that implies a complement carries it: a measure of what, a cost of what, a reason for what, a limit on what. "A Kohn–Sham state enters the PAO Hamiltonian only if the basis reproduces it. The measure is the projectability" leaves the reader to supply "of how much of the state the basis reproduces". Write instead: "The projectability, the norm of the state's projection onto the PAOs, measures how much of the state the basis reproduces." The same holds for "this", "that" or "it" opening a sentence: when the referent is not the noun just before, name it ("This count", "That energy").
 
 **Comparisons.** State a comparison from the reader's side: what they keep doing, what they change, what they leave out. A sentence that only equates two things ("the calls are those of a DFT run") leaves the reader to work out what it means for their script. Write instead: "the calls remain the same as the ones you would use for a DFT-based workflow".
 
@@ -417,10 +420,11 @@ for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
         say("length", f"{nwords} words of prose, above {cap}: split, promote, or override")
     if fenced:
         say("script", f"{fenced} fenced python blocks; pull the code from main.py with literalinclude")
-    if path.parent.name in ("howtos", "theory"):
-        idx = (path.parent / "index.md").read_text() if (path.parent / "index.md").is_file() else ""
-        if not re.search(rf"^- \[.+\]\({path.stem}\.md\)$", idx, re.M) or not re.search(rf"^{path.stem}$", idx, re.M):
-            say("registration", f"missing list entry or toctree entry in {path.parent / 'index.md'}")
+    idx = (path.parent / "index.md").read_text() if (path.parent / "index.md").is_file() else ""
+    if not re.search(rf"^- \[.+\]\({re.escape(path.name)}\)$", idx, re.M):
+        say("registration", f"missing list entry in {path.parent / 'index.md'}")
+    if path.parent.name in ("howtos", "theory") and not re.search(rf"^{path.stem}$", idx, re.M):
+        say("registration", f"missing toctree entry in {path.parent / 'index.md'}")
     if path.parent.name == "howtos":
         folder = path.parent / path.stem
         for script in (folder / "main.py", folder / "figures.py"):
@@ -438,8 +442,6 @@ for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
             if not Path(ex).exists():
                 say("base-example", f"{ex} does not exist")
     elif path.name.startswith("tutorial"):
-        if path.stem not in re.findall(r":link:\s*(\S+)", (path.parent / "index.md").read_text()):
-            say("registration", "missing grid card in docs/learn/tutorials/index.md")
         if not re.search(r"theory/[\w-]+\.md", allmd):
             say("theory-link", "no link to a theory page in docs/learn/theory/")
     waived = overrides(path)
