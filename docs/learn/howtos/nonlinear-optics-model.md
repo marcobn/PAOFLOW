@@ -75,4 +75,4 @@ The circular injection current is the exception. It is allowed only in gyrotropi
 
 - [Non-linear optics](../../internals/nonlinear-optics.md) derives the shift current and SHG, and lists the symmetry tests on model Hamiltonians and the GaAs and GeS examples.
 - [How to run PAOFLOW on a tight-binding model](tight-binding-model.md) lists the other models and shows how to build one with your own parameters.
-- [Tutorial 05](../tutorial05.ipynb) computes the Berry curvature and Chern number of the same gapped graphene.
+- [Tutorial 05](../tutorials/tutorial05.ipynb) computes the Berry curvature and Chern number of the same gapped graphene.

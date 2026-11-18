@@ -1,5 +1,5 @@
 """Figure and checks of the how-to "How to compare pyskeaf orbits with measured quantum-oscillation
-frequencies" (docs/tutorials/howtos/quantum-oscillations.md).
+frequencies" (docs/learn/howtos/quantum-oscillations.md).
 
 Run it after ``python main.py > main.log``, in the same directory. It reads the tables that
 ``main.py`` writes to ``qo_analysis/sweep/``, its printed output ``main.log``, and the pyskeaf

@@ -47,7 +47,7 @@ The groups are built from the file names, so they hold the 2 $3s$, 6 $3p$ and 10
 
 ![Si PDOS summed over both atoms for the 3s, 3p and 3d orbitals](../../_static/images/howtos/plotting/si_pdos.png)
 
-The $3s$ orbitals carry most of the weight at the bottom of the valence band, below $-10$ eV, and the $3p$ orbitals between $-4$ eV and the VBM. Integrated over the valence band, the three curves hold 0.81, 2.27 and 0.92 of the 4.00 states per spin; [Tutorial 01](../tutorial01.ipynb#7-density-of-states-and-projected-dos) discusses this distribution.
+The $3s$ orbitals carry most of the weight at the bottom of the valence band, below $-10$ eV, and the $3p$ orbitals between $-4$ eV and the VBM. Integrated over the valence band, the three curves hold 0.81, 2.27 and 0.92 of the 4.00 states per spin; [Tutorial 01](../tutorials/tutorial01.ipynb#7-density-of-states-and-projected-dos) discusses this distribution.
 
 ## Berry curvature along the path
 
@@ -87,7 +87,7 @@ In the SnTe monolayer (example08), the two components have opposite signs. Insid
 
 ## Conductivity and Seebeck coefficient
 
-You plot the transport tensors against the chemical potential $\mu$ from the files of {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.transport`. It writes one file per tensor, with the columns temperature (K), $\mu$ relative to $E_F$ (eV), and the components $xx$, $yy$, $zz$, $xy$, $xz$, $yz$. Without scattering channels the relaxation time is constant and equal to 1 s, so `sigmagauss_0.dat` holds $\sigma/\tau$ (see [Tutorial 02](../tutorial02.ipynb)). The argument `t_ele` selects the components: by default the three diagonal ones, `[(0, 1)]` for $xy$, and `[]` for the average of the diagonal. Each temperature in the file gets its own figure, and {py:meth}`~PAOFLOW.GPAO.GPAO.plot_seebeck` converts $S$ from V/K to $\mu$V/K.
+You plot the transport tensors against the chemical potential $\mu$ from the files of {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.transport`. It writes one file per tensor, with the columns temperature (K), $\mu$ relative to $E_F$ (eV), and the components $xx$, $yy$, $zz$, $xy$, $xz$, $yz$. Without scattering channels the relaxation time is constant and equal to 1 s, so `sigmagauss_0.dat` holds $\sigma/\tau$ (see [Tutorial 02](../tutorials/tutorial02.ipynb)). The argument `t_ele` selects the components: by default the three diagonal ones, `[(0, 1)]` for $xy$, and `[]` for the average of the diagonal. Each temperature in the file gets its own figure, and {py:meth}`~PAOFLOW.GPAO.GPAO.plot_seebeck` converts $S$ from V/K to $\mu$V/K.
 
 ```{literalinclude} plotting/main.py
 :language: python
@@ -128,5 +128,5 @@ The figure shows the file of the Bi example, whose `fermi_surface()` keeps the b
 ## Where to go next
 
 - {py:class}`~PAOFLOW.GPAO.GPAO` lists every plotting method, including those for optics, phonons and electron–phonon properties, with their arguments.
-- [Tutorial 01](../tutorial01.ipynb) and [Tutorial 02](../tutorial02.ipynb) produce the band, DOS and transport files used here and explain what they contain.
+- [Tutorial 01](../tutorials/tutorial01.ipynb) and [Tutorial 02](../tutorials/tutorial02.ipynb) produce the band, DOS and transport files used here and explain what they contain.
 - [How to compare pyskeaf orbits with measured quantum-oscillation frequencies](quantum-oscillations.md) uses the BXSF files of `fermi_surface()` for de Haas–van Alphen orbits.

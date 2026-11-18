@@ -54,7 +54,7 @@ ACBN0 examples: ./acbn0_examples/
   internal projections (no projwfc.x).
 
 Tight-binding models and band unfolding: no folder; see the how-tos
-docs/tutorials/howtos/tight-binding-model.md and docs/tutorials/howtos/band-unfolding.md
+docs/learn/howtos/tight-binding-model.md and docs/learn/howtos/band-unfolding.md
 
 Quantum transport (Landauer-Buttiker): ./transport_examples/
 

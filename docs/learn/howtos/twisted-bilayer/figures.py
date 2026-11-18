@@ -1,5 +1,5 @@
 """Figures and checks of the how-to "How to compute the band structure of twisted bilayer graphene"
-(docs/tutorials/howtos/twisted-bilayer.md).
+(docs/learn/howtos/twisted-bilayer.md).
 
 Run it after ``OMP_NUM_THREADS=1 python main.py > main.log``, in the same directory, or inside the
 folder ``twisted-bilayer/`` of ``howto_assets.tar.gz`` of the release tutorial-assets-v2, which

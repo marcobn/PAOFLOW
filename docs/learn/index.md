@@ -7,7 +7,7 @@ The Learn section has three kinds of pages, for three reasons to open the docume
 :class-container: sd-mt-4
 
 :::{grid-item-card}
-:link: /tutorials/index
+:link: tutorials/index
 :link-type: doc
 :class-card: landing-card
 
@@ -19,7 +19,7 @@ Complete workflows on one material, from the DFT output to an interpreted result
 :::
 
 :::{grid-item-card}
-:link: /tutorials/howtos/index
+:link: howtos/index
 :link-type: doc
 :class-card: landing-card
 
@@ -48,7 +48,7 @@ The physics behind each result: equations, derivations and approximations.
 :hidden:
 :maxdepth: 2
 
-/tutorials/index
-/tutorials/howtos/index
+tutorials/index
+howtos/index
 theory/index
 ```

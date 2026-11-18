@@ -1,4 +1,4 @@
-"""Checks of the how-to "How to plot PAOFLOW output with GPAO" (docs/tutorials/howtos/plotting.md).
+"""Checks of the how-to "How to plot PAOFLOW output with GPAO" (docs/learn/howtos/plotting.md).
 
 The figures of the page are drawn by ``main.py``, whose workflow is the plotting itself. Run this
 script after it, from the same directory (the one that holds ``plotting/``): it asserts the

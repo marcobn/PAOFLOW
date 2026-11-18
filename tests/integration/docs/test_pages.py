@@ -24,7 +24,7 @@ from tests.integration.qe.assets import ensure_assets_available, resolve_asset_s
 pytestmark = pytest.mark.integration
 
 REPO = Path(__file__).resolve().parents[3]
-PAGES = REPO / 'docs' / 'tutorials'
+PAGES = REPO / 'docs' / 'learn'
 URL = 'https://github.com/marcobn/PAOFLOW/releases/download/'
 ASSETS = {  # archive -> (release tag, sha256)
     'tutorial_assets.tar.gz': (
@@ -37,7 +37,7 @@ ASSETS = {  # archive -> (release tag, sha256)
     ),
 }
 UNWRITTEN = {'tutorial03'}  # stub without stored outputs; add it to the test once it is written
-# how-tos whose main.py exceeds the run-time budget of the tutorials-howtos skill (5 min on 4
+# how-tos whose main.py exceeds the run-time budget of the learn skill (5 min on 4
 # cores): their asset folder holds what main.py writes, so figures.py runs on it on every pull
 # request, and the <task>-workflow case that runs main.py is marked slow
 PRECOMPUTED = {'twisted-bilayer'}
@@ -47,7 +47,7 @@ TIMEOUT = 1800  # s; catches a hung page, far above the budget
 def _cases() -> list:
     cases = [
         pytest.param(p, 'notebook', id=p.stem)
-        for p in sorted(PAGES.glob('tutorial*.ipynb'))
+        for p in sorted(PAGES.glob('tutorials/tutorial*.ipynb'))
         if p.stem not in UNWRITTEN
     ]
     for folder in sorted(p.parent for p in PAGES.glob('howtos/*/main.py')):

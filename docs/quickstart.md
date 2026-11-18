@@ -125,7 +125,7 @@ You can diff your results against them to confirm a correct installation.
 
 ## Next steps
 
-- Explore the [Tutorials](tutorials/index.md) for in-depth guided workflows covering more advanced topics (spin–orbit coupling, topology, transport).
+- Explore the [Tutorials](learn/tutorials/index.md) for in-depth guided workflows covering more advanced topics (spin–orbit coupling, topology, transport).
 - Use the `paoflow-gen` command-line tool to generate a driver script for your own QE calculation:
   ```bash
   paoflow-gen
@@ -136,5 +136,5 @@ You can diff your results against them to confirm a correct installation.
   ARPES, one system folder each), `nlo_examples` (shift current and second-harmonic
   generation), `acbn0_examples`, `transport_examples` (Landauer), `pyskeaf_examples` and
   `qo_analysis_examples`. Tight-binding models and band unfolding are covered by the how-tos
-  [How to run PAOFLOW on a tight-binding model](tutorials/howtos/tight-binding-model.md) and
-  [How to unfold supercell bands onto the primitive Brillouin zone](tutorials/howtos/band-unfolding.md).
+  [How to run PAOFLOW on a tight-binding model](learn/howtos/tight-binding-model.md) and
+  [How to unfold supercell bands onto the primitive Brillouin zone](learn/howtos/band-unfolding.md).

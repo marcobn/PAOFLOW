@@ -1,6 +1,6 @@
 # Tutorials
 
-PAOFLOW tutorials are guided workflows that teach how to use PAOFLOW on one material at a time. Each step names the physics it computes and links to the [theory pages](../learn/theory/index.md) for the derivations.
+PAOFLOW tutorials are guided workflows that teach how to use PAOFLOW on one material at a time. Each step names the physics it computes and links to the [theory pages](../theory/index.md) for the derivations.
 
 Each tutorial walks through a complete workflow end-to-end: from the required inputs, through each PAOFLOW step, to interpreting the results. Tutorials are written for researchers who are familiar with density functional theory but may be new to PAOFLOW.
 

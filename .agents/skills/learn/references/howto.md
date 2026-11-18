@@ -1,6 +1,6 @@
 # How-to template
 
-A how-to is a Markdown page `docs/tutorials/howtos/<task>.md` for a reader who already has their own calculation and needs one change to it: how to set something up, which flags matter, and how to check that the result is right. It varies an existing workflow (a flag, a route, a plot), often one of the examples under `examples/`, assumes [Tutorial 01](../tutorial01.ipynb), and shows only what differs from them. Its code is the script `docs/tutorials/howtos/<task>/main.py`. The file name is the task in kebab case (`adhoc-spin-orbit.md`, `projectability-threshold.md`), and the script's directory has the same name.
+A how-to is a Markdown page `docs/learn/howtos/<task>.md` for a reader who already has their own calculation and needs one change to it: how to set something up, which flags matter, and how to check that the result is right. It varies an existing workflow (a flag, a route, a plot), often one of the examples under `examples/`, assumes [Tutorial 01](../tutorials/tutorial01.ipynb), and shows only what differs from them. Its code is the script `docs/learn/howtos/<task>/main.py`. The file name is the task in kebab case (`adhoc-spin-orbit.md`, `projectability-threshold.md`), and the script's directory has the same name.
 
 A how-to has at most 1500 words of prose (see the table at the top of SKILL.md). When it needs more, it usually answers several questions: split it into one how-to per question, or, if it teaches a workflow on one system, make it a tutorial.
 
@@ -23,7 +23,7 @@ Leave out any physics background beyond what is needed to choose the flags, and 
 
 ## The scripts
 
-A how-to has two scripts in `docs/tutorials/howtos/<task>/`, so that a reader who downloads the workflow gets the workflow and nothing else (see "Running the code" in SKILL.md):
+A how-to has two scripts in `docs/learn/howtos/<task>/`, so that a reader who downloads the workflow gets the workflow and nothing else (see "Running the code" in SKILL.md):
 
 - `main.py` is the workflow the page teaches, and every line of it appears on the page. It reads its input from the extracted asset in the working directory (`savedir = 'tutorial01/silicon.save'`), writes its output files there, and prints what the page quotes. It draws no figures, unless drawing them is what the page teaches.
 - `figures.py` reads the output files of `main.py` and its printed output, saved as `main.log`, draws every figure of the page with `fig.savefig(name, dpi=150)` into the working directory, and ends with the asserts. It never imports `main.py`, so it also redraws the figures from a run that was made elsewhere, for example on a cluster.
@@ -63,7 +63,7 @@ A how-to's code is not executed by the docs build, so paste the output the page 
 
 ## Registration
 
-Add a list entry, a link whose text is the page title, and a toctree entry to `docs/tutorials/howtos/index.md`:
+Add a list entry, a link whose text is the page title, and a toctree entry to `docs/learn/howtos/index.md`:
 
 ```markdown
 - [How to <verb> <object>](<task>.md)

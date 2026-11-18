@@ -1,20 +1,20 @@
 """Build ``howto_assets.tar.gz``, the data of the website how-tos.
 
 The archive holds ``plotting/<system>/``: PAOFLOW output files of the QE examples, read by
-``docs/tutorials/howtos/plotting.md``. Si and Bi come from fresh runs of
+``docs/learn/howtos/plotting.md``. Si and Bi come from fresh runs of
 ``examples/qe_examples/example01/main.py`` and ``examples/pyskeaf_examples/Bi/main.py`` (pass
 their ``output/`` directories with ``--si-output`` and ``--bi-output``), because the committed
 Reference files predate the orbital-named PDOS files and the BXSF header with E_F = 0. The other
 systems come from the committed ``Reference/`` directories of their examples.
 
 It also holds ``quantum-oscillations/``, the inputs of
-``docs/tutorials/howtos/quantum-oscillations.md``, copied unchanged from
+``docs/learn/howtos/quantum-oscillations.md``, copied unchanged from
 ``examples/qo_analysis_examples/NbSn2/``: ``pyskeaf/`` holds the pyskeaf rotations of the SOC
 bands (``calc/soc/qo_EF_0_freqvsangle_1[1-8].out.gz``, 49^3 BXSF grid, azimuth 29.95 deg, polar
 0-90 deg in 90 angles) and ``experiment/`` the measured tables (``data/exp_sweep_peaks.csv``,
 ``data/exp_LK_table.csv``).
 
-It also holds ``twisted-bilayer/``, what ``docs/tutorials/howtos/twisted-bilayer/main.py``
+It also holds ``twisted-bilayer/``, what ``docs/learn/howtos/twisted-bilayer/main.py``
 writes, because running it takes longer than the page budget (6 min on 4 cores): the page test
 runs ``figures.py`` inside this folder. Make it by running, in an empty directory,
 ``OMP_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=4 python main.py > main.log``, and pass that directory,
@@ -88,7 +88,7 @@ def main() -> None:
         '--twisted-bilayer',
         type=Path,
         required=True,
-        help='twisted-bilayer/ written by docs/tutorials/howtos/twisted-bilayer/main.py',
+        help='twisted-bilayer/ written by docs/learn/howtos/twisted-bilayer/main.py',
     )
     parser.add_argument(
         '--out', type=Path, default=Path(__file__).resolve().parent / 'howto_assets.tar.gz'

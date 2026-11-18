@@ -1,6 +1,6 @@
 # Tutorial template
 
-A tutorial is a Jupyter notebook `docs/tutorials/tutorialNN.ipynb` that takes one material through one complete workflow, from the DFT output to an interpreted physical result. The reader is learning: they leave knowing both the call sequence and what each step computes. Tutorial 01 (electronic structure of Si) is the base that every other page may assume. A tutorial has at most 3000 words of prose (see the table at the top of SKILL.md); a workflow that needs more is split into two tutorials, or its variants move to how-tos.
+A tutorial is a Jupyter notebook `docs/learn/tutorials/tutorialNN.ipynb` that takes one material through one complete workflow, from the DFT output to an interpreted physical result. The reader is learning: they leave knowing both the call sequence and what each step computes. Tutorial 01 (electronic structure of Si) is the base that every other page may assume. A tutorial has at most 3000 words of prose (see the table at the top of SKILL.md); a workflow that needs more is split into two tutorials, or its variants move to how-tos.
 
 ## Structure
 
@@ -71,6 +71,6 @@ After:
 >
 > $$p_{n\mathbf{k}} = \sum_\alpha |A_{n\alpha}(\mathbf{k})|^2 .$$
 >
-> A state built from Si $3s$ and $3p$ orbitals has $p_{n\mathbf{k}} \approx 1$. A state well above the conduction-band minimum has plane-wave character between the atoms and a much smaller projectability. `projectability()` keeps the states with $p_{n\mathbf{k}} > 0.95$ (`pthr`) and sets the energy above which the PAO bands stop following the DFT bands. For the Si grid of this tutorial that energy is {TODO: energy from run} eV above the valence-band maximum, so all four valence bands and the lowest four conduction bands are inside it. Why a low projectability distorts the bands, and how the PAO shift fills the rest of the space, is explained in [Projectability](../learn/theory/pao-hamiltonian.md#projectability).
+> A state built from Si $3s$ and $3p$ orbitals has $p_{n\mathbf{k}} \approx 1$. A state well above the conduction-band minimum has plane-wave character between the atoms and a much smaller projectability. `projectability()` keeps the states with $p_{n\mathbf{k}} > 0.95$ (`pthr`) and sets the energy above which the PAO bands stop following the DFT bands. For the Si grid of this tutorial that energy is {TODO: energy from run} eV above the valence-band maximum, so all four valence bands and the lowest four conduction bands are inside it. Why a low projectability distorts the bands, and how the PAO shift fills the rest of the space, is explained in [Projectability](../theory/pao-hamiltonian.md#projectability).
 
 What changed. The heading says what the step decides. The first sentence gives the reason for the step. The equation stays because the reader sets `pthr` on it; the physics behind it is one link away. The intuition is tied to Si orbitals. The threshold carries its code name. The claim about which bands survive is a number from the run. The voice is "you" throughout.

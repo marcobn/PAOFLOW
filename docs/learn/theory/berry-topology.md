@@ -185,9 +185,9 @@ In a metal, splittings of all sizes occur on the Fermi surface, so the conductiv
 
 ## Used in
 
-- [Tutorial 05](../../tutorials/tutorial05.ipynb): the spin Hall plateau of the Kane–Mele model, Berry phases on loops around a valley of gapped graphene, and the Chern numbers of gapped graphene and the Haldane model.
-- [How to plot PAOFLOW output with GPAO](../../tutorials/howtos/plotting.md): the Berry curvature along the band path of bcc Fe and the spin Hall conductivity against the Fermi energy.
-- [How to run PAOFLOW on a tight-binding model](../../tutorials/howtos/tight-binding-model.md): the area normalisation of `spin_Hall()` for two-dimensional models.
+- [Tutorial 05](../tutorials/tutorial05.ipynb): the spin Hall plateau of the Kane–Mele model, Berry phases on loops around a valley of gapped graphene, and the Chern numbers of gapped graphene and the Haldane model.
+- [How to plot PAOFLOW output with GPAO](../howtos/plotting.md): the Berry curvature along the band path of bcc Fe and the spin Hall conductivity against the Fermi energy.
+- [How to run PAOFLOW on a tight-binding model](../howtos/tight-binding-model.md): the area normalisation of `spin_Hall()` for two-dimensional models.
 
 ## References
 

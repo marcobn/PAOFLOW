@@ -1,6 +1,6 @@
 """Figure and checks of the how-to "How to unfold the bands of large supercells with the sparse solver".
 
-The page is docs/tutorials/howtos/unfold-large-supercells.md. Run it after ``python main.py`` in
+The page is docs/learn/howtos/unfold-large-supercells.md. Run it after ``python main.py`` in
 the same directory: it reads ``bilayer_unfolded.npz`` and the saved supercell model, writes the
 figure of the page to the working directory and ends with asserts of the numbers the page quotes.
 """

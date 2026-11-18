@@ -170,8 +170,8 @@ The energy grid of `dos()` must be finer than the narrowest width that matters, 
 
 ## Used in
 
-- [Tutorial 01](../../tutorials/tutorial01.ipynb): band velocities and adaptive Gaussian widths of silicon on a $24\times24\times24$ mesh, then its DOS and the PDOS on the $3s$, $3p$ and $3d$ orbitals, with a sum-rule check of the valence states.
-- [Tutorial 02](../../tutorials/tutorial02.ipynb): band velocities and adaptive widths with a floor for the Boltzmann transport of silicon, and the chemical potential at fixed carrier density from the DOS.
+- [Tutorial 01](../tutorials/tutorial01.ipynb): band velocities and adaptive Gaussian widths of silicon on a $24\times24\times24$ mesh, then its DOS and the PDOS on the $3s$, $3p$ and $3d$ orbitals, with a sum-rule check of the valence states.
+- [Tutorial 02](../tutorials/tutorial02.ipynb): band velocities and adaptive widths with a floor for the Boltzmann transport of silicon, and the chemical potential at fixed carrier density from the DOS.
 
 ## References
 
