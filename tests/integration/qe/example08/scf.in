@@ -39,9 +39,9 @@
    cell_dofree = 'xy',
 /
 
-ATOMIC_SPECIES 
+ATOMIC_SPECIES
 Sn  118.71  Sn.rel-pbe-dn-kjpaw_psl.1.0.0.UPF
-Te  127.60  Te.rel-pbe-dn-kjpaw_psl.1.0.0.UPF 
+Te  127.60  Te.rel-pbe-dn-kjpaw_psl.1.0.0.UPF
 
 HUBBARD (atomic)
 U Sn-5p 0.166567

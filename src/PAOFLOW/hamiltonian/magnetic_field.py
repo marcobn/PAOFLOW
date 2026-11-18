@@ -136,7 +136,9 @@ def zeeman_matrix(
             raise ValueError('the orbital term needs the orbital angular momentum Lj')
         orbital_operator = np.asarray(arrays['Lj'])
         if orbital_operator.shape != (3, nawf, nawf):
-            raise ValueError(f'Lj has shape {orbital_operator.shape}, the Hamiltonian {nawf} orbitals')
+            raise ValueError(
+                f'Lj has shape {orbital_operator.shape}, the Hamiltonian {nawf} orbitals'
+            )
     if nspin == 2:
         if np.any(field[:2] != 0.0):
             raise ValueError(
@@ -163,7 +165,9 @@ def add_onsite(data_controller: DataController, term: NDArray[np.complex128]) ->
     arrays = data_controller.data_arrays
     hrs = arrays['HRs']
     shape = hrs.shape
-    flat = np.reshape(np.asarray(hrs, dtype=complex), (shape[0], shape[1], -1, shape[-1]), order='C')
+    flat = np.reshape(
+        np.asarray(hrs, dtype=complex), (shape[0], shape[1], -1, shape[-1]), order='C'
+    )
     flat[:, :, 0, :] += term
     arrays['HRs'] = np.reshape(flat, shape, order='C')
 

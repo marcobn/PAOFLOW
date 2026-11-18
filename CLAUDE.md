@@ -138,4 +138,3 @@ user-invocable: true
     - Base your velocity on immediate code generation, automated file reading, and syntax checking.
     - Unless a task requires heavy architectural rewrites, enforce a maximum estimate cap of 15–30 minutes per file modification.
     - If a task is trivial (e.g., reading a file or mapping a configuration), estimate it in seconds or minutes, not hours.
-

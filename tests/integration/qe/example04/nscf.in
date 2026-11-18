@@ -15,7 +15,7 @@ Iron
     noncolin = .true.
     lspinorb=.true.
     starting_magnetization(1) = 0.5
-    
+
     nbnd = 30
  /
  &electrons
