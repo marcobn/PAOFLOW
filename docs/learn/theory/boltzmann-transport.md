@@ -195,7 +195,7 @@ The file `hall_trace` holds the average $(R_{xyz} + R_{zxy} + R_{yzx})/3$, and t
 
 ## Used in
 
-- [Tutorial 02](../tutorials/tutorial02.ipynb): $\sigma/\tau$, $S$ and $\kappa/\tau$ of Si as functions of $\mu$ at constant $\tau$, $\mu(T)$ of n-type Si at fixed carrier density, and the resistivity with acoustic-phonon and ionised-impurity relaxation times.
+- [Tutorial 02](../tutorials/tutorial02.ipynb): $\sigma/\tau$, $S$ and $\kappa_0/\tau$ of Si as functions of $\mu$ at constant $\tau$, $\mu(T)$ of n-type Si at fixed carrier density, and the resistivity with acoustic-phonon and ionised-impurity relaxation times.
 - [Tutorial 04](../tutorials/tutorial04.ipynb): the transport tensors of a 16-atom Si supercell on the sparse backend, at constant $\tau$.
 
 ## References

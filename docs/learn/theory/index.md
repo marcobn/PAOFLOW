@@ -7,6 +7,7 @@ These pages explain the physics behind the results PAOFLOW computes: the equatio
 - [Boltzmann transport in the relaxation-time approximation](boltzmann-transport.md)
 - [Kubo linear response and the independent-particle dielectric tensor](linear-response.md)
 - [Berry curvature and topological invariants](berry-topology.md)
+- [Large cells: truncated hoppings, doubled cells and partial spectra](large-cells.md)
 
 ```{toctree}
 :hidden:
@@ -17,4 +18,5 @@ density-of-states
 boltzmann-transport
 linear-response
 berry-topology
+large-cells
 ```

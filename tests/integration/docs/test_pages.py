@@ -10,6 +10,8 @@ so the committed outputs and figures are never touched.
 
 from __future__ import annotations
 
+import ast
+import json
 import os
 import shutil
 import subprocess
@@ -42,6 +44,45 @@ UNWRITTEN = {'tutorial03'}  # stub without stored outputs; add it to the test on
 # request, and the <task>-workflow case that runs main.py is marked slow
 PRECOMPUTED = {'twisted-bilayer'}
 TIMEOUT = 1800  # s; catches a hung page, far above the budget
+HIDDEN = {'hide-input', 'remove-cell'}  # plotting and asserts: not part of the workflow
+
+
+def paoflow_calls(source: str) -> list[str]:
+    """The PAOFLOW calls of some code in source order: the constructor and every method."""
+    from PAOFLOW.PAOFLOW import PAOFLOW
+
+    names = {m for m in dir(PAOFLOW) if not m.startswith('_')} | {'PAOFLOW'}
+    calls = [
+        node
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in names
+    ]
+    return [ast.unparse(c) for c in sorted(calls, key=lambda c: (c.lineno, c.col_offset))]
+
+
+def _workflow_matches(notebook: Path) -> None:
+    """``tutorialNN/main.py`` makes the same PAOFLOW calls as the visible cells of the notebook."""
+    cells = json.loads(notebook.read_text())['cells']
+    visible = '\n'.join(
+        ''.join(c['source'])
+        for c in cells
+        if c['cell_type'] == 'code' and not HIDDEN & set(c['metadata'].get('tags', []))
+    )
+    script = notebook.parent / notebook.stem / 'main.py'
+    if not script.is_file():
+        pytest.fail(f'no {script}', pytrace=False)
+    expected, found = paoflow_calls(visible), paoflow_calls(script.read_text())
+    if found != expected:
+        pytest.fail(
+            f'{script} does not make the PAOFLOW calls of {notebook.name}:\n'
+            + '\n'.join(
+                f'  notebook: {a}\n  main.py:  {b}' for a, b in zip(expected, found) if a != b
+            )
+            + f'\n  ({len(expected)} calls in the notebook, {len(found)} in main.py)',
+            pytrace=False,
+        )
 
 
 def _cases() -> list:
@@ -77,6 +118,7 @@ def _archive(name: str) -> Path:
 
 
 def _run_notebook(path: Path, workdir: Path) -> None:
+    _workflow_matches(path)
     nbclient = pytest.importorskip('nbclient')
     nbformat = pytest.importorskip('nbformat')
     # the setup cell extracts its input from this archive instead of downloading it again
