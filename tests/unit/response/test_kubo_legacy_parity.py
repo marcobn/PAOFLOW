@@ -2,7 +2,9 @@
 
 Every case of ``_kubo_cases.CASES`` is re-run and each output file compared with the values frozen before the
 campaign (``data/kubo_legacy_reference.npz``). Deliberate changes (bug fixes) are listed in ``CHANGED`` with the
-reason; everything else must agree to 1e-10 relative to the largest value of the file.
+reason; everything else must agree to 1e-10 relative to the largest value of the file. On 18 November 2026 the
+constants moved to CODATA 2018 (``utils/constants.py``): the 20 entries that carry e^2/hbar were refreshed then
+(relative change 1.69e-5, one 1.19e-5); nothing else changed.
 """
 
 from __future__ import annotations

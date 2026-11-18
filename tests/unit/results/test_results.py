@@ -254,6 +254,45 @@ def test_output_manifest(tmp_path):
     assert folder.load(folder.find('manifest')).table[0]['name'] == 'paoflow'
 
 
+def test_output_manifest_records_the_source_commit(monkeypatch, tmp_path):
+    """From a git checkout the manifest carries the commit and whether tracked files were modified;
+    an installed package (no checkout around it) records the version only."""
+    import subprocess
+
+    from PAOFLOW.writers import output_manifest
+
+    package = Path(output_manifest.__file__).resolve().parents[1]
+    revision = output_manifest.source_revision()
+    try:
+        top = subprocess.run(['git', '-C', str(package), 'rev-parse', '--show-toplevel'],
+                             capture_output=True, text=True, check=True).stdout.strip()  # fmt: skip
+        in_checkout = (Path(top) / 'src' / 'PAOFLOW').resolve() == package
+    except (OSError, subprocess.CalledProcessError):
+        in_checkout = False
+    if in_checkout:
+        assert len(revision['commit']) == 40 and isinstance(revision['modified'], bool)
+        out = tmp_path / 'output'
+        out.mkdir()
+        output_manifest.write_output_manifest({'opath': str(out)}, start_time=0.0)
+        run = json.loads((out / output_manifest.MANIFEST).read_text())['runs'][-1]
+        assert run['paoflow_commit'] == revision['commit']
+        assert run['paoflow_tree_modified'] == revision['modified']
+    else:
+        assert revision is None
+
+    def no_git(*args, **kwargs):
+        raise FileNotFoundError('git')
+
+    output_manifest.source_revision.cache_clear()
+    monkeypatch.setattr(output_manifest.subprocess, 'run', no_git)
+    try:
+        assert output_manifest.source_revision() is None
+        record = output_manifest.run_record({}, 0.0, str(tmp_path))
+        assert 'paoflow_commit' not in record and record['paoflow']
+    finally:
+        output_manifest.source_revision.cache_clear()
+
+
 def test_stacked_pdos():
     from PAOFLOW.results.palette import resolve_spec
 

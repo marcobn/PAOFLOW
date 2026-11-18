@@ -203,3 +203,18 @@ def test_compute_ir_spectrum_requires_born(tmp_path):
 
     with pytest.raises(ValueError, match='Born effective charges'):
         compute_ir_spectrum(dc, write=False)
+
+
+def test_compute_ir_spectrum_all_silent_crystal_has_no_active_mode(tmp_path):
+    """Vanishing Born charges (an elemental crystal, Si-like): noise intensities of 1e-30 are not
+    activity, although the relative threshold alone (fraction of the strongest mode) passes them."""
+    dc = _diatomic_controller(tmp_path, supercell_matrix=1)
+    phonon = init_phonopy(dc)
+    _set_diatomic_force_constants(phonon, k=1.0)
+    rng = np.random.default_rng(3)
+    arry, _ = dc.data_dicts()
+    arry['born_charges'] = 1.0e-15 * rng.standard_normal((2, 3, 3))
+
+    res = compute_ir_spectrum(dc, write=False)
+    assert res['intensities'].max() < 1.0e-28
+    assert not res['active'].any()

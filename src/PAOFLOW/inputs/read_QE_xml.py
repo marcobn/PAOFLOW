@@ -6,6 +6,8 @@ import numpy as np
 from mpi4py import MPI
 from numpy.typing import NDArray
 
+from ..utils.constants import AU
+
 
 def uniform_grid_from_kpoints(
     kpoints_cart: NDArray[np.float64], b_vectors: NDArray[np.float64]
@@ -125,7 +127,7 @@ def parse_qe_data_file_schema(data_controller, fname):
 
     verbose = attr['verbose']
 
-    Hart2eV = 2 * 13.60569193
+    Hart2eV = AU  # CODATA 2018, as QE 7.x writes the save
 
     tree = ET.parse(fname)
     root = tree.getroot()
@@ -355,7 +357,7 @@ def parse_qe_data_file(data_controller, fpath, fname):
 
     verbose = attr['verbose']
 
-    Hart2eV = 2 * 13.60569193
+    Hart2eV = AU  # CODATA 2018, as QE 7.x writes the save
 
     tree = ET.parse(join(fpath, fname))
     root = tree.getroot()

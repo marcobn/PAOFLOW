@@ -367,3 +367,30 @@ def test_read_epsilon_at_missing_imag_is_zero(tmp_path):
     eps = read_epsilon_at(eps_dir, energy=1.0)
     assert eps[1, 1].real == pytest.approx(3.0, abs=1e-12)
     assert eps[1, 1].imag == pytest.approx(0.0, abs=1e-12)
+
+
+def test_compute_raman_spectrum_silent_crystal_has_no_active_mode(tmp_path):
+    """Every mode silent: eps(+delta) and eps(-delta) differ by finite-difference noise only (1e-9 of
+    eps = 12). The relative threshold alone would flag the strongest noise mode."""
+    dc = _diatomic_controller(tmp_path, supercell_matrix=1)
+    phonon = init_phonopy(dc)
+    _set_diatomic_force_constants(phonon, k=1.0)
+
+    nmodes = 3 * len(phonon.primitive)
+    rng = np.random.default_rng(5)
+    eps0 = 12.0 * np.eye(3)
+    eps_plus = eps0 + 1.0e-8 * rng.standard_normal((nmodes, 3, 3))
+    eps_minus = eps0 + 1.0e-8 * rng.standard_normal((nmodes, 3, 3))
+
+    res = compute_raman_spectrum(dc, eps_plus, eps_minus, 0.05, write=False)
+    assert res['activities'].max() > 0.0
+    assert not res['active'].any()
+
+    # A real modulation (1 % of eps between +-delta) on the optical modes is still flagged.
+    order = np.argsort(res['frequencies'])
+    for v in order[3:]:
+        eps_plus[v] = eps0 * 1.005
+        eps_minus[v] = eps0 * 0.995
+    res = compute_raman_spectrum(dc, eps_plus, eps_minus, 0.05, write=False)
+    assert res['active'][order][3:].all()
+    assert not res['active'][order][:3].any()

@@ -1,6 +1,6 @@
 """Peierls phases of a uniform magnetic field, and the orbital positions of supercells they rely on.
 
-* square lattice: H(k) equals the Harper matrix; the Hofstadter bands at 1/3 flux carry |C| = 1, 2, 1;
+* square lattice: H(k) equals the Harper matrix; the Hofstadter bands at 1/3 flux carry C = 1, -2, 1;
 * a six-site ring: exact Aharonov-Bohm levels, and the electron's sign (l = +1 rises for B along +z);
 * graphene ribbon: the n = 1 Landau level at sqrt(2) hbar v_F / l_B;
 * Hermiticity, and the flux rule of periodic cells;
@@ -92,8 +92,10 @@ def test_hofstadter_bands_carry_the_tknn_chern_numbers(tmp_path):
         u12 = np.roll(u1, -1, 1)
         link = lambda a, b: np.einsum('ijn,ijn->ij', a.conj(), b)
         flux = np.angle(link(u, u1) * link(u1, u12) * link(u12, u2) * link(u2, u))
-        cherns.append(int(np.rint(flux.sum() / (2 * np.pi))))
-    assert [abs(c) for c in cherns] == [1, 2, 1] and sum(cherns) == 0 and cherns[0] == cherns[2]
+        # the plaquette sum of Fukui, Hatsugai and Suzuki is -(1/2 pi) int Omega for the Berry
+        # connection i<u|grad u>: C = -sum / 2 pi in that (Kubo, berry_phase) convention
+        cherns.append(-int(np.rint(flux.sum() / (2 * np.pi))))
+    assert cherns == [1, -2, 1]  # field along +z (a1 x a2), flux 1/3 per plaquette
 
 
 def _ring(radius: float = 1.5) -> HoppingModel:

@@ -65,11 +65,10 @@ def perturb_split(rot_op1, rot_op2, v_k, degen, return_v_k=False):
 
     v_k_temp = np.copy(v_k)
 
-    for i in range(len(degen)):
-        # degenerate subspace indices upper and lower lim
-        ll = degen[i][0]
-        ul = degen[i][-1] + 1
-
+    # each subspace once: a subspace listed twice would be rotated twice by the rotation of the
+    # unrotated block (get_degeneracies listed some twice until Nov 2026)
+    blocks = sorted({(int(d[0]), int(d[-1]) + 1) for d in degen})
+    for ll, ul in blocks:
         # diagonalize in degenerate subspace
         vals, weight = LAN.eigh(op1[ll:ul, ll:ul])
 

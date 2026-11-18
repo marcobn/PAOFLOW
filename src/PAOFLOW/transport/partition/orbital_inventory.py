@@ -12,7 +12,7 @@ from PAOFLOW.transport.partition.types import AtomOrbitals
 def build_atom_orbital_inventory(data_controller: DataController) -> list[AtomOrbitals]:
     arrays, attributes = data_controller.data_dicts()
     atoms = list(arrays['atoms'])
-    positions = np.asarray(arrays['tau'], dtype=float)
+    positions = positions_bohr(arrays, attributes)
     total_orbitals = int(attributes['nawf'])
     orbital_counts = _orbital_counts_by_atom(
         arrays, attributes, atoms, total_orbitals, data_controller
@@ -44,6 +44,28 @@ def build_atom_orbital_inventory(data_controller: DataController) -> list[AtomOr
     return inventory
 
 
+def positions_bohr(arrays: dict, attributes: dict) -> np.ndarray:
+    """Atomic (or orbital) positions ``tau`` in bohr.
+
+    Parameters
+    ----------
+    arrays : dict
+        Data-controller arrays with ``tau``.
+    attributes : dict
+        Data-controller attributes: ``tau_units`` (``'alat'`` for the model loaders, absent
+        for DFT runs, whose ``tau`` is in bohr) and ``alat`` (bohr).
+
+    Returns
+    -------
+    ndarray, shape ``(n, 3)``
+        The positions in bohr.
+    """
+    tau = np.asarray(arrays['tau'], dtype=float)
+    if attributes.get('tau_units', 'bohr') == 'alat':
+        return tau * float(attributes['alat'])
+    return tau
+
+
 def _orbital_counts_by_atom(
     arrays: dict,
     attributes: dict,
@@ -56,10 +78,11 @@ def _orbital_counts_by_atom(
     Parameters
     ----------
     arrays : dict
-        Data-controller arrays: ``atoms``, ``tau`` (bohr) and, when available, ``atomic_basis``
+        Data-controller arrays: ``atoms``, ``tau`` and, when available, ``atomic_basis``
         (the records of the internal projections) or ``species``.
     attributes : dict
-        Data-controller attributes (``workpath``, ``savedir`` locate the UPF files).
+        Data-controller attributes (``workpath``, ``savedir`` locate the UPF files; ``tau_units``
+        and ``alat`` give the units of ``tau``).
     atoms : list of str
         Species label of every atom.
     total_orbitals : int
@@ -85,7 +108,7 @@ def _orbital_counts_by_atom(
     count comes from the pseudo-orbitals of each species (the UPF files, or the POTCAR of a VASP
     run), and without species metadata from an equal split.
     """
-    basis_counts = _orbital_counts_from_basis(arrays, atoms, total_orbitals)
+    basis_counts = _orbital_counts_from_basis(arrays, attributes, atoms, total_orbitals)
     if basis_counts is not None:
         return basis_counts
     if 'species' not in arrays:
@@ -115,14 +138,20 @@ def _orbital_counts_by_atom(
 
 
 def _orbital_counts_from_basis(
-    arrays: dict, atoms: list[str], total_orbitals: int, tolerance_bohr: float = 1.0e-6
+    arrays: dict,
+    attributes: dict,
+    atoms: list[str],
+    total_orbitals: int,
+    tolerance_bohr: float = 1.0e-6,
 ) -> list[int] | None:
     """Orbitals per atom from the records of the internal projection basis.
 
     Parameters
     ----------
     arrays : dict
-        Data-controller arrays with ``tau`` (bohr) and, optionally, ``atomic_basis``.
+        Data-controller arrays with ``tau`` and, optionally, ``atomic_basis`` (centres in bohr).
+    attributes : dict
+        Data-controller attributes (``tau_units``, ``alat``: see `positions_bohr`).
     atoms : list of str
         Species label of every atom.
     total_orbitals : int
@@ -159,7 +188,7 @@ def _orbital_counts_from_basis(
     # doubling_Hamiltonian repeats the cell: the basis then describes the first len(atoms)/copies
     # atoms, and every copy of the cell carries the same orbitals in the same order
     cell_atoms = len(atoms) // copies
-    positions = np.asarray(arrays['tau'], dtype=float)[:cell_atoms]
+    positions = positions_bohr(arrays, attributes)[:cell_atoms]
     atom_of_orbital = []
     for index, record in enumerate(basis):
         distance = np.linalg.norm(positions - np.asarray(record['tau'], dtype=float), axis=1)

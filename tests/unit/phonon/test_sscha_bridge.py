@@ -73,7 +73,8 @@ def test_fermi_dirac_lines():
     from PAOFLOW.phonon.io import fermi_dirac_lines
 
     lines = fermi_dirac_lines(2800.0)
-    assert lines[1] == "    smearing = 'fd'" and lines[2] == '    degauss = 0.01773352'
+    # k_B T in Ry, CODATA 2018 (0.01773352 with the constants used until Nov 2026)
+    assert lines[1] == "    smearing = 'fd'" and lines[2] == '    degauss = 0.01773414'
     with pytest.raises(ValueError, match='positive'):
         fermi_dirac_lines(0.0)
 

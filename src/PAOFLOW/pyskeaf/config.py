@@ -34,7 +34,7 @@ class SkeafConfig:
     min_extfreq: float = 0.0  # kT
     freq_same_frac: float = 0.01  # 0–1
     avg_same_frac: float = 0.05  # 0–1 (fraction of RUC side length)
-    allow_ext_near_walls: bool = False  # 'y' / 'n' in config.in
+    allow_ext_near_walls: bool = True  # 'y' / 'n' in config.in (read from it when present)
     theta_start: float = 0.0  # rad — auto-rotation
     theta_end: float = 0.0  # rad
     phi_start: float = 0.0  # rad

@@ -80,3 +80,22 @@ def test_basis_off_the_atoms_or_unordered_raises():
                 {'atoms': atoms, 'tau': positions, 'atomic_basis': records}, {'nawf': 4}
             )
         )
+
+
+def test_model_positions_in_alat_units_reach_the_partition_in_bohr():
+    """Model loaders keep tau in alat units (tau_units = 'alat'): the layers of a doubled model are
+    alat apart along the transport axis, not 1 bohr (regression of the alat-unit doubling shift)."""
+    import contextlib
+    import io
+
+    from PAOFLOW import PAOFLOW
+    from PAOFLOW.models.models import single_band_model
+
+    model = single_band_model({(0, 0, 1): -1.0}, np.eye(3), 5.0, 1.0, (4, 4, 4))
+    with contextlib.redirect_stdout(io.StringIO()):
+        p = PAOFLOW.PAOFLOW(model=model, verbose=False)
+        p.doubling_Hamiltonian(0, 0, 3)
+    assert p.data_controller.data_attributes['tau_units'] == 'alat'
+    inventory = build_atom_orbital_inventory(p.data_controller)
+    z = np.sort([atom.position[2] for atom in inventory])
+    assert np.allclose(np.diff(np.unique(np.round(z, 8))), 5.0)

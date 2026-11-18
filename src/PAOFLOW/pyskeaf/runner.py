@@ -168,12 +168,15 @@ def run_at_angle(
     min_freq_kT: float = 0.0,
     freq_same_frac: float = 0.01,
     avg_same_frac: float = 0.05,
-    allow_near_walls: bool = False,
+    allow_near_walls: bool = True,
 ) -> SKEAFResult:
     """Run a single-angle SKEAF analysis.
 
     See module docstring for details.  Returns a :class:`SKEAFResult` whose
     ``orbits`` list contains one :class:`Orbit` per averaged extremum.
+    ``allow_near_walls`` keeps extremal orbits close to the super-cell walls
+    (default True, as :meth:`PAOFLOW.PAOFLOW.pyskeaf` and the qo_analysis
+    tools; see :func:`PAOFLOW.pyskeaf.orbits.find_extremal`).
     """
     if fermi_energy is None:
         fermi_energy = bxsf.fermi_energy

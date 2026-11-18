@@ -13,6 +13,7 @@ from PAOFLOW.hamiltonian.bloch_derivatives import (
 )
 from PAOFLOW.models import models
 from PAOFLOW.response import nonlinear_optics as nlo
+from PAOFLOW.utils.constants import ANGSTROM_AU
 
 pytestmark = pytest.mark.unit
 
@@ -76,7 +77,7 @@ def test_grid_too_small_is_refused():
         ({'label': 'TMD', 'material': 'MoS2', 'soc': False}, models.tmd_model('MoS2', soc=False)),
         (
             {'label': 'Kane_Mele', 't': 1.0, 'soc_par': 0.1, 'alat': 1.0},
-            models.kane_mele_model(t=1.0, soc=0.1, rashba=0.0, delta=0.0, alat=1.889727),
+            models.kane_mele_model(t=1.0, soc=0.1, rashba=0.0, delta=0.0, alat=ANGSTROM_AU),
         ),
         (models.kane_mele_model(), models.kane_mele_model()),
     ],

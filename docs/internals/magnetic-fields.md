@@ -77,12 +77,12 @@ All the Hamiltonian terms act on `HRs`. Call them before `interpolated_hamiltoni
 
 | check | result |
 |---|---|
-| Landé g_J of p and d spin-orbit multiplets, along z and an oblique axis | exact, 10⁻¹⁰ eV at 0.1 T |
+| Landé g_J of p and d spin-orbit multiplets, along z and an oblique axis | exact: 5×10⁻¹² eV at 0.1 T (the test asserts 10⁻¹⁰) |
 | `Sj` of fully relativistic runs (Pt) | spin algebra to 10⁻¹⁶; H(**R**) time-reversal invariant to 2×10⁻¹¹ eV with Θ = e^{−iπJ_y}(−1)^l K |
 | bcc Fe (fully relativistic), 12³ grid | spin moment 2.194 μ_B, orbital 0.0564 μ_B, parallel |
-| square lattice, 1/3 flux per plaquette | H(**k**) equals the Harper matrix to 7×10⁻¹⁶; Hofstadter Chern numbers (−1, 2, −1) |
+| square lattice, 1/3 flux per plaquette along +z | H(**k**) equals the Harper matrix to 7×10⁻¹⁶; Hofstadter Chern numbers (1, −2, 1) with C = (1/2π)∫Ω, Ω = ∇×𝒜, 𝒜 = i⟨u\|∇u⟩ (the Kubo curvature of `berry_phase`); the lattice plaquette sum of Fukui–Hatsugai–Suzuki, (1/2π)Σ arg ∏⟨u\|u′⟩, is −C: (−1, 2, −1) |
 | six-site ring | levels 2t cos(2π(ℓ + Φ/Φ₀)/6) to 10⁻¹²; ℓ = +1 rises in B along +z |
-| graphene ribbon, 32 cells, 1/150 flux quanta per cell | n = 1 Landau level 0.6 % below √2 ħv_F/l_B (64 cells, 1/600: 0.4 %) |
+| graphene ribbon, 32 cells, 1/150 flux quanta per cell | n = 1 Landau level 0.6 % below √2 ħv_F/l_B (64 cells, 1/600: 0.1 %; the 0.4 % quoted before came from the 1 % histogram bins of the test) |
 | gapped graphene | m(K) = (ħv_F)²/Δ (2.9798 μ_B), equal in both bands, reversed at K′ |
 | ring, Bloch formula against Peierls | m_n = −∂E_n/∂B for every state, to all digits |
 | Haldane model, Středa | dM/dμ in the gap equals g·ΔN·Ω/(Φ₀μ_B), with ΔN = −1 counted in an 8-cell Peierls supercell |
