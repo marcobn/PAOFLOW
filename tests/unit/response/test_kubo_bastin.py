@@ -111,8 +111,11 @@ def rashba():
     return kc.prepared('rashba', tempfile.mkdtemp())
 
 
-def _close(got, want, rtol=1e-10):
-    return np.allclose(got, want, rtol=rtol, atol=rtol * np.abs(want).max())
+def _close(got, want, rtol=1e-10, scale=None):
+    """Agreement to rtol of ``scale`` (default: the largest value of ``want``). A component that
+    vanishes by symmetry needs the scale of its response, not of its own round-off."""
+    scale = np.abs(want).max() if scale is None else scale
+    return np.allclose(got, want, rtol=rtol, atol=rtol * scale)
 
 
 def test_kubo_response_reproduces_the_tutorial03_routes(rashba, reference):
@@ -129,7 +132,10 @@ def test_kubo_response_reproduces_the_tutorial03_routes(rashba, reference):
     assert _close(r['xy']['intrinsic'], -ref('anomalous_Hall', 'ahcEf_xy.dat'))
     r = rashba.kubo_response('spin_density', ['yx', 'xy'], terms=('surface', 'intrinsic'), **kw)
     assert _close(r['yx']['surface'], -ref('ree_eq1', 'REE_EVEN_yx.dat'))
-    assert _close(r['xy']['intrinsic'], -ref('ree_eq3_todd', 'REE_ODD_xy.dat'))
+    # the T-odd xy part vanishes here (8e-24 against 6e-7 for the even part): compare at the scale
+    # of the response
+    even_scale = np.abs(ref('ree_eq1', 'REE_EVEN_yx.dat')).max()
+    assert _close(r['xy']['intrinsic'], -ref('ree_eq3_todd', 'REE_ODD_xy.dat'), scale=even_scale)
     r = rashba.kubo_response('spin_current', ['zxy'], terms=('intrinsic',), **kw)
     assert _close(r['z_xy']['intrinsic'], ref('shc_eq3', 'SHC_EVEN_z_xy.dat'))
 
