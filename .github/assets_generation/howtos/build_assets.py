@@ -7,20 +7,28 @@ their ``output/`` directories with ``--si-output`` and ``--bi-output``), because
 Reference files predate the orbital-named PDOS files and the BXSF header with E_F = 0. The other
 systems come from the committed ``Reference/`` directories of their examples.
 
-It also holds ``tight-binding/<example>/``: the ``Reference/`` files of the tight-binding model
-examples that ``docs/tutorials/howtos/tight-binding-model.md`` replaces (``Cubium``, ``Graphene``,
-``Graphene2``, ``Kane_mele``; ``examples/TBmodel_examples`` up to commit e439e4e7). Pass a
-directory with one ``<example>/Reference/`` folder per example with ``--tb-reference``. In that
-directory the Graphene2 Berry-phase files (``circle_*``, ``square_berry_phase_{0,1,01}.dat``,
-``berry_phase_k.pdf``) and the Kane_mele ``shcEf_z_xy.dat``, ``*.bxsf`` and ``shc_z_xy.png`` come
-from reruns of the unchanged example scripts (2026-11-16): the committed ones predate commit
-9fe821d7, which swaps K and K' of the ``graphene`` model, and a change of the k-resolved
-Berry-curvature files. The other files are the committed ones.
+It also holds ``quantum-oscillations/``, the inputs of
+``docs/tutorials/howtos/quantum-oscillations.md``, copied unchanged from
+``examples/qo_analysis_examples/NbSn2/``: ``pyskeaf/`` holds the pyskeaf rotations of the SOC
+bands (``calc/soc/qo_EF_0_freqvsangle_1[1-8].out.gz``, 49^3 BXSF grid, azimuth 29.95 deg, polar
+0-90 deg in 90 angles) and ``experiment/`` the measured tables (``data/exp_sweep_peaks.csv``,
+``data/exp_LK_table.csv``).
 
-Upload next to the tutorial assets, without replacing them::
+It also holds ``twisted-bilayer/``, what ``docs/tutorials/howtos/twisted-bilayer/main.py``
+writes, because running it takes longer than the page budget (6 min on 4 cores): the page test
+runs ``figures.py`` inside this folder. Make it by running, in an empty directory,
+``OMP_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=4 python main.py > main.log``, and pass that directory,
+with the output files and ``main.log``, as ``--twisted-bilayer``.
+
+To rebuild an archive whose Si and Bi files are unchanged, extract ``plotting/si`` and
+``plotting/bi`` of the previous archive and pass those directories as ``--si-output`` and
+``--bi-output``.
+
+Upload to a new release tag next to an unchanged copy of the tutorial assets, never replacing
+a published archive (``upload_release_assets.sh`` of the tutorials creates the tag)::
 
     sha256sum howto_assets.tar.gz > howto_SHA256SUMS
-    gh release upload tutorial-assets-v1 howto_assets.tar.gz howto_SHA256SUMS --repo marcobn/PAOFLOW
+    gh release upload tutorial-assets-vN howto_assets.tar.gz howto_SHA256SUMS --repo marcobn/PAOFLOW
 """
 
 from __future__ import annotations
@@ -31,6 +39,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 QE = REPO_ROOT / 'examples' / 'qe_examples'
+NBSN2 = REPO_ROOT / 'examples' / 'qo_analysis_examples' / 'NbSn2'
 
 # system -> (source directory or name of a --<name>-output option, file patterns)
 PLOTTING = {
@@ -41,6 +50,12 @@ PLOTTING = {
     'alp': (QE / 'example06' / 'Reference', ['Seebeckgauss_0.dat']),
     'snte': (QE / 'example08' / 'Reference', ['shcEf_z_*.dat']),
     'bi': ('bi', ['FermiSurf_0.bxsf']),
+}
+
+# archive folder -> (source directory, file patterns)
+QUANTUM_OSCILLATIONS = {
+    'pyskeaf': (NBSN2 / 'calc' / 'soc', ['qo_EF_0_freqvsangle_1[1-8].out.gz']),
+    'experiment': (NBSN2 / 'data', ['exp_sweep_peaks.csv', 'exp_LK_table.csv']),
 }
 
 
@@ -54,9 +69,15 @@ def build_assets(runs: dict[str, Path], output_path: Path) -> None:
                     raise SystemExit(f'{source}: no file matches {pattern}')
                 for path in files:
                     archive.add(path, arcname=f'plotting/{system}/{path.name}')
-        for reference in sorted(runs['tb'].glob('*/Reference')):
-            for path in sorted(reference.iterdir()):
-                archive.add(path, arcname=f'tight-binding/{reference.parent.name}/{path.name}')
+        for path in sorted(p for p in runs['tbg'].rglob('*') if p.is_file()):
+            archive.add(path, arcname=f'twisted-bilayer/{path.relative_to(runs["tbg"])}')
+        for folder, (source, patterns) in QUANTUM_OSCILLATIONS.items():
+            for pattern in patterns:
+                files = sorted(source.glob(pattern))
+                if not files:
+                    raise SystemExit(f'{source}: no file matches {pattern}')
+                for path in files:
+                    archive.add(path, arcname=f'quantum-oscillations/{folder}/{path.name}')
 
 
 def main() -> None:
@@ -64,10 +85,10 @@ def main() -> None:
     parser.add_argument('--si-output', type=Path, required=True, help='output/ of example01')
     parser.add_argument('--bi-output', type=Path, required=True, help='output/ of the Bi example')
     parser.add_argument(
-        '--tb-reference',
+        '--twisted-bilayer',
         type=Path,
         required=True,
-        help='directory with <example>/Reference/ folders of the tight-binding examples',
+        help='twisted-bilayer/ written by docs/tutorials/howtos/twisted-bilayer/main.py',
     )
     parser.add_argument(
         '--out', type=Path, default=Path(__file__).resolve().parent / 'howto_assets.tar.gz'
@@ -76,7 +97,7 @@ def main() -> None:
     runs = {
         'si': args.si_output.resolve(),
         'bi': args.bi_output.resolve(),
-        'tb': args.tb_reference.resolve(),
+        'tbg': args.twisted_bilayer.resolve(),
     }
     build_assets(runs, args.out.resolve())
 

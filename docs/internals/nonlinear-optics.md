@@ -215,7 +215,7 @@ Fig. 4; Rashkeev *et al.* 1998; Nastos *et al.* 2005) and $\sigma_{xyz}$ (Ibañe
 monolayer GeS shift current and SHG (Wang *et al.* 2017, Fig. 1; Rangel *et al.* 2017); the
 Rice–Mele shift vector (Fregoso, Morimoto and Moore 2017). The examples are in
 `examples/nlo_examples/` (`Graphene`, `GaAs`, `GeS`; the graphene one is explained in the how-to
-[How to run PAOFLOW on a tight-binding model](../tutorials/howtos/tight-binding-model.md)),
+[How to compute the non-linear optical response of a tight-binding model](../tutorials/howtos/nonlinear-optics-model.md)),
 with the report `examples/nlo_examples/REPORT.md`.
 
 ## Performance

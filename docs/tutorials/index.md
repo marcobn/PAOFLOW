@@ -40,6 +40,26 @@ Transport properties: compute Boltzmann transport tensors and extend the workflo
 Running linear response calculations
 :::
 
+:::{grid-item-card}
+:link: tutorial04
+:link-type: doc
+:class-card: landing-card
+
+**Tutorial 04**
+
+Large cells on the sparse backend: truncate the PAO Hamiltonian, double the Si cell, compute DOS and transport in one pass, and check the result against the dense pipeline.
+:::
+
+:::{grid-item-card}
+:link: tutorial05
+:link-type: doc
+:class-card: landing-card
+
+**Tutorial 05**
+
+Topology of tight-binding models: the quantised spin Hall conductivity of the Kane–Mele model, Berry phases around a gapped Dirac cone, and Chern numbers of gapped graphene and the Haldane model.
+:::
+
 ::::
 
 ---
@@ -48,7 +68,6 @@ Running linear response calculations
 
 How-Tos are shorter and more targeted than tutorials. Instead of teaching a workflow end-to-end, each one answers a specific practical question: how to set something up, which flags matter, and how to check that the result is right.
 
-- [How to run large systems on the sparse backend](howtos/sparse-workflow.md)
 
 ```{toctree}
 :hidden:

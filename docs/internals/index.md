@@ -65,6 +65,7 @@ release
 :caption: Major Subsystems
 
 internal-basis
+sparse-eigensolver
 acbn0
 nonlocal-velocity
 position-dipoles
@@ -83,6 +84,7 @@ agentic-superconductivity
 agentic-arpes
 agentic-nlo
 sk-edtb
+band-unfolding
 cli-generators
 
 ```

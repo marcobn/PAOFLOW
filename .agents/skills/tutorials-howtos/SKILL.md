@@ -15,7 +15,7 @@ There are two page types, defined by what the reader comes to the page for. Read
 |              | Tutorial                                                                                                         | How-to                                                                                                       |
 | ------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | Reader       | Is learning. Follows one fixed system from the inputs to the interpreted result, and runs the page as it is       | Already has their own calculation and needs one change to it: a flag, a route, a plot, a check               |
-| File         | `docs/tutorials/tutorialNN.ipynb`                                                                                | `docs/tutorials/howtos/<task>.md`, with its script `docs/tutorials/howtos/<task>/main.py`                     |
+| File         | `docs/tutorials/tutorialNN.ipynb`                                                                                | `docs/tutorials/howtos/<task>.md`, with its scripts `docs/tutorials/howtos/<task>/main.py` and `figures.py`    |
 | Template     | `references/tutorial.md`                                                                                         | `references/howto.md`                                                                                        |
 | Builds on    | Tutorial 01 (except Tutorial 01 itself)                                                                          | Tutorial 01, and an example under `examples/` when one exists. Shows only what differs from them             |
 | Length       | Up to 3000 words of prose                                                                                        | Up to 1500 words of prose                                                                                    |
@@ -28,7 +28,7 @@ When a request fits neither type (a long derivation, a design note), say so: der
 
 1. **Read before writing.** Read the base example, if the page has one (`examples/.../main.py`, inputs, README), the PAOFLOW methods the page calls and their docstrings, and the existing pages that already cover nearby concepts. You need the code to know what is computed, and the neighbouring pages to know what is already explained (see "Say it once").
 2. **Find the equation the code evaluates** for each step that gets an equation. Write it down from the source, signs, factors, unit conversions and normalisations included. If it differs from the textbook form, the page shows what the code does and you report the discrepancy to the user. Never write the textbook version silently, and never change the code to match the page.
-3. **Write the script and run it** (see "Running the code" and "Assets and budgets"): the notebook of a tutorial, the `main.py` of a how-to. Every number, table and figure on the page comes from that run, and the script asserts the numbers the conclusions rest on.
+3. **Write the script and run it** (see "Running the code" and "Assets and budgets"): the notebook of a tutorial, the `main.py` and `figures.py` of a how-to. Every number, table and figure on the page comes from that run, and the asserts check the numbers the conclusions rest on.
 4. **Plan the figures, then write the page** from the template, in the style below. Decide first what the reader must see at each step and draw it (see "Where a picture carries the explanation"); the text then says what the figure cannot. When the draft is done, review it in two passes. First, for each paragraph, state its point in one sentence; if you cannot, rewrite the paragraph. Then read the first sentences of each section alone and check that they outline its argument (see "Connecting the facts"). Finally, read the page paragraph by paragraph and ask whether a figure would carry that paragraph better.
 5. **Register it**: a tutorial gets a grid card plus a toctree entry, a how-to a list entry (a link with its title) plus a toctree entry (see the templates). The page test collects the new page by itself; add its name (`tutorialNN`, or the how-to's `<task>`) to the `page` matrix of the `docs-page-tests` job in `.github/workflows/ci.yaml`, which runs one page per job.
 6. **Run the checks** at the end of this file and fix what they report. They are a floor, not the whole review.
@@ -38,11 +38,11 @@ When a request fits neither type (a long derivation, a design note), say so: der
 
 The docs build does not execute notebooks (`nb_execution_mode = 'off'`), so whatever the committed notebook and the committed figures show is what the website shows. A cell without stored output shows no figure on the website. To keep the pages from drifting as the code changes, the page test `tests/integration/docs/test_pages.py` re-runs every tutorial notebook and every how-to `main.py` on each pull request into `develop`, in a scratch directory with the release asset of the page. It fails when a call raises, which catches renamed methods and arguments, and when an assert of the page fails, which catches a number on the page that the code no longer gives. It does not compare figures or stored outputs: re-execute and commit them when the text or a result changes.
 
-- **The script is the page's code.** A tutorial's code is its notebook. A how-to's code is `docs/tutorials/howtos/<task>/main.py`, and every code block on the page is pulled from it with `literalinclude` (see `references/howto.md`), so the page cannot show code that the test does not run. `main.py` also draws every figure of the page.
-- **Asserted numbers.** Each script asserts the few numbers, about five at most, that the conclusions of the page rest on, with a tolerance at the precision the prose quotes: a gap quoted as 0.754 eV is asserted to 1 meV. Each assert names its quantity in its message (`assert abs(gap - 0.754) < 1e-3, f'indirect gap {gap:.4f} eV'`), so that a failure tells the developer which sentence to revise. In a how-to the asserts are at the end of `main.py`; in a tutorial they are in a last code cell with the tag `remove-cell`, which the website hides.
+- **The scripts are the page's code.** A tutorial's code is its notebook: the website hides its plotting cells (`hide-input`) and its asserts (`remove-cell`), and the downloaded notebook holds both. A how-to has two scripts in `docs/tutorials/howtos/<task>/`, because a reader who downloads the workflow should get the workflow and nothing else. `main.py` is the workflow the page teaches, every line of it shown on the page, split into blocks with `literalinclude` at plain step comments (see `references/howto.md`), so the page cannot show code that the test does not run and the reader downloads exactly the code the page explains. `figures.py` holds everything else: it reads the files `main.py` writes and its printed output, saved as `main.log`, draws every figure of the page and asserts the numbers. A step the page explains as something the reader does (a fit, a grouping of orbitals, a comparison) belongs in `main.py`; code that only draws a figure or checks a number the page quotes belongs in `figures.py`.
+- **Asserted numbers.** Each script asserts the few numbers, about five at most, that the conclusions of the page rest on, with a tolerance at the precision the prose quotes: a gap quoted as 0.754 eV is asserted to 1 meV. Each assert names its quantity in its message (`assert abs(gap - 0.754) < 1e-3, f'indirect gap {gap:.4f} eV'`), so that a failure tells the developer which sentence to revise. In a how-to the asserts are at the end of `figures.py`, which takes the values from the output files of `main.py`, or from `main.log` for a value that `main.py` only prints; in a tutorial they are in a last code cell with the tag `remove-cell`, which the website hides.
 - **Data** comes from a GitHub release (`tutorial-assets-vN` or `integration-assets-vN`), never from a path inside the repository: the reader downloads the notebook or the script alone. Confirm that the asset exists with `gh release view <tag>`, then name the tag and the file in the download tip. Code sets `savedir` to the extracted directory next to the script (`savedir = 'tutorial01/silicon.save'`), never `../../examples/...` and never an absolute path. In a tutorial, the setup cell (see `references/tutorial.md`) also downloads and extracts the asset when `savedir` does not exist, so that the downloaded notebook runs as it is; a how-to names the asset in its tip and leaves the download to the reader.
-- **Cheap runs** (within the runtime budget of "Assets and budgets"): run them yourself with the Python of the project environment. Execute a notebook in place with `jupyter execute --inplace <notebook>` from a scratch copy whose working directory holds the extracted dataset, then copy the executed notebook back. Run a how-to with `python main.py` from a scratch directory, then copy its figures to `docs/_static/images/howtos/<task>/`. Then run the page test for the page: `pytest tests/integration/docs -k <page>`.
-- **Heavy runs** (larger grids, SOC supercells, anything that needs the cluster): time the first steps on a reduced grid to estimate the cost. Then hand the user the exact command to run, for example `jupyter execute --inplace tutorialNN.ipynb` or `python main.py` in their cluster environment, together with the output files you need back. Mark every number that is still missing as `{TODO: <quantity> from run}` in the text, and fill the numbers in only from the user's outputs. A page whose run stays above the budget follows the rule for heavy pages in "Assets and budgets".
+- **Cheap runs** (within the runtime budget of "Assets and budgets"): run them yourself with the Python of the project environment. Execute a notebook in place with `jupyter execute --inplace <notebook>` from a scratch copy whose working directory holds the extracted dataset, then copy the executed notebook back. Run a how-to from a scratch directory as the page test does, `python main.py > main.log` and then `python figures.py`, and copy the figures to `docs/_static/images/howtos/<task>/`. Then run the page test for the page: `pytest tests/integration/docs -k <page>`.
+- **Heavy runs** (larger grids, SOC supercells, anything that needs the cluster): time the first steps on a reduced grid to estimate the cost. Then hand the user the exact command to run, for example `jupyter execute --inplace tutorialNN.ipynb` or `python main.py > main.log` in their cluster environment, together with the output files and the log you need back. Mark every number that is still missing as `{TODO: <quantity> from run}` in the text, and fill the numbers in only from the user's outputs. A page whose run stays above the budget follows the rule for heavy pages in "Assets and budgets".
 - A snippet you have not run does not go on a page. If a run fails, report the failure; do not reword the page around it.
 
 ## Assets and budgets
@@ -52,14 +52,14 @@ Both page types are made of the same three parts:
 |         | Tutorial                                                                                                                           | How-to                                                                                                             |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Inputs  | A minimal `.save` directory (`atomic_proj.xml`, `data-file-schema.xml`, the pseudopotential files) under `tutorialNN/` in `tutorial_assets.tar.gz` | The same form under `<task>/` in `howto_assets.tar.gz`. None for a page that builds its model in code              |
-| Script  | The notebook                                                                                                                       | `docs/tutorials/howtos/<task>/main.py`                                                                             |
-| Outputs | Stored in the notebook                                                                                                             | PNGs in `docs/_static/images/howtos/<task>/`, written by `main.py`, and log excerpts pasted on the page            |
+| Scripts | The notebook                                                                                                                       | `docs/tutorials/howtos/<task>/main.py` (the workflow) and `figures.py` (figures and asserts)                       |
+| Outputs | Stored in the notebook                                                                                                             | PNGs in `docs/_static/images/howtos/<task>/`, written by `figures.py`, and log excerpts pasted on the page         |
 
 The inputs are DFT data, so a change in PAOFLOW's code does not invalidate them, and the release tag is bumped only when an input changes. Their generators are `.github/assets_generation/tutorials/build_assets.py` and `.github/assets_generation/howtos/build_assets.py`. A release asset holds PAOFLOW output files only for a heavy page (below), and then `build_assets.py` records the run that made them, because output files go stale as the code changes and a later developer must be able to remake them.
 
 The budgets keep the page test fast enough to run on every pull request and the repository small:
 
-- **Run time**: at most 5 minutes per page on a 4-core runner. A heavier page reads precomputed outputs from its asset, and its case in the page test carries `@pytest.mark.slow`, so that it is skipped on pull requests.
+- **Run time**: at most 5 minutes per page on a 4-core runner. For a heavier how-to, the asset folder `<task>/` holds what `main.py` writes, its output files and `main.log`, at the paths `main.py` writes them, and the page's name goes into the `PRECOMPUTED` set of the page test. On pull requests the test then runs only `figures.py` inside that folder, which takes seconds; running `main.py` is a separate case, `<task>-workflow`, marked `@pytest.mark.slow`. The tip of the page tells the reader that `figures.py` run inside the extracted folder redraws the figures without the calculation.
 - **Inputs**: at most 5 MB compressed per page.
 - **Figures**: PNG at 150 dpi, at most 200 KB each.
 - **Notebooks**: outputs stay stored. Re-execute and commit a notebook only when its text or one of its results changes, because every re-execution adds the full outputs to the history of the repository.
@@ -218,13 +218,13 @@ A well-defined figure makes one point. It shows the quantity the text discusses,
 - Colors: Deep Blue `#004488`, Vermillion `#D55E00` and Yellow-Amber `#FFC20A` first, then Okabe–Ito `#009E73`, `#56B4E9`, `#CC79A7`, `#000000`. Use `#8A6800` for amber text and spines. One color per physical series, kept the same across all panels and pages (for example, the PAO bands are always `#004488`, and DFT reference points are always `#D55E00`).
 - Axis labels carry the quantity and the unit: `$E - E_F$ (eV)`, `$\sigma_{xx}$ ($\Omega^{-1}\,\mathrm{m}^{-1}$)`. State the energy zero in the caption sentence that follows the figure.
 - In notebooks, a plotting cell carries the cell tag `hide-input`. The website then shows the figure with a "Show code cell source" toggle, and the downloaded notebook still holds the full code. Each plotting cell is standalone (it reads the output files of the run) so that it works in the downloaded notebook.
-- In how-tos, figures are PNGs in `docs/_static/images/howtos/<task>/`, written by the page's `main.py`, and embedded with `![alt text describing the physics](../../_static/images/howtos/<task>/<name>.png)`. Alt text states what the figure shows ("Si bands along L–Γ–X, PAO vs DFT"). Because the script that draws a figure is kept, a later developer redraws every figure of the page by running it again when the code changes.
+- In how-tos, figures are PNGs in `docs/_static/images/howtos/<task>/`, written by the page's `figures.py`, and embedded with `![alt text describing the physics](../../_static/images/howtos/<task>/<name>.png)`. Alt text states what the figure shows ("Si bands along L–Γ–X, PAO vs DFT"). Because the script that draws a figure is kept, a later developer redraws every figure of the page by running it again when the code changes.
 - Save figures as PNG at 150 dpi (`fig.savefig(..., dpi=150)`), at most 200 KB each. A larger file usually means too many points or markers; thin the data rather than lower the resolution.
 - After the figure, a few sentences tell the reader what to see in it, with numbers, and which run it shows where that is not obvious from the page: the dataset and the options that shape it (truncation, energy ranges, windows, k-mesh).
 
 ## Notation
 
-Use these symbols, taken from Tutorial 01 and the sparse how-to. Add a symbol here when a new page introduces one that other pages will reuse.
+Use these symbols, taken from Tutorial 01 and Tutorial 04. Add a symbol here when a new page introduces one that other pages will reuse.
 
 | Symbol                                                                              | Meaning                                                    |
 | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -257,7 +257,7 @@ Check keys: `banned-phrase`, `history`, `em-dash`, `bold`, `greek`, `voice`, `to
 Run from the repository root, giving the pages you wrote or revised. The checks waive a rule for a page when a commit of that page has its `Override:` trailer. For an override the developer gave in this session, which is not committed yet, add `--override=<page>:<key>`.
 
 ````bash
-python - docs/tutorials/tutorial01.ipynb docs/tutorials/howtos/sparse-workflow.md <<'EOF'
+python - docs/tutorials/tutorial01.ipynb docs/tutorials/howtos/plotting.md <<'EOF'
 import json, re, sys
 from pathlib import Path
 
@@ -325,6 +325,33 @@ def check_code(text, say):
     if re.search(r"\.plot_\w+\(", text) and not re.search(r"\bcols?\s*=", text):
         say("color", "GPAO call without col/cols falls back to non-palette defaults")
 
+def check_blocks(page, lines, say):
+    """Every line of main.py is shown by a literalinclude, split at unique step comments."""
+    shown, comments = [False] * len(lines), set()
+    pattern = r"^```\{literalinclude\}\s+(\S+)\n((?::[\w-]+:.*\n)*)```"
+    for m in re.finditer(pattern, page.read_text(), re.M):
+        if m.group(1) != f"{page.stem}/main.py":
+            say("script", f"literalinclude of {m.group(1)}; the page shows only {page.stem}/main.py")
+            continue
+        opts = {k: v.strip().strip("'\"") for k, v in re.findall(r"^:([\w-]+):(.*)$", m.group(2), re.M)}
+        ends = []
+        for key, default in (("start-after", -1), ("end-before", len(lines))):
+            if key not in opts:
+                ends.append(default)
+                continue
+            hits = [i for i, line in enumerate(lines) if opts[key] in line]
+            if len(hits) != 1:
+                say("script", f"step comment {opts[key]!r} is on {len(hits)} lines of main.py, not 1")
+                break
+            ends.append(hits[0])
+            comments.add(hits[0])
+        else:
+            for i in range(ends[0] + 1, ends[1]):
+                shown[i] = True
+    hidden = [i + 1 for i, line in enumerate(lines) if line.strip() and not shown[i] and i not in comments]
+    if hidden:
+        say("script", f"lines {hidden[:10]} of main.py are not on the page")
+
 problems, overridden = [], []
 for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
     path = Path(name)
@@ -373,11 +400,14 @@ for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
     if fenced:
         say("script", f"{fenced} fenced python blocks; pull the code from main.py with literalinclude")
     if path.parent.name == "howtos":
-        script = path.parent / path.stem / "main.py"
-        if script.is_file():
-            check_code(script.read_text(), say)
-        else:
-            say("script", f"no {script}")
+        folder = path.parent / path.stem
+        for script in (folder / "main.py", folder / "figures.py"):
+            if script.is_file():
+                check_code(script.read_text(), say)
+            else:
+                say("script", f"no {script}")
+        if (folder / "main.py").is_file():
+            check_blocks(path, (folder / "main.py").read_text().splitlines(), say)
         idx = (path.parent / "index.md").read_text()
         if not re.search(rf"^- \[.+\]\({path.stem}\.md\)$", idx, re.M) or not re.search(rf"^{path.stem}$", idx, re.M):
             say("registration", "missing list entry or toctree entry in docs/tutorials/howtos/index.md")
