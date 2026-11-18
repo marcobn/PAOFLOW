@@ -1,9 +1,9 @@
 # How to run PAOFLOW on a tight-binding model
 
-On this page you run PAOFLOW on a tight-binding model instead of a DFT calculation. The `model` argument of {py:class}`~PAOFLOW.PAOFLOW.PAOFLOW` supplies the real-space Hamiltonian $H_{\alpha\beta}(\mathbf{R})$ directly, as one of the built-in models, a Slater–Koster model with your own parameters, or a model built with the PythTB package, in contrast to [Tutorial 01](../tutorials/tutorial01.ipynb), where it comes from projecting the Kohn–Sham states on pseudo-atomic orbitals (PAOs). Every property is computed from $H_{\alpha\beta}(\mathbf{R})$ alone, so the calls that follow the constructor remain the same as the ones you would use for a DFT-based workflow. The Hamiltonian is then the model and nothing else: the basis is orthogonal, the energies are the model parameters in eV, and no DFT calculation constrains the result, which makes a model the place to test a property against a known answer.
+On this page you run PAOFLOW on a tight-binding model instead of a DFT calculation. The `model` argument of {py:class}`~PAOFLOW.PAOFLOW.PAOFLOW` supplies the real-space Hamiltonian $H_{\alpha\beta}(\mathbf{R})$ directly, as one of the built-in models, a Slater–Koster model with your own parameters, or a model built with the PythTB package, in contrast to [Tutorial 01](../tutorials/tutorial01.ipynb), where it comes from projecting the Kohn–Sham states on pseudo-atomic orbitals (PAOs). Every property is computed from $H_{\alpha\beta}(\mathbf{R})$ alone, so the calls that follow the constructor remain the same as the ones you would use for a DFT-based workflow. The Hamiltonian is then the model and nothing else, in an orthogonal basis with the model parameters in eV, so a model is where you test a property against a known answer.
 
 :::{tip}
-Every model on this page is built in code, so the page needs no input files. The whole script, {download}`main.py <tight-binding-model/main.py>`, runs in about 30 s; {download}`figures.py <tight-binding-model/figures.py>` then draws the figures below. Its PythTB section needs the `pythtb` extra.
+Every model on this page is built in code, so the page needs no input files. Download {download}`main.py <tight-binding-model/main.py>` to start your own model from these, replacing a model and keeping the calls; it runs in about 30 s, and its PythTB section needs the `pythtb` extra. Download {download}`figures.py <tight-binding-model/figures.py>` to redraw the figures of this page from that run, in the same directory after `python main.py > main.log`.
 :::
 
 ## Replacing the DFT steps with a model
@@ -17,17 +17,17 @@ The script below computes the bands and the density of states (DOS) of the Kane�
 
 The constructor builds $H_{\alpha\beta}(\mathbf{R})$, the lattice vectors and the orbital positions from the dictionary. You therefore leave out {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.read_atomic_proj_QE`, {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.projectability` and {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.pao_hamiltonian`, because there are no Kohn–Sham states to project, and you keep every call from {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.bands` on. Four settings depend on the model instead of on a DFT calculation.
 
-The k-path is given with `band_path` and `high_sym_points`, in crystal coordinates of the reciprocal vectors of the model. `bands()` also needs `ibrav`, although with the path given this way its value does not change the path; pass the Quantum ESPRESSO number of the model's lattice, 4 for the hexagonal cells, 1 for simple cubic and 2 for fcc.
+The k-path is given with `band_path` and `high_sym_points`, in crystal coordinates of the reciprocal vectors of the model. `bands()` also needs `ibrav`, although it does not change a path given this way: pass the Quantum ESPRESSO number of the model's lattice, 4 for hexagonal, 1 for simple cubic and 2 for fcc.
 
-A two-dimensional model, such as Kane–Mele, has no hopping along $z$, so $H(\mathbf{k})$ does not depend on $k_z$. Set `nfft3=1` in {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.interpolated_hamiltonian`, and pass `twoD=True` to the properties that are normalised by the cell, such as {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.spin_Hall` and {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.nonlinear_optics`, so that they divide by the area of the cell instead of its volume.
+A two-dimensional model, such as Kane–Mele, has no hopping along $z$, so $H(\mathbf{k})$ does not depend on $k_z$. Set `nfft3=1` in {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.interpolated_hamiltonian`, and pass `twoD=True` to the properties that are normalised by the cell, such as {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.spin_Hall` and {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.nonlinear_optics`, so that they divide by the area of the cell instead of its volume. `spin_Hall(twoD=True)` then gives the sheet conductivity in units with $\hbar = e = 1$, not in SI units, so a quantum spin Hall plateau of $e/2\pi$ reads $1/2\pi$ ([Spin Hall conductivity](../theory/berry-topology.md#spin-berry-curvature-and-spin-hall-conductivity)).
 
-The adaptive smearing needs a floor. On the mesh of a model the band velocity vanishes exactly at the high-symmetry points, and with it the adaptive width of [Section 6 of Tutorial 01](../tutorials/tutorial01.ipynb#6-band-velocities-and-adaptive-smearing): without `min_width`, the DOS of the script above reaches $4 \times 10^{12}$ states/eV at these points. A floor of twice the spacing of the DOS energy grid, here 0.02 eV, removes the spikes.
+The adaptive smearing needs a floor, `min_width`. On the mesh of a model the band velocity vanishes exactly at the high-symmetry points, and with it the adaptive width of [Section 6 of Tutorial 01](../tutorials/tutorial01.ipynb#6-band-velocities-and-adaptive-smearing), so without a floor these states appear in the DOS as spikes or are missed between its energy points ([The width floor](../theory/density-of-states.md#band-extrema-flat-bands-and-the-width-floor)). Choose a floor at or above the spacing of the DOS energy grid, here twice it, 0.02 eV.
 
-The energy zero is the zero of the model parameters, because PAOFLOW does not count electrons in a model. Properties scanned in energy, such as the DOS and the spin Hall conductivity, give the value at every chemical potential between `emin` and `emax`, and you read them at the filling of your model.
+The energy zero is the zero of the model parameters, because PAOFLOW does not count electrons in a model. Properties scanned in energy, such as the DOS, give a value at every chemical potential between `emin` and `emax`; read them at the filling of your model.
 
 ![Kane–Mele bands along Gamma–M–K–Gamma with a spin–orbit gap at K, and the DOS on the same energy axis](../../_static/images/howtos/tight-binding-model/km_bands_dos.png)
 
-The spin–orbit term opens a gap of 1.0392 eV at K, equal to $6\sqrt{3}\,\lambda_{SO}$ for $\lambda_{SO}$ = `soc_par` = 0.1 eV, and the DOS integrates to 2.00 states below $E = 0$, two of the four bands, so $E = 0$ lies in the gap at half filling. [Tutorial 05](../tutorials/tutorial05.ipynb) computes the spin Hall conductivity and the Berry curvature of this model from the same calls.
+The spin–orbit term opens a gap of 1.0392 eV at K, equal to $6\sqrt{3}\,\lambda_{SO}$ for $\lambda_{SO}$ = `soc_par` = 0.1 eV ([Kane–Mele model](../theory/berry-topology.md#the-quantum-spin-hall-model-of-kane-and-mele)), and the DOS integrates to 2.00 states below $E = 0$, two of the four bands, so $E = 0$ lies in the gap at half filling.
 
 ## Choosing the model
 
@@ -42,7 +42,7 @@ The `label` selects the model, in upper or lower case; the other keys are its pa
 | `'cubium2'`   | `t`, `Eg` (gap between the two bands)                                                 | simple cubic, $a = 1$ Å, two orbitals                  | `bands()`                                        |
 | `'Kane_Mele'` | `t`, `soc_par`, `r_par`, `v_par`; optional `alat` (Å, default 1)                      | honeycomb, two spin-orbitals per site                  | all steps of the script above                    |
 
-[Section 1 of Tutorial 05](../tutorials/tutorial05.ipynb#1-the-kanemele-model-and-its-spinorbit-gap) gives the Kane–Mele Hamiltonian and the meaning of its parameters. The other three models stop at {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.pao_eigh` or {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.gradient_and_momenta`, because they do not define the number of bands or the orbital positions that these steps need. For a property of graphene on a k-mesh, use `Kane_Mele` with `soc_par=0`, `r_par=0` and `v_par=delta / (2 * t)` instead: it is the graphene Hamiltonian with every band doubled by spin, and its bands equal those of `graphene` to all printed digits. For the cubic models, use the path `'G-X-M-G-R'` with $X = (0, \tfrac12, 0)$, $M = (\tfrac12, \tfrac12, 0)$, $R = (\tfrac12, \tfrac12, \tfrac12)$ and `ibrav=1`.
+[Section 1 of Tutorial 05](../tutorials/tutorial05.ipynb#1-the-kanemele-model-and-its-spinorbit-gap) gives the Kane–Mele Hamiltonian and the meaning of its parameters. The other three models stop at {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.pao_eigh` or {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.gradient_and_momenta`, because they do not define the number of bands or the orbital positions that these steps need. For a property of graphene on a k-mesh, use `Kane_Mele` with `soc_par=0`, `r_par=0` and `v_par=delta / (2 * t)` instead: it is the graphene Hamiltonian with every band doubled by spin. For the cubic models, use the path `'G-X-M-G-R'` with $X = (0, \tfrac12, 0)$, $M = (\tfrac12, \tfrac12, 0)$, $R = (\tfrac12, \tfrac12, \tfrac12)$ and `ibrav=1`.
 
 To compare two parameter sets, run each in its own `outputdir` and pass both band files to {py:meth}`~PAOFLOW.GPAO.GPAO.plot_bands`:
 
@@ -54,7 +54,7 @@ To compare two parameter sets, run each in its own `outputdir` and pass both ban
 
 ![Graphene bands along Gamma–M–K–Gamma, with a Dirac point at K for delta = 0 and a 1 eV gap for delta = 1 eV](../../_static/images/howtos/tight-binding-model/graphene_bands.png)
 
-With $\delta = 0$ the two bands touch at K, the Dirac point, and span $\pm 3|t| = \pm 8.1$ eV at $\Gamma$. The sublattice potential $\pm\delta/2$ makes the two atoms of the cell inequivalent, breaks inversion symmetry and opens a gap $\delta$ at K and K′. This gapped model is the one whose Berry phases [Tutorial 05](../tutorials/tutorial05.ipynb#3-berry-phases-on-loops-around-a-valley-of-gapped-graphene) computes, and whose non-linear optical response is computed in [How to compute the non-linear optical response of a tight-binding model](nonlinear-optics-model.md).
+With $\delta = 0$ the two bands touch at K, the Dirac point, and span $\pm 3|t| = \pm 8.1$ eV at $\Gamma$. The sublattice potential $\pm\delta/2$ breaks inversion symmetry and opens a gap $\delta$ at K and K′ ([Gapped graphene](../theory/berry-topology.md#gapped-graphene-and-the-valley-berry-phase)). This gapped model is the one whose Berry phases [Tutorial 05](../tutorials/tutorial05.ipynb#3-berry-phases-on-loops-around-a-valley-of-gapped-graphene) computes, and the one of the [non-linear optics how-to](nonlinear-optics-model.md).
 
 ### A Slater–Koster model with your own parameters
 
@@ -76,11 +76,11 @@ Set `alat` (bohr, default 1) to the lattice constant of the material: it leaves 
 
 ![Bands of silicon along L–Gamma–X from the nearest-neighbour sp3 Slater–Koster model](../../_static/images/howtos/tight-binding-model/si_sk_bands.png)
 
-The valence-band maximum is at $\Gamma$ at $-0.229$ eV and the conduction-band minimum at L at 2.081 eV, a gap of 2.309 eV. In silicon the conduction-band minimum lies near X instead, and a nearest-neighbour $sp^3$ basis cannot produce it: you need second-neighbour hoppings (`'nnn'`) or more orbitals per atom to reach it.
+The valence-band maximum is at $\Gamma$ at $-0.229$ eV and the conduction-band minimum at L at 2.081 eV, a gap of 2.309 eV. In silicon the conduction-band minimum lies near X instead, and a nearest-neighbour $sp^3$ basis cannot produce it: that takes second-neighbour hoppings (`'nnn'`) or more orbitals per atom.
 
 ### Models built with PythTB
 
-[PythTB](https://pythtb.readthedocs.io/en/latest/) builds models of any lattice and basis from on-site energies and hoppings. Install it with the `pythtb` extra, `pip install "PAOFLOW[pythtb]"`, which pulls in PythTB 2. PAOFLOW takes a PythTB model in two ways: through a label for one of the models PAOFLOW defines, or as a model object you build yourself. In both cases PAOFLOW sets the lattice constant to 1 bohr, with the lattice vectors of the model in units of it, so read velocities and three-dimensional conductivities in these units.
+[PythTB](https://pythtb.readthedocs.io/en/latest/) builds models of any lattice and basis from on-site energies and hoppings. Install it with the `pythtb` extra, `pip install "PAOFLOW[pythtb]"`, which pulls in PythTB 2. PAOFLOW takes a PythTB model in two ways: through a label for one of the models PAOFLOW defines, or as a model object you build yourself. In both cases the lattice constant is 1 bohr, the unit of the lattice vectors of the model, so velocities and conductivities are in units of it.
 
 | `label`                 | parameters                                                              | lattice and basis                                 |
 | ----------------------- | ----------------------------------------------------------------------- | ------------------------------------------------- |
@@ -102,11 +102,11 @@ For a model PAOFLOW does not define, build it with PythTB and pass the object as
 :start-after: '# The Haldane model built with PythTB'
 ```
 
-The gap of this run, 1.5588 eV at K and K′, equals $6\sqrt{3}\,|t_2|$, the value for $\phi = \pi/2$, so PAOFLOW reads the hoppings and their phases as PythTB defines them. [Section 4 of Tutorial 05](../tutorials/tutorial05.ipynb#4-chern-numbers-the-berry-flux-through-the-whole-zone) computes the Chern number of its lower band.
+The gap of this run, 1.5588 eV at K and K′, equals $6\sqrt{3}\,|t_2|$, the value for $\phi = \pi/2$ ([The Haldane model](../theory/berry-topology.md#the-haldane-model)), so PAOFLOW reads the hoppings and their phases as PythTB defines them. [Section 4 of Tutorial 05](../tutorials/tutorial05.ipynb#4-chern-numbers-the-berry-flux-through-the-whole-zone) computes the Chern number of its lower band.
 
 ## Other properties
 
-Any other property is called as in a DFT run, provided the model defines what it needs (see the tables above); for a three-dimensional Slater–Koster model, {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.transport` runs with its usual arguments. On a two-dimensional model `transport()` stops, because it inverts the $3 \times 3$ conductivity tensor, whose $zz$ component is zero without hopping along $z$.
+Any other property is called as in a DFT run, provided the model defines what it needs (see the tables above); for a three-dimensional Slater–Koster model, {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.transport` runs with its usual arguments. On a two-dimensional model `transport()` stops, because it inverts the $3 \times 3$ conductivity tensor, whose $zz$ component is zero without hopping along $z$ ([Boltzmann transport](../theory/boltzmann-transport.md#conductivity-seebeck-coefficient-and-thermal-conductivity)).
 
 ## Troubleshooting
 

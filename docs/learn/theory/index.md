@@ -6,8 +6,11 @@ These pages explain the physics behind the results PAOFLOW computes: the equatio
 - [Band velocities, density of states and adaptive smearing](density-of-states.md)
 - [Boltzmann transport in the relaxation-time approximation](boltzmann-transport.md)
 - [Kubo linear response and the independent-particle dielectric tensor](linear-response.md)
+- [Second-order optical response: shift current, injection current and second-harmonic generation](nonlinear-optics.md)
 - [Berry curvature and topological invariants](berry-topology.md)
+- [Band unfolding: spectral weights of supercell states](band-unfolding.md)
 - [Large cells: truncated hoppings, doubled cells and partial spectra](large-cells.md)
+- [Quantum oscillations and extremal Fermi-surface orbits](quantum-oscillations.md)
 
 ```{toctree}
 :hidden:
@@ -17,6 +20,9 @@ pao-hamiltonian
 density-of-states
 boltzmann-transport
 linear-response
+nonlinear-optics
 berry-topology
+band-unfolding
 large-cells
+quantum-oscillations
 ```

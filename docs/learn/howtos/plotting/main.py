@@ -49,7 +49,7 @@ plotter.plot_berry_under_bands(
     title='Fe, bands and Berry curvature',
     y_lim=(-4.0, 4.0),
     band_label=r'$E - E_F$ (eV)',
-    berry_label=r'$\Omega_{yz}$ (bohr$^2$)',
+    berry_label=r'$-\Omega^{yz}$ (bohr$^2$)',  # the file holds minus the Kubo curvature
     col=palette[0],
 )
 plt.savefig('fe_berry.png', dpi=150)

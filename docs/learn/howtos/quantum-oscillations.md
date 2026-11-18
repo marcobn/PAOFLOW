@@ -1,29 +1,29 @@
 # How to compare pyskeaf orbits with measured quantum-oscillation frequencies
 
-On this page you test whether the extremal orbits of your calculated Fermi surface explain the frequencies measured in a de Haas–van Alphen, Shubnikov–de Haas or torque rotation. {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.pyskeaf` gives, for each field direction, the frequency $F = \hbar A_\mathrm{ext}/(2\pi e)$ (the Onsager relation) of every extremal cross-section $A_\mathrm{ext}$ of the Fermi surface perpendicular to the field, with its cyclotron mass and carrier type. The class {py:class}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis` reads these tables and the measured peaks, puts both on the same angle axis, and tests the agreement against chance. The comparison inherits the approximations of the calculation: a rigid Fermi surface from the DFT bands at $E_F$, and band masses without electron–phonon or electron–electron renormalisation.
+On this page you test whether the extremal orbits of your calculated Fermi surface explain the frequencies measured in a de Haas–van Alphen, Shubnikov–de Haas or torque rotation. {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.pyskeaf` gives, for each field direction, the frequency $F = \hbar A_\mathrm{ext}/(2\pi e)$ of every extremal cross-section $A_\mathrm{ext}$ of the Fermi surface perpendicular to the field (the [Onsager relation](../theory/quantum-oscillations.md#the-onsager-relation)), with its cyclotron mass and carrier type. The class {py:class}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis` reads these tables and the measured peaks, puts both on the same angle axis, and tests the agreement against chance. The comparison rests on three approximations:
+
+- rigid Fermi surface: the sheets of the DFT bands at the DFT Fermi level;
+- band masses: no electron–phonon or electron–electron renormalisation, which the measured masses contain;
+- single-band orbits: no magnetic breakdown between sheets.
 
 Base example: [examples/qo_analysis_examples/NbSn2/](https://github.com/marcobn/PAOFLOW/tree/master/examples/qo_analysis_examples/NbSn2)
 
 :::{tip}
-The inputs of this page are in `howto_assets.tar.gz` of the release [tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2). Extract it with `tar xzf howto_assets.tar.gz`, which creates `quantum-oscillations/`, and run the code below, or the whole script {download}`main.py <quantum-oscillations/main.py>`, from the directory that contains it; {download}`figures.py <quantum-oscillations/figures.py>` draws the figure of this page from the outputs of `main.py`. The analysis needs the optional dependencies of `pip install "PAOFLOW[qo_analysis]"`. The script runs in about 30 s.
+The inputs of this page are in `howto_assets.tar.gz` of the release [tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2). Extract it with `tar xzf howto_assets.tar.gz`, which creates `quantum-oscillations/`. Download {download}`main.py <quantum-oscillations/main.py>` to run the comparison on your own pyskeaf tables and measured peaks (about 10 s; it needs `pip install "PAOFLOW[qo_analysis]"`). Run {download}`figures.py <quantum-oscillations/figures.py>` after it, in the same directory, to draw the overlay of calculated orbits and measured peaks and check the numbers quoted here.
 :::
 
-## The inputs
-
-The calculated side is the folder of a pyskeaf rotation, with one file `qo_EF_0_freqvsangle_<band>.out` per band (plain or gzip-compressed). For the NbSn2 example it holds the spin–orbit bands 11 to 18 on a $49^3$ grid, at 90 polar angles $1.011^\circ$ apart, from $0^\circ$ to $90^\circ$, at azimuthal angle $29.95^\circ$. pyskeaf measures the polar angle from $+z$ and the azimuthal angle from $+x$, in the Cartesian frame of the BXSF files.
-
-The measured side is two CSV tables, whose `#` lines record where the numbers come from. The sweep table, `angle_deg,freq_T,rel_mag`, holds the peaks of the rotation, with `rel_mag` the FFT magnitude divided by the largest in the data set. The Lifshitz–Kosevich (LK) table, `direction,exp_angle_deg,day,label,freq_T,freq_err_T,mstar_me,mstar_err_me,observed,source`, holds the labelled frequencies and cyclotron masses at single directions. In this example the sweep peaks were digitised from an image of a torque FFT-vs-angle map and the LK values transcribed from text, so they are not raw data. When your rotation exists only as such an image, {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.digitize_fft_map` reads the peaks from it, given the pixel positions of two ticks on each axis and of the colour bar, and checks them against the LK table.
-
 ## Setting up the analysis
+
+The calculated side is the folder of a pyskeaf rotation, with one file `qo_EF_0_freqvsangle_<band>.out` per band (plain or gzip-compressed), made by `pyskeaf()` from the band files of {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.fermi_surface` (see [Finding extremal orbits on the interpolated Fermi surface](../theory/quantum-oscillations.md#finding-extremal-orbits-on-the-interpolated-fermi-surface)). For NbSn2 it holds the spin–orbit bands 11 to 18 on a $49^3$ k-mesh, at 90 polar angles $1.011^\circ$ apart from $0^\circ$ to $90^\circ$, at the azimuthal angle $29.95^\circ$.
 
 ```{literalinclude} quantum-oscillations/main.py
 :language: python
 :end-before: '# Field directions in both conventions'
 ```
 
-Group the bands into the Fermi surfaces they form with `degenerate_groups`. With spin–orbit coupling in a centrosymmetric non-magnetic crystal such as NbSn2 every band is a Kramers pair, so bands 11 and 12 describe one surface and their orbits count once. `'auto'` detects the pairs from the BXSF files in `bxsf_dir`, and on NbSn2 it finds the same four pairs, but without BXSF files it keeps each band alone; pass `2` when you have only the frequency tables. `sweep_angle` and `fixed_angle` name the angle the rotation varied and the one it held.
+Group the bands into the Fermi surfaces they form with `degenerate_groups`. With spin–orbit coupling in a centrosymmetric non-magnetic crystal such as NbSn2 every band is a Kramers pair, so bands 11 and 12 describe one surface and their orbits count once (see [Spin–orbit coupling and Kramers pairs](../theory/quantum-oscillations.md#spinorbit-coupling-and-kramers-pairs)). `'auto'` detects the pairs from the band files in `bxsf_dir` but keeps each band alone without them; pass `2` when you have only the frequency tables. `sweep_angle` names the angle the rotation varied and `fixed_angle` the value of the one it held. pyskeaf measures the polar angle from $+z$ and the azimuthal angle from $+x$, in the Cartesian frame of the band files.
 
-pyskeaf finds each orbit in many copies of the reciprocal cell, in the supercell it slices, and writes their number in the last column. Genuine orbits appear in many copies, while artefacts at the supercell walls appear in a few. `fermi_surface_inventory()` writes the histogram of these counts:
+pyskeaf finds each orbit in several copies of the reciprocal cell, in the supercell it slices, and writes their number in the last column. A genuine orbit on a smooth sheet appears in many copies, while artefacts at the supercell walls appear in a few, so the copy count measures how far an orbit can be trusted (see [Supercell copies](../theory/quantum-oscillations.md#supercell-copies)). `fermi_surface_inventory()` writes the histogram of these counts:
 
 ```text
       copies  entries
@@ -38,11 +38,11 @@ pyskeaf finds each orbit in many copies of the reciprocal cell, in the supercell
      150-200     3509
 ```
 
-For this run the histogram is not cleanly bimodal: the number of orbits per unit copy count falls up to 80 to 100 copies and rises above, so no count separates the two kinds of orbit and the cut is a choice. The comparison below keeps orbits with at least 50 copies, the `min_copies` cut, and repeats the test at 100 to show that the conclusion does not depend on it.
+This histogram is not cleanly bimodal, so no count separates the two kinds of orbit and the cut is a choice. The comparison below keeps orbits with at least 50 copies, the `min_copies` cut, and repeats the test at 100 to show that the conclusion does not depend on it.
 
 ## Field directions and the angle convention
 
-A crystal direction becomes a pair of pyskeaf angles only with a convention: a field normal to the $(hkl)$ planes, along $h\mathbf{a}^* + k\mathbf{b}^* + l\mathbf{c}^*$ (`field_convention='reciprocal'`, the usual meaning of the indices of a sample facet), or a field along the row $h\mathbf{a} + k\mathbf{b} + l\mathbf{c}$ (`'real'`). The two agree only for single-index directions of orthogonal axes. {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.field_directions` prints both for each measured direction and checks the selected one against the angles you expect. The label $[11y]$ of the source is the direction measured at $45^\circ$, here given as $[1\,1\,3.902]$:
+A crystal direction becomes a pair of pyskeaf angles only with a convention: a field normal to the $(hkl)$ planes, along $h\mathbf{a}^* + k\mathbf{b}^* + l\mathbf{c}^*$ (`field_convention='reciprocal'`, the usual meaning of the indices of a sample facet), or a field along the row $h\mathbf{a} + k\mathbf{b} + l\mathbf{c}$ (`'real'`). The two agree only for single-index directions of orthogonal axes (see [Field direction and crystal indices](../theory/quantum-oscillations.md#field-direction-and-crystal-indices)). {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.field_directions` prints both for each measured direction and checks the selected one against the angles you expect. The label $[11y]$ of the source is the direction measured at $45^\circ$, here given as $[1\,1\,3.902]$:
 
 ```{literalinclude} quantum-oscillations/main.py
 :language: python
@@ -59,9 +59,11 @@ A crystal direction becomes a pair of pyskeaf angles only with a convention: a f
    real      : azimuthal   60.051, polar   90.000
 ```
 
-In orthorhombic NbSn2 the $[110]$ field lies at $29.95^\circ$ from $\mathbf{a}$ in the reciprocal convention and at $60.05^\circ$ in the real one, so the wrong convention compares the measurement with a rotation in another plane. The conventional cell enters only here, as `primitive_cell` and the integer rows of `conventional_from_primitive`. A `day` entry selects the LK rows of one measurement session.
+In orthorhombic NbSn2 the $[110]$ field lies at $29.95^\circ$ from $\mathbf{a}$ in the reciprocal convention and at $60.05^\circ$ in the real one, so the wrong convention compares a rotation in another plane. The conventional cell enters only here, as `primitive_cell` and the integer rows of `conventional_from_primitive`. A `day` entry selects the Lifshitz–Kosevich (LK) rows of one measurement session.
 
 ## Reading the measurement
+
+The measured side is two CSV tables, whose `#` lines record where the numbers come from. The sweep table, `angle_deg,freq_T,rel_mag`, holds the peaks of the rotation, with `rel_mag` the FFT magnitude divided by the largest in the data set. The LK table, `direction,exp_angle_deg,day,label,freq_T,freq_err_T,mstar_me,mstar_err_me,observed,source`, holds the labelled frequencies at single directions and the cyclotron masses from the temperature dependence of their amplitudes (see [Temperature damping and the measured mass](../theory/quantum-oscillations.md#temperature-damping-and-the-measured-mass)). In this example the sweep peaks were digitised from an image of a torque FFT-vs-angle map and the LK values transcribed from text, so they are not raw data. When your rotation exists only as such an image, {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.digitize_fft_map` reads the peaks from it and checks them against the LK table.
 
 ```{literalinclude} quantum-oscillations/main.py
 :language: python
@@ -73,13 +75,7 @@ In orthorhombic NbSn2 the $[110]$ field lies at $29.95^\circ$ from $\mathbf{a}$ 
 
 ## Testing the rotation against chance
 
-{py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.sweep_comparison` tests each significant measured peak $(\theta_i, F_i)$, those with `rel_mag` at least `weak_threshold`. Among the calculated orbits $j$ within `angle_window` of $\theta_i$ it takes the nearest in $\ln F$, and counts the peak as matched when
-
-$$
-\frac{|F_{j^*} - F_i|}{F_i} \le t, \qquad j^* = \arg\min_{j:\,|\theta_j - \theta_i| \le \Delta\theta} |\ln F_j - \ln F_i| ,
-$$
-
-with $t$ the `tolerance` and $\Delta\theta$ the `angle_window`. Choose $\Delta\theta$ from the uncertainty of the sample alignment and the angle step of the calculation, and $t$ from the accuracy you expect of the calculated areas. Both settings let in chance coincidences as well as genuine matches, which is why the rate is always quoted with the baselines below.
+{py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.sweep_comparison` takes each significant measured peak, finds the calculated orbit nearest in $\ln F$ within an angle window, and counts the peak as matched when the two frequencies differ by less than a relative tolerance (see [Pointwise matches and chance baselines](../theory/quantum-oscillations.md#pointwise-matches-and-chance-baselines)). Choose `angle_window` from the uncertainty of the sample alignment and the angle step of the calculation. Choose `tolerance` from the accuracy you expect of the calculated areas, which the [resolution of the k-mesh](../theory/quantum-oscillations.md#resolution-of-the-k-mesh) and the position of the Fermi level limit. `weak_threshold` sets which peaks are significant: a weak peak is often a harmonic or a combination of stronger ones, not an extremal orbit. Both windows also let in chance coincidences, hence the two baselines.
 
 ```{literalinclude} quantum-oscillations/main.py
 :language: python
@@ -96,21 +92,15 @@ matched within 5 % (+/-2.6 deg): 38 %
 chance: log-uniform 35 +/- 4 %, angle-shuffled 34 +/- 4 %
 ```
 
-The match rate is meaningful only next to the rate that random data reach with the same orbits. The first baseline replaces the measured frequencies by frequencies drawn log-uniformly between 15 and 8000 T at the measured angles. The second keeps the measured frequencies and moves each to a randomly drawn measured angle, so it rewards only agreement specific to each angle. Both are averaged over 200 draws. On NbSn2, 44 % of the 160 peaks match, against 41 % and 39 % by chance with a spread of 4 %. With 7654 orbits spread over three decades of frequency, a $\pm 5\,\%$ window around any frequency contains an orbit about 40 % of the time, so the pointwise rate is no evidence that the calculation reproduces the measurement. At `min_copies=100` the rate and the baselines both fall by 6 points, so the cut does not change this.
+The first baseline replaces the measured frequencies by random ones at the measured angles, and the second moves each measured frequency to a random measured angle, so it rewards only agreement specific to each angle. On NbSn2, 44 % of the 160 peaks match, against 41 % and 39 % by chance with a spread of 4 %. With 7654 orbits over three decades of frequency, a $\pm 5\,\%$ window around any frequency holds an orbit about 40 % of the time, so the rate is no evidence that the calculation reproduces the measurement. At `min_copies=100` the rate and the baselines both fall by 6 points, so the cut does not change this.
 
 ![Calculated extremal-orbit frequencies of NbSn2 against the rotation angle from [001] to [110], coloured by Kramers pair, with the measured torque peaks marked as matched or unmatched within 5 %](../../_static/images/howtos/quantum-oscillations/nbsn2_sweep_overlay.png)
 
-Assign the measured branches from their shape instead: a calculated branch of one group that follows the measured frequency and its slope over several angles. The figure shows the 160 significant peaks over the orbits with at least 50 copies; the weak peaks are not tested and not drawn. The highest measured branch, between 3.7 and 5.0 kT from $5^\circ$ to $35^\circ$, lies along the amber orbits of bands 15,16, the sheet that the single-direction test below also gives for it. Yet at $5^\circ$ the test matches its 3692 T peak to a hole orbit of bands 13,14 at 3669 T, found in only 56 copies, because the 15,16 orbit nearest in frequency, at 3449 T, lies 6.6 % below. A pointwise match names the nearest orbit, not the sheet that makes the branch. `sweep_comparison` also writes `per_angle_listing.txt` to `qo_analysis/sweep/`, the measured and calculated frequencies side by side at each measured angle, which is the table to read while you follow a branch.
+Assign the measured branches from their shape instead: a calculated branch of one group that follows the measured frequency and its slope over several angles. The figure shows the 160 significant peaks over the orbits with at least 50 copies. The highest measured branch, between 3.7 and 5.0 kT from $5^\circ$ to $35^\circ$, lies along the amber orbits of bands 15,16, the sheet that the single-direction test below also gives for it. Yet at $5^\circ$ the test matches its 3692 T peak to a hole orbit of bands 13,14 at 3669 T, found in only 56 copies, because the 15,16 orbit nearest in frequency, at 3456 T, lies 6.4 % below. A pointwise match names the nearest orbit, not the sheet that makes the branch. To follow a branch, read `qo_analysis/sweep/per_angle_listing.txt`, the measured and calculated frequencies side by side at each measured angle.
 
 ## Anisotropy and mass enhancement at single directions
 
-The LK table adds two tests that a coincidence rarely passes. {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.direction_analysis` takes each label measured at two directions, tries every pair of orbits of one group within `anisotropy_window` (35 %) of the two measured frequencies, and ranks the pairs by
-
-$$
-s = \left|\frac{F_2^\mathrm{c}}{F_1^\mathrm{c}} - \frac{F_2^\mathrm{e}}{F_1^\mathrm{e}}\right| + \frac{1}{2}\sum_{i=1,2} \frac{|F_i^\mathrm{c} - F_i^\mathrm{e}|}{F_i^\mathrm{e}} + \frac{w}{2}\sum_{i=1,2}\left|\ln\frac{m_i^\mathrm{e}}{m_i^\mathrm{c}}\right| ,
-$$
-
-with c for calculated, e for measured and $w = 0.2$. A ratio within 0.03 of the measured one is "reproduced", and deviations above 5 % at both directions that differ by less than 3 points are flagged as a uniform offset.
+The LK table adds two tests that coincidences rarely pass. {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.direction_analysis` takes each label measured at two directions and ranks every pair of calculated orbits of one group by how well it reproduces the ratio of the two measured frequencies, then the frequencies themselves, then the masses (see [Anisotropy ratios](../theory/quantum-oscillations.md#anisotropy-ratios)). The ratio tests the shape of the sheet, because an error that scales the whole sheet cancels in it. `anisotropy_window` (35 %) limits the orbits it tries to those near the two measured frequencies; widen it when a sheet has the right shape and a large error in size.
 
 ```{literalinclude} quantum-oscillations/main.py
 :language: python
@@ -124,16 +114,22 @@ with c for calculated, e for measured and $w = 0.2$. A ratio within 0.03 of the 
     mu 15,16     3672.0    3446.367     5804.0    5455.078      1.581       1.583         2.478 anisotropy reproduced; uniform offset (right shape, wrong size)
 sigma1 11,12      478.0     563.460      512.0     552.901      1.071       0.981         3.179                                WRONG SIGN - likely coincidental
 sigma2 11,12      586.0     563.460      578.0     552.901      0.986       0.981         2.753                                           anisotropy reproduced
+[001] -> [110]
+label group  F_ref_exp  F_ref_calc  F_cmp_exp  F_cmp_calc  ratio_exp  ratio_calc  1+lambda_ref                                                         verdict
+beta1 13,14      102.0      90.795      312.6     277.936      3.065       3.061         2.854 anisotropy reproduced; uniform offset (right shape, wrong size)
 ```
 
-Both $\sigma$ branches find the same 563 T sheet of bands 11,12, whose frequency falls by 2 % towards $[11y]$. $\sigma_2$ falls by 1.4 %, but $\sigma_1$ rises by 7 %, so its match at $[001]$ is a coincidence. $\mu$ keeps its ratio, 1.581 against 1.583, with the calculation about 6 % low at both directions: the sheet has the right shape and the wrong size, so the assignment holds and the 6 % measures the error of the calculated area. The last column is the mass enhancement $1 + \lambda = m^*_\mathrm{LK}/m^*_\mathrm{band}$, which should exceed 1 and be similar for branches of comparable character: 2.48 for $\mu$, 2.75 for $\sigma_2$ and 2.85 for $\beta_1$ (from the $[001] \to [110]$ table), whereas $\delta$, whose ratio is reproduced, gives 1.09, almost no enhancement, which makes it the least secure of these assignments.
+Both $\sigma$ branches find the same 563 T sheet of bands 11,12, whose frequency falls by 2 % towards $[11y]$. $\sigma_2$ falls by 1.4 %, but $\sigma_1$ rises by 7 %, so its match at $[001]$ is a coincidence. $\mu$ keeps its ratio, 1.581 against 1.583, with the calculation about 6 % low at both directions: the sheet has the right shape and the wrong size, so the assignment holds and the 6 % measures the error of the calculated area.
+
+The column `1+lambda_ref` is the [mass enhancement](../theory/quantum-oscillations.md#mass-enhancement) $1 + \lambda = m^*_\mathrm{LK}/m^*_\mathrm{band}$ at the first direction. It contains every renormalisation the DFT bands lack, so it should exceed 1 and be similar for branches of comparable character: 2.48 for $\mu$, 2.75 for $\sigma_2$ and 2.85 for $\beta_1$, whereas $\delta$, whose ratio is reproduced, gives 1.09, almost no enhancement, which makes it the least secure of these assignments.
 
 ## When a branch has no calculated partner
 
-Before you report a measured branch as unexplained, check the calculation. {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.compare_runs` compares the orbits with those of a denser or scalar-relativistic run registered with `add_reference_run()`; {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.fermi_level_scan` follows the orbits in runs at $E_F \pm$ a few meV and checks their shift against the rigid-band slope $dF/dE = \pm 8.637\,(m^*/m_e)$ T/meV, positive for electron orbits; and {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.breakdown_gaps` finds near-contacts between sheets where magnetic breakdown can create orbits that pyskeaf does not trace. The base example runs all three. The orbits of the breakdown network itself, from `breakdown_network()`, take minutes per angle and core, so run one angle first.
+Check the calculation before you report a branch as unexplained. {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.compare_runs` compares the orbits with those of a denser or scalar-relativistic run registered with `add_reference_run()`, which tests the [resolution of the k-mesh](../theory/quantum-oscillations.md#resolution-of-the-k-mesh). {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.fermi_level_scan` follows the orbits in runs at $E_F \pm$ a few meV and checks their shift against the [rigid-band slope](../theory/quantum-oscillations.md#rigid-shift-of-the-fermi-level) $dF/dE = \pm 8.637\,(m^*/m_e)$ T/meV, positive for electron orbits. {py:meth}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis.breakdown_gaps` finds near-contacts between sheets where [magnetic breakdown](../theory/quantum-oscillations.md#magnetic-breakdown) can create orbits that pyskeaf does not trace. The base example runs all three; its breakdown network, `breakdown_network()`, takes minutes per angle and core, so run one angle first.
 
 ## Where to go next
 
+- [Quantum oscillations and extremal Fermi-surface orbits](../theory/quantum-oscillations.md) derives the frequencies, masses and tests used here.
 - {py:class}`~PAOFLOW.agentic.qo_analysis.analysis_driver.QuantumOscillationAnalysis` lists every method with its parameters and the files it writes.
-- {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.pyskeaf` documents the rotation that writes the frequency tables, from the BXSF files of {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.fermi_surface`.
-- The folder [agentic/skeaf/](https://github.com/marcobn/PAOFLOW/tree/master/agentic/skeaf) holds the playbook and prompts with which an AI agent runs this analysis in stages, from the geometry check to a report for experimental collaborators, on the same class.
+- {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.pyskeaf` documents the rotation that writes the frequency tables, from the band files of {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.fermi_surface`.
+- [agentic/skeaf/](https://github.com/marcobn/PAOFLOW/tree/master/agentic/skeaf) holds the playbook with which an AI agent runs this analysis in stages on the same class.

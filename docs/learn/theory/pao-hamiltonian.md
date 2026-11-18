@@ -188,7 +188,9 @@ The basis sets the number of bands, $n_\mathrm{awf}$, and their projectability. 
 
 ## Used in
 
-- [Tutorial 01](../tutorials/tutorial01.ipynb): the projections, projectability, PAO shift and real-space Hamiltonian of bulk Si, its band structure along the high-symmetry path and its interpolation onto a $24\times24\times24$ mesh for the density of states.
+- [Tutorial 01](../tutorials/tutorial01.ipynb): the projections, projectability, PAO shift and $H(\mathbf{R})$ of bulk Si, its bands, and their interpolation onto a $24\times24\times24$ mesh.
+- [How to choose the truncation of the sparse Hamiltonian](../howtos/sparse-truncation.md): how fast the hoppings decay.
+- [How to choose which states the sparse backend solves](../howtos/sparse-states.md): the cap the PAO shift puts on the solved states.
 
 ## References
 

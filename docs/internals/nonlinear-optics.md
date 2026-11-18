@@ -9,7 +9,11 @@ second-harmonic susceptibility, on a dense k-grid interpolated from `HRs` withou
 [response/nonlinear_optics.py](../../src/PAOFLOW/response/nonlinear_optics.py) (band geometry,
 kernels, driver, writers). It implements the formulation of Wang, Liu, Kang, Gu, Xu and Duan,
 Phys. Rev. B **96**, 115147 (2017) and Chen, Ye, Zou, Gu, Xu and Duan, Phys. Rev. B **105**,
-075123 (2022), with the PAO basis replacing the Wannier functions.
+075123 (2022), with the PAO basis replacing the Wannier functions. The physics (the response
+formulas, the sum rule, the shift vector, the symmetry constraints, the broadening, the units
+and the approximations) is on the theory page
+[Second-order optical response](../learn/theory/nonlinear-optics.md); this page covers how the
+code evaluates it.
 
 ## Workflow
 
@@ -55,45 +59,50 @@ $\partial_a H^A$ and $\partial_a\partial_b H^A$ in the eigenbasis of the atomic-
 the test `test_bloch_derivatives.py` checks both against the exact operators of hand-built models and
 against finite differences.
 
-**Band geometry** (`band_geometry`): $\omega_{nm} = E_n - E_m$, $r^a_{nm} = -i v^a_{nm}/\omega_{nm}$
-for $|\omega_{nm}| >$ `degeneracy_tol` (zero otherwise), $\Delta^a_{nm} = v^a_{nn} - v^a_{mm}$, and the
-generalized derivative from the sum rule over all `nawf` bands,
-
-$$
-r^b_{nm;a} = \frac{i}{\omega_{nm}}\Big[\frac{v^b_{nm}\Delta^a_{nm}}{\omega_{nm}} - w^{ab}_{nm}
-+ \big[v^b, G^a\big]_{nm}\Big],\qquad G^a_{pm} = \frac{v^a_{pm}}{\omega_{pm}}\ (p\neq m),
-$$
-
-which is the sum rule of Wang *et al.* (their Eq. 5, including the $\langle n|\partial_a\partial_b H|m\rangle$
-term that does not vanish in a tight-binding basis) after the $p = n, m$ terms are moved into the
-commutator. The sign of the curvature term is pinned by
+**Band geometry** (`band_geometry`, `BandGeometry`): the operators $v_a$, $w_{ab}$ are rotated to
+the band basis, and the band-basis quantities of the theory page
+([Band geometry](../learn/theory/nonlinear-optics.md#band-geometry-from-the-pao-hamiltonian)) are
+stored per k-block: `omega` ($\omega_{nm} = E_n - E_m$), `cluster` and `pair_mask` (degenerate
+groups), `inv_omega`, `velocity`, `velocity_intra`, `position` ($r^a_{nm}$), `position_delta`
+(the covariant form of $r^b_{nm}\Delta^a_{nm}$) and `position_derivative` ($r^b_{nm;a}$, axes
+`[a, b]`). The sum rule of
+[Generalized derivative and the sum rule](../learn/theory/nonlinear-optics.md#generalized-derivative-and-the-sum-rule)
+is evaluated in commutator form,
+$r^b_{nm;a} = (i/\omega_{nm})\big[[v^a_{\rm intra}, v^b]_{nm}/\omega_{nm} - w^{ab}_{nm} + [v^b, G^a]_{nm}\big]$,
+$G^a_{pm} = v^a_{pm}/\omega_{pm}$ between clusters and 0 inside, so the $p = n, m$ terms of the
+band sum are inside the commutator (the module docstring of `response/nonlinear_optics.py` writes
+the sum as $p \neq n, m$, which leaves out the $v^a_{nm}\Delta^b_{nm}/\omega_{nm}$ term that the
+code includes). The sign of the curvature term is pinned by
 `test_generalized_derivative_matches_covariant_finite_differences`, which compares $r^b_{nm;a}$ with
 the k-derivative of $r^b_{nm}$ in a parallel-transport gauge (Richardson-extrapolated central
-differences). The PAO basis is finite, so this sum rule is exact within the model: no slow
-band-convergence as in the plane-wave sum-rule route.
+differences).
 
-**Responses** (`nonlinear_optical_spectra`), with $g_s$ the spin factor, $\int[dk] \to
-\frac{1}{N_k\Omega}\sum_k$, and $f_{nm} = f_n - f_m$:
+**Responses** (`nonlinear_optical_spectra`). The formulas are on the theory page:
+[shift current](../learn/theory/nonlinear-optics.md#shift-current),
+[injection current](../learn/theory/nonlinear-optics.md#injection-current),
+[SHG](../learn/theory/nonlinear-optics.md#second-harmonic-generation). In the code
+$\int[dk] \to \frac{1}{N_k\Omega}\sum_k$ (`norm = spin_factor / (nkd * cell_volume)`), and the
+kernels map to accumulators and files as
 
-| quantity | expression | file, unit |
+| quantity | kernel, accumulator | file, unit (3D) |
 |---|---|---|
-| shift current, $J^a = \sigma^{abc}E^b(\omega)E^c(-\omega)$ | $\sigma^{abc} = \frac{\pi e^3 g_s}{\hbar^2}\int[dk]\sum_{nm} f_{nm}\,\mathrm{Im}[r^b_{mn}r^c_{nm;a} + r^c_{mn}r^b_{nm;a}]\,\delta(\omega_{nm}-\omega)$ | `shift_abc.dat`, µA/V² |
-| magnetic shift current (T-odd), $J^a = \sigma_M^{abc}\mathrm{Im}[E^bE^{c*}]$ | $-\frac{\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{nm}\mathrm{Re}[r^b_{mn}r^c_{nm;a} - r^c_{mn}r^b_{nm;a}]\delta(\omega_{nm}-\omega)$ | `shiftm_abc.dat`, µA/V² |
-| circular injection, $dJ^a/dt = \eta_C^{abc}\mathrm{Im}[E^bE^{c*}]$ | $\frac{2\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{mn}\Delta^a_{mn}\mathrm{Im}[r^b_{mn}r^c_{nm}]\delta(\omega_{nm}-\omega)$ | `injectc_abc.dat`, A V⁻² s⁻¹ |
-| magnetic injection (T-odd), $dJ^a/dt = \eta_M^{abc}\mathrm{Re}[E^bE^{c*}]$ | $-\frac{2\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{mn}\Delta^a_{mn}\mathrm{Re}[r^b_{mn}r^c_{nm}]\delta(\omega_{nm}-\omega)$ | `injectm_abc.dat`, A V⁻² s⁻¹ |
-| SHG, $P^a(2\omega) = \epsilon_0\chi^{abc}E^bE^c$ | Chen *et al.* Eqs. (C1)–(C3): the three-band term $\chi_e$ and the mixed term $\chi_i$ including the T-odd $-\Delta^a_{mn}g^{bc}_{nm}/(2\omega_{mn}^2(\omega_{mn}-\omega))$ | `shgr/shgi/shga_abc.dat`, pm/V |
+| shift current $\sigma^{abc}$ | `accumulate_shift_and_injection`, `out['shift']` | `shift_abc.dat`, µA/V² |
+| magnetic shift current $\sigma_M^{abc}$ | same, `out['shiftm']` | `shiftm_abc.dat`, µA/V² |
+| circular injection $\eta_C^{abc}$ | same, `out['injectc']` | `injectc_abc.dat`, A V⁻² s⁻¹ |
+| magnetic injection $\eta_M^{abc}$ | same, `out['injectm']` | `injectm_abc.dat`, A V⁻² s⁻¹ |
+| SHG $\chi^{abc}$ | `accumulate_shg_histograms`, `hist1`/`hist2` → `shg_from_histograms` | `shgr/shgi/shga_abc.dat`, pm/V |
 
-The field convention is $E(t) = E(\omega)e^{-i\omega t} + E(-\omega)e^{i\omega t}$; for $b = c$ the
-shift current is Eq. (2) of Wang *et al.* and twice the $\sigma^{abb}$ of Sipe and Shkrebtii (2000),
-who write $J = 2\sigma EE^*$. The injection coefficients follow Eq. (9) of Chen *et al.*
-($\eta_C \propto$ the two-band Berry curvature $\Omega^{bc}_{mn} = -2\mathrm{Im}[r^b_{mn}r^c_{nm}]$,
-$\eta_M \propto$ the quantum metric $g^{bc}_{mn} = \mathrm{Re}[r^b_{mn}r^c_{nm}]$). The SI prefactors
-per unit of the dimensionless k-sums are $\pi e^2/\hbar = 7.647\times10^{-4}$ A/V²,
-$2\pi e^3/\hbar^2 = 2.324\times10^{12}$ A V⁻² s⁻¹ and $e/(2\epsilon_0) = 9048$ pm/V.
+In `accumulate_shift_and_injection` the occupation array is `F[k, n, m]` $= f_m - f_n$, and only
+pairs with $F > 0$, $\omega'_{nm} > 0$ and $\omega'_{nm}$ within five widths of the photon grid are
+kept. The SI prefactors per unit of the dimensionless k-sums are `C_SHIFT` $= \pi e^2/\hbar =
+7.647\times10^{-4}$ A/V², `C_INJECT` $= 2\pi e^3/\hbar^2 = 2.324\times10^{12}$ A V⁻² s⁻¹ and
+`C_SHG` $= e/(2\epsilon_0) = 9048$ pm/V. The field convention and the factor 2 against Sipe and
+Shkrebtii are in
+[Second-order response to an optical field](../learn/theory/nonlinear-optics.md#second-order-response-to-an-optical-field).
 
-**δ-functions** are Gaussians (PAOFLOW's convention) or Lorentzians of width `eta`, or the adaptive
-pair widths $a|\mathbf v_n - \mathbf v_m|\Delta k$ floored at `eta` (`adaptive_smearing=a`), evaluated
-directly on the photon-energy grid for the pairs inside the window.
+**δ-functions** (`delta_kernel`; physics in
+[Broadening](../learn/theory/nonlinear-optics.md#broadening)) are evaluated directly on the
+photon-energy grid for the pairs inside the window, in pair blocks.
 
 **SHG histograms.** Every term of $\chi_e + \chi_i$ has the form $W/(E - c\,\omega - i\eta)$ with $E$
 a transition energy and $c \in \{1, 2\}$ (one common $i\eta$ in every denominator, the $1/\tau$ of Chen
@@ -103,15 +112,18 @@ photon grid. The cost per k-point is $O(n_{\rm awf}^3)$ for the three-band term 
 number of photon energies; `test_shg_histograms_match_direct_evaluation` checks it against an explicit
 evaluation.
 
-**Scissor.** `scissor` shifts the conduction energies in every resonance energy and in the explicit
-$1/\omega_{mn}$ factors, while $r$, $r_{;a}$ and $\Delta$ keep the DFT eigenvectors (the
-"scissors with fixed matrix elements" of Nastos *et al.* 2005); the δ-spectra shift rigidly
-(`test_scissor_shifts_the_delta_spectra_rigidly`).
+**Scissor** ([Scissor shift](../learn/theory/nonlinear-optics.md#scissor-shift)). The conduction bands are those with index
+$\geq$ `nocc`; `scissor_pair` shifts $\omega'_{nm}$ of the δ-kernels and `energies_scissored`
+the energies of the SHG kernels (resonances and the explicit $1/\omega_{mn}$ factors), while
+`band_geometry` runs on the unshifted energies. Test:
+`test_scissor_shifts_the_delta_spectra_rigidly`.
 
-**Occupations.** 0 K: a step by band index (`nelec`/$g_s$ bands) or by energy if `fermi_energy` is
-given; finite `temperature`: Fermi–Dirac at `fermi_energy` (default the mid-gap).
+**Occupations** (`occupations`; [Occupations and spin](../learn/theory/nonlinear-optics.md#occupations-and-spin)). The band
+edges and the default mid-gap Fermi level are taken from the eigenvalues on the coarse grid of
+`HRs`; `nelec / spin_factor` must be an integer at 0 K without `fermi_energy`.
 
-**Degeneracies (U(N)-covariant since October 28 2026).** Bands are grouped in clusters by the
+**Degeneracies (U(N)-covariant since October 28 2026).** Physics in
+[Degenerate bands](../learn/theory/nonlinear-optics.md#degenerate-bands). Bands are grouped in clusters by the
 transitive closure of consecutive gaps below `degeneracy_tol` (`degenerate_clusters`); $r$, $G$
 and the band sums are restricted to pairs in different clusters, and every quantity is invariant
 under a change of basis inside a cluster. The band velocities enter only through the intra-cluster
@@ -127,7 +139,8 @@ x-supercell on a 4³ grid reproduces the primitive cell on an (8, 4, 4) grid, do
 GaAs (norm-conserving, k-resolved test at a Λ point): the SHG histograms went from 2.5 % / 18 %
 differences between symmetry-equivalent k to $10^{-10}$.
 
-**Position dipoles (since October 28 2026).** `position_dipoles=True` (or `'intra-atomic'`) goes
+**Position dipoles (since October 28 2026).** Physics in
+[Position dipoles](../learn/theory/nonlinear-optics.md#position-dipoles). `position_dipoles=True` (or `'intra-atomic'`) goes
 beyond the tight-binding position operator: with the Löwdin dipoles $d(\mathbf k)$ of
 `hamiltonian/position_dipoles.py` the position operator is $\tau + d$, the velocity gains
 $i[H, d]$ (so $r = r^{TB} + D$ between clusters, $D = U^\dagger d U$) and the covariant derivative
@@ -178,9 +191,8 @@ singular and the Löwdin dipoles blow up; use the UPF-orbital basis route.
 grid to its irreducible wedge under the point-group operations read from Quantum ESPRESSO
 (`arrays['sym_rot']`, integer matrices acting on fractional k, the time-reversal-combined ones
 excluded; a list of Cartesian matrices can be given for models) and symmetrises the spectra
-once at the end: since the symmetrisation $\mathrm{Sym}_G T = |G|^{-1}\sum_R R\otimes R\otimes R\, T$
-is linear, $\sum_{BZ} T(\mathbf k) = \mathrm{Sym}_G[\sum_{IBZ} w_{\mathbf k} T(\mathbf k)]$ exactly
-for the covariant integrands, with $w_{\mathbf k}$ the orbit sizes. The wedge accumulates the
+once at the end; why this is exact is in
+[Symmetry reduction of the k-mesh](../learn/theory/nonlinear-optics.md#symmetry-reduction-of-the-k-mesh). The wedge accumulates the
 closure of the requested components under the group (`utils/point_groups.py`:
 `reduce_k_grid`, `component_closure`, `symmetrize_components`); GaAs with `xyz, yzx, xxx`
 needs 9 of 27 components on 1/24 of the grid. The operations are checked on the coarse grid
@@ -188,11 +200,10 @@ needs 9 of 27 components on 1/24 of the grid. The operations are checked on the 
 reduction. Test: gapped graphene (D3h, 12 operations), wedge vs full 18² grid identical to
 $10^{-9}$ of the scale for every kind; GaAs 8³: identical to $10^{-10}$.
 
-**Spin.** $g_s = 2$ for `nspin = 1` without spin–orbit, 1 otherwise; with `nspin = 2` the two channels
-are computed separately (`_0`, `_1` files) and summed.
-
-**2D.** `twoD=True` multiplies by `slab_height` (default $|\mathbf a_3|$): sheet conductivities in
-nm µA/V² and sheet susceptibilities in pm²/V.
+**Spin and 2D** ([Occupations and spin](../learn/theory/nonlinear-optics.md#occupations-and-spin),
+[Bulk and sheet units](../learn/theory/nonlinear-optics.md#bulk-and-sheet-units)). With `nspin = 2` each channel is computed
+separately (`_0`, `_1` files) and the unsuffixed files hold the sum. `write_nonlinear_outputs`
+applies the slab height (`slab_height_bohr`) to every response when `twoD=True`.
 
 ## Validation (unit tests, `tests/unit/response/test_nonlinear_optics.py`)
 
@@ -260,9 +271,8 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   (the Λ-line points of the grid, where `eigh` returns an arbitrary basis of the doublets;
   k-resolved test in the GaAs validation folder: 18 % at a Λ point, 1e-10 elsewhere), the
   shift-current kernel is not. The error decreases with the grid density (170 % at 8³) and does
-  not depend on the degeneracy tolerance or the histogram bin; the U(N)-covariant treatment
-  (phase-2 plan C2) is the fix. Quote the equivalent-component spread of the SHG as its error
-  bar until then.
+  not depend on the degeneracy tolerance or the histogram bin. The U(N)-covariant treatment of
+  the degeneracies (above) removes this dependence.
 - **GaAs numbers** (PAW, symmetric 16³ nscf, scissor 0.86 eV, η = 0.05 eV):
   $|\chi_{xyz}(0)| = 110$ pm/V at both 40³ and 60³, 341 → 337 pm/V at 1.5 eV, peak 610 (40³) →
   480 (60³) pm/V near 2.6 eV (the resonance region is not converged at 60³), against
@@ -284,16 +294,22 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   poorly (projectability 0.45) and cannot be used; the 62-orbital configuration of example10
   (18 bands above 0.95) is the working one. Cost at nawf = 62, 40³ k, three components with
   SHG: 15 min on 8 ranks.
+- **Orbital centres of the built-in graphene model.** `models.graphene` stores `tau` rounded to
+  five decimals (0.28867, 0.57735 instead of $1/(2\sqrt3)$, $1/\sqrt3$), which breaks the
+  threefold rotation of the position operator at the $10^{-5}$ level. On the 300² run of the
+  how-to the forbidden circular injection `injectc_xxy` reaches $8.6\times10^4$ nm A V⁻² s⁻¹
+  (150²: $1.1\times10^5$, 600²: $8.5\times10^4$) and $|\sigma^{yyy}+\sigma^{yxx}|$ is
+  $7\times10^{-4}$ nm µA/V²; with `orbital_positions=[[1/3, 1/3, 0], [2/3, 2/3, 0]]` they drop to
+  $2\times10^{-4}$ and $10^{-13}$.
 - **Memory.** The δ-kernels are evaluated in pair blocks of about 16 MB and the three-band SHG
   term in k-chunks of about 2·10⁶ triples; the Wigner–Seitz images of `HRs` (nws × nawf² complex)
   are the largest resident array (300 MB for GaAs at 16³).
 
 ## Not implemented (follow-ups)
 
-Position dipoles beyond the tight-binding approximation (`position_dipoles.py` in $r$ and $r_{;a}$),
-the U(N)-covariant derivative for degenerate bands and the symmetry reduction of the k-grid are planned
-in [nonlinear-optics-phase2-plan.md](nonlinear-optics-phase2-plan.md); k-resolved integrand maps and a
-Rust kernel for the post-`eigh` algebra come after.
+The position dipoles, the U(N)-covariant derivative and the symmetry reduction of
+[nonlinear-optics-phase2-plan.md](nonlinear-optics-phase2-plan.md) are implemented (above);
+k-resolved integrand maps and a Rust kernel for the post-`eigh` algebra are not.
 
 ## References
 
