@@ -6,6 +6,8 @@ This page describes the files, release assets and tests behind the tutorials and
 
 A tutorial teaches one workflow on one fixed system and is a notebook, `docs/tutorials/tutorialNN.ipynb`, with its outputs stored. A how-to shows a reader with their own calculation how to make one change, and is a Markdown page, `docs/tutorials/howtos/<task>.md`, with two scripts in `docs/tutorials/howtos/<task>/`. `main.py` is the workflow the page teaches: the page shows all of it, pulled with `literalinclude` in blocks that start and end at its step comments, so a reader who downloads it gets exactly the code the page explains. `figures.py` reads the output files of `main.py` and its printed output, saved as `main.log`, draws the figures of the page, which are committed under `docs/_static/images/howtos/<task>/`, and asserts the numbers the text quotes. A tutorial keeps the same parts in one notebook: hidden `hide-input` plotting cells and a `remove-cell` cell of asserts.
 
+A theory page, `docs/learn/theory/<topic>.md`, explains the physics behind a family of results: the equations PAOFLOW evaluates, their derivation and the limits of their approximations. It has no script and no run. Tutorials and how-tos keep only the equations the reader needs to run the workflow and read its output (how-tos none) and link to the theory pages for the rest; the Learn section (`docs/learn/index.md`) holds the three page types.
+
 The docs build does not execute notebooks (`nb_execution_mode = 'off'`), so the website shows the committed outputs and figures.
 
 ## Release assets

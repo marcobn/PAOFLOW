@@ -1,6 +1,6 @@
 # Tutorials
 
-PAOFLOW tutorials are guided, workflows that teach both **how to use PAOFLOW** and **the physics behind the calculations**.
+PAOFLOW tutorials are guided workflows that teach how to use PAOFLOW on one material at a time. Each step names the physics it computes and links to the [theory pages](../learn/theory/index.md) for the derivations.
 
 Each tutorial walks through a complete workflow end-to-end: from the required inputs, through each PAOFLOW step, to interpreting the results. Tutorials are written for researchers who are familiar with density functional theory but may be new to PAOFLOW.
 
@@ -62,18 +62,10 @@ Topology of tight-binding models: the quantised spin Hall conductivity of the Ka
 
 ::::
 
----
-
-## How-Tos
-
-How-Tos are shorter and more targeted than tutorials. Instead of teaching a workflow end-to-end, each one answers a specific practical question: how to set something up, which flags matter, and how to check that the result is right.
-
-
 ```{toctree}
 :hidden:
 :maxdepth: 2
 :glob:
 
 tutorial*
-howtos/index
 ```

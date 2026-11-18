@@ -65,15 +65,15 @@ Get PAOFLOW installed in a few commands.
 :::
 
 :::{grid-item-card}
-:link: tutorials/index
+:link: learn/index
 :link-type: doc
 :class-card: landing-card
 
 {octicon}`mortar-board;2.4em;sd-text-muted`
 
-**Tutorials**
+**Learn**
 
-Guided workflows that teach the physics and methodology behind each calculation.
+Tutorials, how-tos, and the theory behind each calculation.
 :::
 
 :::{grid-item-card}
@@ -98,7 +98,7 @@ about/index
 quickstart
 applications/index
 installation
-tutorials/index
+learn/index
 internals/index
 more/contact
 ```

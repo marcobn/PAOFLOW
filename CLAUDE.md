@@ -10,7 +10,7 @@ user-invocable: true
 2. **Existing instructions**
     Follow the instructions in the folder .agents/skills when working on docstrings, feature-design and the tutorial/how-to pages:
     - `.agents/skills/docstring/SKILL.md`: NumPy-style docstrings, type hints on every new or edited function, RST `.. math::` equations in `Notes`
-    - `.agents/skills/tutorials-howtos/SKILL.md`: writing and reviewing `docs/tutorials/tutorialNN.ipynb` and `docs/tutorials/howtos/<task>.md` (voice, physics depth, running the code, figures, checks)
+    - `.agents/skills/tutorials-howtos/SKILL.md`: writing and reviewing the Learn section: `docs/tutorials/tutorialNN.ipynb`, `docs/tutorials/howtos/<task>.md` and `docs/learn/theory/<topic>.md` (voice, minimal theory on tutorials/how-tos with links to the theory pages, running the code, figures, checks)
     - `.agents/skills/feature-design/SKILL.md`: API and module design rules (summarized in section 5)
     - `.agents/skills/sparse-backend/SKILLS.md`: design notes and memory contract for `src/PAOFLOW/sparse/`. Read it before touching the sparse backend or `SparsePAOFLOW.py`
 
@@ -97,7 +97,8 @@ user-invocable: true
                           transport/, superconductivity/, arpes/: same layout, one playbook each over the
                           elphon system folders (mobility/resistivity, alpha2F/Tc/gaps, band maps/kinks)
                           nlo/: same layout for the non-linear optics outputs (SHG, shift current)
-    docs/                 Sphinx + MyST site (Read the Docs); docs/internals/ holds developer notes
+    docs/                 Sphinx + MyST site (Read the Docs); docs/learn/ holds the Learn index and theory/ pages
+                          (its Tutorials and How-tos are docs/tutorials/), docs/internals/ holds developer notes
     .github/              CI workflows and asset_generation scripts for integration-test tarballs
     ```
 

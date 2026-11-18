@@ -1,6 +1,6 @@
 ---
 name: tutorials-howtos
-description: "Write or revise the tutorials (docs/tutorials/tutorialNN.ipynb) and how-tos (docs/tutorials/howtos/<task>.md) of the Read the Docs site so they read like physics written for physicists. Use when: writing a new tutorial or how-to, turning an example into a how-to, revising, reviewing or proofreading an existing tutorial or how-to page, or adding one to the tutorials or how-to index, even if the user only says 'document this workflow' or 'write a page for this flag'."
+description: "Write or revise the pages of the Learn section of the Read the Docs site: tutorials (docs/tutorials/tutorialNN.ipynb), how-tos (docs/tutorials/howtos/<task>.md) and theory pages (docs/learn/theory/<topic>.md), so they read like physics written for physicists. Use when: writing a new tutorial, how-to or theory page, turning an example into a how-to, moving physics out of a tutorial into a theory page, revising, reviewing or proofreading an existing page, or adding one to an index, even if the user only says 'document this workflow', 'write a page for this flag' or 'explain the physics of this method'."
 user-invocable: true
 ---
 
@@ -10,27 +10,27 @@ The reader is a researcher who knows density functional theory but not PAOFLOW. 
 
 The pages are written for people to read, not for agents to parse. The aim is to communicate ideas clearly to a colleague. That means no instructions addressed to tools, no checklists written for a model, and no prompt-like text. It also means no marketing language, which rarely communicates an idea. Write at the level of a good review article: the reader is an expert in a neighbouring field. Do not talk down to them, and do not make them decode in-house shorthand (see "Jargon").
 
-There are two page types, defined by what the reader comes to the page for. Read the matching template before writing:
+The Learn section of the site has three page types, defined by what the reader comes to the page for. Read the matching template before writing:
 
-|              | Tutorial                                                                                                         | How-to                                                                                                       |
-| ------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Reader       | Is learning. Follows one fixed system from the inputs to the interpreted result, and runs the page as it is       | Already has their own calculation and needs one change to it: a flag, a route, a plot, a check               |
-| File         | `docs/tutorials/tutorialNN.ipynb`                                                                                | `docs/tutorials/howtos/<task>.md`, with its scripts `docs/tutorials/howtos/<task>/main.py` and `figures.py`    |
-| Template     | `references/tutorial.md`                                                                                         | `references/howto.md`                                                                                        |
-| Builds on    | Tutorial 01 (except Tutorial 01 itself)                                                                          | Tutorial 01, and an example under `examples/` when one exists. Shows only what differs from them             |
-| Length       | Up to 3000 words of prose                                                                                        | Up to 1500 words of prose                                                                                    |
+|              | Tutorial                                                                                                         | How-to                                                                                                       | Theory                                                                                                  |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Reader       | Is learning. Follows one fixed system from the inputs to the interpreted result, and runs the page as it is       | Already has their own calculation and needs one change to it: a flag, a route, a plot, a check               | Wants to understand the physics behind a result: the equations, their derivation, and where they fail   |
+| File         | `docs/tutorials/tutorialNN.ipynb`                                                                                | `docs/tutorials/howtos/<task>.md`, with its scripts `docs/tutorials/howtos/<task>/main.py` and `figures.py`    | `docs/learn/theory/<topic>.md`                                                                          |
+| Template     | `references/tutorial.md`                                                                                         | `references/howto.md`                                                                                        | `references/theory.md`                                                                                  |
+| Builds on    | Tutorial 01 (except Tutorial 01 itself)                                                                          | Tutorial 01, and an example under `examples/` when one exists. Shows only what differs from them             | `docs/learn/theory/pao-hamiltonian.md` (except that page itself)                                        |
+| Length       | Up to 3000 words of prose                                                                                        | Up to 1500 words of prose                                                                                    | Up to 3000 words of prose                                                                               |
 
 The reader's intent decides the type, and the length is the signal that a page has drifted from it. A how-to also drifts when it needs more than one system or teaches physics that no tutorial covers. When the checks report a page above its length, split it into pages that each answer one question, or promote a how-to that teaches a workflow to a tutorial. A page that answers one question and is still longer, such as a gallery of plots, is kept whole with an override (see "When a request conflicts with these rules").
 
-When a request fits neither type (a long derivation, a design note), say so: derivations belong in `docs/about/theory.md` or `docs/internals/`, and design notes in `docs/internals/`.
+Tutorials and how-tos keep the physics to what the reader needs to run the workflow and read its output, and link to a theory page for the rest (see "Physics depth"). A derivation belongs on a theory page, a design note in `docs/internals/`; when a request fits none of the three types, say so.
 
 ## Workflow
 
 1. **Read before writing.** Read the base example, if the page has one (`examples/.../main.py`, inputs, README), the PAOFLOW methods the page calls and their docstrings, and the existing pages that already cover nearby concepts. You need the code to know what is computed, and the neighbouring pages to know what is already explained (see "Say it once").
 2. **Find the equation the code evaluates** for each step that gets an equation. Write it down from the source, signs, factors, unit conversions and normalisations included. If it differs from the textbook form, the page shows what the code does and you report the discrepancy to the user. Never write the textbook version silently, and never change the code to match the page.
-3. **Write the script and run it** (see "Running the code" and "Assets and budgets"): the notebook of a tutorial, the `main.py` and `figures.py` of a how-to. Every number, table and figure on the page comes from that run, and the asserts check the numbers the conclusions rest on.
+3. **Write the script and run it** (see "Running the code" and "Assets and budgets"): the notebook of a tutorial, the `main.py` and `figures.py` of a how-to. Every number, table and figure on the page comes from that run, and the asserts check the numbers the conclusions rest on. A theory page has no run; it skips this step and the page test of step 5.
 4. **Plan the figures, then write the page** from the template, in the style below. Decide first what the reader must see at each step and draw it (see "Where a picture carries the explanation"); the text then says what the figure cannot. When the draft is done, review it in two passes. First, for each paragraph, state its point in one sentence; if you cannot, rewrite the paragraph. Then read the first sentences of each section alone and check that they outline its argument (see "Connecting the facts"). Finally, read the page paragraph by paragraph and ask whether a figure would carry that paragraph better.
-5. **Register it**: a tutorial gets a grid card plus a toctree entry, a how-to a list entry (a link with its title) plus a toctree entry (see the templates). The page test collects the new page by itself; add its name (`tutorialNN`, or the how-to's `<task>`) to the `page` matrix of the `docs-page-tests` job in `.github/workflows/ci.yaml`, which runs one page per job.
+5. **Register it**: a tutorial gets a grid card plus a toctree entry, a how-to or a theory page a list entry (a link with its title) plus a toctree entry (see the templates). When a tutorial or how-to links to a theory page, add it to the "Used in" list of that theory page. The page test collects the new page by itself; add its name (`tutorialNN`, or the how-to's `<task>`) to the `page` matrix of the `docs-page-tests` job in `.github/workflows/ci.yaml`, which runs one page per job.
 6. **Run the checks** at the end of this file and fix what they report. They are a floor, not the whole review.
 7. **Report** briefly: what you wrote, every place where code and textbook physics disagree, every number or reference you could not confirm, every cell left for the user to run, the run time of the page, every concept whose home page or internals page is missing (see "Say it once" and "Building the explanation"), and every place where a figure would help but you did not make one, with the reason (no data from the run, a heavy run still pending).
 
@@ -68,9 +68,10 @@ The budgets keep the page test fast enough to run on every pull request and the 
 
 The website is read as a whole, and repeated paragraphs make it long and hard to scan. Each concept has one home, and every other page links to it in one clause.
 
-- Tutorial 01 is the home of the core chain: projections, projectability, $H(\mathbf{R})$, interpolation, diagonalisation, DOS. Later pages link back to it instead of re-deriving.
+- Tutorial 01 is the home of the core workflow: projections, projectability, $H(\mathbf{R})$, interpolation, diagonalisation, DOS. Later pages link back to it for the calls instead of repeating them.
+- A theory page is the home of the physics of its topic: derivations, the intuition behind an equation, what each approximation neglects and where it fails. Tutorials and how-tos link to its sections instead of re-deriving; `docs/learn/theory/pao-hamiltonian.md` is the home of the physics of the core chain.
 - The home of a method's parameters is its docstring (rendered under `docs/api/`). A page explains how to choose a parameter for this material and links to the API entry for the full list: ``{py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.bands` ``.
-- Links: `[Tutorial 01](../tutorial01.ipynb)`, `[internal basis](../internals/internal-basis.md)`, headings with `[text](page.md#heading-anchor)` (MyST anchors are on down to level 4).
+- Links: `[Tutorial 01](../tutorial01.ipynb)`, `[internal basis](../internals/internal-basis.md)`, `[relaxation-time approximation](../learn/theory/boltzmann-transport.md#heading-anchor)` from a tutorial (one more `../` from a how-to), headings with `[text](page.md#heading-anchor)` (MyST anchors are on down to level 4).
 - A how-to does not repeat the workflow of its base example. It shows only what changes and links to the example.
 - A fact that holds for a method in general (a default, the files it writes, the energy range it is clipped to) has its home in the method's docstring or in the tutorial that introduces the method. Another page mentions it only when its situation changes what the reader should do, and then as a recommendation: what to do, followed by the reason in this situation, with a link to the home. A bare fact ("`do_pdos=False` turns them off") leaves the reader to work out why it is on this page. Write instead: "For a cell with many atoms, pass `do_pdos=False` to `dos()` unless you need the projected DOS, because by default it writes one file per orbital, thousands of files for a large supercell."
 - A link that says "see X" must land on text that explains the concept. Open the target and check. If the home page does not explain it, the explanation goes on the home page: tell the developer, and do not define the concept on the linking page instead.
@@ -93,7 +94,7 @@ The page is read top to bottom by someone who has not seen the code. Three thing
 
 **Beyond the cases shown.** A page whose change affects many properties (a backend, a global flag) shows one or two and then tells the reader how to run any other: whether the call is unchanged, and where the list of supported methods is (the API page, or a table on the page).
 
-**Internals.** How the implementation works (solvers, data layout, parallel distribution) is explained in `docs/internals/<topic>.md`, not on the page. Where a mechanism has a consequence for the result or the cost, the page states the consequence and links to the internals page in one clause, so the reader knows why it matters. The "Where to go next" section links the internals page again for readers who want the mechanism. If no internals page exists, tell the developer instead of writing the mechanism into the tutorial or how-to.
+**Internals.** How the implementation works (solvers, data layout, parallel distribution) is explained in `docs/internals/<topic>.md`, not on the page and not on a theory page: a theory page is the physics for users, an internals page the code for developers, and an internals page links to the theory page of its topic for the physics. Where a mechanism has a consequence for the result or the cost, the page states the consequence and links to the internals page in one clause, so the reader knows why it matters. The "Where to go next" section links the internals page again for readers who want the mechanism. If no internals page exists, tell the developer instead of writing the mechanism into the tutorial or how-to.
 
 ## Describe the code as it is now
 
@@ -112,13 +113,20 @@ Write like a careful physicist writing a methods section that walks a colleague 
 
 **Voice.** Address the reader as "you" throughout: "You build the Hamiltonian from the projections", "Choose `nk=2000` so that the band crossings near $L$ are resolved." Use the imperative for instructions ("Download the dataset and set `savedir`"). Where the subject of a sentence is the code or the calculation, make it the subject: "`projectability()` keeps the states with $p_{n\mathbf{k}} > 0.95$". Do not switch to "we", "our", "let's" or "one can" partway through.
 
-**Physics depth.** For each step, give the defining equation as the code evaluates it, then one to three sentences of intuition: what the quantity means for an electron in the crystal, and what the reader should see in the output. Name the approximations explicitly: constant relaxation time, rigid band, independent particle, PBE gap, no local-field effects, the projectability cutoff. A reader needs to know what a result is not valid for. Leave derivations out and link to a reference or an internals page for them. Quote experiment or literature values only when the citation is certain (authors, journal, volume, page, year); otherwise ask the user.
+**Physics depth.** Tutorials and how-tos carry as little theory as the reader needs to run the workflow and read its output, so that the physics does not crowd out the calculation; the rest is one link away on a theory page.
+
+- In a tutorial, a step gets a display equation only where the reader needs it to choose a parameter or read the output: the conductivity formula where the reader picks $\tau$, the projectability where they set `pthr`. The equation is written as the code evaluates it, followed by one sentence on what it means for the output, and a link to the section of the theory page that derives it. A step whose output the reader reads without an equation gets one sentence saying what the quantity is, and the link.
+- A how-to has no display equations (check key `howto-math`). Inline symbols are fine where a flag sets one ("the smearing width $\sigma$"). Each flag gets the one or two sentences of physics the reader needs to choose its value, and a link to the theory page for more.
+- Both name their approximations on the page, in one line each: constant relaxation time, rigid band, independent particle, PBE gap, no local-field effects, the projectability cutoff. A reader needs to know what a result is not valid for without following a link; what each approximation neglects and where it fails is on the theory page.
+- Every tutorial links to at least one theory page (check key `theory-link`). When the theory page or the section it needs does not exist yet, write it from `references/theory.md`, or tell the developer; never put the derivation on the tutorial or how-to instead.
+
+Quote experiment or literature values only when the citation is certain (authors, journal, volume, page, year); otherwise ask the user.
 
 **Numbers.** Give quantities with units and the precision the run supports ("indirect gap 0.61 eV", not "about 0.6"). Every number comes from the run or from a cited source.
 
 **Jargon.** Use a technical term only when the physics needs it and no plain phrase is as precise. Terms that every DFT user knows need no explanation: Kohn–Sham state, k-point, PBE, pseudopotential, Fermi level. Terms that are specific to PAOFLOW or to another field do. Examples are projectability, PAO shift, cell doubling, the energy window of the sparse backend, and Berry curvature in a transport page. Define such a term in the sentence where it first appears on the page, or link to its definition in Tutorial 01, the API page or a cited reference. Spell out each acronym at its first use on each page (PAO, PDOS, SHC, AHC, NEGF). Do not use in-house shorthand as nouns: code variable names standing for a concept ("the `nawf` grows"), developer labels ("the dense branch", "nev padding", "the probe", "the engine") or names of internal functions the reader never calls. Say what they mean ("the number of orbitals grows"). When the page needs a name for a mechanism it uses repeatedly, define it once in plain terms ("one loop over all k-points of the mesh, called a pass") before using it.
 
-Avoiding jargon is not the same as simplifying the physics. Do not explain what the reader already knows (what a band structure or reciprocal space is). Do not use analogies that lose precision, and do not reassure ("don't worry", "it's simple", "just run"). Keep the equations, units and approximations. What changes is that every term on the page is one the reader knows or has just been given.
+Avoiding jargon is not the same as simplifying the physics. Do not explain what the reader already knows (what a band structure or reciprocal space is). Do not use analogies that lose precision, and do not reassure ("don't worry", "it's simple", "just run"). Keep the equations the page needs, the units and the approximations. What changes is that every term on the page is one the reader knows or has just been given.
 
 **Titles and headings.** A title says what the page computes, for which system or with which method: "Tutorial 02: Boltzmann transport in silicon", "How to add spin–orbit coupling to a scalar-relativistic calculation". A section heading says what the step does: "3. Projectability: which bands the PAO basis can represent". Avoid catchy or clever titles: no puns, no questions, no alliteration, no exclamations, no teaser subtitles ("Silicon: the workhorse of the semiconductor world"), no superlatives. The same goes for catchphrases in the text ("the secret sauce", "where the magic happens", "the heavy lifting", "say goodbye to"). Each says nothing a plain sentence would not say better.
 
@@ -224,7 +232,7 @@ A well-defined figure makes one point. It shows the quantity the text discusses,
 
 ## Notation
 
-Use these symbols, taken from Tutorial 01 and Tutorial 04. Add a symbol here when a new page introduces one that other pages will reuse.
+Use these symbols, taken from Tutorial 01, Tutorial 04 and the theory pages. Add a symbol here when a new page introduces one that other pages will reuse.
 
 | Symbol                                                                              | Meaning                                                    |
 | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -239,6 +247,8 @@ Use these symbols, taken from Tutorial 01 and Tutorial 04. Add a symbol here whe
 | $n_\mathrm{awf}$                                                                    | number of PAOs in the cell (`nawf` in the code)            |
 | $E_F$                                                                               | Fermi energy; plots use $E - E_F$ unless stated            |
 | $\mathbf{v}_{n\mathbf{k}} = \hbar^{-1}\nabla_{\mathbf{k}}\varepsilon_{n\mathbf{k}}$ | band velocity                                              |
+| $\hat O$                                                                            | operator whose linear response is computed (not $A$, which is the projection) |
+| $\epsilon'$, $\epsilon''$                                                           | real and imaginary parts of the dielectric tensor (not $\varepsilon$, the eigenvalues) |
 
 ## When a request conflicts with these rules
 
@@ -250,7 +260,7 @@ Several developers use this skill, and a rule is sometimes broken on purpose. A 
 
 The same applies to a page that already breaks a rule when you are asked to revise it. Point out the violations the checks report, and fix them unless a commit of the page records an override for that rule (the checks read the `Override:` trailers from `git log` of the page). If the developer wants to keep one, they give the override and you report its trailer line.
 
-Check keys: `banned-phrase`, `history`, `em-dash`, `bold`, `greek`, `voice`, `todo`, `repo-path`, `color`, `hide-input`, `no-output`, `registration`, `base-example`, `length`, `script`. Rules without a key (jargon, titles, physics depth, numbers from the run, the rules of "Connecting the facts") are checked by reading. Their overrides use the section name as the key, for example `Override: docs/tutorials/tutorial01.ipynb titles | ...`.
+Check keys: `banned-phrase`, `history`, `em-dash`, `bold`, `greek`, `voice`, `todo`, `repo-path`, `color`, `hide-input`, `no-output`, `registration`, `base-example`, `length`, `script`, `howto-math`, `theory-link`, `theory-code`. Rules without a key (jargon, titles, physics depth, numbers from the run, the rules of "Connecting the facts") are checked by reading. Their overrides use the section name as the key, for example `Override: docs/tutorials/tutorial01.ipynb titles | ...`.
 
 ## Checks
 
@@ -274,7 +284,7 @@ HISTORY = ["previously", "now uses", "no longer", "was changed", "has been chang
            "the old ", "renamed", "as requested", "the new option", "deprecated", "used to be"]
 PALETTE = {"#004488", "#D55E00", "#FFC20A", "#8A6800", "#009E73", "#56B4E9", "#CC79A7", "#000000"}
 GREEK = re.compile(r"[Α-ωϑϕϵ]")
-MAX_WORDS = {"howtos": 1500, "tutorials": 3000}  # prose words per page, see the table at the top
+MAX_WORDS = {"howtos": 1500, "tutorials": 3000, "theory": 3000}  # prose words per page, see the table at the top
 OVERRIDE = re.compile(r"^Override:\s*(\S+)\s+([\w-]+)\s*\|(.*)$", re.M)
 PENDING = {tuple(a.split("=", 1)[1].rsplit(":", 1)) for a in sys.argv[1:] if a.startswith("--override=")}
 
@@ -384,9 +394,15 @@ for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
                 say("voice", "'we'/'our'/'one can' in prose; address the reader as 'you'")
             if "{todo" in low:
                 say("todo", "unfilled {TODO: ...} placeholder")
+            if path.parent.name == "howtos" and "$$" in text:
+                say("howto-math", "display equation in a how-to; link to the theory page instead")
         else:
             check_code(text, say)
-            fenced += path.suffix == ".md" and bool(re.match(r"python\b", text))
+            fenced += path.parent.name == "howtos" and bool(re.match(r"python\b", text))
+            if path.parent.name == "howtos" and text.startswith("{math}"):
+                say("howto-math", "{math} block in a how-to; link to the theory page instead")
+            if path.parent.name == "theory" and not text.startswith("{"):  # directives are allowed
+                say("theory-code", f"code block on a theory page: {text.strip()[:60]!r}")
             if path.suffix == ".ipynb":
                 if re.search(r"plt\.|matplotlib|GPAO", text) and "hide-input" not in tags:
                     say("hide-input", "plotting cell without the 'hide-input' tag")
@@ -399,6 +415,10 @@ for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
         say("length", f"{nwords} words of prose, above {cap}: split, promote, or override")
     if fenced:
         say("script", f"{fenced} fenced python blocks; pull the code from main.py with literalinclude")
+    if path.parent.name in ("howtos", "theory"):
+        idx = (path.parent / "index.md").read_text() if (path.parent / "index.md").is_file() else ""
+        if not re.search(rf"^- \[.+\]\({path.stem}\.md\)$", idx, re.M) or not re.search(rf"^{path.stem}$", idx, re.M):
+            say("registration", f"missing list entry or toctree entry in {path.parent / 'index.md'}")
     if path.parent.name == "howtos":
         folder = path.parent / path.stem
         for script in (folder / "main.py", folder / "figures.py"):
@@ -408,9 +428,6 @@ for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
                 say("script", f"no {script}")
         if (folder / "main.py").is_file():
             check_blocks(path, (folder / "main.py").read_text().splitlines(), say)
-        idx = (path.parent / "index.md").read_text()
-        if not re.search(rf"^- \[.+\]\({path.stem}\.md\)$", idx, re.M) or not re.search(rf"^{path.stem}$", idx, re.M):
-            say("registration", "missing list entry or toctree entry in docs/tutorials/howtos/index.md")
         m = re.search(r"^Base examples?:(.*)$", allmd, re.M)  # optional; checked when present
         paths = re.findall(r"(?<![/\w])examples/[\w./-]+", m.group(1)) if m else []
         if m and not paths:
@@ -421,6 +438,8 @@ for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
     elif path.name.startswith("tutorial"):
         if path.stem not in re.findall(r":link:\s*(\S+)", (path.parent / "index.md").read_text()):
             say("registration", "missing grid card in docs/tutorials/index.md")
+        if not re.search(r"theory/[\w-]+\.md", allmd):
+            say("theory-link", "no link to a theory page in docs/learn/theory/")
     waived = overrides(path)
     problems += [f"{name}: [{k}] {msg}" for k, msg in found if k not in waived]
     overridden += [f"{name}: [{k}] overridden ({why})" for k, why in waived.items()]
