@@ -150,6 +150,6 @@ import PAOFLOW
 print(PAOFLOW.__version__)
 ```
 
-You should see the current version string (e.g. `3.0.0`).
+You should see the current version string (e.g. `4.0.0`).
 
 ---
