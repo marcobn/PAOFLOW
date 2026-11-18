@@ -32,6 +32,10 @@ def build_assets(source_root: Path, output_path: Path, selected: set[str] | None
                 for path in files:
                     archive.add(path, arcname=path.relative_to(source_root))
 
+            # the QE inputs that made the .save directories, so a reader can rerun the DFT
+            for path in sorted(tutorial_dir.glob('*.in')):
+                archive.add(path, arcname=path.relative_to(source_root))
+
             output_dir = tutorial_dir / 'output'
             if output_dir.is_dir():
                 archive.add(output_dir, arcname=output_dir.relative_to(source_root))

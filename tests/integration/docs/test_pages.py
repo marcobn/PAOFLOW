@@ -28,8 +28,8 @@ PAGES = REPO / 'docs' / 'learn'
 URL = 'https://github.com/marcobn/PAOFLOW/releases/download/'
 ASSETS = {  # archive -> (release tag, sha256)
     'tutorial_assets.tar.gz': (
-        'tutorial-assets-v1',
-        'df21d5d53d57082952ec5488526a938dc47c0ffbbc2d4ea31fcf1883ee40bb21',
+        'tutorial-assets-v2',
+        '39940d3e8b02dd77ba914cf05843e4e09a18539c20c665b2f0b5691ed1a9b6e3',
     ),
     'howto_assets.tar.gz': (
         'tutorial-assets-v2',

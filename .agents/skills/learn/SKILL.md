@@ -51,7 +51,7 @@ Both page types are made of the same three parts:
 
 |         | Tutorial                                                                                                                           | How-to                                                                                                             |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Inputs  | A minimal `.save` directory (`atomic_proj.xml`, `data-file-schema.xml`, the pseudopotential files) under `tutorialNN/` in `tutorial_assets.tar.gz` | The same form under `<task>/` in `howto_assets.tar.gz`. None for a page that builds its model in code              |
+| Inputs  | A minimal `.save` directory (`atomic_proj.xml`, `data-file-schema.xml`, the pseudopotential files) and the QE input files that made it (`scf.in`, `nscf.in`, `proj.in`) under `tutorialNN/` in `tutorial_assets.tar.gz` | The same form under `<task>/` in `howto_assets.tar.gz`. None for a page that builds its model in code              |
 | Scripts | The notebook                                                                                                                       | `docs/learn/howtos/<task>/main.py` (the workflow) and `figures.py` (figures and asserts)                       |
 | Outputs | Stored in the notebook                                                                                                             | PNGs in `docs/_static/images/howtos/<task>/`, written by `figures.py`, and log excerpts pasted on the page         |
 
