@@ -8,7 +8,7 @@ menu entry is chosen, so a run without them is written exactly as before.
 from __future__ import annotations
 
 #: Menu entries that change how the run is made rather than add a property.
-RUN_MODIFIERS = ('hamiltonian_changes', 'restart')
+RUN_MODIFIERS = ('hamiltonian_changes', 'restart', 'sparse')
 
 #: Topology searches on the real-space Hamiltonian (before the band path and the interpolation).
 TOPOLOGY_SEARCHES = ('weyl_points', 'z2_invariant', 'mirror_chern')
@@ -115,6 +115,12 @@ def extra_constant_lines(cfg: dict) -> list[str]:
             '# with the same number of ranks starts from them. Delete them to rebuild.',
             "RESTART = os.path.join(HERE, 'paoflow_dump')",
         ]
+    if 'sparse' in props:
+        lines += [
+            '# Sparse backend: None takes every default (hopping threshold 1e-3 eV); a dict sets',
+            "# e.g. {'hopping_threshold': 1.0e-4}, or {'bond_order': 36} for a real-space cutoff.",
+            'SPARSE_CONFIG = None',
+        ]
     return lines + [''] if lines else []
 
 
@@ -150,7 +156,8 @@ def modify_hamiltonian_lines(cfg: dict) -> list[str]:
 
 def apply_modifications(lines: list[str], cfg: dict) -> list[str]:
     """Insert ``modify_hamiltonian(p)`` after every ``p.pao_hamiltonian(...)`` line and pass the
-    top valence band to ``pao_eigh`` (its Hubbard-shift reference).
+    top valence band to ``pao_eigh`` (its Hubbard-shift reference); with the sparse entry, select
+    the sparse backend in every ``PAOFLOW.PAOFLOW(`` call.
 
     Parameters
     ----------
@@ -162,20 +169,24 @@ def apply_modifications(lines: list[str], cfg: dict) -> list[str]:
     Returns
     -------
     list of str
-        ``lines`` unchanged unless the Hamiltonian is changed.
+        ``lines`` unchanged without these two menu entries.
     """
-    if 'hamiltonian_changes' not in cfg['properties']:
+    changes = 'hamiltonian_changes' in cfg['properties']
+    sparse = 'sparse' in cfg['properties']
+    if not (changes or sparse):
         return lines
     out = []
     for line in lines:
         stripped = line.lstrip()
         indent = line[: len(line) - len(stripped)]
-        if stripped == 'p.pao_eigh()':
+        if changes and stripped == 'p.pao_eigh()':
             # the default bval (0) would put the top of the lowest band at zero
             line = indent + 'p.pao_eigh(bval=TOP_VALENCE_BAND)'
         out.append(line)
-        if stripped.startswith('p.pao_hamiltonian(') and stripped.endswith(')'):
+        if changes and stripped.startswith('p.pao_hamiltonian(') and stripped.endswith(')'):
             out.append(indent + 'modify_hamiltonian(p)')
+        if sparse and stripped == 'npool=NPOOL,':  # a line of every PAOFLOW.PAOFLOW( call
+            out += [indent + 'sparse=True,', indent + 'sparse_config=SPARSE_CONFIG,']
     return out
 
 

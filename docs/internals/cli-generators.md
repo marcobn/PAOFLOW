@@ -167,6 +167,13 @@ are unchanged (the parity tests run as before; coverage scenarios `extras_everyt
 - **Restart point** (`restart`): `run_properties` builds everything up to `gradient_and_momenta`, then
   `restart_dump`; a later run with the same number of MPI ranks finds `paoflow_dump_0.json` and starts from
   `restart_load`.
+- **Sparse backend** (`sparse`): `sparse=True, sparse_config=SPARSE_CONFIG` in every `PAOFLOW.PAOFLOW(` of
+  `main.py` (property, optical, doped runs); `SPARSE_CONFIG = None` takes the defaults. The file names are those
+  of the dense run, so `plot.py` is unchanged. The form refuses it together with the dense-only entries
+  (`SPARSE_DENSE_ONLY`: non-linear optics, spin susceptibility, Z2, mirror Chern, restart), hides the
+  Wigner–Seitz interpolation routes, and `main.py` drops `suggest_energy_window` (a sparse run solves only the
+  bands its properties ask for) and puts the mesh properties (DOS, Hall terms, linear response, transport) in
+  one `with p.sparse.fused():` block, a single mesh pass.
 - **Spin Hall on atoms** (`shc_atoms`, GUI only): `spin_Hall(..., shc_proj=SHC_ATOMS)`.
 - For 2D runs the dense grid is `NFFT = (n, n, 1)`: nothing to interpolate across the vacuum.
 
