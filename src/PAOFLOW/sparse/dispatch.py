@@ -72,7 +72,32 @@ _TO_DENSE = (
     'load_sparse_hamiltonian().'
 )
 
+_NOT_PORTED = (
+    'it was added to the dense pipeline after the sparse backend and has not been ported to the '
+    'bond list yet; ' + _TO_DENSE
+)
+
 DENSE_ONLY_REASONS = {
+    'coupled_optical_response': _NOT_PORTED,
+    'doped_transport': _NOT_PORTED,
+    'kubo_optical_response': _NOT_PORTED,
+    'kubo_response': _NOT_PORTED,
+    'magnetic_field': _NOT_PORTED,
+    'orbital_magnetization': _NOT_PORTED,
+    'orbital_moment': _NOT_PORTED,
+    'peierls_field': _NOT_PORTED,
+    'self_consistent_spin': _NOT_PORTED,
+    'special_displacement': _NOT_PORTED,
+    'spin_susceptibility': _NOT_PORTED,
+    'spinor_basis': _NOT_PORTED,
+    'sscha_force_constants': _NOT_PORTED,
+    'sscha_hessian': _NOT_PORTED,
+    'sscha_minimize': _NOT_PORTED,
+    'sscha_population': _NOT_PORTED,
+    'sscha_setup': _NOT_PORTED,
+    'sscha_status': _NOT_PORTED,
+    'stoner_parameters': _NOT_PORTED,
+    'z2_invariant': _NOT_PORTED,
     'restart_dump': (
         'it pickles the DataController, which does not hold the bond list or the engine '
         'state; save the base cell with save_sparse_hamiltonian() and restart with '

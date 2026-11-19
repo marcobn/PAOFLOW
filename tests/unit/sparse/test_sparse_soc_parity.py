@@ -243,6 +243,12 @@ def test_rashba_edelstein_intra_matches_the_window_truncated_dense_sum(fe):
     vv = np.array([p[1] for p in products])
     ene = np.linspace(-2.0, 2.0, 101)
     E, delta = a['E_k'][:, :bnd, 0], a['deltakp'][:, :bnd, 0]
+    # the sparse pass drops the states from ``shift - shift_margin`` up; since Nov 2026 the dense
+    # degenerate groups that reach past ``bnd`` give them widths that leak into this range
+    from PAOFLOW.sparse.config import SHIFT_MARGIN
+
+    real = E < attr['shift'] - SHIFT_MARGIN
+    sv, vv = np.where(real, sv, 0.0), np.where(real, vv, 0.0)
     acc = np.array([np.sum(np.real(gaussian(e, E, delta) * sv)) for e in ene])
     jc = np.array([np.sum(np.real(gaussian(e, E, delta) * vv)) for e in ene])
     chi = -HBAR * acc / (jc * ELECTRONVOLT_SI * BOHR_RADIUS_CM + 1e-30)

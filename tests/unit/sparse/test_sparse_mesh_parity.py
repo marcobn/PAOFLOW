@@ -127,7 +127,9 @@ def _nondegenerate(d_arrays, bnd, gap=1e-6):
     start vector re-rolls the gauge every run), so strict index-wise
     parity is only demanded away from them."""
     E = d_arrays['E_k'][:, :, 0]
-    return (np.diff(E[:, : bnd + 1], axis=1) > gap).all(axis=1)
+    # a group that reaches past bnd is rotated whole since Nov 2026: gauge-sensitive as well
+    straddle = np.array([any(g.max() >= bnd for g in groups) for groups in d_arrays['degen'][0]])
+    return (np.diff(E[:, : bnd + 1], axis=1) > gap).all(axis=1) & ~straddle
 
 
 def _groupwise(values, E, combine):

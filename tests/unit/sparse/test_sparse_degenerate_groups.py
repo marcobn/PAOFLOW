@@ -19,7 +19,6 @@ from scipy.linalg import block_diag
 from PAOFLOW.sparse.kpoint import degenerate_groups
 from PAOFLOW.sparse.mesh import _band_diagonal_velocities, _commute, _invariant_subspaces
 from PAOFLOW.sparse.solver import _orthonormalize_degenerate
-from PAOFLOW.spectrum.do_eigh import get_degeneracies
 
 
 def _herm(rng, n):
@@ -38,8 +37,7 @@ def _hidden_copies(rng):
 
 def test_degenerate_groups_merges_repeated_clusters():
     E = np.array([-1.0, -0.70502, -0.70502, -0.70501, -0.70501, 0.3, 0.3, 1.0])
-    raw = get_degeneracies(E[None, :, None], len(E))[0][0]
-    assert len(raw) > len({tuple(g) for g in raw}), 'the input must trigger the repeat'
+    # get_degeneracies listed this cluster twice until Nov 2026; the result must hold either way
     groups = degenerate_groups(E, len(E))
     assert [list(g) for g in groups] == [[1, 2, 3, 4], [5, 6]]
 

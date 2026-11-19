@@ -67,7 +67,9 @@ def band_curvature_k_ij(
     from ..utils.perturb_split import perturb_split
 
     v_aux, tksp, dvec = perturb_split(dH_i, d2H_ij, v_k, degen, return_v_k=True)
-    vel_degen = velocity_groups(v_aux.diagonal().real, degen)
+    # get_degeneracies keeps a group that reaches bnd whole (Nov 2026): it is rotated, but only
+    # groups below bnd, whose curvature is stored, take the subspace eigh
+    vel_degen = velocity_groups(v_aux.diagonal().real, [g for g in degen if g.max() < bnd])
 
     curvature = np.array(tksp.diagonal()[:bnd].real, dtype=float)
 

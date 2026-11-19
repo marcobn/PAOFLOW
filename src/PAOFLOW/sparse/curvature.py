@@ -44,7 +44,7 @@ def band_curvature_k(
     v_k : np.ndarray, shape ``(nawf, nawf)``
         Eigenvectors matching ``E`` (columns).
     degen : list of np.ndarray
-        Degenerate band groups at this k-point, all below ``bnd``, in which ``dH/dk_i`` is
+        Degenerate band groups at this k-point (a group may reach past ``bnd``), in which ``dH/dk_i`` is
         diagonalized per direction (the sparse ``KPoint.degen``).
     bnd : int
         Number of bands whose curvature is returned.
@@ -77,6 +77,12 @@ def band_curvature_k(
 
     from ..hamiltonian.do_d2Hd2k import IJ_PAIRS
     from ..spectrum.do_band_curvature import velocity_groups
+
+    # get_degeneracies keeps a group that reaches bnd whole (Nov 2026): it is rotated whole, so
+    # the work window grows to hold it, but only groups below bnd take the subspace eigh (dense)
+    nout = bnd
+    bnd = max([bnd] + [int(g[-1]) + 1 for g in degen])
+    energy_groups = [g for g in energy_groups if g.max() < nout]
 
     vb = v_k[:, :bnd]
     cols = []
@@ -136,4 +142,4 @@ def band_curvature_k(
             block = np.conj(vt[:, g].T) @ t[:, g] + push + np.conj(push.T)
             c[g], _ = eigh(block)
         curvature[ij] = c
-    return curvature
+    return curvature[:, :nout]

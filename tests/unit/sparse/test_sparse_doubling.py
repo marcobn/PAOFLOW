@@ -135,20 +135,15 @@ def test_two_doublings_x_then_y_match_dense():
     _assert_same_bonds(sparse, dense, x=_positions(42, [0, 1]))
 
 
-def test_cross_replica_dnm_differs_from_dense_only_there():
-    """The dense kernel zeroes cross-replica Dnm; the sparse one does not.
-    Same-replica bonds must still agree with the dense kernel exactly."""
+def test_cross_replica_dnm_matches_dense():
+    """Cross-replica Dnm carries the replica shift in both kernels (dense since 16 Nov 2026)."""
     nawf = NAWF
     dense = _bond_dict(_double_dense(5, 1, 0, 0))
     sparse = _bond_dict(_double_sparse(5, [0]))
     cross = 0
     for key, (_, dnm) in sparse.items():
-        same_replica = (key[0] < nawf) == (key[1] < nawf)
-        if same_replica:
-            assert np.allclose(dnm, dense[key][1], atol=1e-13), key
-        else:
-            assert np.allclose(dense[key][1], 0.0)
-            cross += 1
+        assert np.allclose(dnm, dense[key][1], atol=1e-13), key
+        cross += (key[0] < nawf) != (key[1] < nawf)
     assert cross > 0
 
 
