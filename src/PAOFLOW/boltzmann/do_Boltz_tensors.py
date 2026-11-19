@@ -4,6 +4,18 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
+# bytes per (k, band, energy) temporary in L_loop/L_loop_hall (~4-5 live at once, so the
+# peak is ~1.2 GB per rank); measured: blocks down to ~250 MB cost no time, below ~100 MB
+# the small BLAS calls slow the sum 1.5-2.5x
+BLOCK_BYTES = 256e6
+
+
+def _k_blocks(nk, bnd, esize):
+    """Slices of the local k-points, each small enough that one float array of
+    shape (block, bnd, esize) stays within ``BLOCK_BYTES``."""
+    block = max(1, int(BLOCK_BYTES // (8 * max(bnd, 1) * max(esize, 1))))
+    return [slice(s, s + block) for s in range(0, nk, block)]
+
 
 def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channels, weights):
     r"""Compute the Boltzmann transport tensors L0, L1, and L2.
@@ -427,28 +439,30 @@ def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
 
     L = np.zeros((3, 3, esize), dtype=float)
 
-    # Vectorised over (k, band, energy). Eaux[k, n, e] = E_k - ene; the smearing
+    # Vectorised over (k, band, energy) within a block of k-points (_k_blocks), so the
+    # (k, bnd, ne) temporaries stay bounded. Eaux[k, n, e] = E_k - ene; the smearing
     # window and (E - eps)^alpha share that grid, contracted against the per-(k,n)
     # tau * v_i * v_j prefactor. Matches the former band loop up to sum order.
-    Ek = arrays['E_k'][:, :bnd, ispin]
-    tau = arrays['scattering_tau'][:, :bnd, ispin]
-    Ediff = Ek[:, :, None] - ene[None, None, :]
-    EtoAlpha = np.power(Ediff, alpha)
-    if smearing is None:
-        smearA = 1.0 / (4 * temp * (np.cosh(Ediff / (2 * temp)) ** 2))
-    else:
-        delk = arrays['deltakp'][:, :bnd, ispin][:, :, None]
-        if smearing == 'gauss':
-            smearA = gaussian(Ek[:, :, None], ene[None, None, :], delk)
-        elif smearing == 'm-p':
-            smearA = metpax(Ek[:, :, None], ene[None, None, :], delk)
+    for sl in _k_blocks(arrays['E_k'].shape[0], bnd, esize):
+        Ek = arrays['E_k'][sl, :bnd, ispin]
+        tau = arrays['scattering_tau'][sl, :bnd, ispin]
+        Ediff = Ek[:, :, None] - ene[None, None, :]
+        EtoAlpha = np.power(Ediff, alpha)
+        if smearing is None:
+            smearA = 1.0 / (4 * temp * (np.cosh(Ediff / (2 * temp)) ** 2))
+        else:
+            delk = arrays['deltakp'][sl, :bnd, ispin][:, :, None]
+            if smearing == 'gauss':
+                smearA = gaussian(Ek[:, :, None], ene[None, None, :], delk)
+            elif smearing == 'm-p':
+                smearA = metpax(Ek[:, :, None], ene[None, None, :], delk)
 
-    S = smearA * EtoAlpha  # (k, bnd, ne)
-    for ll in range(t_tensor.shape[0]):
-        i = t_tensor[ll][0]
-        j = t_tensor[ll][1]
-        pref = kq_wght * tau * velkp[:, i, :bnd, ispin] * velkp[:, j, :bnd, ispin]
-        L[i, j, :] = np.tensordot(pref, S, axes=([0, 1], [0, 1]))
+        S = smearA * EtoAlpha  # (k, bnd, ne)
+        for ll in range(t_tensor.shape[0]):
+            i = t_tensor[ll][0]
+            j = t_tensor[ll][1]
+            pref = kq_wght * tau * velkp[sl, i, :bnd, ispin] * velkp[sl, j, :bnd, ispin]
+            L[i, j, :] += np.tensordot(pref, S, axes=([0, 1], [0, 1]))
     """
   # noise reduction using a running average (correlation function)
   # Only possible for sigma vs chemical potential
@@ -556,24 +570,26 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
     eps[0, 1, 2] = eps[1, 2, 0] = eps[2, 0, 1] = 1.0
     eps[0, 2, 1] = eps[2, 1, 0] = eps[1, 0, 2] = -1.0
 
-    Ek = arrays['E_k'][:, :bnd, ispin]
-    tau2 = arrays['scattering_tau'][:, :bnd, ispin] ** 2
-    v = velkp[:, :, :bnd, ispin]  # (k, 3, bnd)
-    Minv = M_inv[:, :, :, :, ispin]  # (j, q, k, bnd)
-    if smearing is None:
-        Ediff = Ek[:, :, None] - ene[None, None, :]
-        EtoAlpha = np.power(Ediff, alpha)
-        smearA = 1.0 / (4 * temp * (np.cosh(Ediff / (2 * temp)) ** 2))
-        smearA = smearA * EtoAlpha
-    else:
-        delk = arrays['deltakp'][:, :bnd, ispin][:, :, None]
-        if smearing == 'gauss':
-            smearA = gaussian(Ek[:, :, None], ene[None, None, :], delk)
-        elif smearing == 'm-p':
-            smearA = metpax(Ek[:, :, None], ene[None, None, :], delk)
+    # one block of k-points at a time (_k_blocks), as in L_loop
+    for sl in _k_blocks(snktot, bnd, esize):
+        Ek = arrays['E_k'][sl, :bnd, ispin]
+        tau2 = arrays['scattering_tau'][sl, :bnd, ispin] ** 2
+        v = velkp[sl, :, :bnd, ispin]  # (k, 3, bnd)
+        Minv = M_inv[:, :, sl, :, ispin]  # (j, q, k, bnd)
+        if smearing is None:
+            Ediff = Ek[:, :, None] - ene[None, None, :]
+            EtoAlpha = np.power(Ediff, alpha)
+            smearA = 1.0 / (4 * temp * (np.cosh(Ediff / (2 * temp)) ** 2))
+            smearA = smearA * EtoAlpha
+        else:
+            delk = arrays['deltakp'][sl, :bnd, ispin][:, :, None]
+            if smearing == 'gauss':
+                smearA = gaussian(Ek[:, :, None], ene[None, None, :], delk)
+            elif smearing == 'm-p':
+                smearA = metpax(Ek[:, :, None], ene[None, None, :], delk)
 
-    # A[j,p,k,n] = sum_qr eps_pqr Minv_jq v_r ; sig[i,j,p,k,n] = v_i A[j,p,k,n]
-    A = np.einsum('pqr,jqkn,krn->jpkn', eps, Minv, v, optimize=True)
-    pref = kq_wght * np.einsum('kn,kin,jpkn->ijpkn', tau2, v, A, optimize=True)
-    L_hall = np.tensordot(pref, smearA, axes=([3, 4], [0, 1]))
+        # A[j,p,k,n] = sum_qr eps_pqr Minv_jq v_r ; sig[i,j,p,k,n] = v_i A[j,p,k,n]
+        A = np.einsum('pqr,jqkn,krn->jpkn', eps, Minv, v, optimize=True)
+        pref = kq_wght * np.einsum('kn,kin,jpkn->ijpkn', tau2, v, A, optimize=True)
+        L_hall += np.tensordot(pref, smearA, axes=([3, 4], [0, 1]))
     return L_hall

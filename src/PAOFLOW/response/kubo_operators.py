@@ -25,7 +25,7 @@ current carries the sign of the electron charge (:func:`charge_sign`). The veloc
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -275,33 +275,93 @@ def band_matrices(
     intraband and interband parts does.
     """
     arry, _ = data_controller.data_dicts()
+    return band_matrices_k(
+        observable,
+        indices,
+        arry['dHksp'][ik, :, :, :, ispin],
+        arry['v_k'][ik, :, :, ispin],
+        arry['degen'][ispin][ik],
+        arry['E_k'][ik, :, ispin],
+        arry.get(OBSERVABLES[observable].base),
+        projector,
+        operator,
+    )
+
+
+def band_matrices_k(
+    observable: str,
+    indices: tuple[int, ...],
+    gradient: Sequence[Any],
+    eigenvectors: NDArray[np.complex128],
+    degeneracies: Sequence[Any],
+    energies: NDArray[np.float64],
+    base_operator: Sequence[Any] | None = None,
+    projector: Any | None = None,
+    operator: NDArray[np.complex128] | None = None,
+) -> tuple[NDArray[np.complex128], NDArray[np.complex128]]:
+    """Response and field operators in the band basis from the data of one k-point.
+
+    The body of :func:`band_matrices`, shared with the sparse backend
+    (:mod:`PAOFLOW.sparse.properties.kubo`); matrices may be ndarrays or scipy sparse matrices.
+
+    Parameters
+    ----------
+    observable : str
+        Key of :data:`OBSERVABLES`.
+    indices : tuple of int
+        From :func:`parse_component`.
+    gradient : sequence of 3 matrices, shape ``(nawf, nawf)``
+        :math:`\\partial H/\\partial k_l` in the PAO basis (``dHksp`` of this k-point, eV bohr).
+    eigenvectors : ndarray, shape ``(nawf, m)``, complex
+        Eigenvectors of :math:`H(\\mathbf k)` (columns).
+    degeneracies : sequence of index arrays
+        Degenerate groups of this k-point (``degen[ispin][ik]``).
+    energies : ndarray, shape ``(m,)``
+        Band energies (eV); read for ``spin_torque`` only.
+    base_operator : sequence of 3 matrices, optional
+        ``Sj`` or ``Lj``, for the observables built on one.
+    projector : matrix, shape ``(nawf, nawf)``, optional
+        Orbital projector applied as :math:`(PO + OP)/2` to the response operator.
+    operator : ndarray, shape ``(nawf, nawf)``, optional
+        The matrix of ``observable='custom'``.
+
+    Returns
+    -------
+    response, field : ndarray, shape ``(m, m)``, complex
+        As :func:`band_matrices`.
+
+    Raises
+    ------
+    ValueError
+        ``observable='custom'`` without ``operator``.
+    KeyError
+        An observable built on ``Sj`` / ``Lj`` without ``base_operator``.
+    """
     spec = OBSERVABLES[observable]
-    dH = arry['dHksp']
     # The operators are built from dHksp (= -hbar v) and rotated in the degenerate subspaces as the
     # tutorial03 / do_Hall routes do (same eigh ordering, hence the same gauge); the signs of the
     # true velocity are applied afterwards.
-    field = dH[ik, indices[-1], :, :, ispin]
+    field = gradient[indices[-1]]
     if observable == 'custom':
         if operator is None:
             raise ValueError("observable='custom' needs operator")
         response, response_sign = np.asarray(operator, dtype=complex), 1.0
     elif spec.base is None:
-        response, response_sign = dH[ik, indices[0], :, :, ispin], -1.0
+        response, response_sign = gradient[indices[0]], -1.0
     else:
-        if spec.base not in arry:
+        if base_operator is None:
             raise KeyError(
                 f'{observable} needs {spec.base} (PAOFLOW.spin_operator / orbital_operator)'
             )
-        momentum = arry[spec.base][indices[0]]
+        momentum = base_operator[indices[0]]
         if spec.current:
-            gradient = dH[ik, indices[1], :, :, ispin]
-            response, response_sign = 0.5 * (momentum @ gradient + gradient @ momentum), -1.0
+            direction = gradient[indices[1]]
+            response, response_sign = 0.5 * (momentum @ direction + direction @ momentum), -1.0
         else:
             response, response_sign = momentum, 1.0
     if projector is not None:
         response = 0.5 * (projector @ response + response @ projector)
-    a, b = perturb_split(response, field, arry['v_k'][ik, :, :, ispin], arry['degen'][ispin][ik])
+    a, b = perturb_split(response, field, eigenvectors, degeneracies)
     if observable == 'spin_torque':
-        energies = arry['E_k'][ik, :, ispin]
         a = 1j * (energies[:, None] - energies[None, :]) * a
     return response_sign * a, -b

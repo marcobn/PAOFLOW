@@ -691,6 +691,8 @@ def build_run_script(cfg):
     has_spin_response = 'spin_susceptibility' in props
     needs_spin = any(p in SPIN_PROPERTIES for p in props)
     needs_energy_window = any(p in ENERGY_WINDOW_PROPERTIES for p in props)
+    # a sparse run solves only the bands its properties ask for: no full range to suggest
+    suggests_window = needs_energy_window and 'sparse' not in props
 
     lines = [HEADER]
 
@@ -723,8 +725,9 @@ def build_run_script(cfg):
     lines.extend(_band_path_constant_lines(cfg))
     lines.append('')
     lines.append('# Energy grid for DOS / transport / Hall properties (eV, relative to E_F).')
-    lines.append('# The full PAO band range is printed as a suggestion at run time')
-    lines.append('# (see suggest_energy_window); edit these values to match your needs.')
+    if 'sparse' not in props:
+        lines.append('# The full PAO band range is printed as a suggestion at run time')
+        lines.append('# (see suggest_energy_window); edit these values to match your needs.')
     lines.append('EMIN, EMAX, NE = {}, {}, {}'.format(cfg['emin'], cfg['emax'], cfg['ne']))
     if 'dos' in props:
         lines.append('DO_PDOS = {}'.format(cfg['do_pdos']))
@@ -748,7 +751,7 @@ def build_run_script(cfg):
 
     # ---- basis generation --------------------------------------------- #
     lines.append(BASIS_GEN_BLOCK)
-    if needs_energy_window:
+    if suggests_window:
         lines.append(ENERGY_RANGE_BLOCK)
     lines.extend(modify_hamiltonian_lines(cfg))
 
@@ -979,7 +982,7 @@ def _emit_standard_properties(props, needs_spin, cfg):
         body.append('    p.jdos(delta=JDOS_DELTA, emin=0.0, emax=JDOS_EMAX, ne=JDOS_NE)')
         body.append('')
 
-    if selected & ENERGY_WINDOW_PROPERTIES:
+    if selected & ENERGY_WINDOW_PROPERTIES and 'sparse' not in cfg['properties']:
         body.append('    # Print the full PAO band range as a suggested energy window.')
         body.append('    suggest_energy_window(p)')
         body.append('')
@@ -998,6 +1001,7 @@ def _emit_standard_properties(props, needs_spin, cfg):
     else:
         body.append('    p.gradient_and_momenta()')
     body.append('    p.adaptive_smearing()')
+    mesh_start = len(body)
 
     if 'dos' in selected:
         body.append('    p.dos(do_dos=True, do_pdos=DO_PDOS, emin=EMIN, emax=EMAX, ne=NE)')
@@ -1026,6 +1030,11 @@ def _emit_standard_properties(props, needs_spin, cfg):
             body.append('                ne=NE, write_to_file=True)')
     if 'rashba_edelstein' in selected:
         body.append('    p.rashba_edelstein(emin=EMIN, emax=EMAX, ne=NE)')
+
+    if 'sparse' in cfg['properties'] and len(body) > mesh_start:
+        # one mesh pass for all of them; apart, each property the last pass lacks costs a pass
+        fused = ['    ' + line for line in body[mesh_start:]]
+        body[mesh_start:] = ['    with p.sparse.fused():', *fused]
 
     return body
 

@@ -19,6 +19,8 @@ menu key                    ``main.py`` calls
                             spin-orbit, Zeeman field, supercell doubling
 ``restart``                 :meth:`~PAOFLOW.PAOFLOW.PAOFLOW.restart_dump` after the gradients;
                             the next run loads it and starts from the adaptive smearing
+``sparse``                  ``PAOFLOW(sparse=True, sparse_config=SPARSE_CONFIG)`` in every run of
+                            ``main.py`` (the bond-list backend for large cells)
 ==========================  ============================================================================
 
 The spin Hall conductivity projected on atoms (``shc_proj``) is a GUI-only refinement of the
@@ -59,7 +61,18 @@ EXTRA_PROPERTY_MENU = [
         'ad hoc spin-orbit, supercell doubling',
     ),
     ('restart', 'Restart point: keep the Hamiltonian and gradients for the next run'),
+    ('sparse', 'Sparse backend (large cells): bond-list Hamiltonian, no dense H(k) arrays'),
 ]
+
+#: Menu entries without a sparse implementation, and the dense-only method each one calls
+#: (:data:`PAOFLOW.sparse.dispatch.DENSE_ONLY_REASONS`).
+SPARSE_DENSE_ONLY = {
+    'nonlinear': 'nonlinear_optics',
+    'spin_susceptibility': 'spin_susceptibility',
+    'z2_invariant': 'z2_invariant',
+    'mirror_chern': 'mirror_chern_number',
+    'restart': 'restart_dump',
+}
 
 #: Built-in relaxation-time models of :func:`PAOFLOW.boltzmann.do_tau_models.builtin_tau_model`.
 SCATTERING_CHANNELS = [
@@ -98,6 +111,34 @@ def _internal(answers: Answers) -> bool:
 
 def _chosen(key: str) -> Callable[[Answers, Context], bool]:
     return lambda answers, context: key in _properties(answers)
+
+
+def sparse_conflicts(value: list[str], answers: Answers, context: Context) -> str | None:
+    """Error of a property menu that asks the sparse backend for a dense-only property.
+
+    Parameters
+    ----------
+    value : list of str
+        Chosen menu keys.
+    answers : dict
+        Answers so far (unused).
+    context : Context
+        The session context (unused).
+
+    Returns
+    -------
+    str or None
+        The message, None when the selection can run.
+    """
+    if 'sparse' not in (value or []):
+        return None
+    dense = [key for key in value if key in SPARSE_DENSE_ONLY]
+    if not dense:
+        return None
+    return 'The sparse backend has no %s; drop %s.' % (
+        ', '.join('%s (%s)' % (key, SPARSE_DENSE_ONLY[key]) for key in dense),
+        'it or the sparse entry' if len(dense) == 1 else 'them or the sparse entry',
+    )
 
 
 # ---------------------------------------------------------------------------------- parsers

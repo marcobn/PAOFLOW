@@ -101,6 +101,43 @@ def band_occupations(
     return occupation, (eta / np.pi) / ((energies - mu) ** 2 + eta**2)
 
 
+def optical_finish(
+    interband: NDArray[np.complex128],
+    intraband: NDArray[np.complex128],
+    omegas: NDArray[np.float64],
+    terms: Sequence[str],
+    scale: float,
+) -> dict[str, NDArray]:
+    """Reduce the local k-sums of one component over MPI and assemble the terms.
+
+    Parameters
+    ----------
+    interband, intraband : ndarray, shape ``(nw,)``, complex
+        This rank's sums of :func:`.kubo_kernels.optical_kernel`.
+    omegas : ndarray, shape ``(nw,)``
+        Photon energies (eV).
+    terms : sequence of str
+        Subset of :data:`OPTICAL_TERMS`.
+    scale : float
+        Unit factor, spin multiplicity and ``1 / nkpnts``.
+
+    Returns
+    -------
+    dict
+        ``{'omega': omegas, term: complex values}`` on every rank.
+    """
+    summed = {}
+    for name, values in (('interband', interband), ('intraband', intraband)):
+        real, imag = np.zeros(omegas.size), np.zeros(omegas.size)
+        comm.Allreduce(np.ascontiguousarray(values.real), real, op=MPI.SUM)
+        comm.Allreduce(np.ascontiguousarray(values.imag), imag, op=MPI.SUM)
+        summed[name] = scale * (real + 1j * imag)
+    summed['total'] = summed['interband'] + summed['intraband']
+    result = {'omega': omegas.copy()}
+    result.update({name: summed[name] for name in terms})
+    return result
+
+
 def kubo_optical_response(
     data_controller: 'DataController',
     observable: str,
@@ -198,16 +235,8 @@ def kubo_optical_response(
                 )
                 interband += inter
                 intraband += intra
-        summed = {}
-        for name, values in (('interband', interband), ('intraband', intraband)):
-            real, imag = np.zeros(omegas.size), np.zeros(omegas.size)
-            comm.Allreduce(np.ascontiguousarray(values.real), real, op=MPI.SUM)
-            comm.Allreduce(np.ascontiguousarray(values.imag), imag, op=MPI.SUM)
-            summed[name] = scale * (real + 1j * imag)
-        summed['total'] = summed['interband'] + summed['intraband']
         label = component_label(observable, indices)
-        results[label] = {'omega': omegas.copy()}
-        results[label].update({name: summed[name] for name in terms})
+        results[label] = optical_finish(interband, intraband, omegas, terms, scale)
     return results
 
 

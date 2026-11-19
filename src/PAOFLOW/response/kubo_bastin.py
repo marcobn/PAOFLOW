@@ -74,10 +74,53 @@ BLOCK_ELEMENTS = 1_000_000
 _EXACT = {'total', 'surface', 'sea', 'surface_intraband', 'surface_interband'}
 
 
+def occupation_sum(
+    energies: NDArray[np.float64],
+    widths: NDArray[np.float64] | None,
+    omega: NDArray[np.float64],
+    mu: NDArray[np.float64],
+    kT: float,
+    smearing: str | None,
+) -> NDArray[np.float64]:
+    """:math:`\\sum_{k,n} f_{nk}(\\mu)\\,\\Omega_{nk}` over a block of k-points, every ``mu``.
+
+    Parameters
+    ----------
+    energies, omega : ndarray, shape ``(nk, nb)``
+        Band energies (eV) and the band-resolved quantity.
+    widths : ndarray, shape ``(nk, nb)``, or None
+        Smearing widths (eV) of the same bands; read at ``kT = 0`` with a smearing.
+    mu : ndarray, shape ``(nmu,)``
+    kT : float
+        Temperature (eV); 0 uses ``smearing``.
+    smearing : {'gauss', 'm-p', None}
+        Occupations at ``kT = 0``: Gaussian or Methfessel-Paxton with ``widths``, a step otherwise.
+
+    Returns
+    -------
+    ndarray, shape ``(nmu,)``
+    """
+    total = np.zeros(mu.size)
+    if widths is not None:
+        # an adaptive width of exactly zero (a band with zero velocity) would give 0/0
+        widths = np.where(widths > 0.0, widths, 1.0e-8)
+    for i, m in enumerate(mu):
+        if kT > 0.0:
+            occupation = 0.5 * (1.0 - np.tanh(0.5 * (energies - m) / kT))
+        elif smearing == 'gauss':
+            occupation = intgaussian(energies, m, widths)
+        elif smearing == 'm-p':
+            occupation = intmetpax(energies, m, widths)
+        else:
+            occupation = 0.5 * (1.0 - np.sign(energies - m))
+        total[i] = np.sum(occupation * omega)
+    return total
+
+
 def _occupation_sum(
     data_controller: 'DataController', omega: NDArray, mu: NDArray, kT: float
 ) -> NDArray[np.float64]:
-    """:math:`\\sum_{k,n,s} f_{nks}(\\mu)\\,\\Omega_{nks}` over the local k-points, every ``mu``.
+    """:func:`occupation_sum` over the local k-points and spins.
 
     Parameters
     ----------
@@ -100,21 +143,116 @@ def _occupation_sum(
     for ispin in range(omega.shape[2]):
         nb = omega.shape[1]
         energies = arry['E_k'][:, :nb, ispin]
-        # an adaptive width of exactly zero (a band with zero velocity) would give 0/0
         widths = arry['deltakp'][:, :nb, ispin] if smearing else None
-        if widths is not None:
-            widths = np.where(widths > 0.0, widths, 1.0e-8)
-        for i, m in enumerate(mu):
-            if kT > 0.0:
-                occupation = 0.5 * (1.0 - np.tanh(0.5 * (energies - m) / kT))
-            elif smearing == 'gauss':
-                occupation = intgaussian(energies, m, widths)
-            elif smearing == 'm-p':
-                occupation = intmetpax(energies, m, widths)
-            else:
-                occupation = 0.5 * (1.0 - np.sign(energies - m))
-            total[i] += np.sum(occupation * omega[:, :, ispin])
+        total += occupation_sum(energies, widths, omega[:, :, ispin], mu, kT, smearing)
     return total
+
+
+def bastin_setup(
+    data_controller: 'DataController',
+    observable: str,
+    mu: NDArray[np.float64],
+    eta: float,
+    terms: Sequence[str],
+    temperature: float,
+    two_dimensional: bool,
+    nspin: int,
+) -> tuple[NDArray[np.float64], float, bool, bool, float]:
+    """Checks, energy grid and unit factor of :func:`kubo_bastin_response`.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Reads ``dftSO``, ``nkpnts`` and the cell attributes.
+    observable, mu, eta, terms, temperature, two_dimensional
+        As :func:`kubo_bastin_response`.
+    nspin : int
+        Number of spin channels.
+
+    Returns
+    -------
+    grid : ndarray
+        Energies the exact kernels are evaluated on: ``mu``, or the grid of the thermal average.
+    kT : float
+        Temperature (eV).
+    exact : bool
+        Whether any exact (constant-broadening) term is asked for.
+    thermal : bool
+        Whether the exact terms are thermally averaged afterwards.
+    scale : float
+        Unit factor, spin multiplicity and ``1 / nkpnts``.
+
+    Raises
+    ------
+    ValueError
+        Unknown term, non-positive ``eta`` or a spin observable without a spinor basis.
+    """
+    attr = data_controller.data_attributes
+    unknown = set(terms) - set(TERMS)
+    if unknown:
+        raise ValueError(f'unknown terms {sorted(unknown)}; choose from {TERMS}')
+    if eta <= 0.0:
+        raise ValueError('eta must be positive')
+    spec = OBSERVABLES[observable]
+    if spec.base == 'Sj' and not attr['dftSO']:
+        raise ValueError(f'{observable} needs a spinor basis (spin-orbit or adhoc_SO)')
+    kT = K_BOLTZMANN_EV * temperature
+    exact = bool(_EXACT & set(terms))
+    # kT <= eta/100: the thermal smearing of the exact terms is a Sommerfeld correction of relative
+    # size ~ (pi kT / eta)^2 / 6 < 2e-4, below the k-grid error; the T = 0 kernels are used.
+    thermal = exact and kT > THERMAL_THRESHOLD * eta
+    grid = kernels.thermal_grid(mu, eta, kT) if thermal else mu
+    spin_multiplicity = 1.0 if (attr['dftSO'] or nspin == 2) else 2.0
+    scale = spin_multiplicity * unit_factor(data_controller, observable, two_dimensional)
+    scale /= float(attr['nkpnts'])
+    return grid, kT, exact, thermal, scale
+
+
+def bastin_finish(
+    local: dict[str, NDArray[np.float64]],
+    grid: NDArray[np.float64],
+    mu: NDArray[np.float64],
+    kT: float,
+    thermal: bool,
+    terms: Sequence[str],
+    scale: float,
+) -> dict[str, NDArray[np.float64]]:
+    """Reduce the local k-sums of one component over MPI and assemble the terms.
+
+    Parameters
+    ----------
+    local : dict
+        This rank's sums ``'surface'``, ``'intraband'``, ``'sea'`` (on ``grid``) and
+        ``'intrinsic'`` (on ``mu``).
+    grid, mu, kT, thermal, scale
+        From :func:`bastin_setup`.
+    terms : sequence of str
+        Subset of :data:`TERMS`.
+
+    Returns
+    -------
+    dict
+        ``{'mu': mu, term: values, ...}`` on every rank, in the unit of the observable.
+    """
+    summed = {}
+    for name, values in local.items():
+        total = np.zeros_like(values)
+        comm.Allreduce(np.ascontiguousarray(values), total, op=MPI.SUM)
+        summed[name] = total
+    if thermal:
+        for name in ('surface', 'intraband', 'sea'):
+            summed[name] = kernels.thermal_average(grid, summed[name], mu, kT)
+    available = {
+        'surface': summed['surface'],
+        'sea': summed['sea'],
+        'total': summed['surface'] + summed['sea'],
+        'surface_intraband': summed['intraband'],
+        'surface_interband': summed['surface'] - summed['intraband'],
+        'intrinsic': summed['intrinsic'],
+    }
+    result = {'mu': mu.copy()}
+    result.update({name: scale * available[name] for name in terms})
+    return result
 
 
 def kubo_bastin_response(
@@ -175,25 +313,11 @@ def kubo_bastin_response(
         Unknown term, non-positive ``eta`` or a spin observable without a spinor basis.
     """
     arry, attr = data_controller.data_dicts()
-    unknown = set(terms) - set(TERMS)
-    if unknown:
-        raise ValueError(f'unknown terms {sorted(unknown)}; choose from {TERMS}')
-    if eta <= 0.0:
-        raise ValueError('eta must be positive')
-    spec = OBSERVABLES[observable]
-    if spec.base == 'Sj' and not attr['dftSO']:
-        raise ValueError(f'{observable} needs a spinor basis (spin-orbit or adhoc_SO)')
     mu = np.asarray(mu, dtype=float)
-    kT = K_BOLTZMANN_EV * temperature
-    exact = bool(_EXACT & set(terms))
-    # kT <= eta/100: the thermal smearing of the exact terms is a Sommerfeld correction of relative
-    # size ~ (pi kT / eta)^2 / 6 < 2e-4, below the k-grid error; the T = 0 kernels are used.
-    thermal = exact and kT > THERMAL_THRESHOLD * eta
-    grid = kernels.thermal_grid(mu, eta, kT) if thermal else mu
     nk_local, _, nspin = arry['E_k'].shape
-    spin_multiplicity = 1.0 if (attr['dftSO'] or nspin == 2) else 2.0
-    scale = spin_multiplicity * unit_factor(data_controller, observable, two_dimensional)
-    scale /= float(attr['nkpnts'])
+    grid, kT, exact, thermal, scale = bastin_setup(
+        data_controller, observable, mu, eta, terms, temperature, two_dimensional, nspin
+    )
 
     results = {}
     for component in components:
@@ -227,25 +351,8 @@ def kubo_bastin_response(
             if omega is not None
             else np.zeros(mu.size)
         )
-        summed = {}
-        for name, values in local.items():
-            total = np.zeros_like(values)
-            comm.Allreduce(np.ascontiguousarray(values), total, op=MPI.SUM)
-            summed[name] = total
-        if thermal:
-            for name in ('surface', 'intraband', 'sea'):
-                summed[name] = kernels.thermal_average(grid, summed[name], mu, kT)
-        available = {
-            'surface': summed['surface'],
-            'sea': summed['sea'],
-            'total': summed['surface'] + summed['sea'],
-            'surface_intraband': summed['intraband'],
-            'surface_interband': summed['surface'] - summed['intraband'],
-            'intrinsic': summed['intrinsic'],
-        }
         label = component_label(observable, indices)
-        results[label] = {'mu': mu.copy()}
-        results[label].update({name: scale * available[name] for name in terms})
+        results[label] = bastin_finish(local, grid, mu, kT, thermal, terms, scale)
     return results
 
 

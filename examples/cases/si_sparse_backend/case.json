@@ -1,6 +1,6 @@
 {
  "title": "Si: the sparse backend on a doubled cell",
- "summary": "Bulk silicon through SparsePAOFLOW, the bond-list Hamiltonian meant for large cells: PAO Hamiltonian, the cell doubled along the three axes (16 atoms), an energy window, then bands, DOS/PDOS and Boltzmann transport without dense (nk, nawf, nawf) arrays.",
+ "summary": "Bulk silicon through PAOFLOW(sparse=True), the bond-list Hamiltonian meant for large cells: PAO Hamiltonian, the cell doubled along the three axes (16 atoms), an energy window, then bands, DOS/PDOS and Boltzmann transport without dense (nk, nawf, nawf) arrays.",
  "workflow": "scripts",
  "pseudopotentials": [
   "library/Si.pbe-tm-new-gipaw-v2.1.UPF"
@@ -19,7 +19,7 @@
   {
    "program": "projwfc.x",
    "input": "proj.in",
-   "label": "Atomic projections (read by SparsePAOFLOW)"
+   "label": "Atomic projections (read by the sparse run)"
   }
  ],
  "steps": [

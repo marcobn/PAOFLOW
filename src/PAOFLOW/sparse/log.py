@@ -1,15 +1,11 @@
-"""Dedicated log file for the sparse backend.
+"""``sparse.log``: the sparse run's parameters and memory figures, kept off stdout.
 
-Sparse diagnostics — bond-list statistics, truncation bounds, solver
-dispatch (including whether a k-point solve is routed to the dense
-branch), memory projections and progress — are written to ``sparse.log``
-in the PAOFLOW output directory rather than to stdout.  That keeps the
-standard output of a sparse run identical in kind to a dense one (module
-timings and warnings only), while giving the sparse-specific numbers more
-room than a single line each.
-
-Only rank 0 writes; every other rank gets a no-op object, so call sites
-need no rank guard.
+Truncation, bond list, doubling projection, solve window and the mesh/path passes go to
+``sparse.log`` in the output directory, so stdout matches a dense run (timings, warnings).
+Format: section titles, indented ``key  value`` lines (:meth:`SparseLog.field`) present only
+when they apply, and ``WARNING: ...`` lines naming the remedy (also on stdout). The log says
+what was done; the why lives in the writers' docstrings. Only rank 0 writes; other ranks get a
+silent :class:`SparseLog`, so call sites need no rank guard.
 """
 
 from __future__ import annotations
@@ -24,77 +20,35 @@ if TYPE_CHECKING:
 _ATTR = '_sparse_log'
 
 
-class _NullLog:
-    """No-op logger handed to non-root ranks.
-
-    Notes
-    -----
-    Implements the whole :class:`SparseLog` interface as empty methods so
-    that call sites can log unconditionally: under MPI only rank 0 owns
-    the file, and scattering ``if rank == 0`` guards through the backend
-    would be both noisy and easy to forget.
-    """
-
-    def header(self, title: str, fields: Iterable[tuple[str, Any]] = ()) -> None:
-        """Discard a section header and its fields."""
-
-    def section(self, title: str) -> None:
-        """Discard a subsection title."""
-
-    def write(self, text: str) -> None:
-        """Discard a free-form line."""
-
-    def field(self, key: str, value: Any) -> None:
-        """Discard a key/value line."""
-
-
 class SparseLog:
     """Append-only text log for one sparse run.
 
     Parameters
     ----------
-    path : str
-        Destination file.  It is truncated on construction, so one
-        :class:`SparseLog` corresponds to one run.
-
-    Attributes
-    ----------
-    path : str
-        The file being appended to.
+    path : str or None
+        Destination, truncated on construction (one log per run); ``None`` discards all.
 
     Notes
     -----
-    The file is reopened and closed around every write rather than held
-    open for the lifetime of the run.  A sparse run is long (hours of
-    k-point loops) and its most interesting failure mode — an out-of-memory
-    kill during doubling — gives no opportunity to flush buffers, so the
-    log has to be complete and readable at every instant.  Writes are rare
-    (a handful per property, plus progress lines every few percent of the
-    k-loop), so the cost of reopening is negligible next to a single
-    eigensolve.
+    The file is reopened for every write so it is complete at every instant, e.g. after an
+    out-of-memory kill during doubling; writes are rare, so the cost is negligible.
     """
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str | None) -> None:
         self.path = path
-        with open(path, 'w') as fh:
-            fh.write('PAOFLOW sparse backend log\n')
+        if path is not None:
+            with open(path, 'w') as fh:
+                fh.write('PAOFLOW sparse backend log\n')
 
     def _emit(self, text: str) -> None:
         """Append ``text`` verbatim, reopening the file for this write."""
-        with open(self.path, 'a') as fh:
-            fh.write(text)
+        if self.path is not None:
+            with open(self.path, 'a') as fh:
+                fh.write(text)
 
     def header(self, title: str, fields: Iterable[tuple[str, Any]] = ()) -> None:
-        """Write a rule-delimited section header followed by ``fields``.
-
-        Parameters
-        ----------
-        title : str
-            Heading text, framed above and below by a line of ``=``.
-        fields : iterable of (str, object)
-            Key/value pairs emitted through :meth:`field`.
-        """
-        self._emit('\n' + '=' * 72 + '\n' + title + '\n' + '=' * 72 + '\n')
+        """Write a :meth:`section` title followed by one :meth:`field` per ``(key, value)``."""
+        self.section(title)
         for key, value in fields:
             self.field(key, value)
 
@@ -107,41 +61,34 @@ class SparseLog:
         self._emit(f'{text}\n')
 
     def field(self, key: str, value: Any) -> None:
-        """Write one indented ``key value`` line on a fixed 22-column key."""
-        self._emit(f'  {key!s:<22} {value}\n')
+        """Write one indented ``key value`` line, key padded to 22 columns (or + 2 spaces)."""
+        key = str(key)
+        pad = f'{key:<22} ' if len(key) <= 22 else key + '  '
+        self._emit(f'  {pad}{value}\n')
+
+    def rows(self, pairs: Iterable[tuple[str, Any]]) -> None:
+        """Write one :meth:`field` per ``(key, value)`` pair."""
+        for key, value in pairs:
+            self.field(key, value)
+
+    def warning(self, text: str) -> None:
+        """Print ``WARNING: text`` on stdout and append it to the log (rank 0 only)."""
+        if self.path is not None:
+            message = 'WARNING: ' + text
+            print(message, flush=True)
+            self._emit(f'  {message}\n')
 
 
-def get_sparse_log(
-    data_controller: DataController, fname: str = 'sparse.log'
-) -> SparseLog | _NullLog:
+def get_sparse_log(data_controller: DataController) -> SparseLog:
     """Return the run's log, creating (and truncating) it on first use.
 
-    Parameters
-    ----------
-    data_controller : DataController
-        Run state; supplies the output directory and the MPI rank, and
-        carries the cached log object.
-    fname : str, optional
-        Log file name inside the output directory.
-
-    Returns
-    -------
-    SparseLog or _NullLog
-        The shared logger on rank 0, a silent stand-in elsewhere.
-
-    Notes
-    -----
-    The logger is cached as an attribute of the ``data_controller``, which
-    is the one object every sparse stage already holds, so all stages of a
-    run append to a single file instead of each truncating its own.  The
-    caching also makes the truncation happen exactly once: the first caller
-    of the run creates the file, every later caller gets the same handle.
+    Cached on the ``data_controller``, which every stage holds, so all stages append to one
+    file and it is truncated exactly once. Rank 0 gets the ``sparse.log`` writer (in
+    ``attr['opath']``), other ranks a silent one.
     """
     log = getattr(data_controller, _ATTR, None)
     if log is None:
-        if data_controller.rank == 0:
-            log = SparseLog(join(data_controller.data_attributes['opath'], fname))
-        else:
-            log = _NullLog()
+        path = join(data_controller.data_attributes['opath'], 'sparse.log')
+        log = SparseLog(path if data_controller.rank == 0 else None)
         setattr(data_controller, _ATTR, log)
     return log

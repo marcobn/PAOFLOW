@@ -13,6 +13,7 @@ from PAOFLOW.gen.questions.model import Context
 from PAOFLOW.gen.questions.resolve import resolve_form
 from PAOFLOW.gen.questions.run_extras import (
     EXTRA_PROPERTY_MENU,
+    SPARSE_DENSE_ONLY,
     float_tuple,
     hubbard_row,
     int_triplet,
@@ -74,7 +75,7 @@ def test_top_valence_band(workdir):
 
 def test_every_extra_in_main_and_plot(workdir):
     answers = {
-        'properties': EVERYTHING,
+        'properties': [key for key in EVERYTHING if key != 'sparse'],  # restart, Z2: dense
         'site_atoms': ['2'],
         'scattering': ['acoustic', 'impurity'],
         'hubbard_shifts': [['Si-3p', '0.1']],
@@ -120,6 +121,29 @@ def test_restart_wraps_the_build_only(workdir):
     branch = main[main.index("    if os.path.exists(RESTART + '_0.json'):") :]
     assert branch.index('p.restart_dump') < branch.index('    p.adaptive_smearing()')
     assert '        p.gradient_and_momenta()' in branch  # inside the else branch
+
+
+def test_sparse_entry_selects_the_backend_in_every_run(workdir):
+    from PAOFLOW.PAOFLOW import PAOFLOW
+
+    props = ['bands', 'dos', 'optical', 'doped_transport', 'sparse']
+    main = pd.build_run_script(_config(workdir, {'properties': props}))
+    compile(main, 'main.py', 'exec')
+    runs = main.count('PAOFLOW.PAOFLOW(')
+    assert runs == 3 == main.count('sparse=True,') == main.count('sparse_config=SPARSE_CONFIG,')
+    assert 'SPARSE_CONFIG = None' in main and 'suggest_energy_window' not in main
+    assert '    with p.sparse.fused():\n        p.dos(' in main  # one mesh pass
+    dense = pd.build_run_script(_config(workdir, {'properties': props[:-1]}))
+    assert 'sparse' not in dense.lower() and 'suggest_energy_window(p)' in dense
+    # the dense-only entries are refused in the form, and are still dense-only in PAOFLOW
+    for key, method in SPARSE_DENSE_ONLY.items():
+        form = resolve_form(
+            WORKFLOWS['run'], {'properties': ['dos', key, 'sparse']}, Context(workdir=str(workdir))
+        )
+        assert not form.complete and method in form.errors['properties']
+        assert getattr(PAOFLOW, method)._sparse_role == 'dense', method
+    question = next(q for q in WORKFLOWS['run'].questions() if q.key == 'interpolation')
+    assert not question.when({'properties': ['bands', 'sparse']}, None)
 
 
 def test_modifiers_alone_run_nothing_extra(workdir):

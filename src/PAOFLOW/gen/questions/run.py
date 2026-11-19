@@ -5,7 +5,7 @@ from __future__ import annotations
 from .common import COMMON_ITEMS, COMMON_OVERRIDES, assemble_common, from_save
 from .linear_response import assemble_linear_response, linear_response_items
 from .model import Answers, Context, Note, Question, Workflow, gated
-from .run_extras import RUN_EXTRA_ITEMS, SHC_ATOMS, assemble_run_extras
+from .run_extras import RUN_EXTRA_ITEMS, SHC_ATOMS, assemble_run_extras, sparse_conflicts
 from .spin_response import assemble_spin_response, spin_response_items
 
 PROPERTIES = 'Properties'
@@ -401,6 +401,7 @@ RUN_ITEMS = (
         'Available properties:',
         kind='menu',
         choices=_property_choices,
+        validate=sparse_conflicts,
         abort_if_empty='No valid properties selected; nothing to generate.',
         label='Properties',
         section=PROPERTIES,
@@ -519,7 +520,13 @@ RUN_ITEMS = (
         when=lambda a, c: bool(a.get('interpolate')),
         section=GRIDS,
     ),
-    interpolation_question(lambda a, c: _band_path(a) or bool(a.get('interpolate')), GRIDS),
+    interpolation_question(
+        # the sparse bond list is the standard sum; the Wigner-Seitz routes are dense-only
+        lambda a, c: (
+            (_band_path(a) or bool(a.get('interpolate'))) and 'sparse' not in _properties(a)
+        ),
+        GRIDS,
+    ),
     *gated(NONLINEAR_ITEMS, lambda a, c: 'nonlinear' in _properties(a)),
     *linear_response_items(lambda a, c: bool(a.get('spin_orbit'))),
     *spin_response_items(lambda a, c: 'spin_susceptibility' in _properties(a)),

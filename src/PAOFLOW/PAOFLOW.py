@@ -1,6 +1,9 @@
 import numpy as np
 
+from .sparse.dispatch import sparse_aware, sparse_base_cell, sparse_override, sparse_shared
 
+
+@sparse_aware
 class PAOFLOW:
     """Post-processing engine for Pseudo-Atomic Orbital (PAO) electronic structure calculations.
 
@@ -60,6 +63,44 @@ class PAOFLOW:
         DFT back-end: ``'QE'`` (Quantum ESPRESSO) or ``'VASP'``.
     header_style : str, default ``'color'``
         header style ``'color'`` (large banner) or ``'minimal'`` (small title)
+    sparse : bool, default ``False``
+        Run on the sparse engine (:mod:`PAOFLOW.sparse`): from ``pao_hamiltonian``
+        on, H(R) is a thresholded bond list and no O(nawf² · nk) array is formed.
+        ``False`` keeps the dense pipeline.
+    sparse_config : dict or None, default ``None``
+        Options of the sparse engine, only accepted with ``sparse=True``, e.g.
+        ``sparse_config={'bond_order': 24}``.  ``None`` or ``{}`` takes every
+        default.  Unknown keys raise.  The options:
+
+        - ``'hopping_threshold'`` (float, eV): drop H(R) elements smaller than this;
+          1e-3 when no real-space cutoff is given.  Splits symmetry-protected
+          degeneracies, so it is exclusive with ``'rcut'`` and ``'bond_order'``.
+        - ``'rcut'`` (float, Bohr): keep whole atom-pair blocks up to this bond
+          length instead; preserves the crystal symmetry.
+        - ``'bond_order'`` (int): the same cutoff as a count of neighbour shells
+          (1 = nearest neighbours); exclusive with ``'rcut'``.
+        - ``'hk_solver'`` (``'auto'``, ``'sparse'`` or ``'dense'``, default
+          ``'auto'``): eigensolver used at each k-point.
+        - ``'nev'`` (int): bands solved per k-point.  By default it is derived
+          before every pass: the window reaches from the bottom of the
+          spectrum to the highest property ``emax`` plus the margin that
+          property needs (four adaptive-smearing widths for DoS-like
+          properties, 10 kT at ``tmax`` for transport and doping), capped at
+          the well-projected top, and the bands below it are counted at a few
+          probe k-points.  Give it to skip that probe or fix the count.
+        - ``'interior_window'`` (dict): solve only the states inside an energy
+          window.  ``{}`` places it around the property ranges of each pass,
+          with the same margins; ``{'elo': -3.0, 'ehi': 3.0}`` (eV) fixes it.
+          Properties that need the states below the window are skipped with
+          a warning.  Exclusive with ``'nev'``.
+
+        Full semantics: :class:`~PAOFLOW.sparse.config.SparseConfig`.
+        Methods with a sparse implementation keep their names and arguments;
+        ``pao_eigh``, ``gradient_and_momenta`` and ``adaptive_smearing`` become
+        optional (they are fused into the mesh pass the first property runs);
+        dense-only methods raise, with the reason, until :meth:`to_dense`.
+        Sparse-only features live under :attr:`sparse`: ``with pao.sparse.fused():``
+        computes several properties in one pass, and ``pao.sparse.H`` is the bond list.
 
     Key attributes
     --------------
@@ -191,6 +232,8 @@ class PAOFLOW:
         Print wall-clock time elapsed since the last timer reset.
     finish_execution()
         Print total run time and (if verbose) aggregate memory usage across ranks.
+    to_dense()
+        Continue a ``sparse=True`` run on the dense pipeline, on the same object.
 
     Notes
     -----
@@ -218,6 +261,10 @@ class PAOFLOW:
     # Function container for ErrorHandler's method
     report_exception = None
 
+    # SparseEngine when built with sparse=True, else None (see PAOFLOW.sparse.dispatch)
+    _engine = None
+
+    @sparse_shared
     def print_data_keys(self):
         """
         Print's out the keys do the data_controller dictionaries, "arrays" and "attributes".
@@ -249,6 +296,8 @@ class PAOFLOW:
         dft='QE',
         header_style='color',
         unfold_kpoints=False,
+        sparse=False,
+        sparse_config=None,
     ):
         """
         Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
@@ -272,6 +321,8 @@ class PAOFLOW:
                 to the full grid by symmetry, so that projections and the PAO Hamiltonian
                 (``expand_wedge=False``) are those of a full-grid nscf. Needed by the
                 electron-phonon vertex, which requires the projections at every k. QE only
+            sparse (bool): True runs on the sparse engine, False (default) on the dense pipeline
+            sparse_config (dict or None): Options of the sparse engine (only with sparse=True), e.g. {'bond_order': 24} or {'bond_order': 8, 'interior_window': {}}; None takes the defaults
         Returns:
             None
         """
@@ -280,7 +331,24 @@ class PAOFLOW:
         from mpi4py import MPI
 
         from .DataController import DataController
+        from .sparse.config import SparseConfig
         from .utils.header import header
+
+        if not isinstance(sparse, bool):
+            hint = (
+                ' Pass sparse=True and the options as sparse_config=%r.' % (sparse,)
+                if isinstance(sparse, dict)
+                else ''
+            )
+            raise TypeError(
+                'sparse= takes True or False; got %r.%s' % (type(sparse).__name__, hint)
+            )
+        if not sparse and sparse_config is not None:
+            raise ValueError(
+                'sparse_config= was given but sparse=False: set sparse=True to run on the '
+                'sparse engine, or drop sparse_config.'
+            )
+        sparse = SparseConfig.parse(sparse_config) if sparse else None
 
         # -------------------------------
         # Initialize Parallel Execution
@@ -315,6 +383,11 @@ class PAOFLOW:
         )
 
         self.report_exception = self.data_controller.report_exception
+        # what a restart needs to rebuild the session without a JSON dump
+        # (see load_sparse_hamiltonian)
+        self._session = dict(
+            workpath=workpath, outputdir=outputdir, npool=npool, smearing=smearing, verbose=verbose
+        )
 
         if not restart:
             # Data Attributes
@@ -339,12 +412,54 @@ class PAOFLOW:
                     )
 
         # Do memory checks
-        if model is None and not restart and self.rank == 0 and not attr.get('bxsf_only', False):
+        if (
+            sparse is None
+            and model is None
+            and not restart
+            and self.rank == 0
+            and not attr.get('bxsf_only', False)
+        ):
             gbyte = self.memory_check()
             print('Estimated maximum array size: %.2f GBytes\n' % (gbyte))
 
+        if sparse is not None:
+            from .sparse.engine import SparseEngine
+
+            self._engine = SparseEngine(self, sparse)
+
         self.report_module_time('Initialization')
 
+    @property
+    def sparse(self):
+        """The sparse engine, for features that exist only in sparse mode
+        (fused, the bond list H)."""
+        if self._engine is None:
+            raise RuntimeError(
+                'This run is dense: build it with PAOFLOW(..., sparse=True) (options in '
+                'sparse_config={...}) to use the sparse engine.'
+            )
+        return self._engine
+
+    @sparse_shared
+    def to_dense(self):
+        """
+        Continue a sparse run on the dense pipeline.
+
+        Scatters the base-cell bond list into a dense 'HRs' (plus 'Hks' and 'Dnm'),
+        leaving the DataController as dense 'pao_hamiltonian' would with the truncated
+        model, and drops the sparse engine: every later call on this object runs the
+        dense code, so every dense property becomes available.
+
+        Call after 'pao_hamiltonian' or 'load_sparse_hamiltonian' and before
+        'doubling_Hamiltonian', 'interpolated_hamiltonian' or the first solve.
+
+        Returns:
+            None
+        """
+        self.sparse.release_to_dense()
+        self._engine = None
+
+    @sparse_shared
     def report_module_time(self, mname):
         from time import time
 
@@ -442,6 +557,7 @@ class PAOFLOW:
             * B_to_GB
         )
 
+    @sparse_override
     def finish_execution(self):
         """
         Finish the PAOFLOW execution. Print out run time and maximum memory usage
@@ -487,6 +603,7 @@ class PAOFLOW:
                 print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / to_gb))
                 print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / to_gb))
 
+    @sparse_shared
     def projections(
         self,
         configuration=None,
@@ -810,6 +927,7 @@ class PAOFLOW:
 
         self.report_module_time('Projections')
 
+    @sparse_shared
     def read_atomic_proj_QE(self):
         """
         Read the wavefunctions and overlaps from atomic-proj.xml, written by Quantum Espresso
@@ -866,6 +984,7 @@ class PAOFLOW:
 
         arry['basis'] = basis
 
+    @sparse_shared
     def projectability(self, pthr=0.95, shift='auto'):
         """
         Calculate the Projectability Matrix to determine how many states need to be shifted
@@ -895,6 +1014,7 @@ class PAOFLOW:
 
         self.report_module_time('Projectability')
 
+    @sparse_override
     def pao_hamiltonian(
         self,
         shift_type=1,
@@ -986,6 +1106,7 @@ class PAOFLOW:
             do_Hks_to_HRs(self.data_controller)
             self.data_controller.broadcast_single_array('HRs')
 
+    @sparse_base_cell
     def add_external_fields(self, Efield=[0.0], Bfield=[0.0], HubbardU=[0.0]):
         """
         Add External Fields and Corrections to the Hamiltonian 'HRs'
@@ -1091,6 +1212,7 @@ class PAOFLOW:
                 raise e
         self.report_module_time('Spinor basis')
 
+    @sparse_override
     def magnetic_field(
         self,
         field,
@@ -1109,7 +1231,9 @@ class PAOFLOW:
         moment of the Bloch states orbital_moment. A spin-degenerate run is first rewritten in
         spinors (spinor_basis); a collinear run (nspin = 2) takes B along z only. Call it on
         'HRs', before interpolated_hamiltonian; each call adds its field, and the array
-        'magnetic_field' holds the total (T).
+        'magnetic_field' holds the total (T). Sparse run: supported at the base cell (before
+        doubling_Hamiltonian) for spinor and collinear bases; a spin-degenerate basis raises,
+        since spinor_basis is dense-only.
 
         Arguments:
             field (array_like): Cartesian field (T), shape (3,)
@@ -1198,6 +1322,7 @@ class PAOFLOW:
         self.report_module_time('Peierls phases')
         return flux
 
+    @sparse_override
     def orbital_moment(self, degeneracy_tol=1.0e-6):
         """
         Orbital magnetic moment m_n(k) of every Bloch state on the interpolated grid (mu_B)
@@ -1208,7 +1333,8 @@ class PAOFLOW:
         order (the itinerant part of the band g-factor; the atomic part is magnetic_field's L).
         States closer than degeneracy_tol are left out of each other's sums: inside a degenerate
         group the per-band values depend on the basis, their sum does not. Call it after pao_eigh
-        and gradient_and_momenta.
+        and gradient_and_momenta. Sparse run: supported while nawf <= dense_n_max (the sums run
+        over every state); the arrays cover the bands of 'E_k'.
 
         Arguments:
             degeneracy_tol (float): degeneracy threshold (eV)
@@ -1237,6 +1363,7 @@ class PAOFLOW:
                 raise e
         self.report_module_time('Orbital moment')
 
+    @sparse_override
     def orbital_magnetization(
         self,
         emin=-1.0,
@@ -1252,7 +1379,8 @@ class PAOFLOW:
         M(mu) = (g / N_k) sum_nk f_nk [m_nk + (e / hbar)(mu - e_nk) Omega_nk], g = 2 for
         spin-degenerate bands, 1 otherwise. In the gap of a Chern insulator dM/dmu = (e/h) C times
         the cell area (Streda). Call it after pao_eigh and gradient_and_momenta (it calls
-        orbital_moment if needed); writes <fname>.dat (mu, Mx, My, Mz).
+        orbital_moment if needed); writes <fname>.dat (mu, Mx, My, Mz). Sparse run: supported
+        while nawf <= dense_n_max; the moments are computed in the same mesh pass.
 
         Arguments:
             emin, emax, ne: the chemical potentials (eV, relative to the Fermi level of 'E_k')
@@ -1572,6 +1700,7 @@ class PAOFLOW:
         if 'Lj' not in arry:
             raise ValueError('orbital_operator did not build Lj for this basis')
 
+    @sparse_base_cell(modifies=False)
     def write_Hamiltonian(self, fname: str = 'hamiltonian.dat') -> None:
         """Write the real-space Hamiltonian in the Wannier90 ``_hr.dat`` format.
 
@@ -1595,103 +1724,122 @@ class PAOFLOW:
                 raise e
         self.report_module_time('write_Hamiltonian')
 
+    @sparse_override
     def save_sparse_hamiltonian(
-        self,
-        fname='sparse_hamiltonian.npz',
-        bond_order=3,
-        r_cut=None,
-        magnitude_tol=1.0e-8,
+        self, fname='sparse_hamiltonian.npz', hopping_threshold=None, bond_order=None, rcut=None
     ):
         """
-        Truncate the real-space Hamiltonian 'HRs' to a neighbour-shell cutoff and save it.
+        Truncate 'HRs' to a bond list and save it as a sparse Hamiltonian archive.
 
-        The archive holds the surviving matrix elements as a labelled bond list
-        (atoms, species and orbital names per element) together with the geometry
-        and run metadata needed by 'load_sparse_hamiltonian'.
+        The archive (PAOFLOW.sparse.io) holds the surviving matrix elements as a
+        labelled bond list together with the geometry and run metadata needed to
+        restart from it, densely or with sparse=True. 'HRs' itself is left untouched, so
+        the run continues unchanged.
+
+        Must be called after 'pao_hamiltonian' and before 'interpolated_hamiltonian',
+        'pao_eigh' or any doubling: only the base-cell 'HRs' can be saved.
 
         Arguments:
-            fname (str): File name for the sparse Hamiltonian archive (written to outputdir)
+            fname (str): File name of the archive (relative names go to outputdir)
+            hopping_threshold (float): Drop elements below this magnitude (eV) in every spin channel (default 1e-3)
+                Breaks symmetry, so it is mutually exclusive with bond_order and rcut
             bond_order (int): Keep bonds up to this neighbour shell (1 = nearest neighbours)
-            r_cut (float): Explicit bond-length cutoff in Bohr, overriding bond_order
-            magnitude_tol (float): Discard matrix elements smaller than this in every spin channel
+            rcut (float): Bond-length cutoff in Bohr; mutually exclusive with bond_order
 
         Returns:
             None
 
         """
-        from .hamiltonian.sparse_hamiltonian import (
-            sparsify_real_space_hamiltonian,
-            write_sparse_hamiltonian,
-        )
+        from .sparse.bridge import sparsify
+        from .sparse.config import resolve_threshold
+        from .sparse.io import write_sparse_hamiltonian
+
+        attr = self.data_controller.data_attributes
+        if rcut is not None and bond_order is not None:
+            raise ValueError(
+                'save_sparse_hamiltonian: give either rcut (Bohr) or bond_order (shells), not both.'
+            )
+        # fail on every rank before the rank-0 conversion
+        threshold = resolve_threshold(hopping_threshold, rcut, bond_order, 'hopping_threshold')
 
         try:
             if self.rank == 0:
-                attr = self.data_controller.data_attributes
-                bundle = sparsify_real_space_hamiltonian(
-                    self.data_controller,
-                    bond_order=bond_order,
-                    r_cut=r_cut,
-                    magnitude_tol=magnitude_tol,
-                    verbose=attr['verbose'],
-                )
-                write_sparse_hamiltonian(self.data_controller, bundle, fname)
+                H = sparsify(self.data_controller, threshold, rcut=rcut, bond_order=bond_order)
+                path = write_sparse_hamiltonian(self.data_controller, H, fname)
+                if attr['verbose']:
+                    print('Sparse Hamiltonian written to %s' % path)
+                    print(H.stats_line())
         except Exception as e:
             self.report_exception('save_sparse_hamiltonian')
-            if self.data_controller.data_attributes['abort_on_exception']:
+            if attr['abort_on_exception']:
                 raise e
 
         self.comm.Barrier()
         self.report_module_time('save_sparse_hamiltonian')
 
+    @sparse_override
     def load_sparse_hamiltonian(self, fname='sparse_hamiltonian.npz'):
         """
-        Restore a run from an archive written by 'save_sparse_hamiltonian'.
+        Restart the dense pipeline from a sparse Hamiltonian archive.
 
-        Rebuilds the dense 'HRs' from the stored bonds and repopulates the geometry,
-        orbital map and FFT grids, so that subsequent steps (bands, dos, transport)
-        proceed exactly as after 'pao_hamiltonian'.
+        Reads an archive written by 'save_sparse_hamiltonian' (dense or sparse run),
+        restores the geometry, orbital map and run attributes, and scatters the
+        bond list into a dense 'HRs' (PAOFLOW.sparse.bridge.densify). Replaces
+        the input stages ('projections', 'projectability', 'pao_hamiltonian');
+        every dense property can follow. The model is the truncated one stored in
+        the file, and its truncation is printed.
 
-        Works on an instance created with restart=True, which needs neither a '.save'
-        directory nor a model.
+        Use on an instance created with restart=True. Every rank reads the file.
 
         Arguments:
-            fname (str): File name of the sparse Hamiltonian archive
+            fname (str): Archive path; relative names that do not exist are looked up in outputdir
 
         Returns:
             None
 
         """
-        from .hamiltonian.sparse_hamiltonian import (
-            read_sparse_hamiltonian,
-            restore_data_controller,
-        )
+        from os.path import exists, isabs, join
+
+        from .sparse.bridge import archive_Dnm, densify, init_restart_session
+        from .sparse.io import read_sparse_hamiltonian, restore_data_controller
+
+        if self.data_controller.data_attributes is None:
+            init_restart_session(self.data_controller, self.comm, **self._session)
+        attr = self.data_controller.data_attributes
 
         try:
-            from os.path import exists, isabs, join
-
-            #  A restart instance leaves both data dictionaries set to None.
-            if self.data_controller.data_attributes is None:
-                self.data_controller.data_arrays = {}
-                self.data_controller.data_attributes = {'abort_on_exception': True}
-                self.data_controller.add_default_arrays()
-
-            attr = self.data_controller.data_attributes
-            attr.setdefault('scipyfft', True)
-            attr.setdefault('abort_on_exception', True)
-
             path = fname
-            if not isabs(fname) and not exists(fname) and 'opath' in attr:
+            if not isabs(fname) and not exists(fname):
                 path = join(attr['opath'], fname)
-            bundle = read_sparse_hamiltonian(path)
+            H, bundle = read_sparse_hamiltonian(path)
             restore_data_controller(self.data_controller, bundle)
+            densify(self.data_controller, H, archive_Dnm(bundle))
+
+            if self.rank == 0:
+                report = H.drop_report
+                if bundle['bond_order'] is not None:
+                    cut = 'bond_order = %d (r_c = %.3f Bohr)' % (
+                        bundle['bond_order'],
+                        bundle['cutoff_radius'],
+                    )
+                elif bundle['cutoff_radius'] is not None:
+                    cut = 'r_c = %.3f Bohr' % bundle['cutoff_radius']
+                else:
+                    cut = 'no real-space cutoff'
+                print('Loaded truncated Hamiltonian from %s' % path)
+                print(
+                    '  %d bonds, threshold = %.1e eV, %s, eig_bound = %.3e eV'
+                    % (H.nnz, bundle['threshold'], cut, report.get('eig_bound', float('nan')))
+                )
         except Exception as e:
             self.report_exception('load_sparse_hamiltonian')
-            if (self.data_controller.data_attributes or {}).get('abort_on_exception', True):
+            if attr['abort_on_exception']:
                 raise e
 
         self.comm.Barrier()
         self.report_module_time('load_sparse_hamiltonian')
 
+    @sparse_override
     def bands(
         self,
         ibrav: int | None = None,
@@ -1738,29 +1886,13 @@ class PAOFLOW:
             Stores ``E_k`` and ``v_k`` on the path in the data controller and writes the bands to
             ``fname``.
         """
-        from .spectrum.do_bands import do_bands
+        from .spectrum.do_bands import do_bands, set_band_path
         from .utils.communication import gather_full
 
         arrays, attr = self.data_controller.data_dicts()
-
-        if ibrav is not None:
-            attr['ibrav'] = ibrav
-
-        if 'ibrav' not in attr and 'kq' not in arrays:
-            if band_path is None or high_sym_points is None:
-                if self.rank == 0:
-                    print("Must specify the high-symmetry path, 'kq', or 'ibrav'")
-
-        if 'nk' not in attr:
-            attr['nk'] = nk
-        if band_path is not None:
-            attr['band_path'] = band_path
+        set_band_path(self.data_controller, ibrav, band_path, high_sym_points, nk, write_QE_path)
         if 'adhoc_SO' not in attr:
             attr['adhoc_SO'] = adhoc_SO
-        if high_sym_points is not None:
-            arrays['high_sym_points'] = high_sym_points
-
-        attr['write_QE_bands'] = write_QE_path
         # Prepare HRs for band computation with spin-orbit coupling
         try:
             do_bands(self.data_controller, interpolation=interpolation)
@@ -1780,6 +1912,7 @@ class PAOFLOW:
 
         self.report_module_time('Bands')
 
+    @sparse_base_cell
     def adhoc_spin_orbit(
         self,
         naw=[1],
@@ -1892,6 +2025,7 @@ class PAOFLOW:
 
         self.report_module_time('adhoc_spin_orbit')
 
+    @sparse_base_cell
     def j_to_lm_hamiltonian(self, shells=None, check_unitary=True):
         """
         Rotate the fully-relativistic Hamiltonian from the J basis to the lm basis.
@@ -2071,6 +2205,7 @@ class PAOFLOW:
         self.report_module_time('z2_invariant')
         return result
 
+    @sparse_override
     def wave_function_projection(self, dimension=3):
         """
         Marcio, can you write something here please?
@@ -2095,6 +2230,7 @@ class PAOFLOW:
 
         self.report_module_time('wave_function_projection')
 
+    @sparse_override
     def site_projected_bands(self, site_proj: list[int] = [0]) -> None:
         """Weight of chosen atoms in every state of the band path (site-projected bands).
 
@@ -2135,6 +2271,7 @@ class PAOFLOW:
 
         self.report_module_time('site_projeted_bands')
 
+    @sparse_override
     def doubling_Hamiltonian(self, nx: int, ny: int, nz: int) -> None:
         """Real-space Hamiltonian of a supercell made by doubling the cell along its lattice vectors.
 
@@ -2247,6 +2384,7 @@ class PAOFLOW:
 
         self.report_module_time('doubling_Hamiltonian')
 
+    @sparse_base_cell
     def cutting_Hamiltonian(self, x=False, y=False, z=False):
         """
         Marcio, can you write something here please?
@@ -2281,6 +2419,7 @@ class PAOFLOW:
 
         self.report_module_time('cutting_Hamiltonian')
 
+    @sparse_shared
     def spin_operator(self, adhoc_SO=False, sh_l=None, sh_j=None):
         """
         Calculate the Spin Operator for calculations involving spin
@@ -2295,9 +2434,15 @@ class PAOFLOW:
 
         Returns:
             None
+
+        In a sparse run it must be called at the base cell (before
+        'doubling_Hamiltonian', which then doubles 'Sj'), and 'Sj' is stored as
+        three CSR matrices.
         """
         arrays, attr = self.data_controller.data_dicts()
 
+        if self._engine is not None:
+            self._engine.require_base_cell('spin_operator')
         if adhoc_SO:
             attr['adhoc_SO'] = adhoc_SO
         if ('sh_l' not in arrays and 'sh_j' not in arrays) and not adhoc_SO:
@@ -2370,16 +2515,31 @@ class PAOFLOW:
                     Sj[spol, :, :] = clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], spol)
 
             arrays['Sj'] = Sj
+            if self._engine is not None:
+                from .sparse.operators import to_sparse_operator
+
+                arrays['Sj'] = to_sparse_operator(Sj)
         except Exception as e:
             self.report_exception('spin_operator')
             if attr['abort_on_exception']:
                 raise e
 
+    @sparse_shared
     def orbital_operator(self, adhoc_SO=False):
+        """
+        Calculate the Orbital Angular Momentum Operator 'Lj' (L = J - S with spin-orbit from
+        the DFT run, or the l-blocks of the ad-hoc spin-orbit basis).
+
+        In a sparse run it must be called at the base cell (before
+        'doubling_Hamiltonian', which then doubles 'Lj'), and 'Lj' is stored as
+        three CSR matrices.
+        """
         from .topology.j_matrix import build_L_from_orb, build_orb_list_and_indices, j_matrix
 
         arrays, attr = self.data_controller.data_dicts()
 
+        if self._engine is not None:
+            self._engine.require_base_cell('orbital_operator')
         if adhoc_SO:
             attr['adhoc_SO'] = adhoc_SO
 
@@ -2419,12 +2579,23 @@ class PAOFLOW:
                 for spol in range(3):
                     Jj[spol, :, :] = j_matrix(self.data_controller, spol)
                 # Compute Orbital Angular Momentum operators L = J - S
-                arrays['Lj'] = Jj - arrays['Sj']
+                if self._engine is None:
+                    arrays['Lj'] = Jj - arrays['Sj']
+                else:
+                    from .sparse.operators import to_dense_operator
+
+                    arrays['Lj'] = Jj - to_dense_operator(arrays['Sj'])
+
+            if self._engine is not None:
+                from .sparse.operators import to_sparse_operator
+
+                arrays['Lj'] = to_sparse_operator(arrays['Lj'])
         except:
             self.report_exception('angular_momentum_operator')
             if attr['abort_on_exception']:
                 self.comm.Abort()
 
+    @sparse_override
     def topology(
         self,
         eff_mass=False,
@@ -2492,6 +2663,7 @@ class PAOFLOW:
         arrays.pop('Rfft', None)
         arrays.pop('R_wght', None)
 
+    @sparse_override
     def interpolated_hamiltonian(
         self,
         nfft1: int = 0,
@@ -2613,6 +2785,7 @@ class PAOFLOW:
             else 'R -> k with Wigner-Seitz images'
         )
 
+    @sparse_override
     def pao_eigh(self, bval=0):
         """
         Calculate the Eigen values and vectors of k-space Hamiltonian 'Hksp'
@@ -2671,6 +2844,7 @@ class PAOFLOW:
 
         self.report_module_time('Eigenvalues')
 
+    @sparse_override
     def gradient_and_momenta(
         self,
         band_curvature=False,
@@ -2806,6 +2980,7 @@ class PAOFLOW:
         do_momentum(self.data_controller)
         self.report_module_time('Momenta')
 
+    @sparse_override
     def position_dipole_correction(
         self,
         *,
@@ -2855,6 +3030,10 @@ class PAOFLOW:
         with the dipoles the commutator is complete (Si: 0.99--1.01 of the exact
         plane-wave :math:`\varepsilon`).  The former non-local correction, which
         double counted it (0.87 with both terms), was removed in October 2026.
+
+        Sparse run: supported at the base cell (the tables describe the atoms of the DFT
+        run); the term is added per k-point to the ``dH/dk`` of the interband properties of
+        the mesh passes. The path properties keep the bare gradient, as in the dense pipeline.
         """
         import numpy as np
 
@@ -2925,6 +3104,7 @@ class PAOFLOW:
         self.report_module_time('Position dipoles')
         return True
 
+    @sparse_override
     def adaptive_smearing(
         self,
         smearing: str = 'gauss',
@@ -2968,6 +3148,7 @@ class PAOFLOW:
                 raise e
         self.report_module_time('Adaptive Smearing')
 
+    @sparse_override
     def dos(self, do_dos=True, do_pdos=True, delta=0.01, emin=-10.0, emax=2.0, ne=1000):
         """
         Calculate the Density of States and Projected Density of States
@@ -3028,6 +3209,7 @@ class PAOFLOW:
         )
         self.report_module_time(mname)
 
+    @sparse_override
     def density(self, nr1=48, nr2=48, nr3=48):
         """
         Calculate the Electron Density in real space
@@ -3055,6 +3237,7 @@ class PAOFLOW:
             arrays['deltakp'] = arrays['deltakp'][:, :bnd]
             arrays['deltakp2'] = arrays['deltakp2'][:, :bnd]
 
+    @sparse_override
     def fermi_surface(self, fermi_up=1.0, fermi_dw=-1.0):
         """
         Calculate the Fermi Surface
@@ -3087,6 +3270,7 @@ class PAOFLOW:
 
         self.report_module_time('Fermi Surface')
 
+    @sparse_shared
     def pyskeaf(
         self,
         fermi_energy=0.0,
@@ -3424,6 +3608,7 @@ class PAOFLOW:
         self.report_module_time('Quantum Oscillations')
         return results
 
+    @sparse_override
     def spin_texture(self, fermi_up=1.0, fermi_dw=-1.0):
         """
         Calculate the Spin Texture
@@ -3463,6 +3648,7 @@ class PAOFLOW:
 
         self.comm.Barrier()
 
+    @sparse_override
     def berry_curvature(self, spin_Hall=False, orbital_Hall=False, spol=None, ipol=None, jpol=None):
         """
         Calculate the Berry Curvature along the k-path 'kq'
@@ -3523,6 +3709,7 @@ class PAOFLOW:
         del arrays['Rfft']
         del arrays['R_wght']
 
+    @sparse_override
     def spin_Hall(
         self,
         twoD=False,
@@ -3562,23 +3749,12 @@ class PAOFLOW:
             do_projection_operator,
             orbital_array,
         )
-        from .response.do_Hall import do_spin_Hall
+        from .response.do_Hall import do_spin_Hall, hall_settings
 
         arrays, attr = self.data_controller.data_dicts()
-
-        attr['eminH'], attr['emaxH'] = emin, emax
-        attr['deltaH'] = delta
-        attr['esizeH'] = ne
-
-        if s_tensor is not None:
-            arrays['s_tensor'] = np.array(s_tensor)
-        # Use THIS routine's own energy window. (Previously guarded by
-        # `if 'fermi_up' not in attr`, which meant the first module called in a
-        # session locked fermi_up/fermi_dw in the shared attr dict and every later
-        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
-        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
-        attr['fermi_up'] = fermi_up
-        attr['fermi_dw'] = fermi_dw
+        hall_settings(
+            self.data_controller, 's_tensor', s_tensor, emin, emax, ne, delta, fermi_up, fermi_dw
+        )
 
         if shc_proj is not None:
             arrays['shc_proj'] = np.array(shc_proj)
@@ -3603,6 +3779,7 @@ class PAOFLOW:
 
         self.report_module_time('Spin Hall Conductivity')
 
+    @sparse_override
     def orbital_texture(self, fermi_up=1.0, fermi_dw=-1.0):
         """
         Calculate the Orbital Texture
@@ -3642,6 +3819,7 @@ class PAOFLOW:
 
         self.comm.Barrier()
 
+    @sparse_override
     def orbital_Hall(
         self,
         twoD=False,
@@ -3678,23 +3856,12 @@ class PAOFLOW:
             do_projection_operator,
             orbital_array,
         )
-        from .response.do_Hall import do_orbital_Hall
+        from .response.do_Hall import do_orbital_Hall, hall_settings
 
         arrays, attr = self.data_controller.data_dicts()
-
-        attr['eminH'], attr['emaxH'] = emin, emax
-        attr['deltaH'] = delta
-        attr['esizeH'] = ne
-
-        if o_tensor is not None:
-            arrays['o_tensor'] = np.array(o_tensor)
-        # Use THIS routine's own energy window. (Previously guarded by
-        # `if 'fermi_up' not in attr`, which meant the first module called in a
-        # session locked fermi_up/fermi_dw in the shared attr dict and every later
-        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
-        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
-        attr['fermi_up'] = fermi_up
-        attr['fermi_dw'] = fermi_dw
+        hall_settings(
+            self.data_controller, 'o_tensor', o_tensor, emin, emax, ne, delta, fermi_up, fermi_dw
+        )
 
         if ohc_proj is not None:
             arrays['ohc_proj'] = np.array(ohc_proj)
@@ -3719,6 +3886,7 @@ class PAOFLOW:
 
         self.report_module_time('Orbital Hall Conductivity')
 
+    @sparse_override
     def conductivity(self, delta=0.01, emin=-10.0, emax=2.0, ne=1000, cond_tensor=None):
         from .response.do_conductivity import do_conductivity
 
@@ -3735,6 +3903,7 @@ class PAOFLOW:
 
         self.report_module_time('Conductivity')
 
+    @sparse_override
     def rashba_edelstein(
         self,
         emin=-2,
@@ -3913,6 +4082,7 @@ class PAOFLOW:
 
         self.report_module_time('Rashba_Edelstein')
 
+    @sparse_override
     def anomalous_Hall(
         self,
         do_ac: bool = False,
@@ -3943,24 +4113,12 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .response.do_Hall import do_anomalous_Hall
+        from .response.do_Hall import do_anomalous_Hall, hall_settings
 
-        arrays, attr = self.data_controller.data_dicts()
-
-        attr['eminH'] = emin
-        attr['emaxH'] = emax
-        attr['deltaH'] = delta
-        attr['esizeH'] = ne
-
-        if a_tensor is not None:
-            arrays['a_tensor'] = np.array(a_tensor)
-        # Use THIS routine's own energy window. (Previously guarded by
-        # `if 'fermi_up' not in attr`, which meant the first module called in a
-        # session locked fermi_up/fermi_dw in the shared attr dict and every later
-        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
-        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
-        attr['fermi_up'] = fermi_up
-        attr['fermi_dw'] = fermi_dw
+        attr = self.data_controller.data_attributes
+        hall_settings(
+            self.data_controller, 'a_tensor', a_tensor, emin, emax, ne, delta, fermi_up, fermi_dw
+        )
 
         try:
             do_anomalous_Hall(self.data_controller, do_ac, twoD=twoD)
@@ -3971,6 +4129,7 @@ class PAOFLOW:
 
         self.report_module_time('Anomalous Hall Conductivity')
 
+    @sparse_override
     def effective_mass(self, emin=-1.0, emax=1.0, ne=1000):
         """
         Calculate effective mass components for kx,ky and kz
@@ -4000,6 +4159,7 @@ class PAOFLOW:
 
         self.report_module_time('Effective mass')
 
+    @sparse_override
     def doping(
         self,
         tmin: float = 300,
@@ -4076,6 +4236,7 @@ class PAOFLOW:
         self.report_module_time('Doping')
         return mu
 
+    @sparse_shared
     def doped_transport(
         self,
         doping_conc: float,
@@ -4129,10 +4290,18 @@ class PAOFLOW:
         :meth:`doping` gives :math:`\\mu(T)`; :meth:`transport` then evaluates the tensors at
         that single chemical potential, one temperature at a time. Call after
         :meth:`gradient_and_momenta` (and :meth:`adaptive_smearing` for the adaptive kernel).
+
+        Sparse run: supported, outside ``sparse.fused()`` (inside it :meth:`doping` returns
+        before its pass, so there is no :math:`\\mu(T)` to hand to :meth:`transport`).
         """
         from os.path import join
 
         arrays, attr = self.data_controller.data_dicts()
+        if self._engine is not None and self._engine._fusing is not None:
+            raise RuntimeError(
+                'doped_transport cannot be queued in sparse.fused(): it needs the chemical '
+                'potentials doping() returns before it calls transport(); call it outside the block'
+            )
         if attr['nspin'] != 1:
             raise ValueError(
                 'doped_transport needs one spin channel (spin-degenerate or spin-orbit run); '
@@ -4170,6 +4339,7 @@ class PAOFLOW:
         self.report_module_time('Doped transport')
         return rows
 
+    @sparse_override
     def transport(
         self,
         tmin=300.0,
@@ -4250,6 +4420,7 @@ class PAOFLOW:
 
         self.report_module_time('Transport')
 
+    @sparse_override
     def dielectric_tensor(
         self,
         delta=0.1,
@@ -4349,7 +4520,8 @@ class PAOFLOW:
         ne : int, optional
             Number of frequency samples in ``[emin, emax]``.
         d_tensor : list or {'all', 'diag', 'offdiag'}, optional
-            Tensor components to compute. ``'diag'`` -> ``[[0,0],[1,1],[2,2]]``,
+            Tensor components to compute. ``None`` or ``'all'`` keeps the run's
+            list (all nine by default), ``'diag'`` -> ``[[0,0],[1,1],[2,2]]``,
             ``'offdiag'`` -> the six off-diagonal pairs, or pass an explicit
             list such as ``[[0,0],[1,2]]``. Default (None): ``'diag'``.
         degauss : float, optional
@@ -4415,31 +4587,22 @@ class PAOFLOW:
             pf.dielectric_tensor(d_tensor='diag')    # uses adaptive eta_nm
         """
 
-        from .response.do_epsilon import do_dielectric_tensor
+        from .response.do_epsilon import dielectric_settings, do_dielectric_tensor
 
-        arrays, attr = self.data_controller.data_dicts()
-
-        if 'degauss' not in attr:
-            attr['degauss'] = degauss
-        if 'delta' not in attr:
-            attr['delta'] = delta
-        attr['intrasmear'] = intrasmear
-        attr['intraband'] = bool(intraband)
-        attr['eps_temperature_k'] = None if temperature is None else float(temperature)
-        attr['emissivity'] = emissivity
-        attr['emis_angles'] = np.atleast_1d(np.array(emis_angles, dtype=float))
-        attr['emis_ntheta'] = int(emis_ntheta)
-        attr['emis_temperature'] = np.atleast_1d(np.array(emis_temperature, dtype=float))
-        if d_tensor is None:
-            d_tensor = 'diag'  # the diagonal components (None used to crash)
-        if d_tensor == 'all':
-            pass
-        elif d_tensor == 'diag':
-            arrays['d_tensor'] = np.array([[0, 0], [1, 1], [2, 2]])
-        elif d_tensor == 'offdiag':
-            arrays['d_tensor'] = np.array([[0, 1], [1, 0], [0, 2], [2, 0], [1, 2], [2, 1]])
-        else:
-            arrays['d_tensor'] = np.array(d_tensor)
+        attr = self.data_controller.data_attributes
+        dielectric_settings(
+            self.data_controller,
+            delta,
+            intrasmear,
+            d_tensor,
+            degauss,
+            emissivity,
+            emis_angles,
+            emis_ntheta,
+            emis_temperature,
+            intraband,
+            temperature,
+        )
 
         # -----------------------------------------------
         # Compute dielectric tensor (Re and Im epsilon)
@@ -5295,6 +5458,7 @@ class PAOFLOW:
         self.report_module_time('Coupled Optical Response')
         return results
 
+    @sparse_shared
     def jdos(
         self,
         delta: float = 0.1,
@@ -5350,6 +5514,7 @@ class PAOFLOW:
 
         self.report_module_time('Joint density of states')
 
+    @sparse_base_cell(modifies=False)
     def find_weyl_points(
         self,
         symmetrize: bool | None = None,
@@ -5382,6 +5547,10 @@ class PAOFLOW:
         With the optional ``z2pack`` and ``tbmodels`` packages each candidate gets the Chern number
         of the occupied bands on a sphere around it, read from the ``hamiltonian.dat`` that
         :meth:`write_Hamiltonian` writes: call that first.
+
+        Sparse run: supported at the base cell only (before ``doubling_Hamiltonian``,
+        ``interpolated_hamiltonian`` and the properties); the search runs on the dense ``H(R)``
+        rebuilt from the bond list.
         """
         from .topology.do_find_Weyl import find_weyl
 
@@ -5397,6 +5566,7 @@ class PAOFLOW:
 
         self.report_module_time('Weyl Search')
 
+    @sparse_override
     def ipr(self, fname='ipr'):
         r"""
         Compute the inverse partiticipation ratio (IPR) from PAO eigenstates
@@ -5426,7 +5596,8 @@ class PAOFLOW:
 
         try:
             arry['ipr'] = inverse_participation_ratio(self.data_controller)
-            np.save(join(attr['opath'], fname + '.npy'), arry['ipr'])
+            if self.rank == 0:
+                np.save(join(attr['opath'], fname + '.npy'), arry['ipr'])
 
         except Exception as e:
             self.report_exception('ipr')
@@ -5435,6 +5606,7 @@ class PAOFLOW:
 
         self.report_module_time('Inverse Participation Ratio (IPR)')
 
+    @sparse_override
     def berry_phase(
         self,
         kspace_method='path',
@@ -5493,50 +5665,30 @@ class PAOFLOW:
             Berry/Zak phase
 
         """
-        from .topology.do_berry_phase import do_berry_phase
+        from .topology.do_berry_phase import berry_phase_settings, do_berry_phase
 
-        arry, attr = self.data_controller.data_dicts()
+        attr = self.data_controller.data_attributes
 
-        kspace_method = kspace_method.lower()
-        attr['berry_kspace_method'] = kspace_method
-
-        attr['berry_path'] = berry_path
-        arry['berry_high_sym_points'] = high_sym_points
-
-        attr['berry_nk'] = nk1
-        attr['berry_nk1'] = nk1
-        attr['berry_nk2'] = nk2
-
-        attr['berry_kpath_funct'] = kpath_funct
-
-        arry['berry_kxlim'] = kxlim
-        arry['berry_kylim'] = kylim
-
-        if kspace_method != 'square':
-            attr['berry_eigvals'] = eigvals
-        else:
-            attr['berry_eigvals'] = False
-
-        attr['berry_kradius'] = kradius
-        arry['berry_kcenter'] = np.array(kcenter)
-        attr['berry_eigvals'] = eigvals
-
-        method = method.lower()
-        if method in ['berry', 'zak']:
-            attr['berry_method'] = method
-        else:
-            print("method should be either berry or zak. Falling back to method = 'berry'")
-            attr['berry_method'] = 'berry'
-
-        arry['berry_sub'] = sub
-        if sub != None or (sub == None and not occupied):
-            attr['berry_occupied'] = False
-        else:
-            attr['berry_occupied'] = occupied
-
-        attr['berry_closed'] = closed
-        attr['berry_contin'] = contin
-        attr['berry_fname'] = fname
+        berry_phase_settings(
+            self.data_controller,
+            kspace_method=kspace_method,
+            berry_path=berry_path,
+            high_sym_points=high_sym_points,
+            kpath_funct=kpath_funct,
+            nk1=nk1,
+            nk2=nk2,
+            closed=closed,
+            method=method,
+            sub=sub,
+            occupied=occupied,
+            kradius=kradius,
+            kcenter=kcenter,
+            kxlim=kxlim,
+            kylim=kylim,
+            eigvals=eigvals,
+            fname=fname,
+            contin=contin,
+        )
 
         try:
             do_berry_phase(self)
@@ -6795,13 +6947,16 @@ class PAOFLOW:
 
         self.report_module_time('Quasi-Harmonic')
 
+    @sparse_base_cell(modifies=False)
     def arpes(self, experiment, self_energy=None, ispin=0, basis=None):
         """ARPES intensity map of the PAO Hamiltonian (:mod:`PAOFLOW.arpes`).
 
         Photoemission matrix elements of the PAO Bloch states with a plane-wave final
         state (chinook formalism, Day et al. 2019), the spectral function with an
         optional band-resolved self-energy, the Fermi factor and the resolution.
-        Call after ``projections`` and ``pao_hamiltonian``.
+        Call after ``projections`` and ``pao_hamiltonian``. Sparse run: supported at the
+        base cell only (before ``doubling_Hamiltonian``, ``interpolated_hamiltonian`` and the
+        properties), on the dense ``H(R)`` rebuilt from the bond list.
 
         Arguments:
             experiment (PAOFLOW.arpes.ArpesExperiment): Photon energy, work function,
@@ -7747,6 +7902,7 @@ class PAOFLOW:
 
         self.report_module_time('Electron-Phonon')
 
+    @sparse_override
     def linear_response(
         self,
         response: str = 'shc',
@@ -7850,23 +8006,9 @@ class PAOFLOW:
         attr['full_chi2'] = full_chi2
         attr['lr_delta'] = delta
 
-        # Each tensor list falls back to the one stored by an earlier call (a_tensor of
-        # anomalous_Hall, s_tensor of spin_Hall) only when it is not given here. Until
-        # 14 Nov 2026 a_tensor was read only when s_tensor was also given.
-        if a_tensor is not None:
-            arry['ree_tensor'] = np.array(a_tensor)
-        elif response != 'shc':
-            if 'a_tensor' not in arry:
-                raise ValueError(f"linear_response(response='{response}') needs a_tensor")
-            arry['ree_tensor'] = arry['a_tensor']
+        from .response.linear_response_eqn1 import linear_response_tensors
 
-        if s_tensor is not None:
-            arry['shc_tensor'] = np.array(s_tensor)
-        elif response == 'shc':
-            if 's_tensor' not in arry:
-                raise ValueError("linear_response(response='shc') needs s_tensor")
-            # spin_Hall stores (current, field, spin); this method reads (spin, current, field)
-            arry['shc_tensor'] = np.atleast_2d(arry['s_tensor'])[:, [2, 0, 1]]
+        linear_response_tensors(arry, response, a_tensor, s_tensor)
 
         if response == 'shc' or response == 'ree':
             if 'Sj' not in arry:
@@ -7909,6 +8051,7 @@ class PAOFLOW:
         self.report_module_time('Linear response completed')
         self.comm.Barrier()
 
+    @sparse_override
     def kubo_response(
         self,
         observable: str = 'charge_current',
@@ -8001,6 +8144,10 @@ class PAOFLOW:
         :math:`\\sigma_{xy}` for the magnetic moment along QE's magnetization axis, whereas this method
         reports the computed state (QE's positive ``starting_magnetization`` puts the spins along +z, so
         the moment points along -z). Details: ``docs/internals/kubo-bastin.md``.
+
+        Sparse run: supported while ``nawf <= dense_n_max`` (the kernels sum over every state of each
+        k-point); the default band sums stop at the well-projected top (the shift minus
+        ``shift_margin``), and ``emax`` is capped there.
         """
         from .projection.projection_operator import do_projection_operator, orbital_array
         from .response.kubo_bastin import kubo_bastin_response, write_kubo_response
@@ -8047,6 +8194,7 @@ class PAOFLOW:
         self.report_module_time('Kubo-Bastin response')
         return results
 
+    @sparse_override
     def kubo_optical_response(
         self,
         observable: str = 'charge_current',
@@ -8143,6 +8291,10 @@ class PAOFLOW:
         response is that of the computed spin configuration (QE's positive ``starting_magnetization``
         puts the spins along +z, the moment along -z). The magneto-optical outputs of
         :meth:`anomalous_Hall` (``MCD*``) refer to the reversed moment.
+
+        Sparse run: supported while ``nawf <= dense_n_max``, with ``omega_max`` given (its default
+        needs the band range of the whole mesh before the pass); band sums as in
+        :meth:`kubo_response`.
         """
         from mpi4py import MPI
 
