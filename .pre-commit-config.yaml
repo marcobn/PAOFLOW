@@ -2,6 +2,9 @@ minimum_pre_commit_version: "2.20.0"
 
 default_language_version:
   python: python3
+  # pinned: unpinned, nodeenv installs the newest release, and its parser fails on a pre-release
+  # version string such as 27.0.0-alpha
+  node: "22.11.0"
 
 # data kept byte for byte: the UPFs of PSEUDOS/library (up to 5 MB, the copies the examples carried)
 # and the unit-test fixtures of tests/data and of the data/ folders of tests/unit (pw.x output excerpts,
