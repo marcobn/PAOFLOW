@@ -1212,6 +1212,7 @@ class PAOFLOW:
                 raise e
         self.report_module_time('Spinor basis')
 
+    @sparse_override
     def magnetic_field(
         self,
         field,
@@ -1230,7 +1231,9 @@ class PAOFLOW:
         moment of the Bloch states orbital_moment. A spin-degenerate run is first rewritten in
         spinors (spinor_basis); a collinear run (nspin = 2) takes B along z only. Call it on
         'HRs', before interpolated_hamiltonian; each call adds its field, and the array
-        'magnetic_field' holds the total (T).
+        'magnetic_field' holds the total (T). Sparse run: supported at the base cell (before
+        doubling_Hamiltonian) for spinor and collinear bases; a spin-degenerate basis raises,
+        since spinor_basis is dense-only.
 
         Arguments:
             field (array_like): Cartesian field (T), shape (3,)
@@ -1319,6 +1322,7 @@ class PAOFLOW:
         self.report_module_time('Peierls phases')
         return flux
 
+    @sparse_override
     def orbital_moment(self, degeneracy_tol=1.0e-6):
         """
         Orbital magnetic moment m_n(k) of every Bloch state on the interpolated grid (mu_B)
@@ -1329,7 +1333,8 @@ class PAOFLOW:
         order (the itinerant part of the band g-factor; the atomic part is magnetic_field's L).
         States closer than degeneracy_tol are left out of each other's sums: inside a degenerate
         group the per-band values depend on the basis, their sum does not. Call it after pao_eigh
-        and gradient_and_momenta.
+        and gradient_and_momenta. Sparse run: supported while nawf <= dense_n_max (the sums run
+        over every state); the arrays cover the bands of 'E_k'.
 
         Arguments:
             degeneracy_tol (float): degeneracy threshold (eV)
@@ -1358,6 +1363,7 @@ class PAOFLOW:
                 raise e
         self.report_module_time('Orbital moment')
 
+    @sparse_override
     def orbital_magnetization(
         self,
         emin=-1.0,
@@ -1373,7 +1379,8 @@ class PAOFLOW:
         M(mu) = (g / N_k) sum_nk f_nk [m_nk + (e / hbar)(mu - e_nk) Omega_nk], g = 2 for
         spin-degenerate bands, 1 otherwise. In the gap of a Chern insulator dM/dmu = (e/h) C times
         the cell area (Streda). Call it after pao_eigh and gradient_and_momenta (it calls
-        orbital_moment if needed); writes <fname>.dat (mu, Mx, My, Mz).
+        orbital_moment if needed); writes <fname>.dat (mu, Mx, My, Mz). Sparse run: supported
+        while nawf <= dense_n_max; the moments are computed in the same mesh pass.
 
         Arguments:
             emin, emax, ne: the chemical potentials (eV, relative to the Fermi level of 'E_k')
@@ -2973,6 +2980,7 @@ class PAOFLOW:
         do_momentum(self.data_controller)
         self.report_module_time('Momenta')
 
+    @sparse_override
     def position_dipole_correction(
         self,
         *,
@@ -3022,6 +3030,10 @@ class PAOFLOW:
         with the dipoles the commutator is complete (Si: 0.99--1.01 of the exact
         plane-wave :math:`\varepsilon`).  The former non-local correction, which
         double counted it (0.87 with both terms), was removed in October 2026.
+
+        Sparse run: supported at the base cell (the tables describe the atoms of the DFT
+        run); the term is added per k-point to the ``dH/dk`` of the interband properties of
+        the mesh passes. The path properties keep the bare gradient, as in the dense pipeline.
         """
         import numpy as np
 
@@ -4224,6 +4236,7 @@ class PAOFLOW:
         self.report_module_time('Doping')
         return mu
 
+    @sparse_shared
     def doped_transport(
         self,
         doping_conc: float,
@@ -4277,10 +4290,18 @@ class PAOFLOW:
         :meth:`doping` gives :math:`\\mu(T)`; :meth:`transport` then evaluates the tensors at
         that single chemical potential, one temperature at a time. Call after
         :meth:`gradient_and_momenta` (and :meth:`adaptive_smearing` for the adaptive kernel).
+
+        Sparse run: supported, outside ``sparse.fused()`` (inside it :meth:`doping` returns
+        before its pass, so there is no :math:`\\mu(T)` to hand to :meth:`transport`).
         """
         from os.path import join
 
         arrays, attr = self.data_controller.data_dicts()
+        if self._engine is not None and self._engine._fusing is not None:
+            raise RuntimeError(
+                'doped_transport cannot be queued in sparse.fused(): it needs the chemical '
+                'potentials doping() returns before it calls transport(); call it outside the block'
+            )
         if attr['nspin'] != 1:
             raise ValueError(
                 'doped_transport needs one spin channel (spin-degenerate or spin-orbit run); '
@@ -5493,6 +5514,7 @@ class PAOFLOW:
 
         self.report_module_time('Joint density of states')
 
+    @sparse_base_cell(modifies=False)
     def find_weyl_points(
         self,
         symmetrize: bool | None = None,
@@ -5525,6 +5547,10 @@ class PAOFLOW:
         With the optional ``z2pack`` and ``tbmodels`` packages each candidate gets the Chern number
         of the occupied bands on a sphere around it, read from the ``hamiltonian.dat`` that
         :meth:`write_Hamiltonian` writes: call that first.
+
+        Sparse run: supported at the base cell only (before ``doubling_Hamiltonian``,
+        ``interpolated_hamiltonian`` and the properties); the search runs on the dense ``H(R)``
+        rebuilt from the bond list.
         """
         from .topology.do_find_Weyl import find_weyl
 
@@ -6921,13 +6947,16 @@ class PAOFLOW:
 
         self.report_module_time('Quasi-Harmonic')
 
+    @sparse_base_cell(modifies=False)
     def arpes(self, experiment, self_energy=None, ispin=0, basis=None):
         """ARPES intensity map of the PAO Hamiltonian (:mod:`PAOFLOW.arpes`).
 
         Photoemission matrix elements of the PAO Bloch states with a plane-wave final
         state (chinook formalism, Day et al. 2019), the spectral function with an
         optional band-resolved self-energy, the Fermi factor and the resolution.
-        Call after ``projections`` and ``pao_hamiltonian``.
+        Call after ``projections`` and ``pao_hamiltonian``. Sparse run: supported at the
+        base cell only (before ``doubling_Hamiltonian``, ``interpolated_hamiltonian`` and the
+        properties), on the dense ``H(R)`` rebuilt from the bond list.
 
         Arguments:
             experiment (PAOFLOW.arpes.ArpesExperiment): Photon energy, work function,
@@ -8022,6 +8051,7 @@ class PAOFLOW:
         self.report_module_time('Linear response completed')
         self.comm.Barrier()
 
+    @sparse_override
     def kubo_response(
         self,
         observable: str = 'charge_current',
@@ -8114,6 +8144,10 @@ class PAOFLOW:
         :math:`\\sigma_{xy}` for the magnetic moment along QE's magnetization axis, whereas this method
         reports the computed state (QE's positive ``starting_magnetization`` puts the spins along +z, so
         the moment points along -z). Details: ``docs/internals/kubo-bastin.md``.
+
+        Sparse run: supported while ``nawf <= dense_n_max`` (the kernels sum over every state of each
+        k-point); the default band sums stop at the well-projected top (the shift minus
+        ``shift_margin``), and ``emax`` is capped there.
         """
         from .projection.projection_operator import do_projection_operator, orbital_array
         from .response.kubo_bastin import kubo_bastin_response, write_kubo_response
@@ -8160,6 +8194,7 @@ class PAOFLOW:
         self.report_module_time('Kubo-Bastin response')
         return results
 
+    @sparse_override
     def kubo_optical_response(
         self,
         observable: str = 'charge_current',
@@ -8256,6 +8291,10 @@ class PAOFLOW:
         response is that of the computed spin configuration (QE's positive ``starting_magnetization``
         puts the spins along +z, the moment along -z). The magneto-optical outputs of
         :meth:`anomalous_Hall` (``MCD*``) refer to the reversed moment.
+
+        Sparse run: supported while ``nawf <= dense_n_max``, with ``omega_max`` given (its default
+        needs the band range of the whole mesh before the pass); band sums as in
+        :meth:`kubo_response`.
         """
         from mpi4py import MPI
 

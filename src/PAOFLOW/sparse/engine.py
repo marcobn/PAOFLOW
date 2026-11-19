@@ -38,7 +38,7 @@ from mpi4py import MPI
 from . import window as _window
 from .bridge import init_restart_session, sparsify
 from .config import resolve_threshold
-from .dispatch import _TO_DENSE, call_dense
+from .dispatch import call_dense
 from .log import get_sparse_log
 
 
@@ -388,6 +388,35 @@ class SparseEngine:
             self._log_truncation()
         return result
 
+    def magnetic_field(
+        self, field, spin=True, orbital=True, g_s=None, orbital_angular_momentum=None
+    ):
+        """On-site Zeeman term on the base-cell bond list (dense body, same arguments).
+
+        ``Sj``/``Lj`` are built here, before the dense round trip: inside it the operator
+        builders would start a round trip of their own.  A spin-degenerate scalar basis raises:
+        the dense method rewrites it with ``spinor_basis``, which is dense-only.
+        """
+        from .dispatch import DENSE_ONLY_REASONS
+
+        self._require_H('magnetic_field')
+        arrays, attr = self.data_controller.data_dicts()
+        if self.H.nspin == 1 and not attr.get('dftSO', False):
+            raise NotImplementedError(
+                'sparse magnetic_field: a spin-degenerate basis is first rewritten in spinors '
+                'by spinor_basis(), which is dense-only: ' + DENSE_ONLY_REASONS['spinor_basis']
+            )
+        if orbital and orbital_angular_momentum is None and 'Lj' not in arrays:
+            self.host._orbital_operator_for_fields()
+        if self.H.nspin == 1:
+            self.require_operator('Sj', 'magnetic_field', adhoc_SO=attr.get('adhoc_SO', False))
+        return self.run_base_cell(
+            'magnetic_field',
+            lambda: call_dense(
+                self.host, 'magnetic_field', field, spin, orbital, g_s, orbital_angular_momentum
+            ),
+        )
+
     def release_to_dense(self):
         """For ``PAOFLOW.to_dense()``: scatter the bond list into dense ``HRs``/``Hks``/``Dnm`` as
         dense ``pao_hamiltonian()`` would leave them (truncated model), and give it up."""
@@ -525,6 +554,13 @@ class SparseEngine:
             )
         self._preflight_doubling(nx, ny, nz)
         attr['nx'], attr['ny'], attr['nz'] = nx, ny, nz
+        if 'dipoles' in self._mesh_plan and not self._mesh_plan['dipoles'][1]:
+            # the automatic default, as on a doubled cell in the dense pipeline
+            del self._mesh_plan['dipoles']
+            self.log.warning(
+                'position dipoles skipped (the cell is doubled); the velocity keeps the '
+                'orbital-centre approximation'
+            )
 
         def _double():
             # deterministic and replicated on every rank: no broadcast needed
@@ -1122,11 +1158,15 @@ class SparseEngine:
                 'Use gradient_and_momenta(position_dipoles=True) instead '
                 '(docs/internals/position-dipoles.md).'
             )
-        if position_dipoles or (position_dipoles is None and attr.get('position_dipoles')):
-            raise NotImplementedError(
-                'sparse gradient_and_momenta: position_dipoles adds -i[H(k), d(k)] to the dense '
-                'dHksp on the full k-grid, which the sparse engine never forms; ' + _TO_DENSE
-            )
+        # the default of the dense method: on for internal projections of a QE run
+        if position_dipoles is None:
+            position_dipoles = attr.get('position_dipoles')
+        automatic = position_dipoles is None
+        if automatic:
+            arrays = self.data_controller.data_arrays
+            position_dipoles = bool(arrays.get('atomic_basis')) and attr.get('dft', 'QE') == 'QE'
+        if position_dipoles:
+            self.position_dipole_correction(level=position_dipole_level, strict=not automatic)
         if band_curvature:
             if self.config.interior_window is not None:
                 self._skip(
@@ -1135,6 +1175,76 @@ class SparseEngine:
                 )
             else:
                 self._mesh_plan.setdefault('products', set()).add('d2Ed2k')
+
+    def position_dipole_correction(
+        self,
+        *,
+        level: str = 'full',
+        q_max: float = 20.0,
+        n_q: int = 600,
+        pao_tol: float = 1.0e-3,
+        inject: bool = True,
+        strict: bool = True,
+    ) -> bool:
+        """Record the position dipoles for the mesh passes (same arguments as the dense method).
+
+        The radial tables are built here (one k-point), so a basis without them fails now; each
+        pass then adds ``-i[H(k), d(k)]`` to the ``dH/dk`` of its consumers, one k-point at a
+        time.  Base cell only: the tables describe the atoms of the DFT run.
+
+        Returns
+        -------
+        bool
+            Whether the dipoles were built (and, with ``inject``, recorded).
+
+        Raises
+        ------
+        ValueError, NotImplementedError
+            With ``strict``: no tables for this basis, a basis that does not match the bond list
+            (a doubled cell), or ``nawf > dense_n_max`` (the term is a dense per-k product).
+        """
+        params = dict(level=level, q_max=q_max, n_q=n_q, pao_tol=pao_tol)
+        failure = None
+        try:
+            self._require_H('position_dipole_correction')
+            if self.H.nawf > self.config.dense_n_max:
+                raise NotImplementedError(
+                    'sparse position_dipole_correction: -i[H(k), d(k)] is a dense (nawf, nawf) '
+                    'product per k-point (nawf = %d > dense_n_max = %d)'
+                    % (self.H.nawf, self.config.dense_n_max)
+                )
+            self._dipoles_at(np.zeros(3), params)
+        except Exception as e:
+            if strict:
+                raise
+            failure = e
+        if self.comm.allreduce(failure is not None, op=MPI.LOR):
+            self.log.warning(
+                'position dipoles skipped (%s); the velocity keeps the orbital-centre '
+                'approximation' % (failure or 'failed on another rank')
+            )
+            return False
+        if inject:
+            self._mesh_plan['dipoles'] = (params, strict)
+        self._time('Position dipoles')
+        return True
+
+    def _dipoles_at(self, kfrac, params):
+        """Position dipoles ``d(k)`` ``(3, nawf, nawf)`` at crystal ``kfrac``; raises
+        ``ValueError`` if the basis of the tables is not the one of the bond list."""
+        from ..hamiltonian.position_dipoles import position_dipoles_on_grid
+
+        # shortcut: one k-point per call (30-60 ms on Si, 10x the dense blocks of k-points);
+        # a block of d(k) is a k-indexed dense array, upgrade if the memory contract admits one
+        k_cart = kfrac @ self.data_controller.data_arrays['b_vectors']
+        dipole = position_dipoles_on_grid(self.data_controller, k_cart[:, None], **params)[0]
+        if dipole.shape[-1] != self.H.nawf:
+            raise ValueError(
+                'the position dipoles of the PAO basis (%d orbitals) do not match the '
+                'Hamiltonian (%d): they are built for the cell of the DFT run, not for a '
+                'doubled one' % (dipole.shape[-1], self.H.nawf)
+            )
+        return dipole
 
     def adaptive_smearing(
         self,
@@ -1210,6 +1320,7 @@ class SparseEngine:
             self._fusing.append(prop)
             return
         self._execute([prop])
+        return prop.result
 
     def _mesh_needed(self, products, consumers):
         """Whether a mesh pass must run for these products and consumers."""
@@ -1348,6 +1459,10 @@ class SparseEngine:
         if window.mode == 'bottom':
             attr['bnd'] = window.nev
         nev = attr['bnd']
+        dipoles = None
+        if 'dipoles' in self._mesh_plan:
+            params = self._mesh_plan['dipoles'][0]
+            dipoles = functools.partial(self._dipoles_at, params=params)
 
         def _mesh():
             run_mesh(
@@ -1366,6 +1481,7 @@ class SparseEngine:
                 interior=window.interior,
                 ptop=self._projectable_top(),
                 label='Mesh pass %d' % (self._mesh_passes + 1),
+                dipoles=dipoles,
                 **self.config.limits,
             )
 

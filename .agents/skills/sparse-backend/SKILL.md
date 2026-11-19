@@ -29,9 +29,12 @@ refuses to run in a sparse job.
    exist.
    `test_every_reason_names_an_obstacle` rejects a bare way out. Before settling for a reason,
    try the cheap routes: `@sparse_shared` for a method that only calls routed methods, and
-   `@sparse_base_cell` for an `H(R)` transform, each checked against the dense result on
-   `tests/data/silicon` (both were tried and failed for `doped_transport` and `spinor_basis`;
-   their reasons record what broke).
+   `@sparse_base_cell` for an `H(R)` transform (or `modifies=False` for a method that only
+   reads `HRs`, like `arpes` and `find_weyl_points`), each checked against the dense result on
+   `tests/data/silicon` (the round trip failed for `spinor_basis`; its reason records what
+   broke). A shared method that needs what a routed one returns (`doped_transport` reads the
+   `mu` of `doping`) works outside `fused()` only: a property hands its return value back
+   through `MeshProperty.result`, set in `finalize`.
 4. **Say it in the method's docstring** as well: one line in `Notes` (sparse: supported /
    dense-only and why), so the user reads it before the job fails.
 
@@ -260,6 +263,16 @@ are *plausibly wrong* — off by conventions, not by crashes.
   (both zeroed those pairs until 16 Nov 2026, a spurious band-diagonal
   velocity in doubled cells). The dense `Dnm`
   array is deleted at conversion; do not resurrect it (it is O(nawf²)).
+- **`KPoint.pksp` is not one basis.** `momentum_k` rotates each degenerate group per
+  direction (`perturb_split`), so products of two directions `p^a_nm p^b_mn` taken from it are
+  wrong at degenerate k-points (Si orbital magnetization 1e-2 instead of 1e-11). A kernel that
+  multiplies two directions takes `V† (dH/dk_l) V` itself (`orbital_moment`) or an operator
+  pair through `perturb_split` (Hall, Kubo), as the dense `momentum_in_eigenbasis` does.
+- **Position dipoles touch the consumers only.** `-i[H, d]` has no band-diagonal part and
+  the dense pipeline takes widths and curvature before adding it, so `run_mesh` computes
+  `velkp`, `deltakp` and `d2Ed2k` from the bare `dH/dk` and swaps `kp.dhk` just before
+  `on_k`. Base cell only (the tables are those of the DFT cell); the path pass keeps the bare
+  gradient, as the dense path kernels do.
 - **ARPACK returns shift-inverted eigenpairs in transformed-problem order.**
   Sort *before* truncating the guard pairs (`_sorted_lowest`), or copies of
   a degenerate multiplet silently land in the discarded tail. This exact
@@ -326,6 +339,8 @@ kind of property it is decides the sparse side:
 | interband sums over every state | Hall family, linear response | `needs = {'full_spectrum'}` |
 | band path | berry_curvature, topology | `path = True` (`with_dnm` as the dense kernel) |
 | base-cell H(R) transform | add_external_fields, cutting | `@sparse_base_cell` |
+| base-cell H(R) transform that builds `Sj`/`Lj` | magnetic_field | engine method: operators first, then `run_base_cell` |
+| reads the base-cell H(R) at its own k-points | arpes, find_weyl_points | `@sparse_base_cell(modifies=False)` |
 | genuinely dense (DFT phonons, Z2Pack) | phonons, mirror_chern_number | `DENSE_ONLY_REASONS` |
 
 Per-k objects that are not k-indexed (`(nk, esize)` scans gathered for a

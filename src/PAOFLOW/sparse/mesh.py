@@ -22,7 +22,7 @@ measure 0.4-1.5.
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
@@ -193,6 +193,45 @@ def _band_diagonal_velocities(
     return vel, resolved
 
 
+def _with_dipole_velocity(hk: Any, dhk: Sequence[Any], dipole: np.ndarray) -> list[np.ndarray]:
+    """``dH/dk_l - i[H(k), d_l(k)]`` of one k-point, as dense ``(nawf, nawf)`` arrays.
+
+    Parameters
+    ----------
+    hk : scipy.sparse matrix, shape (nawf, nawf)
+    dhk : sequence of 3 sparse matrices or :class:`~PAOFLOW.sparse.kpoint.DenseOnDemand`
+        Bare ``dH/dk_l`` (minus the velocity); not modified.
+    dipole : np.ndarray, shape (3, nawf, nawf)
+        Position dipoles ``d(k)`` (bohr), Hermitian.
+
+    Notes
+    -----
+    What ``inject_dipole_velocity_into_dHksp`` adds to the dense ``dHksp``, one k-point at a time.
+    """
+    from ..hamiltonian.position_dipoles import dipole_velocity_term
+
+    term = dipole_velocity_term(hk.toarray()[None], dipole[None])[0]
+    return [(dhk[l].toarray() if issparse(dhk[l]) else dhk[l]) - term[l] for l in range(3)]
+
+
+class _DipoleGradient(Sequence):
+    """:func:`_with_dipole_velocity` on first use: a consumer that never reads ``dH/dk`` (PDOS)
+    does not pay for ``d(k)``, the dominant cost of a base-cell pass with dipoles."""
+
+    def __init__(self, hk: Any, dhk: Sequence[Any], dipoles: Callable[[], np.ndarray]) -> None:
+        self._arguments = (hk, dhk, dipoles)
+        self._dhk: list[np.ndarray] | None = None
+
+    def __len__(self) -> int:
+        return 3
+
+    def __getitem__(self, index):
+        if self._dhk is None:
+            hk, dhk, dipoles = self._arguments
+            self._dhk = _with_dipole_velocity(hk, dhk, dipoles())
+        return self._dhk[index]
+
+
 def _commute(B: np.ndarray) -> bool:
     """Whether the three Hermitian blocks ``B`` (3, g, g) commute to ``COMMUTE_TOL``."""
     scale = np.abs(B).max() ** 2
@@ -262,6 +301,7 @@ def run_mesh(
     dense_ratio: float = DENSE_RATIO,
     dense_n_max: int = DENSE_N_MAX,
     label: str = 'Mesh pass',
+    dipoles: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> None:
     """Walk the local share of the BZ mesh, producing all band-diagonal data.
 
@@ -306,6 +346,11 @@ def run_mesh(
         Kernel dispatch limits from ``sparse_config``; ``dense_n_max`` also caps the full spectrum.
     label : str, optional
         Section title in ``sparse.log``.
+    dipoles : callable or None, optional
+        ``dipoles(kfrac) -> (3, nawf, nawf)``: position dipoles ``d(k)`` (bohr). The consumers
+        then get ``dH/dk - i[H, d]`` (:func:`_with_dipole_velocity`); velocities, widths and
+        curvature keep the bare gradient, as in the dense pipeline (the term has no band-diagonal
+        part, and dense takes the widths and the curvature before it is added).
 
     Raises
     ------
@@ -395,6 +440,8 @@ def run_mesh(
     if full:
         log.field('full spectrum', f'all {nawf} states per k-point for {", ".join(wanting)}')
     log.field('smearing', f'{smearing}, afac {afac:.3f}{bounds}')
+    if dipoles is not None:
+        log.field('position dipoles', 'added to dH/dk of the interband properties')
     limits = {'dense_ratio': dense_ratio, 'dense_n_max': dense_n_max}
     log.rows(hk_solver_fields(nawf, nsolve, hk_solver=solver, **limits))
     warning = None if (full or interior is not None) else creep_warning(nawf, nsolve)
@@ -499,6 +546,8 @@ def run_mesh(
             else:
                 acc[(ispin, ik)] = (E[:bnd], vel, delta)
 
+            if dipoles is not None and consumers:
+                kp.dhk = _DipoleGradient(hk, dhk, lambda k=kloc[ik]: dipoles(k))
             for c in consumers:
                 c.activate()
                 c.on_k(kp)

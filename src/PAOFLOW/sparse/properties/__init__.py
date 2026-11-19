@@ -80,6 +80,9 @@ class MeshProperty:
         Path only: whether ``dH/dk`` carries the ``Dnm`` terms, as the replicated dense kernel.
     uses_mesh : bool
         ``False`` if the property solves its own k-points in ``finalize``.
+    result : object
+        What the PAOFLOW method returns, set by ``finalize``; ``None`` inside ``fused()``, where
+        the call returns before the pass.
     """
 
     method: str = ''
@@ -91,6 +94,7 @@ class MeshProperty:
     path: bool = False
     with_dnm: bool = True
     uses_mesh: bool = True
+    result = None
 
     def __init__(self, engine: SparseEngine) -> None:
         self.engine = engine
@@ -176,7 +180,7 @@ class DenseBody(MeshProperty):
     def finalize(self, data_controller: DataController) -> None:
         from ..dispatch import call_dense
 
-        call_dense(self.engine.host, self.method, **self.kwargs)
+        self.result = call_dense(self.engine.host, self.method, **self.kwargs)
 
 
 def _load() -> dict[str, type[MeshProperty]]:
@@ -186,7 +190,9 @@ def _load() -> dict[str, type[MeshProperty]]:
         dielectric,
         dos,
         hall,
+        kubo,
         linear_response,
+        orbital_moment,
         path,
         rashba_edelstein,
         states,

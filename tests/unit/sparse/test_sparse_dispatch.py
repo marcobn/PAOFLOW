@@ -307,8 +307,8 @@ def test_sparse_run_holds_the_engine(sparse):
 
 
 def test_dense_only_method_refuses_in_a_sparse_run(sparse):
-    with pytest.raises(NotImplementedError, match='(?s)find_weyl_points is dense-only.*to_dense'):
-        sparse.find_weyl_points()
+    with pytest.raises(NotImplementedError, match='(?s)peierls_field is dense-only.*to_dense'):
+        sparse.peierls_field(flux_quanta=1.0)
     with pytest.raises(NotImplementedError, match='save_sparse_hamiltonian'):
         sparse.restart_dump()
 
@@ -346,7 +346,7 @@ def test_unknown_engine_attribute_is_an_attribute_error(sparse):
 
 
 def test_dense_only_options_of_routed_methods_refuse(sparse):
-    with pytest.raises(NotImplementedError, match='position_dipoles'):
+    with pytest.raises(RuntimeError, match='position_dipole_correction requires the sparse'):
         sparse.gradient_and_momenta(position_dipoles=True)
     with pytest.raises(ValueError, match='was removed'):
         sparse.gradient_and_momenta(nonlocal_velocity=True)

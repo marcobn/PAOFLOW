@@ -80,34 +80,6 @@ DENSE_ONLY_REASONS = {
         'of the cell and Wigner-Seitz interpolates the dense HRs for a GMRES density response '
         'over all bands; ' + _TO_DENSE
     ),
-    'doped_transport': (
-        'it reads the chemical potentials that doping() returns and the sigma and S tensors that '
-        'transport() leaves in the run data, and the sparse doping and transport only write '
-        'their files; call doping() and transport() themselves in a sparse run.'
-    ),
-    'kubo_response': (
-        'the Kubo-Bastin kernels read the stored dHksp and v_k of the whole grid, (nk, nawf, '
-        'nawf) arrays the sparse pass never forms, and no per-k form of them is registered yet; '
-        'linear_response() has the tutorial03 limits in a sparse run, or ' + _TO_DENSE
-    ),
-    'kubo_optical_response': (
-        'the Kubo-Greenwood kernel reads the stored dHksp and v_k of the whole grid, (nk, nawf, '
-        'nawf) arrays the sparse pass never forms, and no per-k form of it is registered yet; '
-        'dielectric_tensor() and the do_ac option of the Hall methods run sparse, or ' + _TO_DENSE
-    ),
-    'magnetic_field': (
-        'it adds mu_B (L + g_s S).B to the dense HRs and, in a scalar basis, first calls '
-        'spinor_basis(), which a sparse run cannot follow (see there); ' + _TO_DENSE
-    ),
-    'orbital_magnetization': (
-        'it integrates the orbital_moment and berry_curvature_vector arrays of orbital_moment(), '
-        'which is dense-only; ' + _TO_DENSE
-    ),
-    'orbital_moment': (
-        'it sums interband terms of the stored pksp, a (nk, 3, nawf, nawf) array the sparse pass '
-        'never forms, and stores the moment of every band at every k; a full-spectrum '
-        'MeshProperty over moment_and_curvature is the missing piece; ' + _TO_DENSE
-    ),
     'peierls_field': (
         'it multiplies the dense HRs by Peierls phases, and a periodic cell needs a magnetic '
         'supercell (doubling first), where a sparse run has no HRs: the phases would have to be '
@@ -160,18 +132,6 @@ DENSE_ONLY_REASONS = {
     'mirror_chern_number': (
         'it rotates the dense HRs into mirror sectors and hands them to Z2Pack/tbmodels as '
         '_hr.dat files; ' + _TO_DENSE
-    ),
-    'find_weyl_points': (
-        'its scipy minimizer evaluates the dense HRs at arbitrary k and integrates Chern '
-        'numbers around each candidate; it has not been ported to the bond list yet; ' + _TO_DENSE
-    ),
-    'position_dipole_correction': (
-        'it adds -i[H(k), d(k)] to dHksp on the whole k-grid, as dense (nk, nawf, nawf) '
-        'blocks, which the sparse engine never forms; ' + _TO_DENSE
-    ),
-    'arpes': (
-        'it evaluates photoemission matrix elements of the PAO Bloch states from the dense HRs; '
-        'it has not been ported to the bond list yet; ' + _TO_DENSE
     ),
     'nonlinear_optics': (
         'it Wigner-Seitz interpolates the dense HRs on its own k-grid and sums r_nm and its '
