@@ -4,8 +4,10 @@
 The folded case copies one block twice, as ``doubling_Hamiltonian`` does, so
 every band is doubly degenerate; with ``dH/dk_x`` and ``dH/dk_z`` copied too,
 the rotated velocities stay degenerate and the subspace ``eigh`` branch runs.
-An odd ``bnd`` puts a degenerate pair across the window edge, which
-``get_degeneracies`` drops from both the energy and the velocity groups.
+An odd ``bnd`` puts a degenerate pair across the window edge. ``get_degeneracies``
+keeps it whole, so both kernels rotate it, but neither takes its subspace ``eigh``:
+where the velocity stays degenerate the rotation is fixed by rounding alone, and the
+curvature of the band below the edge depends on it. Those bands are not compared.
 """
 
 import numpy as np
@@ -55,7 +57,13 @@ def test_band_curvature_k_matches_per_component(folded, sparse, bnd):
     )
     got = band_curvature_k(E, dh, d2h, V, degen, bnd, degen)
     assert got.shape == (6, bnd)
-    np.testing.assert_allclose(got, expected, rtol=1e-8, atol=1e-8 * np.abs(expected).max())
+    # a group across the window edge: its curvature is basis-dependent in both kernels
+    edge = [g[g < bnd] for g in degen if g.max() >= bnd]
+    keep = np.setdiff1d(np.arange(bnd), np.concatenate(edge)) if edge else np.arange(bnd)
+    assert (len(keep) < bnd) == (folded and bnd % 2 == 1)
+    np.testing.assert_allclose(
+        got[:, keep], expected[:, keep], rtol=1e-8, atol=1e-8 * np.abs(expected).max()
+    )
 
 
 def testvelocity_groups_need_not_be_adjacent_or_share_energy_across_groups():
