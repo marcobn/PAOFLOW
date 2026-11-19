@@ -1,0 +1,42 @@
+{
+ "title": "Al-H-Al junction: Landauer transmission and eigenchannels",
+ "summary": "A hydrogen layer between two Al leads: conductor transmission, the four main eigenchannels and the zero-bias current.",
+ "workflow": "landauer",
+ "answers": {
+  "savedir": "alh.save",
+  "prefix": "alh",
+  "projector": "internal",
+  "calculation": "conductor",
+  "lead_layers": 3,
+  "transport_direction": "z",
+  "emin": -7.0,
+  "emax": 2.0,
+  "ne": 901,
+  "delta": 0.0005,
+  "eigenchannels": 4,
+  "eigenchannel_energy": "0.0",
+  "basis": "standard"
+ },
+ "pseudopotentials": [
+  "library/Al.pbe-rrkj.UPF",
+  "library/H.pbe-van_bm.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "tags": [
+  "Landauer",
+  "junction",
+  "eigenchannels"
+ ],
+ "source": "examples/transport_examples/example02"
+}

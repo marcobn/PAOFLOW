@@ -52,6 +52,8 @@ class Transport:
         self._onsite_shift_config: dict[str, Any] | None = None
         self._lead_convergence_config: dict[str, Any] | None = None
         self._eigenchannel_config: dict[str, Any] | None = None
+        self._bias_settings: Any = None
+        self._bias_electrostatics: dict[str, Any] = {'kind': 'planar'}
 
     def configure_energy_grid(
         self,
@@ -83,7 +85,10 @@ class Transport:
         delta : float
             Broadening parameter.
         nk : list[int] or tuple[int, int], optional
-            2D k-grid dimensions. Default is ``(0, 0)``.
+            Transverse k-mesh (the two directions perpendicular to transport). ``(0, 0)``
+            (default) uses the transverse DFT mesh. It sets the mesh on which the Hamiltonian
+            blocks are built, so a value other than the default must be given before
+            :meth:`build_hamiltonian_blocks`.
         smearing_type : str, optional
             Smearing function: ``'lorentzian'`` (default), ``'gaussian'``,
             ``'fermi-dirac'``/``'fd'``, ``'methfessel-paxton'``/``'mp'``, or
@@ -113,6 +118,13 @@ class Transport:
             'nx_smear': nx_smear,
         }
         if self.conductor_data is not None:
+            built_nk = self.conductor_data.get_runtime_data().nk_par
+            if any(int(n) > 0 for n in nk) and [int(n) for n in nk] != [int(n) for n in built_nk]:
+                raise ValueError(
+                    'The transverse k-mesh %s was fixed when the Hamiltonian blocks were built; '
+                    'call configure_energy_grid(nk=%s) before build_hamiltonian_blocks().'
+                    % ([int(n) for n in built_nk], [int(n) for n in nk])
+                )
             self.conductor_data.energy.emin = emin
             self.conductor_data.energy.emax = emax
             self.conductor_data.energy.ne = ne
@@ -691,6 +703,18 @@ class Transport:
 
         Notes
         -----
+        The current is the Landauer integral of the zero-bias transmission between the two shifted
+        Fermi functions,
+
+        .. math::
+            I(V) = \int dE\, T(E)\,[f(E - \mu_L V) - f(E - \mu_R V)],
+
+        in units of :math:`2e/h` times eV per transverse cell, positive for electrons flowing from
+        left to right (:math:`\mu_L V > \mu_R V`). This is the sign of
+        ``compute_current_self_consistent``. Before 15 November 2026 the Fermi function was
+        :math:`1 - f` and the sign was the opposite: swap ``mu_L`` and ``mu_R`` in scripts written
+        for it.
+
         Writes ``current.dat`` as two columns ``V I`` under the configured
         output directory.
         """
@@ -747,3 +771,277 @@ class Transport:
         results.bias_grid = bias_grid
         results.current = currents
         return currents
+
+    def configure_bias_self_consistency(
+        self,
+        *,
+        temperature: float = 300.0,
+        fermi_energy: float = 0.0,
+        electrostatics: str = 'planar',
+        charge_widths: float | dict[str, float] | None = None,
+        potential_grid_spacing: float = 0.3,
+        arc_points: int = 30,
+        line_points: int = 40,
+        fermi_poles: int = 10,
+        window_spacing: float = 0.005,
+        mixing: float = 0.5,
+        history: int = 6,
+        tolerance: float = 1.0e-3,
+        max_iterations: int = 80,
+        thomas_fermi_preconditioner: bool = True,
+        verbose: bool = False,
+    ) -> None:
+        """Configure the finite-bias calculation of :meth:`compute_current_self_consistent`.
+
+        Parameters
+        ----------
+        temperature : float, optional
+            Electron temperature of the leads (K).
+        fermi_energy : float, optional
+            Fermi level of the leads at zero bias (eV); 0 for a PAO Hamiltonian referred to the Fermi level.
+        electrostatics : {'planar', '3d'}, optional
+            Poisson solver between the electrode planes, periodic across the transport direction:
+
+            - ``'planar'``: the charge of every atomic layer is a sheet (junctions uniform across the transverse
+              cell);
+            - ``'3d'``: the charge of every atom is a Gaussian and the potential is three-dimensional (molecules,
+              wires). The transverse lattice vectors must be perpendicular to the transport direction.
+        charge_widths : float, dict or None, optional
+            Gaussian widths of the atomic charges for ``'3d'`` (bohr): one value, one per species, or None to take
+            every species from its pseudopotential (the width with the Hartree self-energy of the valence
+            pseudo-atomic density, ``PAOFLOW.transport.negf.charge_model``). Species without a pseudopotential
+            (tight-binding models) need a value.
+        potential_grid_spacing : float, optional
+            Spacing (bohr) of the grid of :math:`U(\\mathbf r)` written for ``potential_grid_biases`` of
+            :meth:`compute_current_self_consistent`.
+        arc_points, line_points, fermi_poles : int, optional
+            Equilibrium contour: Gauss-Legendre points on the arc and on the line, Fermi poles enclosed. The
+            defaults integrate a bound state to about 2e-7.
+        window_spacing : float, optional
+            Energy step in the bias window (eV).
+        mixing : float, optional
+            Anderson mixing parameter, applied to the preconditioned residual.
+        history : int, optional
+            Iterations kept by the Anderson mixing.
+        tolerance : float, optional
+            Convergence threshold on the change of the potential (eV).
+        max_iterations : int, optional
+            Iteration limit per bias.
+        thomas_fermi_preconditioner : bool, optional
+            Precondition the residual with the Thomas-Fermi response of the conductor (default): without it the
+            charge of a metal sloshes unless ``mixing`` is a few hundredths.
+        verbose : bool, optional
+            Print one line per iteration.
+
+        Raises
+        ------
+        ValueError
+            For an unknown electrostatics or non-positive numerical settings.
+        """
+        from PAOFLOW.transport.negf.self_consistency import SelfConsistencySettings
+
+        if electrostatics not in ('planar', '3d'):
+            raise ValueError(f"electrostatics must be 'planar' or '3d', got {electrostatics!r}")
+        if potential_grid_spacing <= 0:
+            raise ValueError('potential_grid_spacing must be positive')
+        if temperature <= 0 or window_spacing <= 0 or tolerance <= 0 or not 0 < mixing <= 1:
+            raise ValueError(
+                'temperature, window_spacing, tolerance must be positive and 0 < mixing <= 1'
+            )
+        self._bias_settings = SelfConsistencySettings(
+            temperature=temperature,
+            fermi_energy=fermi_energy,
+            arc_points=arc_points,
+            line_points=line_points,
+            fermi_poles=fermi_poles,
+            window_spacing=window_spacing,
+            mixing=mixing,
+            history=history,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+            thomas_fermi_preconditioner=thomas_fermi_preconditioner,
+            verbose=verbose,
+        )
+        self._bias_electrostatics = {
+            'kind': electrostatics,
+            'charge_widths': charge_widths,
+            'grid_spacing': potential_grid_spacing,
+        }
+
+    def compute_current_self_consistent(
+        self,
+        *,
+        bias: Any,
+        mu_L: float = 0.5,
+        mu_R: float = -0.5,
+        profile: str = 'self_consistent',
+        write: bool = True,
+        potential_grid_biases: Any = None,
+        comm: MPI.Comm = MPI.COMM_WORLD,
+    ) -> Any:
+        r"""Current, potential profile and charge of the junction at finite bias.
+
+        At each bias the leads shift to :math:`\mu_{L,R} = E_F + c_{L,R}\,eV` and the conductor gets a potential
+        energy on every atomic layer (``electrostatics='planar'`` in :meth:`configure_bias_self_consistency`) or
+        on every atom (``'3d'``). With ``profile='self_consistent'`` it is the Hartree potential of the
+        bias-induced charge (Poisson equation between the electrodes) and is iterated to self-consistency; with
+        ``'linear'`` it is the Laplace potential of the electrodes (the ramp). The current is the Landauer integral
+        of the bias-dependent transmission :math:`T(E;V)`.
+
+        Parameters
+        ----------
+        bias : array_like
+            Biases (V), solved in order (each starts from the previous one).
+        mu_L, mu_R : float, optional
+            Coefficients :math:`c_L`, :math:`c_R` (as in :meth:`compute_current`); default symmetric.
+        profile : {'self_consistent', 'linear'}, optional
+        write : bool, optional
+            Write ``current_<profile><postfix>.dat`` (V, I, iterations, converged, residual),
+            ``potential_<profile><postfix>.dat`` and ``charge_<profile><postfix>.dat`` (per layer or per atom,
+            one column per bias), ``transmission_<profile><postfix>.dat`` (V, E, T) and, for ``'3d'``,
+            ``potential_planar_average_<profile><postfix>.dat`` to the output directory.
+        potential_grid_biases : sequence of float, optional
+            For ``'3d'`` with ``write``: biases of the scan at which :math:`U(\mathbf r)` is written on a grid
+            of the slab, ``potential_grid_<profile><postfix>_V<bias>.xsf`` (XCrySDen, VESTA).
+        comm : MPI.Comm, optional
+            The energy points are shared out over its ranks.
+
+        Returns
+        -------
+        FiniteBiasResults
+            :mod:`PAOFLOW.transport.negf.self_consistency`; also ``self.results.bias_scan``.
+
+        Raises
+        ------
+        RuntimeError
+            Before ``build_hamiltonian_blocks(calculation_type='conductor')``.
+        NotImplementedError
+            For spin-polarised inputs or non-orthonormal orbitals; for ``'3d'``, transverse lattice vectors not
+            perpendicular to the transport direction.
+
+        Notes
+        -----
+        The current is :math:`\int dE\, T(E;V)[f(E-\mu_L) - f(E-\mu_R)]` per transverse cell, in eV: units
+        of :math:`2e/h` as :meth:`compute_current`. The zero-bias PAO Hamiltonian is the self-consistent
+        reference: only the change of the electron numbers acts, and the exchange-correlation response is
+        neglected (``docs/internals/negf-finite-bias.md``).
+        """
+        from PAOFLOW.transport.negf.density_matrix import open_conductor_from
+        from PAOFLOW.transport.negf.self_consistency import (
+            SelfConsistencySettings,
+            check_orthonormal_conductor,
+            finite_bias_scan,
+        )
+
+        if self.conductor_data is None or self.blc_blocks is None or self._partition is None:
+            raise RuntimeError(
+                'Call build_hamiltonian_blocks(...) before compute_current_self_consistent(...).'
+            )
+        if self._partition.dim_l is None or not self._partition.central_atoms:
+            raise RuntimeError(
+                'finite-bias transport needs a conductor partition: define_partition(..., left_lead_layers=..., '
+                "right_lead_layers=...) and build_hamiltonian_blocks(calculation_type='conductor')"
+            )
+        arrays, attributes = self.data_controller.data_dicts()
+        if int(attributes.get('nspin', 1)) != 1:
+            raise NotImplementedError('finite-bias self-consistency for spin-polarised inputs')
+        check_orthonormal_conductor(self.blc_blocks)
+        settings = self._bias_settings or SelfConsistencySettings()
+        model = self._electrostatic_model(comm)
+        spin_factor = 1.0 if attributes.get('dftSO', False) else 2.0
+        scan = finite_bias_scan(
+            open_conductor_from(self.conductor_data, self.blc_blocks),
+            model,
+            settings,
+            np.atleast_1d(np.asarray(bias, dtype=float)),
+            mu_left_coefficient=mu_L,
+            mu_right_coefficient=mu_R,
+            profile=profile,
+            spin_factor=spin_factor,
+            comm=comm,
+        )
+        if scan.electrostatics == '3d':
+            heights = np.linspace(
+                model.slab.lower, model.slab.upper, 2 * int(model.slab.length / 0.1) + 1
+            )
+            scan.planar_average_coordinates = heights
+            for point in scan.points:
+                point.planar_average_potential = model.planar_average(
+                    self._applied_charge(scan, point),
+                    point.chemical_potential_left - settings.fermi_energy,
+                    point.chemical_potential_right - settings.fermi_energy,
+                    heights,
+                )
+        if write and comm.Get_rank() == 0:
+            from PAOFLOW.transport.io.write_data import write_finite_bias_results
+
+            postfix = self._output_config.get('postfix', '')
+            write_finite_bias_results(
+                output_dir=self._output_config['output_dir'], postfix=postfix, scan=scan
+            )
+            if potential_grid_biases is not None and scan.electrostatics == '3d':
+                self._write_potential_grids(scan, model, potential_grid_biases, settings, postfix)
+        if self.results is not None:
+            self.results.bias_scan = scan
+        return scan
+
+    def _electrostatic_model(self, comm: MPI.Comm) -> Any:
+        """The planar layers or the atomic charges of the conductor (``configure_bias_self_consistency``)."""
+        from PAOFLOW.transport.negf.atomic_electrostatics import atomic_electrostatics
+        from PAOFLOW.transport.negf.charge_model import atomic_charge_widths
+        from PAOFLOW.transport.negf.electrostatics import planar_layers
+        from PAOFLOW.transport.partition.directions import direction_index
+
+        arrays, attributes = self.data_controller.data_dicts()
+        atoms = self._partition.central_atoms
+        axis = direction_index(self._partition.transport_direction)
+        cell = np.asarray(arrays['a_vectors'], dtype=float) * float(attributes['alat'])
+        if self._bias_electrostatics['kind'] == 'planar':
+            return planar_layers(atoms, axis, cell)
+        widths = atomic_charge_widths(
+            [atom.element for atom in atoms],
+            self._bias_electrostatics['charge_widths'],
+            species=arrays.get('species'),
+            attributes=attributes,
+        )
+        return atomic_electrostatics(atoms, axis, cell, widths, comm=comm)
+
+    @staticmethod
+    def _applied_charge(scan: Any, point: Any) -> Any:
+        """The charge whose potential acts at a bias point: none for the linear ramp."""
+        if scan.profile == 'linear':
+            return np.zeros_like(point.group_charge)
+        return point.group_charge
+
+    def _write_potential_grids(
+        self, scan: Any, model: Any, biases: Any, settings: Any, postfix: str
+    ) -> None:
+        """Write :math:`U(\\mathbf r)` at the requested biases of a three-dimensional scan (XSF)."""
+        import os
+
+        from PAOFLOW.writers.grid_xsf import write_grid_xsf
+
+        for bias in np.atleast_1d(np.asarray(biases, dtype=float)):
+            matches = [point for point in scan.points if abs(point.bias - bias) < 1e-9]
+            if not matches:
+                raise ValueError(f'potential_grid_biases: {bias} V is not a bias of the scan')
+            point = matches[0]
+            origin, spanning, values = model.potential_on_grid(
+                self._applied_charge(scan, point),
+                point.chemical_potential_left - settings.fermi_energy,
+                point.chemical_potential_right - settings.fermi_energy,
+                spacing=self._bias_electrostatics['grid_spacing'],
+            )
+            write_grid_xsf(
+                os.path.join(
+                    self._output_config['output_dir'],
+                    f'potential_grid_{scan.profile}{postfix}_V{point.bias:+.4f}.xsf',
+                ),
+                origin,
+                spanning,
+                values,
+                model.labels,
+                model.coordinates,
+                periodic_axes=(0, 1),
+                name='potential_energy_eV',
+            )

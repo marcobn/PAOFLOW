@@ -30,10 +30,10 @@ from PAOFLOW.hamiltonian.nonlocal_velocity import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SI_ONCV_DIR = REPO_ROOT / 'examples' / 'qe_examples' / 'example16' / 'Si_ONCV'
+SI_ONCV_DIR = REPO_ROOT / 'PSEUDOS' / 'library'
 SI_ONCV_UPF = 'Si_ONCV_PBE_sr.UPF'
-MNO_DIR = REPO_ROOT / 'examples' / 'acbn0_examples' / 'MnO'
-USPP_DIR = REPO_ROOT / 'examples' / 'qe_examples' / 'example03'
+MNO_DIR = REPO_ROOT / 'PSEUDOS' / 'library'
+USPP_DIR = REPO_ROOT / 'PSEUDOS' / 'library'
 USPP_UPF = 'Pt.pz-n-rrkjus_psl.0.1.UPF'
 
 
@@ -198,10 +198,13 @@ def test_si_pao_shared_species_reference(si_pao_catalog):
 
 @pytest.fixture(scope='module')
 def mno_pao_catalog():
-    if not (MNO_DIR / 'Mn.upf').exists() or not (MNO_DIR / 'O.upf').exists():
+    if (
+        not (MNO_DIR / 'Mn_ONCV_PBE_sr.upf').exists()
+        or not (MNO_DIR / 'O_ONCV_PBE_sr.upf').exists()
+    ):
         pytest.skip(f'MnO UPFs missing under {MNO_DIR}')
     arrays = {
-        'species': [('Mn', 'Mn.upf'), ('O', 'O.upf')],
+        'species': [('Mn', 'Mn_ONCV_PBE_sr.upf'), ('O', 'O_ONCV_PBE_sr.upf')],
         'atoms': ['Mn', 'O'],
         'tau': np.array([[0.0, 0.0, 0.0], [2.22, 2.22, 2.22]]),
     }

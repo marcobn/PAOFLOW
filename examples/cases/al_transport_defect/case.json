@@ -1,0 +1,25 @@
+{
+ "title": "Al with a defect: the low-level Landauer calls",
+ "summary": "The Landauer transmission and DOS of an Al supercell with a defect in its middle, written with the low-level PAOFLOW.Transport calls one by one (partition, blocks, tuning, energy grid, self-energies, Green functions). The QE runs of your own supercell are not part of the case.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Landauer transmission and DOS of the conductor with the defect",
+   "command": [
+    "python",
+    "main.py"
+   ],
+   "cwd": ".",
+   "mpi": true,
+   "interactive": false,
+   "note": "needs output/qe/al.save of your own Al supercell (pw.x, then projwfc.x with lwrite_overlaps = .true.); writes output/paoflow/ (files with the postfix _defect)"
+  }
+ ],
+ "tags": [
+  "Landauer",
+  "defect",
+  "transport",
+  "metal"
+ ],
+ "source": "examples/recipes/transport_defect"
+}

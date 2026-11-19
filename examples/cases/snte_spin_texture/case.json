@@ -1,0 +1,49 @@
+{
+ "title": "SnTe monolayer: spin texture, Fermi surface and spin Hall conductivity",
+ "summary": "A 2D layer with spin-orbit coupling: Fermi surface and spin texture near the valence-band top, and the spin Hall conductivity in sheet units.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "SnTe.save",
+  "prefix": "SnTe",
+  "projector": "internal",
+  "properties": [
+   "bands",
+   "fermi_surface",
+   "spin_texture",
+   "spin_Hall"
+  ],
+  "ibrav": 8,
+  "is_2d": true,
+  "spin_orbit": true,
+  "nk": 1000,
+  "emin": -3.5,
+  "emax": 1.5,
+  "npool": 4,
+  "interpolate": true,
+  "nfft": 140,
+  "std_basis": "minimal"
+ },
+ "pseudopotentials": [
+  "library/Sn.rel-pbe-dn-kjpaw_psl.1.0.0.UPF",
+  "library/Te.rel-pbe-dn-kjpaw_psl.1.0.0.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "tags": [
+  "2D",
+  "spin texture",
+  "spin Hall",
+  "spin-orbit"
+ ],
+ "source": "examples/qe_examples/example08"
+}

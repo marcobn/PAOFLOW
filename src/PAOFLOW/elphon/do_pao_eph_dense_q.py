@@ -54,6 +54,7 @@ Deferred / to validate
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -67,6 +68,7 @@ from ..phonon.qe_force_constants import (
 )
 from .do_pao_eph import (
     check_long_range_terms,
+    gamma_zero_mask,
     load_epw_coupling,
     vertex_from_epw,
     vertex_from_qe_ahc,
@@ -90,6 +92,10 @@ from .fermi_surface_coupling import FermiSurfacePairCoupling
 # --------------------------------------------------------------------------- #
 # 1. Build the double real-space vertex g(R_e, R_p)
 # --------------------------------------------------------------------------- #
+CELL_DTYPES = ('complex128', 'complex64')
+"""Storage precisions of the node-shared ``g(R_e, R_p)`` (:func:`prepare_dense_vertex`)."""
+
+
 def build_g_ReRp(g_qRe, q_cryst, qgrid):
     """Fourier-transform the coarse-q half-vertex ``g_q(R_e)`` to ``g(R_e, R_p)``.
 
@@ -608,6 +614,10 @@ def eliashberg_dense_q(
     cache_dir=None,
     cache_tag=None,
     long_range=None,
+    gamma_modes='all',
+    gamma_acoustic_thz=0.1,
+    fd_options=None,
+    cell_dtype='complex128',
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
 
@@ -710,6 +720,16 @@ def eliashberg_dense_q(
         belongs to interband dipoles only).
     save_dir, pseudo_dir, prefix, basis, unfold, basis_shells, unfold_tol, cache_dir, cache_tag
         ``source='dfpt'`` and cache options of :func:`prepare_dense_vertex`.
+    gamma_modes : {'all', 'acoustic'}, optional
+        Modes zeroed at ``q = Gamma`` (:func:`~PAOFLOW.elphon.do_pao_eph.gamma_zero_mask`):
+        ``'all'`` (default, the QE convention) or only the acoustic ones below
+        ``gamma_acoustic_thz`` -- required by ``source='fd'``, where Gamma is the only q.
+    fd_options : dict, optional
+        ``source='fd'``: options of :func:`~PAOFLOW.elphon.fd_vertex.fd_cell_derivatives`
+        (``basispath``, ``configuration``, ``pthr``, ``fixed_basis``, ``locality_cutoff``,
+        ``ridge``, ...).
+    cell_dtype : {'complex128', 'complex64'}, optional
+        Storage precision of the node-shared vertex (:func:`prepare_dense_vertex`).
 
     Notes
     -----
@@ -737,7 +757,7 @@ def eliashberg_dense_q(
         allow_missing_long_range=allow_missing_long_range,
         save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
         basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
-        long_range=long_range,
+        long_range=long_range, fd_options=fd_options, cell_dtype=cell_dtype,
     )  # fmt: skip
     g_ReRp, win, phonon_at_q = vertex['g_ReRp'], vertex['window'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']
@@ -837,11 +857,14 @@ def eliashberg_dense_q(
         is_gamma = np.linalg.norm(q_cryst - np.round(q_cryst)) < 1.0e-6
         q_weight = qweights[iq] / qweights.sum()
         pair_weights = None
+        gamma_mask = (
+            gamma_zero_mask(freq_thz, gamma_modes, gamma_acoustic_thz) if is_gamma else None
+        )
         if pair_coupling is not None:
             # Same mode exclusions as lambda_qv below.
             pair_weights = np.where(freq_thz < min_freq_thz, 0.0, q_weight)
             if is_gamma:
-                pair_weights[:] = 0.0
+                pair_weights[gamma_mask] = 0.0
         lr_q = None
         if long_range is not None:
             lr_q = long_range.vertex_pao(q_cryst, A.shape[1], orbital_positions)
@@ -853,14 +876,14 @@ def eliashberg_dense_q(
         lam = res['lambda_qnu'][isig].copy()
         lam[freq_thz < min_freq_thz] = 0.0  # drop spurious soft/imaginary modes
         if is_gamma:
-            lam[:] = 0.0  # zero the Gamma acoustic blow-up (QE convention)
+            lam[gamma_mask] = 0.0  # every mode (QE convention) or the acoustic ones only
         lam_qv[iq] = lam
         om_qv[iq] = np.abs(freq_thz)
         if transport:
             lam_tr = res['lambda_tr_qnu'][isig].copy()
             lam_tr[freq_thz < min_freq_thz] = 0.0  # same exclusions as lambda
             if is_gamma:
-                lam_tr[:] = 0.0
+                lam_tr[gamma_mask] = 0.0
             lam_tr_qv[iq] = lam_tr
 
     # Each rank wrote a disjoint slice; a single SUM reduction rebuilds the grid.
@@ -895,6 +918,54 @@ def eliashberg_dense_q(
     return out
 
 
+def _sum_on_node_root(node_comm, array: NDArray[np.complex128]) -> None:
+    """Sum ``array`` over the ranks of ``node_comm`` into node rank 0, in place, one leading row at a time.
+
+    Row-wise messages keep every count far below the ``2^31`` limit of MPI for the
+    multi-GB ``g_q(R_e)`` of large cells.
+    """
+    if node_comm.Get_size() == 1:
+        return
+    from mpi4py import MPI
+
+    if not array.flags.c_contiguous:
+        raise ValueError('_sum_on_node_root needs a C-contiguous array')
+    root = node_comm.Get_rank() == 0
+    for row in array:  # contiguous views of the leading axis
+        if root:
+            node_comm.Reduce(MPI.IN_PLACE, row, op=MPI.SUM, root=0)
+        else:
+            node_comm.Reduce(row, None, op=MPI.SUM, root=0)
+
+
+def _broadcast_cells(leaders, g_ReRp: NDArray, labels, owner: dict) -> None:
+    """Give every node the q-cells built on the others (node leaders only), one orbital row at a time.
+
+    Parameters
+    ----------
+    leaders : MPI communicator
+        One rank per node (the node-local rank 0 of each).
+    g_ReRp : ndarray ``(nawf, nawf, ncart, n1, n2, n3, nq1, nq2, nq3)``
+        The node's shared buffer; the cells of the other nodes are filled in.
+    labels : ndarray ``(nq, 3)`` int
+        Grid labels of the coarse q.
+    owner : dict
+        ``label -> rank in leaders`` of the node that built the cell.
+    """
+    me = leaders.Get_rank()
+    for lab in labels:
+        root = int(owner[tuple(int(x) for x in lab)])
+        for row in range(g_ReRp.shape[0]):
+            cell = g_ReRp[row, ..., lab[0], lab[1], lab[2]]
+            if me == root:
+                buf = np.ascontiguousarray(cell)
+            else:
+                buf = np.empty(cell.shape, dtype=g_ReRp.dtype)
+            leaders.Bcast(buf, root=root)
+            if me != root:
+                cell[...] = buf
+
+
 def prepare_dense_vertex(
     A: NDArray[np.complex128],
     kpts_cryst: NDArray[np.float64],
@@ -923,6 +994,9 @@ def prepare_dense_vertex(
     cache_tag: str | None = None,
     bands=None,
     long_range=None,
+    fd_options: dict | None = None,
+    node_groups: int | None = None,
+    cell_dtype: str = 'complex128',
 ) -> dict:
     """Coarse couplings -> shared ``g(R_e, R_p)`` and the phonon interpolator.
 
@@ -955,10 +1029,14 @@ def prepare_dense_vertex(
     phonon_at_q : callable or None
         ``q_cryst -> (freq_thz, z)``; ``None`` builds it from EPW's force constants or
         from the ``ph.x`` dyn files.
-    source : {'epw', 'dfpt', 'ahc', 'elphmat'}, optional
+    source : {'epw', 'dfpt', 'fd', 'ahc', 'elphmat'}, optional
         Coarse coupling input (see :func:`eliashberg_dense_q`).  ``'dfpt'`` computes the
         vertex natively from ``dvscf`` and the nscf wavefunctions
-        (:class:`~PAOFLOW.elphon.dfpt_vertex.CoarseVertexSetup`), without EPW.
+        (:class:`~PAOFLOW.elphon.dfpt_vertex.CoarseVertexSetup`), without EPW.  ``'fd'``
+        takes the finite-difference derivatives of a cell that is its own unit cell
+        (:mod:`~PAOFLOW.elphon.fd_vertex`): ``coupling_dir`` is the electron-phonon
+        directory of the displaced runs, ``qgrid_coarse`` must be ``(1, 1, 1)`` and the
+        phonons default to the cell's force constants from the same runs.
     masses_amu : ndarray, shape ``(nat,)``
         Atomic masses (amu), one per atom.
     tau_cryst : ndarray, shape ``(nat, 3)``, optional
@@ -1004,6 +1082,20 @@ def prepare_dense_vertex(
         ``source='dfpt'``: restrict the band projector of the vertex to these nscf bands
         (EPW's ``exclude_bands``; default all bands, the consistent choice for the PAO
         Hamiltonian).
+    fd_options : dict, optional
+        ``source='fd'``: keyword arguments of
+        :func:`~PAOFLOW.elphon.fd_vertex.fd_cell_derivatives` (basis, projectability,
+        fixed basis, locality cutoff and ridge of the random mode); ``ridge`` is also
+        used by the force-constant fit.
+    node_groups : int, optional
+        Testing only: split the communicator into this many groups that play the role of
+        nodes, so that the shared windows and the cell exchange of ``source='dfpt'`` are
+        exercised on one machine.  Default: the real nodes (``MPI.COMM_TYPE_SHARED``).
+    cell_dtype : {'complex128', 'complex64'}, optional
+        Storage precision of the node-shared ``g(R_e, R_p)`` (and of its cache entry, whose
+        key carries the precision).  ``'complex64'`` halves the window (the dense step
+        reads it row by row in double precision, the couplings change at the 1e-7 level);
+        for cells whose double-precision table exceeds the shared memory of a node.
 
     Returns
     -------
@@ -1026,12 +1118,49 @@ def prepare_dense_vertex(
     # Allocate ONE copy per node in MPI shared memory (built by the node-local
     # rank 0 only) instead of an independent copy per rank, which otherwise
     # multiplies the memory by the number of ranks on the node.
-    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    if node_groups:
+        node_comm = comm.Split(comm.Get_rank() % int(node_groups), comm.Get_rank())
+    else:
+        node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
     node_rank = node_comm.Get_rank()
 
     epw = None
     dfpt = None
     small = {'epsi': None, 'zstar': None}
+    fd = None
+    if source == 'fd':
+        from .fd_vertex import fd_force_constants, fd_phonon_at_q
+
+        if tuple(qgrid_coarse) != (1, 1, 1):
+            raise ValueError(
+                "source='fd' is a Gamma-only supercell source: qgrid_coarse must be (1, 1, 1)."
+            )
+        fd = dict(fd_options or {})
+        if comm.Get_size() > 1:
+            # The cell derivatives come from serial PAOFLOW runs on every displaced save
+            # (collectives on COMM_WORLD inside); with one q there is nothing for MPI to
+            # distribute here, so the driver must run on a single rank.
+            raise ValueError(
+                "source='fd' builds the cell derivatives with serial PAOFLOW runs: run the "
+                'driver with a single MPI rank (python eliashberg.py, no mpirun).'
+            )
+        if q_cryst_coarse is None:
+            q_cryst_coarse = np.zeros((1, 3))
+        if phonon_at_q is None:
+            phi = fd_force_constants(coupling_dir, ridge=float(fd.get('ridge', 1.0e-4)))
+            if phi is None:
+                raise ValueError(
+                    'the displaced runs in %s do not determine the force constants of every '
+                    'atom (pw.x outputs with forces next to the inputs, +/- pairs along x, y, z '
+                    'or the random mode); pass phonon_at_q.' % coupling_dir
+                )
+            if phi.shape[0] != nmodes:
+                raise ValueError(
+                    'force constants of %d modes but %d atoms in masses_amu.'
+                    % (phi.shape[0], masses_amu.size)
+                )
+            atom_positions = tau_cryst if orbital_positions is not None else None
+            phonon_at_q = fd_phonon_at_q(phi, masses_amu, at, atom_positions)
     if source == 'dfpt':
         from .dfpt_vertex import CoarseVertexSetup
 
@@ -1095,13 +1224,21 @@ def prepare_dense_vertex(
     nawf = int(A.shape[1])
     qg = qgrid_coarse
     shape = (nawf, nawf, nmodes, ng[0], ng[1], ng[2], qg[0], qg[1], qg[2])
-    itemsize = np.dtype(np.complex128).itemsize
+    if cell_dtype not in CELL_DTYPES:
+        raise ValueError('cell_dtype must be one of %s, got %r' % (CELL_DTYPES, cell_dtype))
+    itemsize = np.dtype(cell_dtype).itemsize
     nelem = int(np.prod(shape))
+    if comm.Get_rank() == 0:
+        print(
+            '  g(R_e, R_p) node-shared window: %s x %s = %.1f GB per node'
+            % (shape, cell_dtype, nelem * itemsize / 1e9),
+            flush=True,
+        )
     win = MPI.Win.Allocate_shared(
         nelem * itemsize if node_rank == 0 else 0, itemsize, comm=node_comm
     )
     buf, _ = win.Shared_query(0)
-    g_ReRp = np.ndarray(buffer=buf, dtype=np.complex128, shape=shape)
+    g_ReRp = np.ndarray(buffer=buf, dtype=cell_dtype, shape=shape)
 
     # --- cache of the finished g(R_e, R_p) (optional) ----------------------- #
     cache_key = None
@@ -1110,6 +1247,12 @@ def prepare_dense_vertex(
         from .coupling_cache import dense_vertex_cache_key, load_dense_vertex
 
         tag = cache_tag if long_range is None else '%s|lr=%s' % (cache_tag, long_range.signature())
+        if fd is not None:  # the fit options change the derivatives (paths do not)
+            from .fd_vertex import fd_cache_tag
+
+            tag = fd_cache_tag(tag, fd)
+        if cell_dtype != 'complex128':
+            tag = '%s|%s' % (tag, cell_dtype)
         cache_key = dense_vertex_cache_key(
             coupling_dir, source, qgrid_coarse, ng, masses_amu, A.shape, tag
         )
@@ -1129,8 +1272,12 @@ def prepare_dense_vertex(
     if cached:
         pass
     elif source == 'dfpt':
-        # The q-cells are disjoint: the node ranks share the coarse q and then the
-        # orbital rows of the q -> R_p transform (identical to the serial loop).
+        # Work split: the coarse q (or the irreducible q of the star unfolding) go
+        # round-robin over the nodes; inside a node the k-points of every q are
+        # split over the node ranks and the partial g_q(R_e) summed on node rank 0,
+        # which writes the q-cell of the shared window.  The nodes then exchange
+        # their cells (each needs the whole g(R_e, R_p)) and share the orbital
+        # rows of the q -> R_p transform (identical to the serial loop).
         nq_coarse = qg[0] * qg[1] * qg[2]
         labels = np.round(q_cryst_coarse * np.asarray(qg)).astype(int) % np.asarray(qg)
         if q_cryst_coarse.shape[0] != nq_coarse or len({tuple(lab) for lab in labels}) != nq_coarse:
@@ -1138,17 +1285,35 @@ def prepare_dense_vertex(
                 'the coarse q-points (%d) must tile the full %s grid'
                 % (q_cryst_coarse.shape[0], 'x'.join(map(str, qg)))
             )
-        member_of = {
-            tuple(np.round(m.q_cryst * np.asarray(qg)).astype(int) % np.asarray(qg)): m
-            for m in dfpt.members
-        }
+
+        def label_of(q_cryst):
+            return tuple(
+                int(x) for x in np.round(q_cryst * np.asarray(qg)).astype(int) % np.asarray(qg)
+            )
+
+        member_of = {label_of(m.q_cryst): m for m in dfpt.members}
         kidx = np.round(np.asarray(kpts_cryst, dtype=float) * np.asarray(ng)).astype(
             int
         ) % np.asarray(ng)
         node_size = node_comm.Get_size()
+        leaders = comm.Split(0 if node_rank == 0 else MPI.UNDEFINED, comm.Get_rank())
+        inode, nnodes = node_comm.bcast(
+            (leaders.Get_rank(), leaders.Get_size()) if node_rank == 0 else None, root=0
+        )
+        from .dfpt_vertex import k_blocks
+
+        mine_k = k_blocks(nk, node_size)[node_rank]
+        owner = {}  # q label -> node that builds its cell
         if node_rank == 0:
             g_ReRp[...] = 0.0
         node_comm.Barrier()
+        if comm.Get_rank() == 0:
+            print(
+                '  coarse vertex: %d q on %d node(s), %d rank(s) per node share the %d k-points'
+                % (nq_coarse, nnodes, node_size, nk),
+                flush=True,
+            )
+        t_build = time.time()
         if unfold == 'irreducible':
             from .dfpt_vertex import (
                 orbital_shells,
@@ -1165,30 +1330,68 @@ def prepare_dense_vertex(
                 basis_shells if isinstance(basis_shells, tuple) else orbital_shells(basis_shells)
             )
             ops = pao_vertex_rotation_operators(dfpt, shells, atom_labels, tuple(ng))
-            mine = list(range(node_rank, len(dfpt.q_irr), node_size))
+            for m in dfpt.members:
+                owner[label_of(m.q_cryst)] = int(m.iq_irr) % nnodes
+            mine = list(range(inode, len(dfpt.q_irr), nnodes))
             for member, gk in unfolded_pao_vertices(
-                dfpt, A, kpts_cryst, tuple(ng), ops, mine, basis, check_member=True, tol=unfold_tol
-            ):
-                lab = np.round(member.q_cryst * np.asarray(qg)).astype(int) % np.asarray(qg)
+                dfpt, A, kpts_cryst, tuple(ng), ops, mine, basis, check_member=True,
+                tol=unfold_tol, node_comm=node_comm,
+            ):  # fmt: skip
+                lab = label_of(member.q_cryst)
                 if long_range is not None:
                     gk = gk - long_range.vertex_pao(member.q_cryst, nawf, orbital_positions)[None]
                 g_ReRp[..., lab[0], lab[1], lab[2]] = pao_vertex_to_cells(gk, kidx, tuple(ng))
         elif unfold == 'full':
             from .elph_bloch import pao_vertex_to_cells
 
-            for iq in range(node_rank, nq_coarse, node_size):
-                member = member_of[tuple(labels[iq])]
-                gk = dfpt.pao_vertex_k(member, A, tuple(ng), basis, bands)
+            for iq in range(nq_coarse):
+                owner[tuple(int(x) for x in labels[iq])] = iq % nnodes
+            for iq in range(inode, nq_coarse, nnodes):
+                t_q = time.time()
+                member = member_of[tuple(int(x) for x in labels[iq])]
+                gk = dfpt.pao_vertex_k(member, A, tuple(ng), basis, bands, kpoints=mine_k)
                 if long_range is not None:
                     gk = gk - long_range.vertex_pao(member.q_cryst, nawf, orbital_positions)[None]
-                gR = pao_vertex_to_cells(gk, kidx, tuple(ng))
-                g_ReRp[..., labels[iq, 0], labels[iq, 1], labels[iq, 2]] = gR
+                gR = pao_vertex_to_cells(gk, kidx[mine_k], tuple(ng))
+                del gk
+                _sum_on_node_root(node_comm, gR)
+                if node_rank == 0:
+                    g_ReRp[..., labels[iq, 0], labels[iq, 1], labels[iq, 2]] = gR
+                del gR
+                if comm.Get_rank() == 0:
+                    print(
+                        '  coarse q %d of %d: %.0f s' % (iq + 1, nq_coarse, time.time() - t_q),
+                        flush=True,
+                    )
         else:
             raise ValueError("unfold must be 'full' or 'irreducible', got %r" % (unfold,))
         dfpt.clear_cache()
         node_comm.Barrier()
+        if nnodes > 1 and node_rank == 0:
+            _broadcast_cells(leaders, g_ReRp, labels, owner)
+        if leaders != MPI.COMM_NULL:
+            leaders.Free()
+        node_comm.Barrier()
+        if comm.Get_rank() == 0:
+            print('  coarse vertex built in %.0f s' % (time.time() - t_build), flush=True)
         for row in range(node_rank, nawf, node_size):
             g_ReRp[row] = np.fft.fftn(g_ReRp[row], axes=(-3, -2, -1)) / nq_coarse
+    elif source == 'fd':
+        if node_rank == 0:
+            from .fd_vertex import FD_DERIVATIVE_OPTIONS, fd_cell_derivatives, fill_g_ReRp_from_fd
+
+            result = fd_cell_derivatives(
+                coupling_dir, **{k: v for k, v in fd.items() if k in FD_DERIVATIVE_OPTIONS}
+            )
+            fill_g_ReRp_from_fd(g_ReRp, result['directional'], int(masses_amu.size))
+            fit = result.get('fit')
+            if fit is not None:
+                print(
+                    '  finite-difference vertex: %d random pairs, relative residual %.2e'
+                    % (fit['nconfig'], fit['relative_residual']),
+                    flush=True,
+                )
+            del result
     elif node_rank == 0:
         nq_coarse = qg[0] * qg[1] * qg[2]
         labels = np.round(q_cryst_coarse * np.asarray(qg)).astype(int) % np.asarray(qg)

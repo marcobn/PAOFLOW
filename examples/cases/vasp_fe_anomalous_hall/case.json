@@ -1,0 +1,27 @@
+{
+ "title": "VASP Fe: spin-orbit bands and anomalous Hall conductivity",
+ "summary": "Ferromagnetic bcc iron from a VASP run with spin-orbit coupling: the PAO Hamiltonian (3D 4S 4P 4D 5S 5P), its band structure and the anomalous Hall conductivity sigma_xy (dc and ac). Needs your own VASP runs and POTCAR.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Fe bands and anomalous Hall conductivity",
+   "command": [
+    "python",
+    "main.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "needs the VASP runs of nscf/ (vasprun.xml, WAVECAR, POTCAR); writes output/ (ahcEf_xy.dat), Fe_soc_VASP.png and Fe_ahc_VASP.png"
+  }
+ ],
+ "tags": [
+  "VASP",
+  "spin-orbit",
+  "anomalous Hall",
+  "magnetic",
+  "metal",
+  "PAW"
+ ],
+ "source": "examples/recipes/vasp/example03"
+}

@@ -2,7 +2,7 @@
     calculation = 'scf'
     restart_mode='from_scratch',
     prefix='pt',
-   pseudo_dir = '../pseudos/',
+    pseudo_dir = '../../../../PSEUDOS/library/',
     outdir='./'
  /
  &system

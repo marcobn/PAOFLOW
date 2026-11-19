@@ -9,10 +9,10 @@
     H_{ij}(\\mathbf{k}) = \\sum_{\\mathbf{R}} H_{ij}(\\mathbf{R})
         \\, e^{s \\, 2\\pi i \\, \\mathbf{k} \\cdot \\mathbf{R}}
 
-with ``s = +1`` matching the dense band-path convention
-(``spectrum.do_bands.band_loop_H``) and ``s = -1`` matching the dense
-FFT mesh convention (``scipy.fftpack.fftn`` in
-``hamiltonian.do_double_grid`` / ``do_gradient``).
+with ``s = -1`` matching the dense FFT mesh convention (``scipy.fftpack.fftn``
+in ``hamiltonian.do_double_grid`` / ``do_gradient``) and, since 15 November
+2026, the dense band path (``spectrum.do_bands.band_loop_H``); ``s = +1`` gives
+:math:`H(-\\mathbf{k})`, the band path of earlier versions.
 
 The CSR sparsity pattern (the union of bond index pairs over all R) is
 built once and only the numerical values are refilled per k-point, so
@@ -444,10 +444,10 @@ class SparseHamiltonian:
         inside the cutoff.
 
         ``rcut`` **must** be applied here, at the base cell:
-        ``doubling.double_axis`` zeroes ``dnm`` on cross-replica blocks
-        (replicating the dense ``block_diag(Dnm, Dnm)`` semantics), after
-        which the true bond vector is no longer recoverable from the
-        container.  Note also that ``rcut`` is a physically *different*
+        ``doubling.double_axis`` only replicates the base bonds, so the cutoff
+        of the doubled cell is that of the base cell (until 16 Nov 2026 it
+        also zeroed ``dnm`` on cross-replica blocks, as the dense kernel did,
+        which made the true bond vector unrecoverable from the container).  Note also that ``rcut`` is a physically *different*
         truncation axis from ``threshold`` (bond length vs matrix-element
         magnitude) and the two interact; the default is ``None``.
         """
@@ -736,8 +736,8 @@ class SparseHamiltonian:
         ispin : int, optional
             Spin channel.
         sign : {-1, +1}, optional
-            Sign of the Fourier phase: ``-1`` is the FFT mesh convention,
-            ``+1`` the band-path convention.
+            Sign of the Fourier phase: ``-1`` is PAOFLOW's convention (FFT mesh and band path),
+            ``+1`` gives :math:`H(-\\mathbf{k})`.
         cart : bool, optional
             Whether ``kvec`` is Cartesian; see :meth:`_phase_arg`.
 

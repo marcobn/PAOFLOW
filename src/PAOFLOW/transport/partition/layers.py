@@ -51,6 +51,7 @@ def resolve_layer_partition(
             dim_r=None,
             transport_direction=direction,
             selectors=selectors,
+            central_atoms=_in_block_order(central_orbitals),
         )
 
     if left_lead_layers is None or right_lead_layers is None:
@@ -88,6 +89,7 @@ def resolve_layer_partition(
         dim_r=dim_r,
         transport_direction=direction,
         selectors=selectors,
+        central_atoms=_in_block_order(central_orbitals),
     )
 
 
@@ -106,6 +108,11 @@ def _group_atoms_into_layers(
         else:
             layers[-1].append(atom)
     return layers
+
+
+def _in_block_order(atoms: list[AtomOrbitals]) -> tuple[AtomOrbitals, ...]:
+    """The atoms in the orbital order of their block (the ranges of :func:`_range_string`)."""
+    return tuple(sorted(atoms, key=lambda item: item.first_orbital))
 
 
 def _layers_to_orbitals(layers: Iterable[Iterable[AtomOrbitals]]) -> list[AtomOrbitals]:

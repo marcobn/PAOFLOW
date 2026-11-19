@@ -1,7 +1,7 @@
 &control
    calculation = 'scf'
    prefix = 'Bi',
-   pseudo_dir = '../../pseudos/'
+   pseudo_dir = '../../../../../PSEUDOS/library/'
    outdir = './'
    verbosity = "high"
    wf_collect=.true.

@@ -88,11 +88,11 @@ discovered jobs, preserving their paths relative to this directory:
 
 ```bash
 # From repository root
-mkdir -p examples/transport_examples/_assets
+mkdir -p tests/integration/transport/_assets
 python .github/assets_generation/transport/build_assets.py \
-  --transport-root examples/transport_examples \
+  --transport-root tests/integration/transport \
   --reference-root tests/integration/transport/_assets/staging \
-  --out examples/transport_examples/_assets/transport_test_assets_dev.tar.gz
+  --out tests/integration/transport/_assets/transport_test_assets_dev.tar.gz
 ```
 
 The builder is [.github/assets_generation/transport/build_assets.py](../../../.github/assets_generation/transport/build_assets.py).
@@ -108,7 +108,7 @@ When generating assets through [.github/assets_generation/transport/create_asset
 
 ```bash
 pytest -q tests/integration/transport/test_transport_examples.py \
-  --transport-assets-archive examples/transport_examples/_assets/transport_test_assets_dev.tar.gz
+  --transport-assets-archive tests/integration/transport/_assets/transport_test_assets_dev.tar.gz
 ```
 
 By default, assets are overlaid into the sandbox via symlinks (fast). To use a
@@ -116,7 +116,7 @@ copy instead:
 
 ```bash
 pytest -q tests/integration/transport/test_transport_examples.py \
-  --transport-assets-archive examples/transport_examples/_assets/transport_test_assets_dev.tar.gz \
+  --transport-assets-archive tests/integration/transport/_assets/transport_test_assets_dev.tar.gz \
   --transport-assets-link copy
 ```
 

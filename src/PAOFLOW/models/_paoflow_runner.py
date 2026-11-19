@@ -108,10 +108,19 @@ def build_model_hamiltonian(
     Returns
     -------
     HRs : (nawf, nawf, nR, nspin) real-space Hamiltonian.
-    R : (nR, 3) lattice vectors in Cartesian/alat units.
+    R : (nR, 3) lattice vectors in Cartesian/alat units, oriented so that
+        :math:`H(\\mathbf k)=\\sum_R \\mathrm{HRs}(R)\\,e^{+2\\pi i\\mathbf k\\cdot\\mathbf R}` (the transform of
+        :mod:`PAOFLOW.models.band_unfold` and :mod:`PAOFLOW.models.surface_project`).
     nawf : number of Wannier functions.
     nspin : number of spin channels.
     norbitals : (natoms,) orbital count per atom, or None.
+
+    Notes
+    -----
+    Every PAOFLOW builder (the QE route, the hopping-list and PythTB models and, since 15 November
+    2026, ``Slater_Koster`` and ``SK_EDTB``) stores the hopping to the cell ``R`` at the grid index
+    ``-R``: :math:`H(\\mathbf k)=\\sum_{\\mathbf n}e^{-2\\pi i\\mathbf k\\cdot\\mathbf n}\\mathrm{HRs}[\\mathbf n]`.
+    The grid vectors are therefore returned with the opposite sign, ``R = -R_n``.
     """
     from PAOFLOW import PAOFLOW as PF
     from PAOFLOW.utils.get_R_grid_fft import get_R_grid_fft
@@ -127,7 +136,9 @@ def build_model_hamiltonian(
     nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
 
     get_R_grid_fft(pf.data_controller, nk1, nk2, nk3)
-    R = arry['R'].copy()
+    R = -arry[
+        'R'
+    ]  # the hopping stored at the index n connects to the cell -R_n (PAOFLOW's convention)
     HRs = arry['HRs'].reshape(nawf, nawf, -1, nspin).copy()
 
     norbitals = arry.get('norbitals', None)

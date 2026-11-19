@@ -3,7 +3,7 @@ Iron
  &control
     calculation='nscf'
     restart_mode='restart',
-   pseudo_dir = '../pseudos/',
+    pseudo_dir = '../../../../PSEUDOS/library/',
     outdir='./',
     prefix='fe'
  /

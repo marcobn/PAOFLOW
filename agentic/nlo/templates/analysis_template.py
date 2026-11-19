@@ -20,7 +20,7 @@ from PAOFLOW.agentic.thermo_optics import metrics as mt
 from PAOFLOW.agentic.thermo_optics.datasets import make_dataset, read_dataset, write_dataset
 
 HERE = Path(__file__).resolve().parent
-OUTPUT = Path('<examples/nlo_examples/<System>/output>')  # read-only
+OUTPUT = Path('<examples/cases/<system>_nlo/output>')  # read-only
 RUN = {
     'nk': '<40^3>',
     'eta_ev': 0.05,

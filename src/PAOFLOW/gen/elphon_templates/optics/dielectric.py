@@ -47,14 +47,21 @@ def main():
         '--interband-only', action='store_true', default=not DEFAULTS.get('intraband', True),
         help='no Drude term (the intraband part of a metal comes from alpha^2F_tr)',
     )  # fmt: skip
+    parser.add_argument(
+        '--no-position-dipoles', action='store_true',
+        help='plain tight-binding velocities (no Loewdin dipole correction)',
+    )  # fmt: skip
     parser.add_argument('--pthr', type=float, default=DEFAULTS.get('pthr', 0.95))
     args = parser.parse_args()
     direct_dielectric(
         SYSTEM, args.savedir, args.outdir, nfft=args.nfft, emin=args.emin, emax=args.emax,
-        ne=args.ne, delta=args.delta, intraband=not args.interband_only, pthr=args.pthr,
+        ne=args.ne, delta=args.delta, intraband=not args.interband_only, pthr=args.pthr, position_dipoles=not args.no_position_dipoles,
         smearing=DEFAULTS.get('smearing'),
     )  # fmt: skip
 
 
 if __name__ == '__main__':
-    main()
+    # An error on one MPI rank stops every rank instead of hanging the job.
+    from PAOFLOW.utils.mpi_guard import run_main
+
+    run_main(main)

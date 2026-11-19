@@ -1,0 +1,33 @@
+{
+ "title": "NbSn2: quantum oscillations vs torque magnetometry",
+ "summary": "Orthorhombic NbSn2 (Fddd): the extremal orbits of spin-orbit and scalar-relativistic pyskeaf runs (bundled, compressed) compared with a torque rotation from [001] to [110] with PAOFLOW.agentic.qo_analysis: Fermi-surface inventory, digitised experimental FFT map, branch assignment, field directions, SOC vs scalar-relativistic, Fermi-level scan, breakdown gaps, weak peaks and a collaborator package. No QE or PAOFLOW run is needed.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Spin-orbit analysis against the torque rotation",
+   "command": ["python", "main.py"],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "about 1.5 minutes; results in qo_analysis_soc/ (RUN_NETWORK = True in main.py adds the breakdown network, about 15 min on 24 cores)"
+  },
+  {
+   "label": "Scalar-relativistic run and its convergence (81^3 vs 49^3)",
+   "command": ["python", "main_sr.py"],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "a few seconds; results in qo_analysis_sr/"
+  }
+ ],
+ "tags": [
+  "quantum oscillations",
+  "dHvA",
+  "torque",
+  "pyskeaf",
+  "experiment comparison",
+  "agentic",
+  "spin-orbit"
+ ],
+ "source": "examples/qo_analysis_examples/NbSn2"
+}

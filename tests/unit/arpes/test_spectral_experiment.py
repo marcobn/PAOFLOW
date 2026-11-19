@@ -151,3 +151,31 @@ def test_polarisation_selects_orbitals():
     )
     assert z_pol.intensity.max() > 0.0
     assert x_pol.intensity.max() < 1e-10 * z_pol.intensity.max()
+
+
+def test_graphene_dark_corridor_needs_the_atomic_gauge():
+    """Graphene pi band along Gamma-K: the two sublattices emit in phase on the Gamma side of K and in
+    antiphase beyond it (the dark corridor; Shirley et al., PRB 51, 13614 (1995)). The eigenvectors
+    of BlochHamiltonian are cell-periodic; simulate converts them to the atomic gauge of the matrix
+    element (c e^{-i k.tau}). Without the conversion the bright branch was the outer one."""
+    from PAOFLOW.models.models import honeycomb_model, hoppings_to_HRs
+
+    bohr = 0.529177210903
+    model = honeycomb_model(delta=0.0, t=-2.7, alat=4.65)
+    hrs = hoppings_to_HRs(model.hoppings, model.number_of_orbitals, model.real_space_grid)
+    bloch = BlochHamiltonian.from_hrs(hrs, model.lattice_vectors, model.alat)
+    cartesian = np.asarray(model.orbital_positions) @ (model.lattice_vectors * model.alat * bohr)
+    basis = PhotoemissionBasis(
+        [Orbital(i, i, 'C', cartesian[i], 1, 1, n=2, label='2P') for i in range(2)]
+    ).with_atomic_radial('slater')
+    a = np.linalg.norm(model.lattice_vectors[0]) * model.alat * bohr
+    k_point = 4 * np.pi / (3 * a)  # K' along a_1 || x
+    kx = np.array([0.4, k_point - 0.25, k_point + 0.25])
+    experiment = ArpesExperiment(
+        photon_ev=50.0, work_function_ev=4.5, polarization=(1.0, 0.0, 1.0),
+        energy=(-9.0, 0.5, 50), kpoints=np.stack([kx, 0 * kx, 0 * kx], axis=1),
+        resolution=(0.0, 0.0),
+    )  # fmt: skip
+    out = simulate(experiment, basis, bloch, ConstantSelfEnergy(0.05))
+    pi = out.weights[:, 0]  # the valence (pi) band
+    assert pi[1] > 0.3 * pi[0] and pi[2] < 1e-10 * pi[1]

@@ -1,0 +1,41 @@
+{
+ "title": "Si (ultrasoft): minimal, standard and extended projection bases",
+ "summary": "Bulk silicon with a scalar-relativistic ultrasoft pseudopotential: the PAO Hamiltonian and bands on the three basis presets, the radial tables solved in the augmented metric of the UPF. Compare with si_oncv_basis_presets.",
+ "workflow": "scripts",
+ "pseudopotentials": [
+  "library/Si.pbe-n-rrkjus_psl.1.0.0.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "steps": [
+  {
+   "label": "PAO bands with the minimal, standard and extended bases",
+   "command": [
+    "python",
+    "main.py"
+   ],
+   "cwd": ".",
+   "mpi": true,
+   "interactive": false,
+   "note": "generates BASIS_PS/ from the UPF at the first run; writes output_<preset>/bands_0.dat and bands_minimal_vs_standard_vs_extended.png"
+  }
+ ],
+ "tags": [
+  "basis presets",
+  "internal projections",
+  "bands",
+  "ultrasoft",
+  "semiconductor"
+ ],
+ "source": "examples/recipes/basis_presets/Si_USPP"
+}

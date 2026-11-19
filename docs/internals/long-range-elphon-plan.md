@@ -193,7 +193,7 @@ Local scripts in `Workspace/PAOFLOW/validation/dfpt_vertex_parity/sic{,6,40}/` (
   pseudopotential and cutoff); the fitted Born charges agree with the Γ run to 0.03 e (Z* ≈ 0 for
   Si, the residual is the $q^3$ term of the $|q| = 0.04$ samples amplified by ε∞). A charge-density
   file convention would have given $Z^*_{\rm el} - Z_{\rm ion}$ with the wrong sign and is
-  detected by `calibrate_sign`. On the polar 3C-SiC (`examples/elphon/SiC/coupling/quadrupoles.py`,
+  detected by `calibrate_sign`. On the polar 3C-SiC (`examples/cases/sic_elphon/coupling/quadrupoles.py`,
   6³ k, 60 Ry, PBE, |q| = 0.02 and 0.04, 10 s per run): $Q^{\rm Si}_{x,yz} = +7.49$ and
   $Q^{\rm C}_{x,yz} = -3.01$ e bohr (Si at the origin), against 7.41 and −2.63 fitted from small-q
   DFPT by Poncé et al., Phys. Rev. Research 3, 043022 (2021), Table IV (Abinit LDA: 7.03 / −1.42);

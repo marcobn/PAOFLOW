@@ -2,7 +2,7 @@
          calculation     = 'nscf'
          prefix          = 'MoP2'
          restart_mode    = 'from_scratch'
-         pseudo_dir      = '../pseudos/'
+         pseudo_dir      = '../../../../PSEUDOS/library/'
          outdir          = './'
          wf_collect      = .true.
        /

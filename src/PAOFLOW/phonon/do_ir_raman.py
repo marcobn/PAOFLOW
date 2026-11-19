@@ -156,8 +156,9 @@ def compute_ir_spectrum(
     fname='phonon',
     write=True,
     intensity_tol=1.0e-4,
+    intensity_floor=1.0e-10,
 ):
-    """Compute the infrared spectrum from Born charges and Gamma eigenvectors.
+    r"""Compute the infrared spectrum from Born charges and Gamma eigenvectors.
 
     Parameters
     ----------
@@ -188,12 +189,26 @@ def compute_ir_spectrum(
     intensity_tol : float
         Relative threshold (fraction of the maximum mode intensity) above which
         a mode is flagged IR-active.
+    intensity_floor : float
+        Absolute threshold, in :math:`e^2/\mathrm{amu}` (the units of the
+        intensities), below which a mode is silent whatever the other modes do.
+        A mode is flagged IR-active only above both thresholds: the relative one
+        alone flags numerical noise (1e-30) as activity when every mode is
+        silent, as in an elemental crystal whose Born charges vanish.
 
     Returns
     -------
     dict
         ``{'frequencies', 'intensities', 'mode_charges', 'spectrum',
         'irreps', 'active'}``.
+
+    Notes
+    -----
+    The intensity of mode :math:`\nu` is
+    :math:`I_\nu = \sum_\alpha |\sum_{k\beta} Z^*_{k,\alpha\beta} e_{k\beta,\nu}/\sqrt{M_k}|^2`,
+    with the Born charges in units of the elementary charge and the masses in
+    amu. The default floor, 1e-10, is a mode effective charge
+    :math:`|\bar Z_\nu| = 10^{-5}\,e/\sqrt{\mathrm{amu}}`.
     """
     arry, attr = data_controller.data_dicts()
     phonon = arry['phonopy']
@@ -237,7 +252,7 @@ def compute_ir_spectrum(
     freqs = freqs_thz * scale
 
     imax = intensities.max() if intensities.size else 0.0
-    active = intensities > (intensity_tol * imax) if imax > 0 else np.zeros(nmodes, bool)
+    active = (intensities > intensity_tol * imax) & (intensities > intensity_floor)
 
     irreps = _irrep_labels(phonon, nmodes)
 
@@ -463,8 +478,9 @@ def compute_raman_spectrum(
     fname='phonon',
     write=True,
     intensity_tol=1.0e-4,
+    modulation_tol=2.0e-4,
 ):
-    """Compute the powder Raman spectrum from finite-difference dielectric data.
+    r"""Compute the powder Raman spectrum from finite-difference dielectric data.
 
     Parameters
     ----------
@@ -489,12 +505,32 @@ def compute_raman_spectrum(
     intensity_tol : float
         Relative threshold (fraction of the maximum activity) above which a
         mode is flagged Raman-active.
+    modulation_tol : float
+        Smallest fractional change of the dielectric constant between the
+        :math:`\pm\delta` cells that counts as Raman activity (see Notes). A mode
+        is flagged Raman-active only above both thresholds: the relative one
+        alone flags finite-difference noise as activity when every mode is
+        silent.
 
     Returns
     -------
     dict
         ``{'frequencies', 'activities', 'intensities', 'tensors',
         'invariants', 'spectrum', 'irreps', 'active'}``.
+
+    Notes
+    -----
+    The reference is the activity of an isotropic Raman tensor whose diagonal is
+    the mean dielectric constant per unit step,
+    :math:`R_{\rm ref} = (\bar\varepsilon/\delta)\,\mathbb{1}` with
+    :math:`\bar\varepsilon = \mathrm{Tr}(\varepsilon^+ + \varepsilon^-)/6`
+    averaged over the computed modes:
+    :math:`A_{\rm ref} = 45\,|\bar\varepsilon/\delta|^2`. A mode whose
+    displacement changes the isotropic dielectric constant by the fraction
+    :math:`f = \Delta\varepsilon/\bar\varepsilon` between :math:`\pm\delta`
+    has :math:`A/A_{\rm ref} = f^2/4`; the flag requires
+    :math:`A > (f_{\rm tol}^2/4)\,A_{\rm ref}` with :math:`f_{\rm tol}` =
+    ``modulation_tol``.
     """
     arry, attr = data_controller.data_dicts()
     phonon = arry['phonopy']
@@ -542,7 +578,15 @@ def compute_raman_spectrum(
         intensities[v] = act * pref / freqs_cm[v]
 
     amax = activities.max() if activities.size else 0.0
-    active = activities > (intensity_tol * amax) if amax > 0 else np.zeros(nmodes, bool)
+    if computed.any():
+        mean_eps = np.mean(
+            np.abs(np.trace(eps_plus[computed] + eps_minus[computed], axis1=1, axis2=2)) / 6.0
+        )
+    else:
+        mean_eps = 0.0
+    reference = 45.0 * (mean_eps / float(delta)) ** 2
+    floor = 0.25 * modulation_tol**2 * reference
+    active = (activities > intensity_tol * amax) & (activities > floor)
 
     irreps = _irrep_labels(phonon, nmodes)
 

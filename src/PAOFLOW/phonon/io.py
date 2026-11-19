@@ -13,6 +13,8 @@ Ry/au forces), matching ``Phonopy(..., calculator='qe')`` set up in
 :mod:`PAOFLOW.phonon.do_phonopy`.
 """
 
+import copy
+import functools
 import os
 
 import numpy as np
@@ -69,6 +71,30 @@ def _supercell_kgrid(data_controller, supercell_matrix):
     return kg
 
 
+@functools.lru_cache(maxsize=16)
+def _ibrav_of_lattice(lattice: tuple, symprec: float) -> dict:
+    """:func:`~PAOFLOW.inputs.lattice_format.qe_ibrav_from_lattice` of a lattice, once per lattice.
+
+    The displaced cells of a supercell share its lattice, and the classification (a search over
+    the candidate ``ibrav``, about a second each) depends on the lattice alone.
+
+    Parameters
+    ----------
+    lattice : tuple of float
+        The nine components of the lattice vectors (Bohr, row-major).
+    symprec : float
+        Length tolerance (Bohr).
+
+    Returns
+    -------
+    dict
+        The classification (callers get a copy).
+    """
+    from PAOFLOW.inputs.lattice_format import qe_ibrav_from_lattice
+
+    return qe_ibrav_from_lattice(np.array(lattice, dtype=float).reshape(3, 3), symprec=symprec)
+
+
 def _detect_ibrav_cell(cell, symprec=1.0e-4):
     """Classify a (super)cell as a QE ``ibrav`` + ``celldm`` description.
 
@@ -99,13 +125,10 @@ def _detect_ibrav_cell(cell, symprec=1.0e-4):
         or ``None`` when the explicit ``CELL_PARAMETERS`` card must be kept.
     """
     try:
-        from PAOFLOW.inputs.lattice_format import (
-            lattice_format_QE,
-            qe_ibrav_from_lattice,
-        )
+        from PAOFLOW.inputs.lattice_format import lattice_format_QE
 
         lat = np.asarray(cell.cell, dtype=float)  # Bohr
-        res = qe_ibrav_from_lattice(lat, symprec=symprec)
+        res = copy.deepcopy(_ibrav_of_lattice(tuple(lat.ravel().tolist()), float(symprec)))
         ibrav = int(res.get('ibrav', 0))
         if ibrav == 0 or res.get('celldm') is None:
             return None
@@ -151,8 +174,92 @@ def _structure_card_ibrav(cell, pp_filenames, frac_qe):
     return species + '\n' + '\n'.join(pos) + '\n'
 
 
-def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines=None, nbnd=None):
-    """Assemble the ``&control/&system/&electrons`` namelist block."""
+def occupation_lines(attr: dict) -> list[str]:
+    """``&system`` lines of the occupations of a (super)cell run: those of the parent ``pw.x`` run.
+
+    Parameters
+    ----------
+    attr : dict
+        The data attributes of the parent run: ``qe_smearing`` and ``qe_degauss`` (Ry) as read
+        from its ``data-file-schema.xml`` by
+        :func:`PAOFLOW.inputs.read_QE_xml.qe_occupations`, and ``insulator``.
+
+    Returns
+    -------
+    list of str
+        No lines for an insulator (fixed occupations); otherwise ``occupations``, ``smearing``
+        and ``degauss`` with the parent run's type and width.  A parent read from an older file
+        without these attributes falls back to Methfessel-Paxton, 0.02 Ry.
+
+    Notes
+    -----
+    The supercells (special-displacement, displaced finite-difference and Raman cells) must use
+    the occupations of the run their force constants and electrons come from.  For Fermi-Dirac
+    occupations (``'fd'``) the width is the electronic temperature :math:`k_B T`, which is how
+    hot electrons enter the thermal cells.  PAOFLOW's own ``degauss`` attribute (eV, the
+    broadening of DOS and dielectric functions) is unrelated and is not used here.
+    """
+    if bool(attr.get('insulator', True)):
+        return []
+    smearing = attr.get('qe_smearing') or 'mp'
+    degauss = attr.get('qe_degauss')
+    degauss = 0.02 if degauss is None else float(degauss)
+    return [
+        "    occupations = 'smearing'",
+        "    smearing = '%s'" % smearing,
+        '    degauss = %.8f' % degauss,
+    ]
+
+
+def fermi_dirac_lines(temperature_k: float) -> list[str]:
+    """``&system`` occupation lines of Fermi-Dirac electrons at an electronic temperature.
+
+    Parameters
+    ----------
+    temperature_k : float
+        Electronic temperature :math:`T_e` (K).
+
+    Returns
+    -------
+    list of str
+        ``occupations = 'smearing'``, ``smearing = 'fd'`` and ``degauss`` :math:`= k_B T_e` in Ry
+        (:math:`6.3336 \times 10^{-6}` Ry/K).
+
+    Raises
+    ------
+    ValueError
+        If ``temperature_k`` is not positive.
+    """
+    from ..utils.constants import K_BOLTZMAN_AU
+
+    if not float(temperature_k) > 0.0:
+        raise ValueError('the electronic temperature must be positive, got %r' % temperature_k)
+    return [
+        "    occupations = 'smearing'",
+        "    smearing = 'fd'",
+        '    degauss = %.8f' % (2.0 * K_BOLTZMAN_AU * float(temperature_k)),
+    ]
+
+
+def _namelists(
+    data_controller,
+    supercell,
+    prefix: str,
+    pp_dir: str,
+    ibrav: int = 0,
+    celldm_lines: list[str] | None = None,
+    nbnd: int | None = None,
+    conv_thr: float = 1.0e-8,
+    mixing_beta: float = 0.7,
+    occupations: list[str] | None = None,
+) -> str:
+    """Assemble the ``&control/&system/&electrons`` namelist block.
+
+    ``conv_thr`` and ``mixing_beta`` default to the values of the finite-displacement cells;
+    the SSCHA configurations of :mod:`PAOFLOW.phonon.sscha_bridge` pass tighter ones.
+    ``occupations`` replaces the occupation lines of the parent run (:func:`occupation_lines`),
+    e.g. :func:`fermi_dirac_lines` for hot electrons.
+    """
     _, attr = data_controller.data_dicts()
 
     nat = len(supercell)
@@ -160,7 +267,6 @@ def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines
     ecutwfc = float(attr.get('ecutwfc', 60.0))  # Ry
     ecutrho = float(attr.get('ecutrho', 4.0 * ecutwfc))  # Ry
     nspin = int(attr.get('nspin', 1))
-    insulator = bool(attr.get('insulator', True))
 
     lines = []
     lines.append('&control')
@@ -181,17 +287,14 @@ def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines
     lines.append('    ecutrho = %.2f' % ecutrho)
     if nbnd is not None:
         lines.append('    nbnd = %d' % int(nbnd))
-    if not insulator:
-        lines.append("    occupations = 'smearing'")
-        lines.append("    smearing = 'mp'")
-        lines.append('    degauss = %.4f' % float(attr.get('degauss', 0.02)))
+    lines.extend(occupation_lines(attr) if occupations is None else occupations)
     if nspin == 2:
         lines.append('    nspin = 2')
         lines.append('    starting_magnetization(1) = 0.1')
     lines.append('/')
     lines.append('&electrons')
-    lines.append('    conv_thr = 1.0d-8')
-    lines.append('    mixing_beta = 0.7')
+    lines.append('    conv_thr = %s' % ('%.1e' % conv_thr).replace('e', 'd'))
+    lines.append('    mixing_beta = %g' % mixing_beta)
     lines.append('/')
     return '\n'.join(lines)
 
@@ -396,7 +499,6 @@ def _raman_scf_namelists(data_controller, cell, prefix, pp_dir, nbnd=None):
     ecutwfc = float(attr.get('ecutwfc', 60.0))
     ecutrho = float(attr.get('ecutrho', 4.0 * ecutwfc))
     nspin = int(attr.get('nspin', 1))
-    insulator = bool(attr.get('insulator', True))
 
     lines = []
     lines.append('&control')
@@ -416,10 +518,7 @@ def _raman_scf_namelists(data_controller, cell, prefix, pp_dir, nbnd=None):
     lines.append('    ecutrho = %.2f' % ecutrho)
     if nbnd is not None:
         lines.append('    nbnd = %d' % int(nbnd))
-    if not insulator:
-        lines.append("    occupations = 'smearing'")
-        lines.append("    smearing = 'mp'")
-        lines.append('    degauss = %.4f' % float(attr.get('degauss', 0.02)))
+    lines.extend(occupation_lines(attr))
     if nspin == 2:
         lines.append('    nspin = 2')
         lines.append('    starting_magnetization(1) = 0.1')

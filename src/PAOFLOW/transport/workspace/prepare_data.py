@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+import numpy as np
+
 from mpi4py import MPI
 
 from PAOFLOW.DataController import DataController
@@ -67,8 +69,12 @@ def prepare_conductor_data(data: ConductorData, data_controller: DataController)
     elif data.carriers == 'phonons':
         raise NotImplementedError('Phonon transport not yet implemented')
 
+    # transverse k-mesh: configure_energy_grid(nk=...) when given, else the transverse DFT mesh
+    requested_nk_par = np.asarray(data.kpoint_grid.nk, dtype=int)
     nk_par, nr_par = initialize_meshsize(
-        nr_full=nr_full, transport_direction=data.transport_direction
+        nr_full=nr_full,
+        transport_direction=data.transport_direction,
+        nk_par=requested_nk_par if np.any(requested_nk_par > 0) else None,
     )
 
     s_par = data.kpoint_grid.s[:2]

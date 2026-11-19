@@ -19,10 +19,11 @@ Two further workflows generate multi-phase driver scripts:
 
 3. **Harmonic phonons** (``main.phonon.py``) -- finite-displacement phonons via
    phonopy (generate supercells -> run pw.x -> analyse forces).
-4. **Electron-phonon** (``paoflow-gen elphon``) -- writes a *system folder* in the layout
-   of ``examples/elphon/<System>``: ``system.py`` (the only file with values, an
-   ``ElphonSystem`` plus per-workflow defaults), ``qe/`` (scf, ph.x with ``fildvscf``,
-   the nscf on the irreducible wedge, ``run_qe.sh``; EPW inputs for the EPW source) and
+4. **Electron-phonon** (``paoflow-gen elphon``) -- writes an electron-phonon *system
+   folder* (the layout of ``examples/cases/<system>_elphon``): ``system.py`` (the only file
+   with values, an ``ElphonSystem`` plus per-workflow defaults), ``qe/`` (scf, ph.x with
+   ``fildvscf``, the nscf on the irreducible wedge, ``run_qe.sh``; EPW inputs for the EPW
+   source) and
    one subfolder per selected workflow (``phonons/``, ``coupling/``,
    ``superconductivity/``, ``optics/``, ``transport/``, ``arpes/``) with the drivers of
    ``PAOFLOW/gen/elphon_templates`` (the same thin drivers the examples use, built on
@@ -37,6 +38,19 @@ import glob
 import os
 import re
 import sys
+from pathlib import Path
+
+from .questions.run_extras import EXTRA_PROPERTY_MENU
+from .run_extras_driver import (
+    RUN_MODIFIERS,
+    apply_modifications,
+    doped_transport_run_lines,
+    extra_constant_lines,
+    extra_plot_entries,
+    modify_hamiltonian_lines,
+    topology_search_lines,
+    with_restart,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -115,20 +129,22 @@ def parse_laser_list(spec):
     """Parse a laser-wavelength specification into a list of floats (nm).
 
     Accepts a comma- or space-separated list (``'488, 514.5, 532'``) or a
-    restricted Python expression that evaluates to an iterable of numbers, e.g.
-    ``'[n for n in range(450, 650, 5)]'``.  The expression is evaluated with no
-    builtins and only ``range`` exposed, so it cannot import modules or call
-    arbitrary functions.
+    small Python expression that gives an iterable of numbers, e.g.
+    ``'[n for n in range(450, 650, 5)]'``.  The expression is evaluated by
+    :func:`PAOFLOW.gen.safe_lists.evaluate_number_list` (numbers, arithmetic,
+    lists, ``range`` and one comprehension; no ``eval``), so it cannot import
+    modules or call arbitrary functions.
     """
+    from .safe_lists import evaluate_number_list
+
     spec = (spec or '').strip()
     if not spec:
         return []
     if any(ch in spec for ch in '[]()') or 'range' in spec or ' for ' in spec:
         try:
-            value = eval(spec, {'__builtins__': {}}, {'range': range})
-        except Exception as exc:  # pragma: no cover - user input error path
+            values = evaluate_number_list(spec)
+        except ValueError as exc:
             raise ValueError('Could not parse laser list %r: %s' % (spec, exc))
-        values = [float(x) for x in value]
     else:
         values = [float(x) for x in spec.replace(',', ' ').split() if x.strip()]
     if not values:
@@ -358,30 +374,31 @@ PROPERTY_MENU = [
     ('optical', 'Optical / dielectric tensor (separate extended-basis run)'),
     ('emissivity', 'Emissivity (Fresnel/Kirchhoff; implies the optical run)'),
     ('nonlinear', 'Non-linear optics (shift / injection currents, SHG) on the PAO Hamiltonian'),
+    ('linear_response', 'Linear response (Kubo): Hall, Edelstein, conductivity, any term'),
+    (
+        'spin_susceptibility',
+        'Spin susceptibility (Pauli, Stoner, LSDA grid) and Stoner instability',
+    ),
+    *EXTRA_PROPERTY_MENU,
 ]
 SPIN_PROPERTIES = {'spin_texture', 'spin_Hall'}
 # Properties that read an explicit (emin, emax) energy window.
-ENERGY_WINDOW_PROPERTIES = {'dos', 'transport', 'spin_Hall', 'orbital_Hall', 'anomalous_Hall'}
+ENERGY_WINDOW_PROPERTIES = {
+    'dos',
+    'transport',
+    'spin_Hall',
+    'orbital_Hall',
+    'anomalous_Hall',
+    'linear_response',
+    'rashba_edelstein',
+}
 
 
 def select_properties():
-    """Show the property menu and return the ordered set of chosen keys."""
-    print('\nAvailable properties:')
-    for i, (_key, label) in enumerate(PROPERTY_MENU, 1):
-        print(f'  {i}: {label}')
-    raw = _input("Enter a comma/space separated list (e.g. '1 2 8'): ").strip()
-    tokens = raw.replace(',', ' ').split()
-    chosen = []
-    for tok in tokens:
-        try:
-            idx = int(tok)
-        except ValueError:
-            continue
-        if 1 <= idx <= len(PROPERTY_MENU):
-            key = PROPERTY_MENU[idx - 1][0]
-            if key not in chosen:
-                chosen.append(key)
-    return chosen
+    """Show the property menu and return the ordered list of chosen keys."""
+    from .questions.prompt import ask_menu
+
+    return ask_menu('Available properties:', PROPERTY_MENU)
 
 
 # --------------------------------------------------------------------------- #
@@ -435,12 +452,19 @@ def _format_high_sym(high_sym):
 
 def _wants_explicit_band_path(cfg):
     """True when the script must pass an explicit band_path/high_sym to bands()."""
-    return cfg['ibrav'] == 0 or bool(cfg.get('is_2d'))
+    return cfg['ibrav'] == 0 or bool(cfg.get('is_2d')) or bool(cfg.get('band_path'))
 
 
 def _band_path_constant_lines(cfg):
     """Source lines defining BAND_PATH / HIGH_SYM (empty list when not needed)."""
     ibrav = cfg['ibrav']
+    if cfg.get('band_path') and cfg.get('high_sym'):
+        return [
+            '# Band path (labels joined by "-", segments split by "|") and the crystal',
+            '# coordinates of its points (set in PAOFLOW Studio).',
+            'BAND_PATH = {!r}'.format(cfg['band_path']),
+            'HIGH_SYM = {}'.format(_format_high_sym(cfg['high_sym'])),
+        ]
     if ibrav == 0:
         return [
             '# ibrav=0: PAOFLOW needs an explicit band path. Fill these in:',
@@ -481,20 +505,190 @@ def _projection_lines(
     """
     if _uses_projwfc(cfg):
         return [
-            indent + '# QE projwfc.x projections: run projwfc.x with',
-            indent + '# lwrite_overlaps=.true. into <prefix>.save before this step.',
+            indent + '# QE projwfc.x projections: run projwfc.x -in proj.in (written with this',
+            indent + '# script, lwrite_overlaps=.true.) after pw.x, before this step.',
             f'{indent}{var}.read_atomic_proj_QE()',
         ]
     return [f'{indent}{var}.projections(basispath={basispath}, configuration={configuration})']
 
 
+def _nonlinear_constant_lines(cfg):
+    """Editable constants of the non-linear (and coupled) optics run in main.py."""
+    molecule = bool(cfg.get('nlo_molecule', False))
+    two_d = bool(cfg.get('is_2d', False))
+    nk = 1 if molecule else int(cfg.get('nlo_nk', 40))
+    responses = cfg.get('nlo_responses', ('shift', 'injection', 'shg'))
+    # A tight-binding model has a grid of one point along the directions without hoppings.
+    grid = tuple(nk if periodic else 1 for periodic in cfg.get('periodic', (True, True, True)))
+    if cfg.get('tb_model'):
+        about = [
+            '# Non-linear optics (nonlinear_optics): dense k-grid, photon window (eV), broadening (eV),',
+            '# scissor of the conduction bands (eV), on the real-space Hamiltonian of the model (the',
+            '# orbital centres give the position operator: a model has no Löwdin dipoles).',
+        ]
+    else:
+        about = [
+            '# Non-linear optics (nonlinear_optics): dense k-grid, photon window (eV), broadening (eV),',
+            "# scissor of the conduction bands (eV). It runs on the extended basis of the run's own",
+            '# pseudopotentials (BASIS_PS) with the Löwdin position dipoles, the validated setting: the',
+            '# dipoles make the SHG independent of the basis (GaAs: 178 / 181 pm/V on two bases, while',
+            '# the orbital centres alone give 103 / 218).',
+        ]
+    lines = about + [
+        'NLO_NK = ({}, {}, {})'.format(*grid),
+        'NLO_EMIN, NLO_EMAX, NLO_NE = {}, {}, {}'.format(
+            cfg.get('nlo_emin', 0.0), cfg.get('nlo_emax', 4.0), cfg.get('nlo_ne', 401)
+        ),
+        'NLO_ETA = {}'.format(cfg.get('nlo_eta', 0.05)),
+        'NLO_SCISSOR = {}'.format(cfg.get('nlo_scissor', 0.0)),
+        "NLO_COMPONENTS = {!r}   # 'all', 'diag' or a list such as ['xyz', 'yyy']".format(
+            'all' if molecule else cfg.get('nlo_components', 'all')
+        ),
+        'NLO_RESPONSES = {!r}   # any of shift, injection, shg'.format(tuple(responses)),
+        'NLO_DIPOLES = {}   # Löwdin position dipoles in r and r_{{;a}} (needs the internal basis)'.format(
+            bool(cfg.get('nlo_dipoles', not _uses_projwfc(cfg)))
+        ),
+        'NLO_SYMMETRY = True   # irreducible wedge of the dense grid (QE symmetries)',
+        'NLO_SHG_TERMS = {}   # SHG split into interband / intraband terms at w and 2w'.format(
+            bool(cfg.get('nlo_shg_terms', False))
+        ),
+        'NLO_TWOD = {}   # sheet units of a 2D material (shift nm uA/V^2, SHG pm^2/V)'.format(
+            two_d
+        ),
+        'NLO_SLAB_HEIGHT = None   # bohr; None = the cell height along c',
+        'NLO_MOLECULE = {}   # isolated molecule in a box: Gamma point, beta tensor and beta_HRS'.format(
+            molecule
+        ),
+        "NLO_COUPLING = {!r}   # molecules: 'none', 'monopole', 'hartree', 'hartree+alda'".format(
+            cfg.get('nlo_coupling', 'hartree+alda')
+        ),
+        'NLO_COMPLEMENT_SHIFT = 30.0   # molecules: PAO complement this far above the HOMO (eV)',
+        '# Metals: the Fermi-surface terms (nonlinear Drude, Berry-curvature dipole) of the SHG and of',
+        "# the zero-frequency photocurrent (pcr_/pci_ files); 'auto' detects a metallic channel. A metal",
+        '# needs an electronic temperature (K); tau (fs) is the intraband relaxation (None: hbar/eta).',
+        'NLO_FERMI_SURFACE = {!r}'.format(True if cfg.get('nlo_metal') else 'auto'),
+        'NLO_TEMPERATURE = {}'.format(
+            cfg.get('nlo_temperature', 0.0) if cfg.get('nlo_metal') else 0.0
+        ),
+        'NLO_TAU = {}'.format(cfg.get('nlo_tau', 20.0) if cfg.get('nlo_metal') else None),
+        '# Second-order interband coherences of metals damped with NLO_COHERENCE_DAMPING x eta (1: one',
+        '# dephasing rate, the insulator convention; 2: adiabatic switching, = velocity-gauge Kubo).',
+        'NLO_COHERENCE_DAMPING = {}'.format(
+            cfg.get('nlo_coherence_damping', 1.0) if cfg.get('nlo_metal') else 1.0
+        ),
+        '',
+    ]
+    if cfg.get('nlo_coupled'):
+        lines += [
+            '# Coupled optical response (coupled_optical_response): the dielectric function and the',
+            '# SHG with local fields, ALDA and a long-range kernel, level by level (3D crystals,',
+            '# one spin channel, norm-conserving pseudopotentials). Each level is a self-consistent',
+            '# solve per energy: start from 12^3-16^3, converge the k-grid (GaAs: 24^3-32^3).',
+            'COUPLED_NK = ({n}, {n}, {n})'.format(n=int(cfg.get('coupled_nk', 16))),
+            'COUPLED_KERNELS = {!r}'.format(
+                tuple(
+                    cfg.get(
+                        'coupled_kernels',
+                        ('none', 'hartree', 'hartree+alda', 'hartree+alda+bootstrap'),
+                    )
+                )
+            ),
+            'COUPLED_EMIN, COUPLED_EMAX, COUPLED_NE = {}, {}, {}'.format(
+                cfg.get('coupled_emin', 0.0),
+                cfg.get('coupled_emax', 5.0),
+                cfg.get('coupled_ne', 51),
+            ),
+            'COUPLED_SHG_ENERGIES = {!r}   # fundamental photon energies of the coupled SHG; [] skips it'.format(
+                list(cfg.get('coupled_shg_energies', [0.1]))
+            ),
+            'COUPLED_COMPONENTS = {!r}'.format(cfg.get('coupled_components', ['xyz'])),
+            'COUPLED_ETA = {}'.format(cfg.get('coupled_eta', 0.1)),
+            'COUPLED_LRC_ALPHA = 0.2   # alpha of the LRC level (Botti et al. 2004)',
+            '',
+        ]
+    return lines
+
+
+def _nonlinear_run_lines(cfg):
+    """run_nonlinear() of main.py: nonlinear_optics and, optionally, coupled_optical_response."""
+    lines = [
+        '',
+        'def run_nonlinear():',
+        '    """Shift / injection currents and SHG from the real-space PAO Hamiltonian.',
+        '',
+        '    nonlinear_optics() (and coupled_optical_response()) interpolate HRs on their own dense',
+        '    grids, so they run right after pao_hamiltonian() (before interpolated_hamiltonian /',
+        "    pao_eigh release HRs), on the extended basis of the run's pseudopotentials.",
+        '    """',
+        '    p = PAOFLOW.PAOFLOW(',
+        '        workpath=HERE,',
+        '        outputdir=OUTPUTDIR,',
+        '        savedir=SAVEDIR,',
+        '        smearing=SMEARING,',
+        '        npool=NPOOL,',
+        '        save_overlaps=SAVE_OVERLAPS,',
+        '        verbose=False,',
+        '    )',
+        '',
+    ]
+    lines.extend(_projection_lines(cfg, configuration="'extended'"))
+    lines += [
+        '    p.projectability(pthr=PTHR)',
+        '    p.pao_hamiltonian()',
+    ]
+    lines += _nonlinear_call_lines(cfg)
+    lines += ['', '    p.finish_execution()', '']
+    return lines
+
+
+def _spin_response_parts(cfg):
+    """Constants and run_spin_response() of main.py (:mod:`PAOFLOW.gen.questions.spin_response`)."""
+    from .questions.spin_response import spin_response_lines
+
+    constants, body = spin_response_lines(cfg)
+    at = body.index('__PROJECTIONS__')
+    return constants, body[:at] + _projection_lines(cfg, configuration='STD_BASIS') + body[at + 1 :]
+
+
+def _nonlinear_call_lines(cfg):
+    """The nonlinear_optics (and coupled_optical_response) calls of run_nonlinear() on ``p``."""
+    lines = [
+        '    p.nonlinear_optics(',
+        '        nk=NLO_NK, emin=NLO_EMIN, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA, scissor=NLO_SCISSOR,',
+        "        components=NLO_COMPONENTS, shift_current='shift' in NLO_RESPONSES,",
+        "        injection_current='injection' in NLO_RESPONSES,",
+        "        second_harmonic='shg' in NLO_RESPONSES, position_dipoles=NLO_DIPOLES,",
+        '        symmetry=NLO_SYMMETRY, shg_terms=NLO_SHG_TERMS, twoD=NLO_TWOD,',
+        '        slab_height=NLO_SLAB_HEIGHT, molecule=NLO_MOLECULE,',
+        '        coupling=(NLO_COUPLING if NLO_MOLECULE else None),',
+        '        complement_shift=NLO_COMPLEMENT_SHIFT, fermi_surface=NLO_FERMI_SURFACE,',
+        '        temperature=NLO_TEMPERATURE, relaxation_time=NLO_TAU,',
+        '        coherence_damping=NLO_COHERENCE_DAMPING,',
+        '    )',
+    ]
+    if cfg.get('nlo_coupled'):
+        lines += [
+            '    p.coupled_optical_response(',
+            '        nk=COUPLED_NK, kernels=COUPLED_KERNELS, emin=COUPLED_EMIN, emax=COUPLED_EMAX,',
+            '        ne=COUPLED_NE, second_harmonic=bool(COUPLED_SHG_ENERGIES),',
+            '        shg_energies=COUPLED_SHG_ENERGIES, components=COUPLED_COMPONENTS, eta=COUPLED_ETA,',
+            '        scissor=NLO_SCISSOR, lrc_alpha=COUPLED_LRC_ALPHA, position_dipoles=NLO_DIPOLES,',
+            '        temperature=NLO_TEMPERATURE, relaxation_time=NLO_TAU,',
+            '    )',
+        ]
+    return lines
+
+
 def build_run_script(cfg):
     """Assemble a full property-run main.py from the collected config."""
     props = cfg['properties']
-    standard_props = [p for p in props if p not in ('optical', 'emissivity', 'nonlinear')]
+    separate = ('optical', 'emissivity', 'nonlinear', 'spin_susceptibility', 'doped_transport')
+    standard_props = [p for p in props if p not in separate and p not in RUN_MODIFIERS]
+    has_doped = 'doped_transport' in props
     has_optical = 'optical' in props or 'emissivity' in props
     has_emissivity = 'emissivity' in props
     has_nonlinear = 'nonlinear' in props
+    has_spin_response = 'spin_susceptibility' in props
     needs_spin = any(p in SPIN_PROPERTIES for p in props)
     needs_energy_window = any(p in ENERGY_WINDOW_PROPERTIES for p in props)
 
@@ -538,55 +732,48 @@ def build_run_script(cfg):
         lines.append('TMIN, TMAX, NT = 300.0, 300.0, 1   # temperature grid (K) for transport')
     lines.append('')
     lines.append('# Double-grid interpolation (denser FFT grid). Set to None to skip.')
-    if cfg['interpolate']:
+    if cfg['interpolate'] and cfg.get('is_2d'):
+        # a slab: one k-point across the vacuum, nothing to interpolate there
+        lines.append('NFFT = ({n}, {n}, 1)'.format(n=cfg['nfft']))
+    elif cfg['interpolate']:
         lines.append('NFFT = ({n}, {n}, {n})'.format(n=cfg['nfft']))
     else:
         lines.append('NFFT = None')
     lines.append('')
+    lines.extend(extra_constant_lines(cfg))
     if has_nonlinear:
-        lines.append(
-            '# Non-linear optics: dense k-grid, photon window (eV), broadening, scissor (eV)'
-        )
-        lines.append('NLO_NK = ({n}, {n}, {n})'.format(n=cfg.get('nlo_nk', 40)))
-        lines.append('NLO_EMAX, NLO_NE = {}, 401'.format(cfg.get('nlo_emax', 4.0)))
-        lines.append('NLO_ETA = {}'.format(cfg.get('nlo_eta', 0.05)))
-        lines.append('NLO_SCISSOR = {}'.format(cfg.get('nlo_scissor', 0.0)))
-        lines.append(
-            'NLO_DIPOLES = False   # True: Löwdin position dipoles in r and r_{;a} (beyond tight binding)'
-        )
-        lines.append('NLO_SYMMETRY = True   # irreducible wedge of the dense grid (QE symmetries)')
-        lines.append(
-            "NLO_COMPONENTS = {!r}   # 'all', 'diag' or a list such as ['xyz', 'yyy']".format(
-                cfg.get('nlo_components', 'all')
-            )
-        )
-        lines.append('')
+        lines.extend(_nonlinear_constant_lines(cfg))
+    if has_spin_response:
+        lines.extend(_spin_response_parts(cfg)[0])
 
     # ---- basis generation --------------------------------------------- #
     lines.append(BASIS_GEN_BLOCK)
     if needs_energy_window:
         lines.append(ENERGY_RANGE_BLOCK)
+    lines.extend(modify_hamiltonian_lines(cfg))
 
     # ---- standard property run ---------------------------------------- #
     if standard_props:
         lines.append('')
         lines.append('def run_properties():')
         lines.append('    """Standard properties on the {} basis."""'.format(cfg['std_basis']))
-        lines.append('    p = PAOFLOW.PAOFLOW(')
-        lines.append('        workpath=HERE,')
-        lines.append('        outputdir=OUTPUTDIR,')
-        lines.append('        savedir=SAVEDIR,')
-        lines.append('        smearing=SMEARING,')
-        lines.append('        npool=NPOOL,')
-        lines.append('        save_overlaps=SAVE_OVERLAPS,')
-        lines.append('        verbose=False,')
-        lines.append('    )')
-        lines.append('')
-        lines.extend(_projection_lines(cfg, configuration='STD_BASIS'))
-        lines.append('    p.projectability(pthr=PTHR)')
-        lines.append('    p.pao_hamiltonian()')
-        lines.append('')
-        lines.extend(_emit_standard_properties(standard_props, needs_spin, cfg))
+        body = ['    p = PAOFLOW.PAOFLOW(']
+        body.append('        workpath=HERE,')
+        body.append('        outputdir=OUTPUTDIR,')
+        body.append('        savedir=SAVEDIR,')
+        body.append('        smearing=SMEARING,')
+        body.append('        npool=NPOOL,')
+        body.append('        save_overlaps=SAVE_OVERLAPS,')
+        body.append('        verbose=False,')
+        body.append('    )')
+        body.append('')
+        body.extend(_projection_lines(cfg, configuration='STD_BASIS'))
+        body.append('    p.projectability(pthr=PTHR)')
+        body.append('    p.pao_hamiltonian()')
+        body.append('')
+        body.extend(topology_search_lines(cfg))
+        body.extend(_emit_standard_properties(standard_props, needs_spin, cfg))
+        lines.extend(with_restart(body, cfg))
         lines.append('')
         lines.append('    p.finish_execution()')
         lines.append('')
@@ -624,7 +811,8 @@ def build_run_script(cfg):
         lines.append('    p.pao_hamiltonian()')
         lines.append('    if NFFT is not None:')
         lines.append(
-            '        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])'
+            '        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2]%s)'
+            % _interpolation_argument(cfg)
         )
         lines.append('    p.pao_eigh()')
         lines.append('')
@@ -644,40 +832,20 @@ def build_run_script(cfg):
         lines.append('    p.finish_execution()')
         lines.append('')
 
-    # ---- non-linear optics (standard basis, needs HRs) ----------------- #
+    # ---- non-linear optics (extended basis, needs HRs) ----------------- #
     if has_nonlinear:
-        lines.append('')
-        lines.append('def run_nonlinear():')
-        lines.append(
-            '    """Shift / injection currents and SHG from the real-space PAO Hamiltonian.'
+        lines.extend(_nonlinear_run_lines(cfg))
+
+    # ---- spin susceptibility (spinors, needs HRs) ---------------------- #
+    if has_spin_response:
+        lines.extend(_spin_response_parts(cfg)[1])
+
+    # ---- doped semiconductor (smearing=None) ---------------------------- #
+    lines.extend(
+        doped_transport_run_lines(
+            cfg, _projection_lines(cfg, configuration='STD_BASIS'), _interpolation_argument(cfg)
         )
-        lines.append('')
-        lines.append(
-            '    nonlinear_optics() interpolates HRs on NLO_NK on the fly, so it runs right'
-        )
-        lines.append(
-            '    after pao_hamiltonian() (before interpolated_hamiltonian / pao_eigh release HRs).'
-        )
-        lines.append('    """')
-        lines.append('    p = PAOFLOW.PAOFLOW(')
-        lines.append('        workpath=HERE,')
-        lines.append('        outputdir=OUTPUTDIR,')
-        lines.append('        savedir=SAVEDIR,')
-        lines.append('        smearing=SMEARING,')
-        lines.append('        npool=NPOOL,')
-        lines.append('        save_overlaps=SAVE_OVERLAPS,')
-        lines.append('        verbose=False,')
-        lines.append('    )')
-        lines.append('')
-        lines.extend(_projection_lines(cfg, configuration='STD_BASIS'))
-        lines.append('    p.projectability(pthr=PTHR)')
-        lines.append('    p.pao_hamiltonian()')
-        lines.append('    p.nonlinear_optics(nk=NLO_NK, emax=NLO_EMAX, ne=NLO_NE, eta=NLO_ETA,')
-        lines.append('                       scissor=NLO_SCISSOR, components=NLO_COMPONENTS,')
-        lines.append('                       position_dipoles=NLO_DIPOLES, symmetry=NLO_SYMMETRY)')
-        lines.append('')
-        lines.append('    p.finish_execution()')
-        lines.append('')
+    )
 
     # ---- main --------------------------------------------------------- #
     lines.append('')
@@ -697,15 +865,83 @@ def build_run_script(cfg):
         lines.append('    run_optical()')
     if has_nonlinear:
         lines.append('    run_nonlinear()')
-    if not standard_props and not has_optical and not has_nonlinear:
+    if has_spin_response:
+        lines.append('    run_spin_response()')
+    if has_doped:
+        lines.append('    run_doped_transport()')
+    if not (standard_props or has_optical or has_nonlinear or has_spin_response or has_doped):
         lines.append('    pass  # no properties selected')
     lines.append('')
     lines.append('')
     lines.append('if __name__ == "__main__":')
-    lines.append('    main()')
+    lines.append('    # An error on one MPI rank stops every rank instead of hanging the job.')
+    lines.append('    from PAOFLOW.utils.mpi_guard import run_main')
+    lines.append('')
+    lines.append('    run_main(main)')
     lines.append('')
 
-    return '\n'.join(lines)
+    return '\n'.join(apply_modifications(lines, cfg))
+
+
+def _linear_response_lines(cfg):
+    """PAOFLOW call of the linear-response (Kubo-Bastin) property, from the ``lr_*`` keys of ``cfg``.
+
+    Parameters
+    ----------
+    cfg : dict
+        Run configuration (:func:`PAOFLOW.gen.questions.linear_response.assemble_linear_response`).
+
+    Returns
+    -------
+    list of str
+        The lines of ``main.py``: one commented :meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_response` call
+        (:func:`PAOFLOW.gen.questions.linear_response.linear_response_calls`); it writes
+        ``kubo_<observable>_<component>.dat`` with one column per term. With ``lr_frequency``, one
+        :meth:`PAOFLOW.PAOFLOW.PAOFLOW.kubo_optical_response` call, which writes
+        ``kubo_optical_<observable>_<component>.dat`` against the photon energy.
+    """
+    from .questions.linear_response import OBSERVABLES, linear_response_calls
+
+    optical = bool(cfg.get('lr_frequency'))
+    lines = [
+        '    # %s: %s, components %s.'
+        % (
+            'Optical response (Kubo-Greenwood)'
+            if optical
+            else 'Linear response (Kubo-Bastin at constant broadening)',
+            OBSERVABLES[cfg['lr_observable']][0],
+            ', '.join(cfg['lr_components']),
+        ),
+    ]
+    if cfg.get('is_2d'):
+        lines.append(
+            '    # twoD=True: sheet values in units of e^2/hbar; for an insulator 2 pi sigma_xy is'
+        )
+        lines.append('    # the Chern number (twice it for spin-degenerate bands).')
+    for method, kwargs, comment in linear_response_calls(cfg):
+        arguments = ', '.join('%s=%r' % (key, value) for key, value in kwargs.items())
+        lines.append('    # %s' % comment)
+        if optical:
+            lines.append('    p.%s(%s)' % (method, arguments))
+        else:
+            lines.append('    p.%s(emin=EMIN, emax=EMAX, ne=NE, %s)' % (method, arguments))
+    return lines
+
+
+def _interpolation_argument(cfg):
+    """``, interpolation='...'`` of ``bands`` and ``interpolated_hamiltonian`` ('' when standard).
+
+    Parameters
+    ----------
+    cfg : dict
+        Run configuration with ``interpolation`` (:data:`PAOFLOW.gen.questions.run.INTERPOLATION_ROUTES`).
+
+    Returns
+    -------
+    str
+    """
+    route = cfg.get('interpolation', 'standard')
+    return '' if route == 'standard' else ', interpolation=%r' % route
 
 
 def _emit_standard_properties(props, needs_spin, cfg):
@@ -717,18 +953,31 @@ def _emit_standard_properties(props, needs_spin, cfg):
     if 'bands' in selected:
         if _wants_explicit_band_path(cfg):
             body.append('    p.bands(ibrav=IBRAV, nk=NK, band_path=BAND_PATH,')
-            body.append("            high_sym_points=HIGH_SYM, fname='bands')")
+            body.append(
+                "            high_sym_points=HIGH_SYM, fname='bands'%s)"
+                % _interpolation_argument(cfg)
+            )
         else:
-            body.append("    p.bands(ibrav=IBRAV, nk=NK, fname='bands')")
+            body.append(
+                "    p.bands(ibrav=IBRAV, nk=NK, fname='bands'%s)" % _interpolation_argument(cfg)
+            )
+    if 'site_projected_bands' in selected:
+        body.append('    p.site_projected_bands(site_proj=SITE_ATOMS)')
 
     if 'topology' in selected:
         body.append('    p.topology(Berry=True, eff_mass=True, spol=2, ipol=0, jpol=1)')
 
     body.append('')
     body.append('    if NFFT is not None:')
-    body.append('        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])')
+    body.append(
+        '        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2]%s)'
+        % _interpolation_argument(cfg)
+    )
     body.append('    p.pao_eigh()')
     body.append('')
+    if 'jdos' in selected:
+        body.append('    p.jdos(delta=JDOS_DELTA, emin=0.0, emax=JDOS_EMAX, ne=JDOS_NE)')
+        body.append('')
 
     if selected & ENERGY_WINDOW_PROPERTIES:
         body.append('    # Print the full PAO band range as a suggested energy window.')
@@ -738,11 +987,16 @@ def _emit_standard_properties(props, needs_spin, cfg):
     if 'fermi_surface' in selected:
         body.append('    p.fermi_surface()')
     if 'spin_texture' in selected:
-        # spin_texture needs the spin operator cached beforehand.
-        body.append('    p.spin_operator(spin_orbit=SPIN_ORBIT)')
+        # spin_texture builds the spin operator (from the shells of the save, or the one of a
+        # spinful model) when it is not there yet.
         body.append('    p.spin_texture()')
 
-    body.append('    p.gradient_and_momenta()')
+    if 'transport' in selected and cfg.get('do_hall'):
+        body.append(
+            '    p.gradient_and_momenta(band_curvature=True)  # the Hall and Nernst tensors'
+        )
+    else:
+        body.append('    p.gradient_and_momenta()')
     body.append('    p.adaptive_smearing()')
 
     if 'dos' in selected:
@@ -750,16 +1004,28 @@ def _emit_standard_properties(props, needs_spin, cfg):
     if 'spin_Hall' in selected:
         # Do not pre-build the spin operator here: spin_Hall builds it
         # internally with the correct do_spin_orbit flag from the DFT data.
-        body.append('    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]])')
+        if cfg.get('shc_atoms'):
+            body.append(
+                '    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]], shc_proj=SHC_ATOMS)'
+            )
+        else:
+            body.append('    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]])')
     if 'orbital_Hall' in selected:
         # The orbital (L) operator is built inside orbital_Hall from the PAO shells;
         # [[0, 1, 2]] is sigma^{L_z}_{xy}, the counterpart of the spin Hall element.
         body.append('    p.orbital_Hall(emin=EMIN, emax=EMAX, o_tensor=[[0, 1, 2]])')
     if 'anomalous_Hall' in selected:
         body.append('    p.anomalous_Hall(do_ac=True, emin=EMIN, emax=EMAX, a_tensor=[[0, 1]])')
+    if 'linear_response' in selected:
+        body.extend(_linear_response_lines(cfg))
     if 'transport' in selected:
         body.append('    p.transport(tmin=TMIN, tmax=TMAX, nt=NT, emin=EMIN, emax=EMAX,')
-        body.append('                ne=NE, write_to_file=True)')
+        if cfg.get('do_hall'):
+            body.append('                ne=NE, do_hall=True, write_to_file=True)')
+        else:
+            body.append('                ne=NE, write_to_file=True)')
+    if 'rashba_edelstein' in selected:
+        body.append('    p.rashba_edelstein(emin=EMIN, emax=EMAX, ne=NE)')
 
     return body
 
@@ -774,8 +1040,14 @@ def build_acbn0_script(cfg):
     lines.append('from PAOFLOW import GPAO')
     if use_v:
         lines.append('from PAOFLOW.ACBN0 import ACBN0, eACBN0')
+        lines.append(
+            'from PAOFLOW.utils.qe_launch import mpi_prefix, python_bin, qe_bin, qe_options'
+        )
     else:
         lines.append('from PAOFLOW.ACBN0 import ACBN0')
+        lines.append(
+            'from PAOFLOW.utils.qe_launch import mpi_prefix, python_bin, qe_bin, qe_options'
+        )
     lines.append('')
     lines.append('# ----------------------------------------------------------------------- #')
     lines.append('# Configuration  (edit freely)                                            #')
@@ -786,12 +1058,19 @@ def build_acbn0_script(cfg):
     lines.append('BASISPATH = os.path.join(HERE, {!r}) + os.sep'.format(cfg['basisdir']))
     lines.append('OUT = {!r}'.format(cfg['outputdir']))
     lines.append('')
-    lines.append('# Parallel launch commands and executable paths (edit to your machine).')
-    lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
-    lines.append('MPI_PY = {!r}'.format(cfg['mpi_py']))
-    lines.append('MPI_HARTREE = {!r}'.format(cfg['mpi_hartree']))
-    lines.append('QE_PATH = {!r}'.format(cfg['qe_path']))
-    lines.append('PY_PATH = {!r}'.format(cfg['py_path']))
+    lines.append(
+        '# Parallel launch commands and executable paths (edit the defaults to your machine).'
+    )
+    lines.append(
+        '# PAOFLOW_* variables take precedence: paoflow-studio sets them from its Runs tab'
+    )
+    lines.append('# (ranks, Quantum ESPRESSO build, pw.x options such as -nk 4).')
+    lines.append('MPI_QE = mpi_prefix({!r})'.format(cfg['mpi_qe']))
+    lines.append("MPI_PY = mpi_prefix({!r}, 'PAOFLOW_MPI_PY')".format(cfg['mpi_py']))
+    lines.append("MPI_HARTREE = mpi_prefix({!r}, 'PAOFLOW_MPI_HARTREE')".format(cfg['mpi_hartree']))
+    lines.append('QE_PATH = qe_bin({!r})'.format(cfg['qe_path']))
+    lines.append("QE_OPTIONS = qe_options('')   # pw.x options, e.g. -nk 4")
+    lines.append('PY_PATH = python_bin({!r})'.format(cfg['py_path']))
     lines.append('')
     lines.append(
         'PROJECTION = {!r}   # ortho-atomic projections fit the Hubbard U'.format(cfg['projection'])
@@ -874,7 +1153,7 @@ def build_acbn0_script(cfg):
     lines.append('        mpi_qe=MPI_QE,')
     lines.append('        mpi_python=MPI_PY,')
     lines.append('        mpi_hartree=MPI_HARTREE,')
-    lines.append("        qe_options='',")
+    lines.append('        qe_options=QE_OPTIONS,')
     lines.append('        qe_path=QE_PATH,')
     lines.append('        python_path=PY_PATH,')
     lines.append('        outputdir=OUT,')
@@ -908,7 +1187,7 @@ def build_acbn0_script(cfg):
         lines.append('        mpi_qe=MPI_QE,')
         lines.append('        mpi_python=MPI_PY,')
         lines.append('        mpi_hartree=MPI_HARTREE,')
-        lines.append("        qe_options='',")
+        lines.append('        qe_options=QE_OPTIONS,')
         lines.append('        qe_path=QE_PATH,')
         lines.append('        python_path=PY_PATH,')
         lines.append('        outputdir=OUT,')
@@ -935,7 +1214,10 @@ def build_acbn0_script(cfg):
     lines.append('')
     lines.append('')
     lines.append('if __name__ == "__main__":')
-    lines.append('    main()')
+    lines.append('    # An error on one MPI rank stops every rank instead of hanging the job.')
+    lines.append('    from PAOFLOW.utils.mpi_guard import run_main')
+    lines.append('')
+    lines.append('    run_main(main)')
     lines.append('')
 
     return '\n'.join(lines)
@@ -1017,6 +1299,7 @@ def build_phonon_script(cfg):
     lines.append('import sys')
     lines.append('')
     lines.append('from PAOFLOW import PAOFLOW')
+    lines.append('from PAOFLOW.utils.qe_launch import mpi_prefix, qe_command')
     lines.append('')
     lines.append('# ----------------------------------------------------------------------- #')
     lines.append('# Configuration  (edit freely)                                            #')
@@ -1128,15 +1411,18 @@ def build_phonon_script(cfg):
     lines.append('Q_LABELS = None')
     lines.append('Q_NPOINTS = 101   # q-points per path segment')
     lines.append('')
-    lines.append('# pw.x launch settings for the supercell SCF runs (edit to your machine).')
-    lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
     lines.append(
-        "QE_PW = {!r}   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
+        '# pw.x launch settings for the supercell SCF runs (edit the defaults to your machine;'
+    )
+    lines.append('# the PAOFLOW_* variables, set by the paoflow-studio Runs tab, take precedence).')
+    lines.append('MPI_QE = mpi_prefix({!r})'.format(cfg['mpi_qe']))
+    lines.append(
+        "QE_PW = qe_command('pw.x', {!r})   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
             cfg.get('qe_pw', 'pw.x')
         )
     )
     lines.append(
-        'QE_PH = {!r}   # ph.x command for the Born DFPT run (may include flags)'.format(
+        "QE_PH = qe_command('ph.x', {!r})   # ph.x command for the Born DFPT run".format(
             _derive_ph_command(cfg.get('qe_pw', 'pw.x'))
         )
     )
@@ -1408,7 +1694,10 @@ def build_phonon_script(cfg):
     lines.append('')
     lines.append('')
     lines.append('if __name__ == "__main__":')
-    lines.append('    main()')
+    lines.append('    # An error on one MPI rank stops every rank instead of hanging the job.')
+    lines.append('    from PAOFLOW.utils.mpi_guard import run_main')
+    lines.append('')
+    lines.append('    run_main(main)')
     lines.append('')
 
     return '\n'.join(lines)
@@ -1729,6 +2018,82 @@ def _plot_func(name, body_lines):
     return [f'def {name}():'] + ['    ' + ln for ln in body_lines] + ['']
 
 
+def _nonlinear_plot_entries(cfg, funcs, menu):
+    """plot.py functions and menu entries of the non-linear and coupled optics run."""
+    two_d = bool(cfg.get('is_2d', False))
+
+    def guarded(call_lines):
+        # every GPAO NLO plot raises FileNotFoundError when the run did not write its files
+        return (
+            ['try:']
+            + ['    ' + ln for ln in call_lines]
+            + ['except FileNotFoundError:', '    _missing(None)']
+        )
+
+    entries = [
+        ('Shift current', 'plot_shift_current',
+         [f"pplt.plot_nonlinear(OUTPUTDIR, 'shift', two_d={two_d}, y_lim=_ylim())"]),
+        ('Injection current', 'plot_injection_current',
+         [f"pplt.plot_nonlinear(OUTPUTDIR, 'injectc', two_d={two_d}, y_lim=_ylim())"]),
+        ('SHG susceptibility (|chi|, Re, Im)', 'plot_shg',
+         [f"pplt.plot_nonlinear(OUTPUTDIR, 'shg', part=part, two_d={two_d}, y_lim=_ylim())"]),
+    ]  # fmt: skip
+    for label, fname, call in entries:
+        body = guarded(call)
+        if fname == 'plot_shg':
+            body = ["for part in ('abs', 'real', 'imag'):"] + ['    ' + ln for ln in body]
+        funcs += _plot_func(fname, body)
+        menu.append((label, fname))
+    if cfg.get('nlo_metal'):
+        funcs += _plot_func(
+            'plot_photocurrent_channels',
+            [
+                '# metals: zero-frequency photocurrent by channel (shift, injection, BCD, Drude)',
+                "comps = [os.path.basename(f)[4:-4] for f in _many('pcr_*.dat')]",
+                'comps = [c for c in comps if len(c) == 3]',
+                'if not comps:',
+                '    _missing(None)',
+                'for comp in comps:',
+                f'    pplt.plot_photocurrent_channels(OUTPUTDIR, comp, two_d={two_d})',
+            ],
+        )
+        menu.append(('Photocurrent of a metal by channel', 'plot_photocurrent_channels'))
+    if cfg.get('nlo_shg_terms') or cfg.get('nlo_metal'):
+        funcs += _plot_func(
+            'plot_shg_terms',
+            [
+                '# one figure per SHG component: interband / intraband terms at w and 2w',
+                "comps = [os.path.basename(f)[5:-4] for f in _many('shgr_*.dat')]",
+                'comps = [c for c in comps if len(c) == 3]',
+                'if not comps:',
+                '    _missing(None)',
+                'for comp in comps:',
+                f'    pplt.plot_shg_terms(OUTPUTDIR, comp, two_d={two_d})',
+            ],
+        )
+        menu.append(('SHG by term (interband / intraband, w / 2w)', 'plot_shg_terms'))
+    if cfg.get('nlo_coupled'):
+        funcs += _plot_func(
+            'plot_coupled_dielectric',
+            guarded(
+                [
+                    "pplt.plot_coupled_response(OUTPUTDIR, 'epsilon', 'imag')",
+                    "pplt.plot_coupled_response(OUTPUTDIR, 'epsilon', 'real')",
+                ]
+            ),
+        )
+        menu.append(('Dielectric function at the kernel levels', 'plot_coupled_dielectric'))
+        funcs += _plot_func(
+            'plot_coupled_shg',
+            guarded(["pplt.plot_coupled_response(OUTPUTDIR, 'shg', 'abs')"]),
+        )
+        menu.append(('SHG at the kernel levels', 'plot_coupled_shg'))
+    if cfg.get('nlo_molecule'):
+        funcs += _plot_func('plot_molecular_beta', guarded(['pplt.plot_molecular_beta(OUTPUTDIR)']))
+        menu.append(('Molecular hyperpolarizability (beta)', 'plot_molecular_beta'))
+    return funcs, menu
+
+
 def build_plot_script(cfg):
     """Assemble a plot.py that mimics the property selection in *cfg*."""
     props = cfg['properties']
@@ -1861,16 +2226,66 @@ def build_plot_script(cfg):
             'plot_hall_coefficient',
             [
                 '# Trace of the Hall coefficient tensor (only present when the run',
-                '# enabled do_hall); each file is energy vs a single value.',
-                "files, _ = _spin_channels('hall_trace_0.dat')",
+                '# enabled do_hall): hall_trace[_<smearing>]_<spin>.dat holds the',
+                '# columns T (K), E (eV), R_H (m^3/C); one curve per temperature.',
+                'import numpy as np',
+                'import matplotlib.pyplot as plt',
+                '',
+                "files, labels = _spin_channels('hall_trace*_0.dat')",
                 'if not files:',
                 '    _missing(None)',
                 '    return',
-                'pplt.plot_shc(files if len(files) > 1 else files[0],',
-                "              title='Hall coefficient', x_lim=_ewin(), y_lim=_ylim())",
+                'fig, ax = plt.subplots()',
+                "fig.suptitle('Hall coefficient')",
+                'for fn, base in zip(files, labels):',
+                '    data = np.atleast_2d(np.loadtxt(fn))',
+                '    for temp in np.unique(data[:, 0]):',
+                '        rows = data[data[:, 0] == temp]',
+                "        tag = '{:g} K'.format(temp)",
+                '        if len(files) > 1:',
+                "            tag = '{}, {}'.format(base, tag)",
+                '        ax.plot(rows[:, 1], rows[:, 2], label=tag)',
+                'ax.set_xlim(*_ewin())',
+                'if _ylim() is not None:',
+                '    ax.set_ylim(*_ylim())',
+                "ax.set_xlabel('Energy (eV)')",
+                "ax.set_ylabel(r'$R_H$ (m$^3$/C)')",
+                'ax.legend()',
+                'plt.show()',
             ],
         )
         menu.append(('Hall coefficient', 'plot_hall_coefficient'))
+        if cfg.get('do_hall'):
+            funcs += _plot_func(
+                'plot_nernst',
+                [
+                    '# Nernst tensor over the relaxation time (do_hall): nernst[_<smearing>]_<spin>.dat',
+                    '# holds T (K), E (eV) and 27 components, N_xyz first, in V K^-1 T^-1 s^-1.',
+                    'import numpy as np',
+                    'import matplotlib.pyplot as plt',
+                    '',
+                    "files, labels = _spin_channels('nernst*_0.dat')",
+                    'if not files:',
+                    '    _missing(None)',
+                    '    return',
+                    'fig, ax = plt.subplots()',
+                    "fig.suptitle('Nernst coefficient N_xyz / tau')",
+                    'for fn, base in zip(files, labels):',
+                    '    data = np.atleast_2d(np.loadtxt(fn))',
+                    '    for temp in np.unique(data[:, 0]):',
+                    '        rows = data[data[:, 0] == temp]',
+                    "        tag = '{:g} K'.format(temp)",
+                    '        if len(files) > 1:',
+                    "            tag = '{}, {}'.format(base, tag)",
+                    '        ax.plot(rows[:, 1], rows[:, 2], label=tag)',
+                    'ax.set_xlim(*_ewin())',
+                    "ax.set_xlabel('Energy (eV)')",
+                    "ax.set_ylabel(r'$N_{xyz}/\\tau$ (V K$^{-1}$ T$^{-1}$ s$^{-1}$)')",
+                    'ax.legend()',
+                    'plt.show()',
+                ],
+            )
+            menu.append(('Nernst coefficient', 'plot_nernst'))
 
     if 'spin_Hall' in props:
         funcs += _plot_func(
@@ -1988,25 +2403,7 @@ def build_plot_script(cfg):
         menu.append(('Visible color (sRGB swatch)', 'plot_visible_color'))
 
     if 'nonlinear' in props:
-        nonlinear_groups = [
-            ('Shift current', 'plot_shift_current', ['shift_*.dat', 'shiftm_*.dat']),
-            ('Injection current', 'plot_injection_current', ['injectc_*.dat', 'injectm_*.dat']),
-            ('SHG susceptibility', 'plot_shg', ['shgr_*.dat', 'shgi_*.dat', 'shga_*.dat']),
-        ]
-        for label, fname, globs in nonlinear_groups:
-            glob_calls = ' + '.join(f'_many({gl!r})' for gl in globs)
-            funcs += _plot_func(
-                fname,
-                [
-                    f'files = {glob_calls}',
-                    'if not files:',
-                    '    _missing(None)',
-                    '    return',
-                    'pplt.plot_dielectric(files if len(files) > 1 else files[0],',
-                    f'                     title={label!r}, y_lim=_ylim(), legend_outside=True)',
-                ],
-            )
-            menu.append((label, fname))
+        funcs, menu = _nonlinear_plot_entries(cfg, funcs, menu)
 
     if has_emissivity:
         funcs += _plot_func(
@@ -2049,6 +2446,8 @@ def build_plot_script(cfg):
             ],
         )
         menu.append(('Fermi surface (XCrySDen)', 'plot_fermi_surface'))
+
+    funcs, menu = extra_plot_entries(cfg, funcs, menu)
 
     if 'spin_texture' in props:
         funcs += _plot_func(
@@ -2461,6 +2860,7 @@ def build_raman_script(cfg):
     lines.append('import sys')
     lines.append('')
     lines.append('from PAOFLOW import PAOFLOW')
+    lines.append('from PAOFLOW.utils.qe_launch import mpi_prefix, qe_command')
     lines.append('from PAOFLOW.basis_gen import generate_basis_for_pseudo')
     lines.append('from PAOFLOW.basis_gen.driver import _default_shells')
     lines.append('from PAOFLOW.inputs.read_upf import UPF as _UPFParser')
@@ -2543,10 +2943,15 @@ def build_raman_script(cfg):
     lines.append('# Force constants for the zone-centre eigenvectors.')
     lines.append("FORCE_SETS = os.path.join(HERE, OUTPUTDIR, PHONON_DIR, 'FORCE_SETS')")
     lines.append('')
-    lines.append('# pw.x launch settings for the displaced-cell SCF runs (edit to your machine).')
-    lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
     lines.append(
-        "QE_PW = {!r}   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
+        '# pw.x launch settings for the displaced-cell SCF runs (edit the defaults to your'
+    )
+    lines.append(
+        '# machine; the PAOFLOW_* variables, set by the paoflow-studio Runs tab, take precedence).'
+    )
+    lines.append('MPI_QE = mpi_prefix({!r})'.format(cfg['mpi_qe']))
+    lines.append(
+        "QE_PW = qe_command('pw.x', {!r})   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
             cfg.get('qe_pw', 'pw.x')
         )
     )
@@ -2690,7 +3095,10 @@ def build_raman_script(cfg):
     lines.append('')
     lines.append('')
     lines.append("if __name__ == '__main__':")
-    lines.append('    main()')
+    lines.append('    # An error on one MPI rank stops every rank instead of hanging the job.')
+    lines.append('    from PAOFLOW.utils.mpi_guard import run_main')
+    lines.append('')
+    lines.append('    run_main(main)')
     lines.append('')
     return '\n'.join(lines)
 
@@ -2912,275 +3320,196 @@ def build_raman_plot_script(cfg):
 # Config collection
 # --------------------------------------------------------------------------- #
 def collect_common(args, workdir):
-    """Prompt for configuration shared by both workflows."""
-    det_save = detect_savedir(workdir)
-    det_upfs = detect_upfs(workdir, det_save)
-    det_prefix = detect_prefix(workdir, det_save)
+    """Prompt for the configuration shared by the run, ACBN0 and phonon workflows.
 
-    savedir = args.savedir or ask('Save directory (<prefix>.save)', det_save or 'pwscf.save')
-    prefix = args.prefix or ask('Prefix', det_prefix)
-    if args.upf:
-        upfs = [u.strip() for u in args.upf.split(',') if u.strip()]
-    else:
-        default_upfs = ', '.join(det_upfs) if det_upfs else 'pseudo.UPF'
-        answer = ask('Pseudopotential (UPF) file(s), comma-separated', default_upfs)
-        upfs = [u.strip() for u in answer.split(',') if u.strip()]
-    basisdir = ask('Basis directory name', 'BASIS_PS')
-    ibrav = ask_int('ibrav (0 = read cell; needs band path for bands)', 0)
-    is_2d = ask_yes_no('Is this a 2D system (slab with vacuum along c)?', False)
-    projector = ask_choice(
-        'Projector source (internal = PAOFLOW atomic projection; projwfc = QE projwfc.x)',
-        ['internal', 'projwfc'],
-        'internal',
-    )
-    return {
-        'savedir': savedir,
-        'prefix': prefix,
-        'upfs': upfs,
-        'basisdir': basisdir,
-        'ibrav': ibrav,
-        'is_2d': is_2d,
-        'projector': projector,
-        'outputdir': 'output',
-        'workdir': workdir,
-    }
+    The questions are :data:`PAOFLOW.gen.questions.common.COMMON_ITEMS` (shared with the GUI).
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        ``savedir``, ``prefix`` and ``upf`` overrides.
+    workdir : str
+        Directory scanned for the QE artefacts.
+
+    Returns
+    -------
+    dict
+    """
+    from .questions.common import COMMON_ITEMS, COMMON_OVERRIDES, assemble_common
+    from .questions.model import Context
+    from .questions.prompt import ask_items
+
+    context = Context.from_args(args, workdir, COMMON_OVERRIDES)
+    return assemble_common(ask_items(COMMON_ITEMS, context), context)
 
 
 def collect_run(common):
-    """Prompt for the full property-run configuration."""
-    props = select_properties()
-    if not props:
-        print('No valid properties selected; nothing to generate.')
+    """Prompt for the full property-run configuration (:data:`PAOFLOW.gen.questions.run.RUN_ITEMS`).
+
+    Parameters
+    ----------
+    common : dict
+        The common configuration (:func:`collect_common`).
+
+    Returns
+    -------
+    dict or None
+        The run configuration; ``None`` when no property is selected.
+    """
+    from .questions.model import Context
+    from .questions.prompt import ask_items
+    from .questions.run import RUN_ITEMS, assemble_run_from_common
+
+    answers = ask_items(RUN_ITEMS, Context(workdir=common.get('workdir', '.')), dict(common))
+    if answers is None:
         return None
+    return assemble_run_from_common(common, answers)
 
-    std_basis = 'standard'
-    if any(p != 'optical' for p in props):
-        std_basis = ask_choice(
-            '\nBasis configuration for the standard properties:',
-            ['minimal', 'standard', 'extended'],
-            'standard',
-        )
 
-    cfg = dict(common)
-    cfg['properties'] = props
-    cfg['std_basis'] = std_basis
-    cfg['npool'] = ask_int('npool', 1)
-    cfg['smearing'] = ask('Smearing (gauss / m-p / None)', 'gauss')
-    if cfg['smearing'].lower() == 'none':
-        cfg['smearing'] = None
-    cfg['spin_orbit'] = ask_yes_no('Spin-orbit (noncollinear) calculation?', False)
-    cfg['nk'] = ask_int('Band path k-points (NK)', 400) if 'bands' in props else 400
-    if any(p in ENERGY_WINDOW_PROPERTIES for p in props):
-        print('\nEnergy grid for DOS / transport / Hall properties (eV, relative to E_F).')
-        print(
-            '  The full PAO band range is computed at run time and printed as a '
-            'suggestion;\n  the values below are what the calculation actually uses.'
-        )
-        cfg['emin'] = ask_float('  EMIN', -8.0)
-        cfg['emax'] = ask_float('  EMAX', 4.0)
-        cfg['ne'] = ask_int('  NE (number of energy points)', 1000)
-    else:
-        cfg['emin'] = -8.0
-        cfg['emax'] = 4.0
-        cfg['ne'] = 1000
-    cfg['do_pdos'] = ask_yes_no('Projected DOS as well?', True) if 'dos' in props else False
-    cfg['interpolate'] = ask_yes_no(
-        'Use double-grid interpolation (denser FFT)?',
-        'optical' in props,
-    )
-    cfg['nfft'] = ask_int('FFT grid size per direction', 24) if cfg['interpolate'] else 0
-    if 'nonlinear' in props:
-        print('\nNon-linear optics (shift / injection currents, SHG):')
-        cfg['nlo_nk'] = ask_int('  dense k-grid per direction', 40)
-        cfg['nlo_emax'] = ask_float('  largest photon energy (eV)', 4.0)
-        cfg['nlo_eta'] = ask_float('  broadening eta (eV)', 0.05)
-        cfg['nlo_scissor'] = ask_float('  scissor shift of the conduction bands (eV)', 0.0)
-        cfg['nlo_components'] = ask("  tensor components ('all', 'diag' or e.g. xyz,yyy)", 'all')
-        if ',' in cfg['nlo_components']:
-            cfg['nlo_components'] = [c.strip() for c in cfg['nlo_components'].split(',')]
-    cfg['plot'] = ask_yes_no('Also generate a plotting script (plot.py)?', True)
-    return cfg
+def collect_nonlinear(cfg):
+    """Prompt for the non-linear (and coupled) optics run; fills the ``nlo_*`` / ``coupled_*`` keys.
+
+    The questions are :data:`PAOFLOW.gen.questions.run.NONLINEAR_ITEMS` (shared with the GUI).
+
+    Parameters
+    ----------
+    cfg : dict
+        Run configuration (``is_2d`` and the projection mode already set); modified in place.
+
+    Returns
+    -------
+    dict
+        ``cfg``.
+    """
+    from .questions.model import Context
+    from .questions.prompt import ask_items
+    from .questions.run import NONLINEAR_ITEMS, assemble_nonlinear
+
+    answers = ask_items(NONLINEAR_ITEMS, Context(workdir=cfg.get('workdir', '.')), dict(cfg))
+    return assemble_nonlinear(cfg, answers)
 
 
 def collect_phonon(common):
-    """Prompt for the harmonic-phonon (finite-displacement) configuration."""
-    cfg = dict(common)
-    cfg['supercell'] = ask_int('Supercell multiplicity (isotropic diagonal)', 2)
-    cfg['displacement'] = ask_float('Displacement amplitude (Bohr)', 0.06)
-    mesh = ask_int('q-mesh density per axis (DOS / thermal)', 12)
-    cfg['mesh'] = [mesh, mesh, mesh]
-    cfg['units'] = ask_choice('Frequency units', ['cm-1', 'THz'], 'cm-1')
-    cfg['do_thermal'] = ask_yes_no('Compute thermal properties (F, S, Cv)?', True)
-    cfg['pp_dir'] = ask('Pseudopotential directory (blank or "HERE" = script directory)', 'HERE')
-    cfg['hubbard_file'] = ask(
-        'pw.x input with a HUBBARD card to inject (on-site U only; blank = none)', ''
-    )
-    cfg['born'] = ask_yes_no(
-        'Compute Born charges + dielectric tensor (NAC / LO-TO splitting)?', True
-    )
-    if cfg['born']:
-        cfg['born_method'] = ask_choice(
-            'Born/epsilon method (dfpt = ph.x, field = lelfield pw.x)',
-            ['dfpt', 'field'],
-            'dfpt',
-        )
-    else:
-        cfg['born_method'] = 'dfpt'
-    cfg['vibdielectric'] = cfg['born'] and ask_yes_no(
-        'Also compute the vibrational (ionic) dielectric function eps(w) (reststrahlen band)?',
-        True,
-    )
-    if cfg['vibdielectric']:
-        cfg['vibdielectric_gamma'] = ask_float(
-            '  Phonon linewidth gamma for eps(w) (in the chosen units)', 4.0
-        )
-        cfg['vibdielectric_emissivity'] = ask_yes_no(
-            '  Also compute the reststrahlen (phonon) emissivity (1 - R)?', True
-        )
-        if cfg['vibdielectric_emissivity']:
-            temp = ask_float('    Temperature for the total hemispherical emissivity (K)', 300.0)
-            cfg['vibdielectric_emis_temp'] = [temp]
-        else:
-            cfg['vibdielectric_emis_temp'] = [300.0]
-    else:
-        cfg['vibdielectric_gamma'] = 4.0
-        cfg['vibdielectric_emissivity'] = False
-        cfg['vibdielectric_emis_temp'] = [300.0]
-    cfg['qha'] = ask_yes_no(
-        'Compute quasi-harmonic properties (thermal expansion, V(T), B(T), Gruneisen)?',
-        False,
-    )
-    if cfg['qha']:
-        cfg['qha_nvolumes'] = ask_choice(
-            '  Number of sampled volumes (5 = full EOS fit; 3 = parabolic fit)',
-            ['5', '3'],
-            '5',
-        )
-        cfg['qha_nvolumes'] = int(cfg['qha_nvolumes'])
-        cfg['qha_strain'] = ask_float('  Maximum linear strain of the volume scan', 0.02)
-        if cfg['qha_nvolumes'] >= 4:
-            cfg['qha_eos'] = ask_choice(
-                '  Equation of state',
-                ['vinet', 'birch_murnaghan', 'murnaghan'],
-                'vinet',
-            )
-        else:
-            cfg['qha_eos'] = 'vinet'
-        cfg['qha_tmin'] = ask_float('  Minimum temperature (K)', 0.0)
-        cfg['qha_tmax'] = ask_float('  Maximum temperature (K)', 1000.0)
-        cfg['qha_tstep'] = ask_float('  Temperature step (K)', 10.0)
-        cfg['qha_pressure'] = ask_float('  External pressure (GPa)', 0.0)
-    else:
-        cfg['qha_nvolumes'] = 5
-        cfg['qha_strain'] = 0.02
-        cfg['qha_eos'] = 'vinet'
-        cfg['qha_tmin'] = 0.0
-        cfg['qha_tmax'] = 1000.0
-        cfg['qha_tstep'] = 10.0
-        cfg['qha_pressure'] = 0.0
-    print('\npw.x launch settings for the displaced-supercell SCF runs:')
-    cfg['mpi_qe'] = ask('MPI command for pw.x', 'mpirun -np 4')
-    cfg['qe_pw'] = ask(
-        "pw.x executable/command (may include flags, e.g. 'pw.x', 'pw.x -npool 4', "
-        "'/opt/qe/bin/pw.x')",
-        'pw.x',
-    )
-    cfg['plot'] = ask_yes_no('Also generate a plotting script (plot.phonon.py)?', True)
-    cfg['raman_method'] = ask_choice(
-        'Also generate a Raman workflow (main.raman.py)?  Pick the flavour '
-        '(none = skip; all = static + resonance from one run)',
-        ['none', 'static', 'resonance', 'all'],
-        'none',
-    )
-    cfg['raman'] = cfg['raman_method'] != 'none'
-    if cfg['raman']:
-        print('\nRaman finite-difference settings:')
-        cfg['raman_delta'] = ask_float('  Mass-weighted displacement step (Bohr*sqrt(amu))', 0.05)
-        cfg['raman_nbnd'] = ask_int('  Bands for the displaced SCF (0 = QE default)', 0)
-        cfg['raman_npool'] = ask_int('  npool for the per-cell dielectric run', 4)
-        cfg['raman_smearing'] = ask('  Smearing for the dielectric run', 'gauss')
-        raman_nfft = ask_int('  Double-grid FFT size per direction (0 = skip)', 24)
-        cfg['raman_nfft'] = raman_nfft
-        cfg['raman_e_static'] = ask_float('  Static-epsilon upper energy (eV)', 0.05)
-        cfg['raman_temperature'] = ask_float('  Temperature for the Bose factor (K)', 300.0)
-        cfg['raman_gamma'] = ask_float('  Lorentzian FWHM (in the chosen units)', 4.0)
-        if cfg['raman_method'] in ('resonance', 'all'):
-            laser_str = ask(
-                '  Laser wavelength(s) in nm (comma-separated, or a Python list '
-                'expression like "[n for n in range(450, 650, 5)]")',
-                '532',
-            )
-            lasers = parse_laser_list(laser_str)
-            cfg['raman_laser_nm'] = lasers if len(lasers) > 1 else lasers[0]
-            cfg['raman_lifetime'] = ask_float(
-                '  Lifetime broadening of the dielectric tensor (eV)', 0.1
-            )
-        else:
-            laser = ask_float('  Laser wavelength (nm; 0 = omit the (wL-wv)^4 factor)', 0.0)
-            cfg['raman_laser_nm'] = laser if laser > 0 else None
-            cfg['raman_lifetime'] = 0.1
-        cfg['raman_pthr'] = 0.95
-        cfg['raman_configuration'] = 'extended'
-    return cfg
+    """Prompt for the harmonic-phonon configuration (:data:`PAOFLOW.gen.questions.phonon.PHONON_ITEMS`).
+
+    Parameters
+    ----------
+    common : dict
+        The common configuration (:func:`collect_common`).
+
+    Returns
+    -------
+    dict
+    """
+    from .questions.model import Context
+    from .questions.phonon import PHONON_ITEMS, assemble_phonon_from_common
+    from .questions.prompt import ask_items
+
+    answers = ask_items(PHONON_ITEMS, Context(workdir=common.get('workdir', '.')), dict(common))
+    return assemble_phonon_from_common(common, answers)
 
 
 def collect_acbn0(common):
-    """Prompt for the ACBN0 / eACBN0 configuration."""
-    cfg = dict(common)
-    cfg['use_intersite_v'] = ask_yes_no(
-        'Include intersite V (eACBN0)? (No = on-site U only, ACBN0)', False
-    )
-    if cfg['use_intersite_v'] and not _uses_projwfc(cfg):
-        print(
-            '\nNote: intersite V (eACBN0) requires the true non-orthogonal atomic\n'
-            '  overlap S(k), which only the projwfc.x projector provides. The\n'
-            '  internal ortho-atomic projection dumps S(k)=I and gives wrong V.\n'
-            '  Switching the projector to projwfc for this workflow.'
-        )
-        cfg['projector'] = 'projwfc'
-    cfg['projection'] = ask('Projection scheme', 'ortho-atomic')
-    cfg['conv_thr'] = float(ask('U/V convergence threshold (eV)', '0.05'))
-    cfg['nk'] = ask_int('Band path k-points (NK)', 400)
-    cfg['gaussian_threshold'] = float(
-        ask('Gaussian-fit tolerance (loosen for ONCV/SOC pseudos)', '0.05')
-    )
+    """Prompt for the ACBN0 / eACBN0 configuration (:data:`PAOFLOW.gen.questions.acbn0.ACBN0_ITEMS`).
 
-    print("\nEnter the Hubbard manifolds, one per line, as '<species>-<nl> <initU>'")
-    print("  e.g. 'Si-3p 0.5'.  Leave blank to finish.")
-    hubbard = []
-    while True:
-        line = _input('  manifold: ').strip()
-        if not line:
-            break
-        parts = line.split()
-        orb = parts[0].strip().strip('\'"')
-        try:
-            val = float(parts[1]) if len(parts) > 1 else 0.5
-        except ValueError:
-            val = 0.5
-        hubbard.append((orb, val))
-    if not hubbard:
-        print('No Hubbard manifolds entered; nothing to generate.')
+    Parameters
+    ----------
+    common : dict
+        The common configuration (:func:`collect_common`).
+
+    Returns
+    -------
+    dict or None
+        The configuration; ``None`` when no Hubbard manifold is entered.
+    """
+    from .questions.acbn0 import ACBN0_ITEMS, assemble_acbn0_from_common
+    from .questions.model import Context
+    from .questions.prompt import ask_items
+
+    answers = ask_items(ACBN0_ITEMS, Context(workdir=common.get('workdir', '.')), dict(common))
+    if answers is None:
         return None
-    cfg['hubbard'] = hubbard
-
-    if cfg['use_intersite_v']:
-        v_default = detect_v_cutoff(common.get('workdir', '.')) or 2.6
-        cfg['v_cutoff'] = float(ask('Intersite V neighbour cutoff (Angstrom)', repr(v_default)))
-        cfg['v_init'] = float(ask('Initial intersite V (eV)', '0.5'))
-
-    print('\nParallel launch commands (edit later in the script if unsure):')
-    cfg['mpi_qe'] = ask('MPI command for pw.x', 'mpirun -np 4')
-    cfg['mpi_py'] = ask('MPI command for python', 'mpirun -np 1')
-    cfg['mpi_hartree'] = ask('MPI command for the Hartree step', 'mpirun -np 4')
-    cfg['qe_path'] = ask('Quantum ESPRESSO bin path', '')
-    cfg['py_path'] = ask('Python bin path', '')
-    return cfg
+    return assemble_acbn0_from_common(common, answers)
 
 
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+def start_from_example(args: argparse.Namespace) -> int:
+    """``paoflow-gen --example NAME``: copy a case, write its drivers, print the steps.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        ``example`` (a case name, or ``list``), ``workdir`` (the destination when not ``.``),
+        ``force`` (replace files that differ).
+
+    Returns
+    -------
+    int
+        Exit status.
+    """
+    from .cases import case_plan, copy_case, find_case, list_cases
+    from .outputs import workflow_outputs
+    from .questions import WORKFLOWS
+    from .questions.model import Context
+    from .questions.resolve import resolve_form
+
+    if args.example == 'list':
+        cases = list_cases()
+        if not cases:
+            print('No example cases: they come with a source checkout of PAOFLOW (examples/cases).')
+            return 1
+        width = max(len(case.name) for case in cases)
+        for case in cases:
+            print('%-*s  %s  [%s]' % (width, case.name, case.title, case.workflow))
+        return 0
+    try:
+        case = find_case(args.example)
+    except KeyError as error:
+        sys.stderr.write('%s\n' % error.args[0])
+        return 1
+    destination = os.path.abspath(
+        os.path.expanduser(args.workdir if args.workdir != '.' else case.name)
+    )
+    try:
+        written = copy_case(case, Path(destination), overwrite=args.force)
+    except FileExistsError as error:
+        sys.stderr.write(
+            'Files of the case differ in %s: %s (use --force to replace them).\n'
+            % (destination, ', '.join(error.args[1]))
+        )
+        return 1
+    print('%s\n%s\n' % (case.title, case.summary))
+    print('Copied %d file(s) into %s' % (len(written), destination))
+    if case.scripts:
+        print('\nSteps, in %s (see README.md):' % destination)
+        for index, step in enumerate(case_plan(case), 1):
+            print('  %d. %s: %s' % (index, step.label, step.command(4)))
+        return 0
+    form = resolve_form(WORKFLOWS[case.workflow], case.answers, Context(workdir=destination))
+    if not form.complete:
+        sys.stderr.write('The answers of the case do not resolve: %s\n' % form.errors)
+        return 1
+    for generated in workflow_outputs(case.workflow, form.config):
+        target = os.path.join(destination, generated.path)
+        if os.path.exists(target) and not args.force:
+            print('Kept %s (use --force to rewrite it)' % generated.path)
+            continue
+        print('Wrote %s' % generated.write(destination))
+    print('\nSteps, in %s:' % destination)
+    plan = case_plan(case)
+    for index, step in enumerate(plan[: len(case.qe)], 1):
+        print('  %d. %s: %s' % (index, step.label, step.command(4)))
+    print(
+        '  %d. the drivers written above (see README.md), e.g. mpirun -np 4 python main.py'
+        % (len(case.qe) + 1)
+    )
+    for index, step in enumerate(plan[len(case.qe) + 1 :], len(case.qe) + 2):
+        print('  %d. %s: %s' % (index, step.label, step.command(4)))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the interactive generator.
 
@@ -3194,7 +3523,8 @@ def main(argv: list[str] | None = None) -> int:
     int
         Exit status (0 on success).  Writes the selected driver and its
         companion scripts; the electron-phonon workflow writes a system folder
-        instead (:func:`PAOFLOW.gen.elphon_system.main_elphon`).
+        instead (:func:`PAOFLOW.gen.elphon_system.main_elphon`) and the SSCHA
+        workflow ``main.sscha.py`` (:mod:`PAOFLOW.gen.sscha_driver`).
     """
     parser = argparse.ArgumentParser(
         description='Generate a PAOFLOW main.py driver script interactively.'
@@ -3217,12 +3547,12 @@ def main(argv: list[str] | None = None) -> int:
         '--out',
         default=None,
         help='Output script path (default: main.py for the run workflow, '
-        'main.acbn0.py for the acbn0 workflow); the system folder for elphon',
+        'main.acbn0.py for the acbn0 workflow, main.sscha.py for sscha); the system folder for elphon',
     )
     parser.add_argument(
         '--plot',
         action='store_true',
-        help='Force generation of a plotting script (run workflow only)',
+        help='Force generation of a plotting script (run and tb_model workflows)',
     )
     parser.add_argument(
         '--plot-out',
@@ -3233,13 +3563,41 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '-f', '--force', action='store_true', help='Overwrite an existing output file'
     )
+    parser.add_argument(
+        '--gui',
+        action='store_true',
+        help='Open the same questions in the browser (paoflow-studio on the working directory)',
+    )
+    parser.add_argument(
+        '--example',
+        default=None,
+        metavar='NAME',
+        help='Copy the example case NAME (examples/cases) into ./NAME, or into -d/--workdir when '
+        'given, write its drivers and print the steps; --example list shows the cases',
+    )
     args = parser.parse_args(argv)
+    if args.example:
+        return start_from_example(args)
 
     workdir = os.path.abspath(os.path.expanduser(args.workdir))
+    if args.gui:
+        from ..gui.cli import main as gui_main
+
+        return gui_main(['--root', workdir])
 
     workflow = ask_choice(
         'Which workflow?',
-        ['acbn0', 'run', 'phonon', 'elphon'],
+        [
+            'acbn0',
+            'run',
+            'tb_model',
+            'phonon',
+            'elphon',
+            'ep_model',
+            'sscha',
+            'pyskeaf',
+            'landauer',
+        ],
         'run',
     )
 
@@ -3248,87 +3606,48 @@ def main(argv: list[str] | None = None) -> int:
         from .elphon_system import main_elphon
 
         return main_elphon(args, workdir)
+
+    from .outputs import DRIVER_NAMES, workflow_outputs
+
     # Each non-default workflow gets its own main.<workflow>.py name so it is
     # not confused with a regular PAOFLOW main.py; an explicit -o/--out wins.
-    _default_out = {
-        'acbn0': 'main.acbn0.py',
-        'phonon': 'main.phonon.py',
-    }
-    out_path = args.out or _default_out.get(workflow, 'main.py')
+    out_path = args.out or DRIVER_NAMES[workflow]
     if os.path.exists(out_path) and not args.force:
         sys.stderr.write(f'Refusing to overwrite {out_path} (use --force).\n')
         return 1
 
-    common = collect_common(args, workdir)
-    if workflow == 'acbn0':
-        cfg = collect_acbn0(common)
+    if workflow == 'sscha':
+        # Anharmonic phonons (python-sscha): main.sscha.py with its own prompts.
+        from .sscha_driver import collect_sscha
+
+        cfg = collect_sscha(args, workdir)
+    elif workflow in ('pyskeaf', 'tb_model', 'ep_model', 'landauer'):
+        # Quantum oscillations from the BXSF files of a Property run, a property run on a
+        # tight-binding model or the electron-phonon run of a model crystal (no QE save needed),
+        # and Landauer transport from a save: the declarative questions.
+        from .questions import collect
+
+        cfg = collect(workflow, args, workdir)
         if cfg is None:
             return 1
-        content = build_acbn0_script(cfg)
-    elif workflow == 'phonon':
-        cfg = collect_phonon(common)
-        if cfg is None:
-            return 1
-        content = build_phonon_script(cfg)
     else:
-        cfg = collect_run(common)
+        common = collect_common(args, workdir)
+        collect = {'acbn0': collect_acbn0, 'phonon': collect_phonon, 'run': collect_run}[workflow]
+        cfg = collect(common)
         if cfg is None:
             return 1
-        content = build_run_script(cfg)
 
-    with open(out_path, 'w', encoding='utf-8') as handle:
-        handle.write(content)
-    print(f'\nWrote {os.path.abspath(out_path)}')
-
-    if workflow == 'acbn0':
-        # Always pair the ACBN0 driver with a plot.acbn0.py that compares the
-        # band structures of the cases it computes (DFT+U and, for eACBN0,
-        # DFT+U+V).
-        plot_path = args.plot_out or 'plot.acbn0.py'
-        if os.path.exists(plot_path) and not args.force:
-            sys.stderr.write(f'Refusing to overwrite {plot_path} (use --force).\n')
-        else:
-            plot_content = build_acbn0_plot_script(cfg)
-            with open(plot_path, 'w', encoding='utf-8') as handle:
-                handle.write(plot_content)
-            print(f'Wrote {os.path.abspath(plot_path)}')
-    elif workflow == 'phonon':
-        if args.plot or cfg.get('plot'):
-            plot_path = args.plot_out or 'plot.phonon.py'
-            if os.path.exists(plot_path) and not args.force:
-                sys.stderr.write(f'Refusing to overwrite {plot_path} (use --force).\n')
-            else:
-                plot_content = build_phonon_plot_script(cfg)
-                with open(plot_path, 'w', encoding='utf-8') as handle:
-                    handle.write(plot_content)
-                print(f'Wrote {os.path.abspath(plot_path)}')
-        if cfg.get('raman'):
-            raman_path = 'main.raman.py'
-            if os.path.exists(raman_path) and not args.force:
-                sys.stderr.write(f'Refusing to overwrite {raman_path} (use --force).\n')
-            else:
-                raman_content = build_raman_script(cfg)
-                with open(raman_path, 'w', encoding='utf-8') as handle:
-                    handle.write(raman_content)
-                print(f'Wrote {os.path.abspath(raman_path)}')
-            if args.plot or cfg.get('plot'):
-                raman_plot_path = 'plot.raman.py'
-                if os.path.exists(raman_plot_path) and not args.force:
-                    sys.stderr.write(f'Refusing to overwrite {raman_plot_path} (use --force).\n')
-                else:
-                    raman_plot_content = build_raman_plot_script(cfg)
-                    with open(raman_plot_path, 'w', encoding='utf-8') as handle:
-                        handle.write(raman_plot_content)
-                    print(f'Wrote {os.path.abspath(raman_plot_path)}')
-    elif args.plot or cfg.get('plot'):
-        plot_path = args.plot_out or 'plot.py'
-        if os.path.exists(plot_path) and not args.force:
-            sys.stderr.write(f'Refusing to overwrite {plot_path} (use --force).\n')
-        else:
-            plot_content = build_plot_script(cfg)
-            with open(plot_path, 'w', encoding='utf-8') as handle:
-                handle.write(plot_content)
-            print(f'Wrote {os.path.abspath(plot_path)}')
+    driver, *companions = workflow_outputs(
+        workflow, cfg, plot=args.plot, out=out_path, plot_out=args.plot_out
+    )
+    print(f'\nWrote {driver.write(os.curdir)}')
+    # The ACBN0 driver always comes with plot.acbn0.py (the band structures of the DFT+U and,
+    # for eACBN0, DFT+U+V cases); the others with their plot and Raman scripts when asked.
+    for companion in companions:
+        if os.path.exists(companion.path) and not args.force:
+            sys.stderr.write(f'Refusing to overwrite {companion.path} (use --force).\n')
+            continue
+        print(f'Wrote {companion.write(os.curdir)}')
 
     return 0
 

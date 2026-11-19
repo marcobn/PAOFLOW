@@ -83,7 +83,19 @@ class PAOFLOW:
         Build the real-space Hamiltonian ``H(R)`` (stored as ``HRs``) and the
         k-space Hamiltonian ``H(k)`` (stored as ``Hks``).
     add_external_fields(Efield, Bfield, HubbardU)
-        Apply electric field, magnetic field, or Hubbard-U corrections to ``HRs``.
+        Apply electric field, Zeeman (exchange-like, eV), or Hubbard-U corrections to ``HRs``.
+    spinor_basis()
+        Rewrite a spin-degenerate or collinear ``HRs`` in block-ordered spinors.
+    magnetic_field(field, spin, orbital, g_s, orbital_angular_momentum)
+        Uniform field (T) on site: the spin and atomic orbital Zeeman terms mu_B (L + g_s S).B.
+    peierls_field(field, flux_quanta, plane)
+        Uniform field coupled to the hoppings (Peierls phases, Landau gauge).
+    stoner_parameters(density)
+        Stoner integrals of the PAO shells from the LSDA spin kernel (eV per mu_B).
+    self_consistent_spin(field, nk, smearing, degauss, stoner, seed, …)
+        On-site LSDA (Stoner) mean field: the enhanced spin response or the ordered moment.
+    spin_susceptibility(field, nk, smearing, degauss, methods, …)
+        Uniform static spin susceptibility: bare, on-site Stoner and the LSDA kernel on the grid.
     write_Hamiltonian(fname)
         Dump ``HRs`` in the Z2Pack format.
 
@@ -137,7 +149,11 @@ class PAOFLOW:
     ----------------------------------------
     topology(eff_mass, Berry, spin_Hall, spin_orbit, spol, ipol, jpol)
         Berry curvature, effective mass, and spin Berry curvature along the
-        k-path, including Z2 invariant support.
+        k-path (the Pfaffian Z2 it writes is legacy: use Z2Pack or berry_phase flows).
+    orbital_moment(degeneracy_tol)
+        Orbital magnetic moment m_n(k) of the Bloch states on the grid (mu_B).
+    orbital_magnetization(emin, emax, ne, temperature, degeneracy_tol, fname)
+        Orbital magnetization per cell against the chemical potential (modern theory).
     berry_phase(kspace_method, berry_path, high_sym_points, …)
         Berry/Zak phase via the discretized product formula (Resta 1994).
     anomalous_Hall(do_ac, emin, emax, fermi_up, fermi_dw, ne, delta, a_tensor)
@@ -444,6 +460,15 @@ class PAOFLOW:
         if self.rank == 0:
             tt = time() - self.start_time
             print('Total CPU time =%s%8.3f sec' % (25 * ' ', tt))
+            # Output manifest (paoflow_outputs.json): the files of this run with their kinds and
+            # the facts the file names do not carry (DFT Fermi energy, spin, basis size).  It is
+            # informational, so a failure never stops the run.
+            try:
+                from .writers.output_manifest import write_output_manifest
+
+                write_output_manifest(self.data_controller.data_attributes, self.start_time)
+            except Exception as exc:  # noqa: BLE001
+                print('(output manifest not written: %s)' % exc)
 
         verbose = self.data_controller.data_attributes['verbose']
 
@@ -533,8 +558,8 @@ class PAOFLOW:
             bands poorly) and keeps the pure table basis for norm-conserving ones; ``True`` /
             ``False`` force either choice (``False`` with the generator route solves every
             shell in the box). Not with the ``'minimal'`` preset (already the pseudo-orbital
-            basis). With spin-orbit coupling the scalar pseudo-orbitals fill both ``j``
-            blocks (as the scalar tables do).
+            basis). With spin-orbit coupling a fully relativistic UPF gives each ``j`` block
+            its own pseudo-orbital; scalar ones (POTCAR) fill both blocks, as scalar tables do.
         r_box : float, optional
             Generator route only: radius of the confining box of the radial solver (bohr),
             default ``min(r_max of the mesh, 10)``.
@@ -655,8 +680,8 @@ class PAOFLOW:
                             ', '.join(l for l in arry['configuration'][elem] if l not in labels) or 'nothing',
                             attr.get('basispath')))  # fmt: skip
                 if attr.get('dftSO', False):
-                    # spin-orbit: scalar pseudo-orbitals duplicated into the j blocks, tables
-                    # j-resolved when available
+                    # spin-orbit: the j-resolved pseudo-orbitals of fully relativistic UPFs
+                    # (scalar ones duplicated into the j blocks), tables j-resolved when available
                     basis, arry['shells'] = build_mixed_basis_with_tables(
                         self.data_controller, pseudo_labels
                     )
@@ -966,31 +991,67 @@ class PAOFLOW:
         Add External Fields and Corrections to the Hamiltonian 'HRs'
 
         Arguments:
-            Efield (ndarray): 1D array of Efield values
-            Bfield (ndarray): 1D array of Bfield values
-            HubbardU (ndarray): 1D array of Hubbard Correctional values
+            Efield (ndarray): uniform electric field (V/A); each orbital is shifted by -E.tau at
+                its own centre
+            Bfield (ndarray): Zeeman energy (eV): adds -B.S on site, lowering the spin parallel to
+                B (an exchange field; a physical field B_T is -g mu_B B_T: use magnetic_field for
+                tesla and the orbital term). Needs a spinor basis (fully relativistic, adhoc
+                spin-orbit, spinful models, or spinor_basis()); the spin operator is built if
+                missing; a collinear run (nspin = 2) takes B along z only
+            HubbardU (ndarray or dict): Hubbard corrections, -U_n / 2 on each orbital (eV), in the
+                order of the basis (a shorter list covers the first orbitals and leaves the
+                others alone); or a dict of manifolds, {'Al-3p': 0.1, 'P-3p': 2.31}, resolved
+                on the internal projection basis of the run
 
         Returns:
             None
 
+        Each call applies only the fields passed to it (before 16 Nov 2026 a later call
+        re-applied every field stored by earlier ones); the arrays 'Efield', 'Bfield' and
+        'HubbardU' hold the totals applied so far. Call it before interpolated_hamiltonian, on
+        'HRs'.
         """
         arry, attr = self.data_controller.data_dicts()
 
-        if any(v != 0.0 for v in Efield):
-            arry['Efield'] = np.array(Efield)
-        if any(v != 0.0 for v in Bfield):
-            arry['Bfield'] = np.array(Bfield)
-        if any(v != 0.0 for v in HubbardU):
-            arry['HubbardU'] = np.array(HubbardU)
+        efield = np.array(Efield, dtype=float) if any(v != 0.0 for v in Efield) else np.zeros(3)
+        bfield = np.array(Bfield, dtype=float) if any(v != 0.0 for v in Bfield) else np.zeros(3)
+        if isinstance(HubbardU, dict):
+            from .hamiltonian.add_ext_field import hubbard_shifts_from_labels
 
-        Efield, Bfield, HubbardU = arry['Efield'], arry['Bfield'], arry['HubbardU']
+            hubbard = hubbard_shifts_from_labels(arry, HubbardU) if HubbardU else None
+            hubbard = hubbard if hubbard is not None and hubbard.any() else None
+        else:
+            hubbard = np.array(HubbardU, dtype=float) if any(v != 0.0 for v in HubbardU) else None
 
         try:
-            # Add external fields or non scf ACBN0 correction
-            if Efield.any() != 0.0 or Bfield.any() != 0.0 or HubbardU.any() != 0.0:
+            if hubbard is not None:
+                nawf = arry['HRs'].shape[0]
+                if hubbard.size > nawf:
+                    raise ValueError(
+                        'HubbardU has %d values for %d orbitals' % (hubbard.size, nawf)
+                    )
+                hubbard = np.concatenate([hubbard, np.zeros(nawf - hubbard.size)])
+            if efield.any() or bfield.any() or hubbard is not None:
                 from .hamiltonian.add_ext_field import add_ext_field
 
-                add_ext_field(self.data_controller)
+                if bfield.any() and arry['HRs'].shape[-1] == 1 and 'Sj' not in arry:
+                    if not attr.get('dftSO', False):
+                        raise ValueError(
+                            'Bfield needs a spinor basis: this run is spin-degenerate (call '
+                            'spinor_basis() first)'
+                        )
+                    self.spin_operator(adhoc_SO=attr.get('adhoc_SO', False))
+                add_ext_field(
+                    self.data_controller,
+                    efield=efield,
+                    bfield=bfield,
+                    hubbard_u=np.zeros(arry['HRs'].shape[0]) if hubbard is None else hubbard,
+                )
+                arry['Efield'] = np.asarray(arry['Efield'], dtype=float) + efield
+                arry['Bfield'] = np.asarray(arry['Bfield'], dtype=float) + bfield
+                if hubbard is not None:
+                    previous = np.asarray(arry['HubbardU'], dtype=float)
+                    arry['HubbardU'] = hubbard if not previous.any() else previous + hubbard
                 if self.rank == 0 and attr['verbose']:
                     print('External Fields Added')
         except Exception as e:
@@ -1000,16 +1061,531 @@ class PAOFLOW:
 
         self.comm.Barrier()
 
-    def write_Hamiltonian(self, fname='hamiltonian.dat'):
+    def spinor_basis(self):
         """
-        Write 'HRs' to file for use with Z2 Pack
+        Rewrite the Hamiltonian in block-ordered spinors (all orbitals spin up, then spin down)
+
+        A spin-degenerate run (nspin = 1 without spin-orbit coupling) becomes diag(H, H), a
+        collinear one (nspin = 2) diag(H_up, H_dn), with nspin = 1. Every band then holds one
+        electron, and magnetic fields (magnetic_field, add_external_fields(Bfield=...)) can point
+        in any direction. Sj is set to sigma/2 x 1; Dnm, Hks and Lj are doubled. Call it on
+        'HRs', before interpolated_hamiltonian.
 
         Arguments:
-            fname (str): File name for the Hamiltonian in the Z2 Pack format
+            None
 
         Returns:
             None
+        """
+        from .hamiltonian.magnetic_field import spinor_basis
 
+        arry, attr = self.data_controller.data_dicts()
+        try:
+            if isinstance(arry.get('shells'), dict) and not attr.get('dftSO', False):
+                # orbital labels of the scalar basis (orb_atom), for orbital_operator afterwards
+                self.data_controller.build_arrays_adhoc_soc()
+            spinor_basis(self.data_controller)
+        except Exception as e:
+            self.report_exception('spinor_basis')
+            if self.data_controller.data_attributes['abort_on_exception']:
+                raise e
+        self.report_module_time('Spinor basis')
+
+    def magnetic_field(
+        self,
+        field,
+        spin=True,
+        orbital=True,
+        g_s=None,
+        orbital_angular_momentum=None,
+    ):
+        """
+        Add a uniform magnetic field (tesla) on site: mu_B (L + g_s S) . B
+
+        The spin and the atomic orbital Zeeman terms, with the physical sign (the magnetic moment
+        -mu_B (L + g_s S) lines up with B). L is the orbital angular momentum of every PAO shell
+        (orbital_operator: fully relativistic and adhoc spin-orbit runs, and scalar runs); the
+        coupling of the itinerant motion to the vector potential is peierls_field, the orbital
+        moment of the Bloch states orbital_moment. A spin-degenerate run is first rewritten in
+        spinors (spinor_basis); a collinear run (nspin = 2) takes B along z only. Call it on
+        'HRs', before interpolated_hamiltonian; each call adds its field, and the array
+        'magnetic_field' holds the total (T).
+
+        Arguments:
+            field (array_like): Cartesian field (T), shape (3,)
+            spin (bool): include g_s mu_B S . B
+            orbital (bool): include mu_B L . B
+            g_s (float): spin g-factor (default: the free-electron 2.00231930436)
+            orbital_angular_momentum (ndarray): (3, n, n) L matrices (units of hbar) of the current
+                basis (n = nawf) or of one spin block (n = nawf / 2), for bases whose orbitals
+                PAOFLOW cannot label (models)
+
+        Returns:
+            ndarray: the on-site term added (eV), shape (nawf, nawf, nspin)
+        """
+        from .hamiltonian.magnetic_field import ELECTRON_SPIN_G_FACTOR, onsite_magnetic_field
+
+        arry, attr = self.data_controller.data_dicts()
+        field = np.asarray(field, dtype=float).reshape(3)
+        g_s = ELECTRON_SPIN_G_FACTOR if g_s is None else float(g_s)
+        term = None
+        try:
+            nspin = arry['HRs'].shape[-1]
+            if orbital and orbital_angular_momentum is not None:
+                lmat = np.asarray(orbital_angular_momentum, dtype=complex)
+                nawf = arry['HRs'].shape[0]
+                if lmat.shape == (3, nawf // 2, nawf // 2) and attr.get('dftSO', False):
+                    lmat = np.stack([np.kron(np.eye(2), lmat[a]) for a in range(3)])
+                arry['Lj'] = lmat
+            elif orbital and 'Lj' not in arry:
+                self._orbital_operator_for_fields()
+            if nspin == 1 and not attr.get('dftSO', False):
+                self.spinor_basis()
+            elif nspin == 1 and 'Sj' not in arry:
+                self.spin_operator(adhoc_SO=attr.get('adhoc_SO', False))
+            term = onsite_magnetic_field(
+                self.data_controller, field, g_s=g_s, spin=spin, orbital=orbital
+            )
+            arry['magnetic_field'] = (
+                np.asarray(arry.get('magnetic_field', np.zeros(3)), dtype=float) + field
+            )
+        except Exception as e:
+            self.report_exception('magnetic_field')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Magnetic field')
+        return term
+
+    def peierls_field(self, field=None, flux_quanta=None, plane=(0, 1)):
+        """
+        Couple a uniform magnetic field to the hoppings: Peierls phases (orbital motion, vector potential)
+
+        Every hopping <i,0|H|j,R> takes the phase (e/hbar) int A.dl along the straight line between
+        the orbital centres, in the Landau gauge of the plane (a_p, a_q); the field points along the
+        third lattice vector a_r. A periodic cell along a_p must hold an integer number of flux
+        quanta (a magnetic supercell, doubling_Hamiltonian); a ribbon or a flake (open along a_p,
+        cutting_Hamiltonian) takes any field. Together with magnetic_field (spin and atomic orbital
+        Zeeman terms on site) it is the full coupling of the PAO Hamiltonian to B. Call it on 'HRs',
+        before interpolated_hamiltonian; each call adds its flux.
+
+        Arguments:
+            field (float): field along a_r (T), or
+            flux_quanta (float): flux through the cell a_p x a_q in units of h/e
+            plane (tuple of int): the lattice directions (p, q) of the cyclotron orbits
+
+        Returns:
+            float: the flux quanta per cell applied
+        """
+        from .hamiltonian.peierls import flux_quanta_per_cell, peierls_phases
+
+        arry, attr = self.data_controller.data_dicts()
+        flux = None
+        try:
+            if (field is None) == (flux_quanta is None):
+                raise ValueError('give either field (T) or flux_quanta')
+            if flux_quanta is None:
+                flux = flux_quanta_per_cell(field, arry['a_vectors'], attr['alat'], tuple(plane))
+            else:
+                flux = float(flux_quanta)
+            peierls_phases(self.data_controller, flux, tuple(plane))
+            if 'Hks' in arry and np.shape(arry['Hks']) == np.shape(arry['HRs']):
+                arry['Hks'] = np.fft.fftn(arry['HRs'], axes=(2, 3, 4))
+            attr['peierls_flux_quanta'] = attr.get('peierls_flux_quanta', 0.0) + flux
+        except Exception as e:
+            self.report_exception('peierls_field')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Peierls phases')
+        return flux
+
+    def orbital_moment(self, degeneracy_tol=1.0e-6):
+        """
+        Orbital magnetic moment m_n(k) of every Bloch state on the interpolated grid (mu_B)
+
+        m_n = -i (e / 2 hbar) <grad u_n| x (H - e_n) |grad u_n>, from the velocity matrices of
+        gradient_and_momenta (with the Dnm term), for an electron: a state circulating
+        counter-clockwise about z has m_z < 0, and its energy in a field is e_n - m_n . B to first
+        order (the itinerant part of the band g-factor; the atomic part is magnetic_field's L).
+        States closer than degeneracy_tol are left out of each other's sums: inside a degenerate
+        group the per-band values depend on the basis, their sum does not. Call it after pao_eigh
+        and gradient_and_momenta.
+
+        Arguments:
+            degeneracy_tol (float): degeneracy threshold (eV)
+
+        Returns:
+            None: arrays 'orbital_moment' and 'berry_curvature_vector', shape (nk, nbnd, 3, nspin)
+            on the local k-points (mu_B, bohr^2)
+        """
+        from .response.orbital_moment import moment_and_curvature
+
+        arry, attr = self.data_controller.data_dicts()
+        try:
+            energies, momenta = arry['E_k'], arry['pksp']
+            nk, nb, nspin = energies.shape
+            moment = np.zeros((nk, nb, 3, nspin))
+            curvature = np.zeros((nk, nb, 3, nspin))
+            for ispin in range(nspin):
+                for ik in range(nk):
+                    moment[ik, :, :, ispin], curvature[ik, :, :, ispin] = moment_and_curvature(
+                        energies[ik, :, ispin], momenta[ik, :, :nb, :nb, ispin], degeneracy_tol
+                    )
+            arry['orbital_moment'], arry['berry_curvature_vector'] = moment, curvature
+        except Exception as e:
+            self.report_exception('orbital_moment')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Orbital moment')
+
+    def orbital_magnetization(
+        self,
+        emin=-1.0,
+        emax=1.0,
+        ne=201,
+        temperature=0.0,
+        degeneracy_tol=1.0e-6,
+        fname='orbital_magnetization',
+    ):
+        """
+        Orbital magnetization per cell against the chemical potential (modern theory, mu_B)
+
+        M(mu) = (g / N_k) sum_nk f_nk [m_nk + (e / hbar)(mu - e_nk) Omega_nk], g = 2 for
+        spin-degenerate bands, 1 otherwise. In the gap of a Chern insulator dM/dmu = (e/h) C times
+        the cell area (Streda). Call it after pao_eigh and gradient_and_momenta (it calls
+        orbital_moment if needed); writes <fname>.dat (mu, Mx, My, Mz).
+
+        Arguments:
+            emin, emax, ne: the chemical potentials (eV, relative to the Fermi level of 'E_k')
+            temperature (float): electronic temperature (K); 0 gives step occupations
+            degeneracy_tol (float): see orbital_moment
+
+        Returns:
+            tuple: chemical potentials (ne,) and M (ne, 3) in mu_B per cell
+        """
+        from mpi4py import MPI
+
+        from .response.orbital_moment import magnetization_density
+
+        arry, attr = self.data_controller.data_dicts()
+        chemical = np.linspace(emin, emax, ne)
+        total = np.zeros((ne, 3))
+        try:
+            if 'orbital_moment' not in arry:
+                self.orbital_moment(degeneracy_tol)
+            energies = arry['E_k']
+            nk, nb, nspin = energies.shape
+            spin_factor = 2.0 if (nspin == 1 and not attr.get('dftSO', False)) else 1.0
+            kT = 8.617333262e-5 * float(temperature)
+            local = np.zeros((ne, 3))
+            for ispin in range(nspin):
+                for ik in range(nk):
+                    local += magnetization_density(
+                        energies[ik, :, ispin],
+                        arry['orbital_moment'][ik, :, :, ispin],
+                        arry['berry_curvature_vector'][ik, :, :, ispin],
+                        chemical,
+                        kT,
+                    )
+            self.comm.Allreduce(local, total, op=MPI.SUM)
+            total *= spin_factor / self.comm.allreduce(nk, op=MPI.SUM)
+            if self.rank == 0:
+                import os
+
+                np.savetxt(
+                    os.path.join(attr['opath'], fname + '.dat'),
+                    np.column_stack([chemical, total]),
+                    header='mu (eV)   M_x   M_y   M_z (mu_B per cell)',
+                )
+        except Exception as e:
+            self.report_exception('orbital_magnetization')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Orbital magnetization')
+        return chemical, total
+
+    def stoner_parameters(self, density='auto', verbose=True):
+        """
+        Stoner integrals of the PAO shells from the LSDA spin kernel (eV per mu_B)
+
+        I_gg' = -2 int r^2 dr R_g^2 R_g'^2 f_s(n) / 4 pi, with the radial functions of the projection
+        basis, a valence plus core density and the LSDA spin kernel f_s (Slater exchange + PW92
+        correlation); the exchange splitting of shell g is sum_g' I_gg' m_g' (Janak's convention:
+        Stoner criterion I N(E_F) > 1, N per spin). Needs the projection basis (DFT runs); for
+        models pass shells and stoner to self_consistent_spin. The on-site model leaves out the
+        bond (off-diagonal) part of the magnetization density and its self-consistent shape: for
+        Pd, Pt and Fe its effective I is about 2/3 of the full LSDA one (spin_susceptibility with
+        'alda', docs/internals/spin-response.md).
+
+        Arguments:
+            density (str): 'crystal' (QE's charge density, spherically averaged about the atom; the
+                free-atom tail makes the integrals of diffuse shells diverge), 'atomic' (the
+                pseudopotential's atomic density) or 'auto' (crystal when the save holds
+                charge-density.dat)
+            verbose (bool): print the table
+
+        Returns:
+            tuple: the shells (list of dict) and the matrix (ngroups, ngroups)
+        """
+        from .hamiltonian.stoner import (
+            crystal_densities,
+            shell_groups,
+            species_densities,
+            stoner_matrix,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+        groups, matrix = None, None
+        try:
+            groups = shell_groups(arry, attr)
+            if density == 'auto':
+                import os
+
+                found = os.path.isfile(os.path.join(attr.get('fpath', ''), 'charge-density.dat'))
+                density = 'crystal' if found else 'atomic'
+            if density not in ('crystal', 'atomic'):
+                raise ValueError(f"density must be 'crystal', 'atomic' or 'auto', not {density!r}")
+            densities = (crystal_densities if density == 'crystal' else species_densities)(
+                self.data_controller
+            )
+            matrix = stoner_matrix(groups, densities)
+            arry['stoner_shells'], arry['stoner_matrix'] = groups, matrix
+            if verbose and self.rank == 0:
+                print(f'Stoner integrals (eV per mu_B, {density} density), diagonal per shell:')
+                for g, group in enumerate(groups):
+                    print(
+                        f'  {group["species"]:>3s} {group["label"]:>3s} (l = {group["l"]}): {matrix[g, g]:.4f}'
+                    )
+        except Exception as e:
+            self.report_exception('stoner_parameters')
+            if attr['abort_on_exception']:
+                raise e
+        return groups, matrix
+
+    def self_consistent_spin(
+        self,
+        field=(0.0, 0.0, 0.0),
+        nk=(16, 16, 16),
+        smearing='marzari-vanderbilt',
+        degauss=0.2721,
+        stoner=None,
+        shells=None,
+        spin=True,
+        orbital=False,
+        g_s=None,
+        seed=None,
+        mixing=0.5,
+        tol=1.0e-7,
+        max_iter=300,
+        update_hamiltonian=True,
+        linear=False,
+    ):
+        """
+        Self-consistent spin response to a uniform field: the LSDA exchange field in the Stoner mean field
+
+        Solves H(k) + mu_B (L + g_s S).B - sum_g h_g . S_g with h_g = sum_g' I_gg' (m_g' - m0_g')
+        self-consistently on a k-grid, m_g the spin moment of shell g and m0 its value without field
+        (a magnetic DFT Hamiltonian already holds its exchange splitting). In the linear regime this
+        is the RPA-Stoner enhancement chi = chi0 / (1 - I chi0); with seed it finds a Stoner
+        instability (the solution returned is checked to be stable). A spin-degenerate run is first
+        rewritten in spinors. Call it on 'HRs', before interpolated_hamiltonian.
+
+        Arguments:
+            field (array_like): field (T), Cartesian
+            nk (tuple): k-grid of the self-consistency
+            smearing (str): 'marzari-vanderbilt', 'gaussian' or 'fermi-dirac'
+            degauss (float): smearing width (eV; QE's degauss in Ry times 13.6057)
+            stoner (float or ndarray): None computes stoner_parameters; a float is one I (eV) on the
+                d shells (or on every shell when there are no d shells); an array the full matrix
+            shells (list of dict): the shells ('orbitals' index arrays), for models
+            spin, orbital (bool): Zeeman terms of the field (orbital needs Lj)
+            g_s (float): spin g-factor
+            seed (array_like): initial moments (ngroups, 3) on top of m0, to probe an instability
+            mixing, tol, max_iter: the loop (Anderson mixing after a linear warm-up)
+            update_hamiltonian (bool): add the field and the converged exchange term to 'HRs'
+            linear (bool): stay on the solution connected to m0 (Anderson mixing from the start, no
+                stability check): the linear response, negative across a Stoner instability
+
+        Returns:
+            dict: 'moments' (ngroups, 3, mu_B), 'total_moment' (3,), 'reference', 'mu', 'converged',
+            'stable', 'iterations', 'shells'
+        """
+        from .hamiltonian.magnetic_field import ELECTRON_SPIN_G_FACTOR, add_onsite, zeeman_matrix
+        from .hamiltonian.stoner import bloch_hamiltonians, solve_spin_response
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            if orbital and 'Lj' not in arry:
+                self._orbital_operator_for_fields()
+            nspin = arry['HRs'].shape[-1]
+            if nspin == 1 and not attr.get('dftSO', False):
+                self.spinor_basis()
+            elif nspin == 1 and 'Sj' not in arry:
+                self.spin_operator(adhoc_SO=attr.get('adhoc_SO', False))
+            if shells is None:
+                from .hamiltonian.stoner import shell_groups
+
+                if stoner is None and 'stoner_matrix' not in arry:
+                    self.stoner_parameters(verbose=attr.get('verbose', False))
+                # the orbitals of the current basis (both spinor components after spinor_basis);
+                # the shells keep the order of stoner_parameters
+                shells = shell_groups(arry, attr)
+            if stoner is None:
+                matrix = np.asarray(arry['stoner_matrix'], dtype=float)
+            elif np.ndim(stoner) == 0:
+                d_shells = [g for g, group in enumerate(shells) if group.get('l') == 2]
+                chosen = d_shells if d_shells else list(range(len(shells)))
+                matrix = np.zeros((len(shells), len(shells)))
+                matrix[chosen, chosen] = float(stoner)
+            else:
+                matrix = np.asarray(stoner, dtype=float)
+            g_s = ELECTRON_SPIN_G_FACTOR if g_s is None else float(g_s)
+            onsite = zeeman_matrix(arry, np.asarray(field, dtype=float), g_s, spin, orbital)
+            comm = self.comm if self.size > 1 else None
+            from .hamiltonian.orbital_centres import orbital_centres_bohr
+
+            # pair-resolved Wigner-Seitz interpolation, as the grid response and the optics
+            lattice = float(attr['alat']) * np.asarray(arry['a_vectors'], dtype=float)
+            positions = orbital_centres_bohr(arry, attr) @ np.linalg.inv(lattice)
+            hk = bloch_hamiltonians(np.asarray(arry['HRs']), tuple(nk), comm,
+                                    np.asarray(arry['a_vectors'], dtype=float), float(attr['alat']), positions)  # fmt: skip
+            result = solve_spin_response(
+                hk, onsite, shells, matrix, arry.get('Sj'), float(attr['nelec']), float(degauss),
+                smearing, mixing, tol, max_iter, None if seed is None else np.asarray(seed, dtype=float),
+                check_stability=not linear, warmup=0 if linear else 30, comm=comm,
+            )  # fmt: skip
+            result['total_moment'] = result['moments'].sum(axis=0)
+            result['shells'] = shells
+            if update_hamiltonian:
+                add_onsite(self.data_controller, onsite + result['exchange'])
+                arry['spin_moments'] = result['moments']
+            if self.rank == 0 and attr.get('verbose', False):
+                print(f"self-consistent spin: total moment {np.round(result['total_moment'], 6)} mu_B, "
+                      f"converged {result['converged']}, stable {result['stable']}, {result['iterations']} iterations")  # fmt: skip
+        except Exception as e:
+            self.report_exception('self_consistent_spin')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Self-consistent spin')
+        return result
+
+    def spin_susceptibility(
+        self,
+        field=10.0,
+        nk=(16, 16, 16),
+        smearing='marzari-vanderbilt',
+        degauss=0.2721,
+        methods=('bare', 'stoner'),
+        stoner=None,
+        shells=None,
+        g_s=None,
+        direction=(0.0, 0.0, 1.0),
+        alda_options=None,
+        fname='spin_susceptibility',
+    ):
+        """
+        Uniform static spin susceptibility chi = dM/dh per cell (mu_B per eV)
+
+        M is the spin moment per cell, h = g_s mu_B B / 2 the half Zeeman splitting; symmetric fields
+        +-B along direction. methods: 'bare' (frozen Hamiltonian, the Pauli + Van Vleck chi0),
+        'stoner' (self_consistent_spin: on-site LSDA mean field, linear), 'alda' (the LSDA spin kernel on
+        the real-space grid of the crystal, response.spin_response; collinear spin-degenerate runs
+        with the internal basis). A negative chi is a Stoner instability: the reference state is
+        unstable (self_consistent_spin with a seed finds the ordered moment). The Hamiltonian is
+        left as it was (but in spinors). Writes <fname>.dat.
+
+        Arguments:
+            field (float): |B| (T)
+            nk, smearing, degauss, stoner, shells, g_s: as self_consistent_spin
+            methods (sequence of str): any of 'bare', 'stoner', 'alda'
+            direction (array_like): field direction
+            alda_options (dict): keyword arguments of spin_response.static_spin_susceptibility
+
+        Returns:
+            dict: chi per method (mu_B/eV), 'enhancement' (chi / chi_bare), 'h' (eV)
+        """
+        from .hamiltonian.magnetic_field import BOHR_MAGNETON_EV_PER_TESLA, ELECTRON_SPIN_G_FACTOR
+
+        attr = self.data_controller.data_attributes
+        g_s = ELECTRON_SPIN_G_FACTOR if g_s is None else float(g_s)
+        unit = np.asarray(direction, dtype=float) / np.linalg.norm(direction)
+        h = 0.5 * g_s * BOHR_MAGNETON_EV_PER_TESLA * float(field)
+        out = {'h': h, 'field': float(field)}
+        try:
+            # the grid response needs the spin-degenerate Hamiltonian: before the others make spinors
+            for method in sorted(methods, key=lambda name: name != 'alda'):
+                if method == 'alda':
+                    from .response.spin_response import static_spin_susceptibility
+
+                    comm = self.comm if self.size > 1 else None
+                    grid = static_spin_susceptibility(self.data_controller, nk=nk, smearing=smearing, degauss=degauss,
+                                                      comm=comm, **(alda_options or {}))  # fmt: skip
+                    out['alda'], out['alda_bare'] = grid['chi'], grid['chi_bare']
+                    self.report_module_time('Spin response on the grid (ALDA)')
+                    continue
+                moments = []
+                for sign in (1.0, -1.0):
+                    res = self.self_consistent_spin(
+                        field=sign * float(field) * unit, nk=nk, smearing=smearing, degauss=degauss,
+                        stoner=0.0 if method == 'bare' else stoner, shells=shells,
+                        update_hamiltonian=False, g_s=g_s, linear=True,
+                    )  # fmt: skip
+                    moments.append(float(res['total_moment'] @ unit))
+                # a field along +B raises the spins along +B: the spin moment n_up - n_down falls
+                out[method] = -(moments[0] - moments[1]) / (2.0 * h)
+            if 'bare' in out:
+                out['enhancement'] = {
+                    m: out[m] / out['bare'] for m in ('stoner', 'alda') if m in out
+                }
+            if self.rank == 0:
+                import os
+
+                with open(os.path.join(attr['opath'], fname + '.dat'), 'w') as handle:
+                    handle.write(
+                        f'# uniform static spin susceptibility dM/dh (mu_B per eV per cell); B = {field} T, h = {h:.6e} eV\n'
+                    )
+                    for method in methods:
+                        handle.write(f'{method:8s} {out[method]: .8e}\n')
+        except Exception as e:
+            self.report_exception('spin_susceptibility')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Spin susceptibility')
+        return out
+
+    def _orbital_operator_for_fields(self):
+        """Build Lj with orbital_operator when the basis carries the labels it needs."""
+        arry, attr = self.data_controller.data_dicts()
+        fully_relativistic = attr.get('dftSO', False) and not attr.get('adhoc_SO', False)
+        if attr.get('adhoc_SO', False):
+            ready = 'orb_atom' in arry
+        elif fully_relativistic:
+            ready = 'jchia' in arry or isinstance(arry.get('shells'), dict)
+        else:
+            ready = isinstance(arry.get('shells'), dict) and 'atoms' in arry
+        if not ready:
+            raise ValueError(
+                'the orbital angular momentum of this basis is unknown (a model?): pass '
+                'orbital=False, or orbital_angular_momentum=(Lx, Ly, Lz)'
+            )
+        self.orbital_operator(adhoc_SO=attr.get('adhoc_SO', False))
+        if 'Lj' not in arry:
+            raise ValueError('orbital_operator did not build Lj for this basis')
+
+    def write_Hamiltonian(self, fname: str = 'hamiltonian.dat') -> None:
+        """Write the real-space Hamiltonian in the Wannier90 ``_hr.dat`` format.
+
+        Parameters
+        ----------
+        fname : str, optional
+            File name, in the output directory.
+
+        Returns
+        -------
+        None
+            Writes ``fname``: the matrix elements :math:`H_{\\mu\\nu}(\\mathbf{R})` (eV) on the
+            lattice vectors of the k mesh, which ``tbmodels.Model.from_wannier_files`` reads (the
+            tight-binding models of Z2Pack, :meth:`find_weyl_points`, :meth:`mirror_chern_number`).
         """
         try:
             self.data_controller.write_HRs(fname)
@@ -1118,28 +1694,49 @@ class PAOFLOW:
 
     def bands(
         self,
-        ibrav=None,
-        band_path=None,
-        high_sym_points=None,
-        adhoc_SO=False,
-        fname='bands',
-        nk=500,
-        write_QE_path=False,
-    ):
-        """
-        Compute the electronic band structure
+        ibrav: int | None = None,
+        band_path: str | None = None,
+        high_sym_points: dict | None = None,
+        adhoc_SO: bool = False,
+        fname: str = 'bands',
+        nk: int = 500,
+        write_QE_path: bool = False,
+        interpolation: str = 'fft_grid',
+    ) -> None:
+        """Compute the electronic band structure along a path.
 
-        Arguments:
-            ibrav (int): Crystal structure (following the specifications of QE)
-            band_path (str): A string representing the band path to follow
-            high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
-            adhoc_SO (bool): If True the calculation includes relativistic spin orbit coupling
-            fname (str): File name for the band output
-            nk (int): Number of k-points to include in the path (High Symmetry points are currently included twice, increasing nk)
-            write_QE_path (bool): If True generates the kpath in tpiba to run QE bands
-        Returns:
-            None
+        Parameters
+        ----------
+        ibrav : int, optional
+            Crystal structure (following the specifications of QE); selects the default path.
+        band_path : str, optional
+            A string representing the band path to follow.
+        high_sym_points : dict, optional
+            Symbols of the high-symmetry points as keys and length-3 arrays with their positions as values.
+        adhoc_SO : bool, optional
+            If True the calculation includes relativistic spin-orbit coupling.
+        fname : str, optional
+            File name for the band output.
+        nk : int, optional
+            Number of k-points along the path (high-symmetry points are currently included twice).
+        write_QE_path : bool, optional
+            If True generates the k-path in tpiba to run QE bands.
+        interpolation : {'fft_grid', 'wigner_seitz', 'wigner_seitz_pairs'}, optional
+            Fourier sum of ``HRs`` off the DFT mesh. ``'fft_grid'`` (default) sums over the FFT grid
+            as stored; ``'wigner_seitz'`` gives every grid vector its shortest image in the supercell
+            lattice, as Wannier interpolation does, and is the more accurate when the real-space
+            Hamiltonian has not decayed at the edge of the supercell. ``'wigner_seitz_pairs'``
+            chooses the image of every orbital pair by the length of its bond (wannier90
+            ``use_ws_distance``): with several atoms per cell the bands then keep the symmetry
+            operations that move one atom onto another. It needs one orbital centre per orbital
+            (QE runs after ``projections`` and models; not after ``doubling_Hamiltonian`` or
+            ``adhoc_spin_orbit``). All reproduce the DFT mesh.
 
+        Returns
+        -------
+        None
+            Stores ``E_k`` and ``v_k`` on the path in the data controller and writes the bands to
+            ``fname``.
         """
         from .spectrum.do_bands import do_bands
         from .utils.communication import gather_full
@@ -1166,7 +1763,7 @@ class PAOFLOW:
         attr['write_QE_bands'] = write_QE_path
         # Prepare HRs for band computation with spin-orbit coupling
         try:
-            do_bands(self.data_controller)
+            do_bands(self.data_controller, interpolation=interpolation)
             if self.rank == 0 and 'nkpnts' in attr and arrays['kq'].shape[1] == attr['nkpnts']:
                 print('WARNING: The bands kpath and nscf calculations have the same size.')
                 print(
@@ -1419,6 +2016,61 @@ class PAOFLOW:
         self.report_module_time('mirror_chern_number')
         return result
 
+    def z2_invariant(
+        self,
+        nbnd_occ: int | str = 'auto',
+        k3_planes: tuple[float, ...] = (0.0,),
+        surface_kwargs: dict | None = None,
+    ) -> dict | None:
+        """Z2 index of the occupied bands from the Wannier charge centres (Z2Pack).
+
+        Parameters
+        ----------
+        nbnd_occ : int or 'auto', optional
+            Number of occupied bands (``'auto'``: the number of electrons).
+        k3_planes : tuple of float, optional
+            Time-reversal-invariant planes ``k3 = const`` (crystal units): ``(0.0,)`` for a 2D
+            layer with vacuum along ``c``, ``(0.0, 0.5)`` for a 3D crystal.
+        surface_kwargs : dict, optional
+            Overrides of the ``z2pack.surface.run`` sampling (``pos_tol``, ``iterator``, ...).
+
+        Returns
+        -------
+        dict or None
+            ``nocc``, ``planes`` and ``z2`` (one index per plane); None on an error with
+            ``abort_on_exception`` off. Writes ``z2_HRs.dat`` and ``z2_wcc_k3_<k3>.dat`` (the
+            Wannier charge centres along the pumping parameter).
+
+        Notes
+        -----
+        Needs spin-orbit coupling (fully relativistic save or :meth:`adhoc_spin_orbit`) and the
+        optional ``z2pack`` and ``tbmodels`` packages; call after :meth:`pao_hamiltonian`. For a 3D
+        crystal the indices of the planes :math:`k_3 = 0` and :math:`k_3 = 1/2` are two of the
+        weak indices; their sum (mod 2) with those of the other directions gives the strong one.
+        """
+        from .topology.z2_invariant import do_z2_invariant
+
+        attr = self.data_controller.data_attributes
+        result = None
+        try:
+            result = do_z2_invariant(
+                self.data_controller,
+                nbnd_occ=nbnd_occ,
+                k3_planes=tuple(k3_planes),
+                surface_kwargs=surface_kwargs,
+            )
+            if self.rank == 0:
+                for k3, z2 in zip(result['planes'], result['z2']):
+                    print(
+                        'Z2 invariant (k3 = %g, %d occupied bands): %d' % (k3, result['nocc'], z2)
+                    )
+        except Exception as e:
+            self.report_exception('z2_invariant')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('z2_invariant')
+        return result
+
     def wave_function_projection(self, dimension=3):
         """
         Marcio, can you write something here please?
@@ -1443,24 +2095,33 @@ class PAOFLOW:
 
         self.report_module_time('wave_function_projection')
 
-    def site_projected_bands(self, site_proj=[0]):
-        """
-        This routine calculates the wavefunction square wheights to produce a site projected band
-        structure.
+    def site_projected_bands(self, site_proj: list[int] = [0]) -> None:
+        """Weight of chosen atoms in every state of the band path (site-projected bands).
 
-        Arguments:
-            site_proj (list of ints): Incides of the atomic site to project the bands
+        Parameters
+        ----------
+        site_proj : list of int, optional
+            Atoms to project on, 0-based in the order of the save (or of the model).
 
-        Returns:
-            None
+        Returns
+        -------
+        None
+            Writes ``site-projected-bands_<spin>.dat``: k-point index along the path, band energy
+            (eV) and the weight of the chosen atoms, band after band.
+
+        Notes
+        -----
+        The weight of state :math:`n\\mathbf{k}` is
+        :math:`\\sum_{\\mu \\in \\mathrm{sites}} |\\langle \\mu | n\\mathbf{k} \\rangle|^2`
+        over the PAO orbitals of the chosen atoms (both spin blocks with ad hoc spin-orbit). Call it
+        after :meth:`bands`, which leaves the eigenvectors of the path.
         """
 
         from .spectrum.do_site_projected_bands import site_projeted_bands
 
         arry, attr = self.data_controller.data_dicts()
 
-        if 'site_proj' not in arry:
-            arry['site_proj'] = site_proj
+        arry['site_proj'] = np.atleast_1d(np.asarray(site_proj, dtype=int))
 
         if 'naw' not in arry:
             self.data_controller.build_arrays_adhoc_soc()
@@ -1474,18 +2135,42 @@ class PAOFLOW:
 
         self.report_module_time('site_projeted_bands')
 
-    def doubling_Hamiltonian(self, nx, ny, nz):
-        """
-        Marcio, can you write something here please?
-        Please check the argument descriptions also
+    def doubling_Hamiltonian(self, nx: int, ny: int, nz: int) -> None:
+        """Real-space Hamiltonian of a supercell made by doubling the cell along its lattice vectors.
 
-        Arguments:
-            nx (bool): Number of doubles in first dimension
-            ny (bool): Number of doubles in second dimension
-            nz (bool): Number of doubles in third dimension
+        Parameters
+        ----------
+        nx : int
+            Number of doublings along the first lattice vector: the supercell holds ``2**nx``
+            copies of the cell along it. 0 leaves the direction alone.
+        ny : int
+            Number of doublings along the second lattice vector.
+        nz : int
+            Number of doublings along the third lattice vector.
 
-        Returns:
-            None
+        Returns
+        -------
+        None
+            ``HRs``, ``tau``, ``atoms``, ``a_vectors`` and the per-atom arrays (``naw``, ``sh``,
+            ``nl``, the spin operator, the ad hoc spin-orbit strengths) describe the supercell, on
+            every rank.
+
+        Notes
+        -----
+        Each doubling along :math:`\\mathbf{a}_i` builds the Hamiltonian of the cell
+        :math:`(\\mathbf{a}_i \\to 2\\mathbf{a}_i)` from the blocks of the original one,
+
+        .. math::
+
+            H'(\\mathbf{R}') = \\begin{pmatrix}
+                H(2\\mathbf{R}') & H(2\\mathbf{R}' + \\mathbf{a}_i) \\\\
+                H(2\\mathbf{R}' - \\mathbf{a}_i) & H(2\\mathbf{R}')
+            \\end{pmatrix},
+
+        so the bands of the supercell are those of the cell folded into the smaller Brillouin
+        zone. Call it after :meth:`pao_hamiltonian` (and after :meth:`adhoc_spin_orbit`), before
+        the band structure and the interpolation; the k mesh of ``HRs`` is kept, so the supercell
+        samples a denser k grid of the original crystal.
         """
         from .hamiltonian.do_doubling import doubling_HRs
 
@@ -1710,7 +2395,23 @@ class PAOFLOW:
                         spol, len(orb_list) : 2 * len(orb_list), len(orb_list) : 2 * len(orb_list)
                     ] = L
 
-            elif attr['adhoc_SO'] == False:
+            elif not attr['dftSO']:
+                # Scalar (no spin-orbit) basis: L in the real harmonics |l,m> of every shell
+                # (restored 14 Nov 2026; the orbital Hall effect needs no spin-orbit coupling).
+                self.data_controller.build_arrays_adhoc_soc()
+                orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
+                if len(orb_list) != attr['nawf']:
+                    raise ValueError(
+                        'orbital_operator: the shells of %s have no real-harmonic table '
+                        '(%d of %d orbitals labelled)'
+                        % (arrays['atoms'], len(orb_list), attr['nawf'])
+                    )
+                arrays['Lj'] = np.zeros((3, attr['nawf'], attr['nawf']), dtype=complex)
+                for spol in range(3):
+                    L, _ = build_L_from_orb(arrays['orb_atom'], spol)
+                    arrays['Lj'][spol] = L
+
+            else:
                 if 'Sj' not in arrays:
                     self.spin_operator(adhoc_SO=False)
                 # Compute Total Angular Momentum operators
@@ -1719,16 +2420,6 @@ class PAOFLOW:
                     Jj[spol, :, :] = j_matrix(self.data_controller, spol)
                 # Compute Orbital Angular Momentum operators L = J - S
                 arrays['Lj'] = Jj - arrays['Sj']
-
-            # elif attr['dftSO'] == False and attr['adhoc_SO'] == False:
-            #    self.data_controller.build_arrays_adhoc_soc()
-            #    # Compute Orbital Angular Momentum operators L in the basis of |l,m> (NO SOC)
-            #    orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
-            #    arrays['Lj'] = np.zeros((3,attr['nawf'],attr['nawf']), dtype=complex)
-            #
-            #    for spol in range(3):
-            #        L, _ = build_L_from_orb(arrays['orb_atom'], spol)
-            #        arrays['Lj'][spol, 0:len(orb_list), 0:len(orb_list)] = L
         except:
             self.report_exception('angular_momentum_operator')
             if attr['abort_on_exception']:
@@ -1750,7 +2441,8 @@ class PAOFLOW:
         Arguments:
             eff_mass (bool): If True calculate the Effective Mass Tensor
             Berry (bool): If True calculate the Berry Curvature
-            spin_Hall (bool): If True calculate Spin Hall Conductivity
+            spin_Hall (bool): If True calculate Spin Hall Conductivity (and the legacy Pfaffian
+                Z2 in Z2.dim; use Z2Pack, e.g. mirror_chern_number, or berry_phase flows instead)
             adhoc_SO (bool): If True the calculation includes spin_orbit effects for topology.
             spol (int): Spin polarization
             ipol (int): In plane dimension 1
@@ -1800,22 +2492,46 @@ class PAOFLOW:
         arrays.pop('Rfft', None)
         arrays.pop('R_wght', None)
 
-    def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False, free_HRs=True):
-        """
-        Calculate the interpolated Hamiltonian with the method of zero padding
-        Populates DataController with 'Hksp'.
+    def interpolated_hamiltonian(
+        self,
+        nfft1: int = 0,
+        nfft2: int = 0,
+        nfft3: int = 0,
+        reshift_Ef: bool = False,
+        free_HRs: bool = True,
+        interpolation: str = 'zero_padding',
+    ) -> None:
+        """Fourier-interpolate the PAO Hamiltonian onto a denser k-grid.
 
-        Arguments:
-            nfft1 (int): Desired size of the interpolated Hamiltonian's first dimension
-            nfft2 (int): Desired size of the interpolated Hamiltonian's second dimension
-            nfft3 (int): Desired size of the interpolated Hamiltonian's third dimension
-            free_HRs (bool): Release 'HRs' once it has been interpolated. It is replicated
-                on every rank, so keeping it roughly doubles the peak footprint of this
-                step. Set False only when calling 'topology' or 'berry_phase' afterwards
-                without an intervening 'pao_eigh' (which frees it regardless).
+        Parameters
+        ----------
+        nfft1, nfft2, nfft3 : int, optional
+            Size of the interpolated grid along each reciprocal vector; 0 (default) doubles the
+            DFT mesh along that direction.
+        reshift_Ef : bool, optional
+            Recompute the Fermi energy on the interpolated grid and subtract it from ``Hksp``.
+        free_HRs : bool, optional
+            Release ``HRs`` once it has been interpolated. It is replicated on every rank, so
+            keeping it roughly doubles the peak footprint of this step. Set False only when calling
+            ``topology`` or ``berry_phase`` afterwards without an intervening ``pao_eigh`` (which
+            frees it regardless).
+        interpolation : {'zero_padding', 'wigner_seitz', 'wigner_seitz_pairs'}, optional
+            How the real-space grid of ``HRs`` is mapped to lattice vectors off the DFT mesh.
+            ``'zero_padding'`` (default) keeps the parallelepiped of grid vectors and splits the
+            Nyquist planes; ``'wigner_seitz'`` gives every grid vector its shortest image in the
+            supercell lattice, as Wannier interpolation does. Both reproduce the DFT mesh exactly
+            and cost one FFT per orbital pair; the Wigner-Seitz choice is the more accurate when
+            ``HRs`` has not decayed at the edge of the supercell. It needs a grid that holds every
+            image (about 1.5 times the DFT mesh for fcc and bcc lattices, twice the default) and
+            raises otherwise. ``'wigner_seitz_pairs'`` chooses the image of every orbital pair by the
+            length of its bond, which keeps the symmetry operations that move one atom onto another
+            (same cost; needs one orbital centre per orbital, see :meth:`bands`).
 
-        Returns:
-            None
+        Returns
+        -------
+        None
+            Stores ``Hksp`` (distributed over the k-points) and the new grid sizes in the data
+            controller.
         """
         from .hamiltonian.do_double_grid import do_double_grid
         from .spectrum.do_Efermi import E_Fermi
@@ -1852,7 +2568,7 @@ class PAOFLOW:
                 attr['npool'] = temp_pool
 
             # Fourier interpolation on extended grid (zero padding)
-            do_double_grid(self.data_controller)
+            do_double_grid(self.data_controller, interpolation=interpolation)
             # do_double_grid has taken its scattered copy; the replicated original is
             # dead weight through the gather_scatter peak below.
             if free_HRs and 'HRs' in arrays:
@@ -1891,7 +2607,11 @@ class PAOFLOW:
             if attr['abort_on_exception']:
                 raise e
 
-        self.report_module_time('R -> k with Zero Padding')
+        self.report_module_time(
+            'R -> k with Zero Padding'
+            if interpolation == 'zero_padding'
+            else 'R -> k with Wigner-Seitz images'
+        )
 
     def pao_eigh(self, bval=0):
         """
@@ -1970,7 +2690,12 @@ class PAOFLOW:
           (:meth:`position_dipole_correction`), the term that completes the
           commutator ``i[H, r]`` when the position operator is no longer reduced
           to the orbital centres.  ``None`` falls back to
-          ``attr['position_dipoles']`` (False if unset).
+          ``attr['position_dipoles']``; if that is unset, the dipoles are on for
+          internal projections of a QE run (:meth:`projections`, whose radial
+          tables they need) and off otherwise (projwfc, VASP, models).  When the
+          default turns them on and they cannot be built for the basis (e.g. a
+          doubled cell), a warning is printed and the run goes on without them;
+          ``True`` raises instead.
           position_dipole_level (str): ``'full'`` (Löwdin-orthogonalised basis)
           or ``'intra-atomic'`` (on-site blocks only).
           nonlocal_velocity, nonlocal_velocity_inject, nonlocal_velocity_sign:
@@ -2053,7 +2778,11 @@ class PAOFLOW:
                 '(docs/internals/position-dipoles.md).'
             )
         if position_dipoles is None:
-            dipoles_enabled = bool(attr.get('position_dipoles', False))
+            position_dipoles = attr.get('position_dipoles')
+        automatic = position_dipoles is None
+        if automatic:
+            # internal projections of a QE run: the PAO radial tables of the basis are at hand
+            dipoles_enabled = bool(arrays.get('atomic_basis')) and attr.get('dft', 'QE') == 'QE'
         else:
             dipoles_enabled = bool(position_dipoles)
         if dipoles_enabled:
@@ -2063,7 +2792,14 @@ class PAOFLOW:
                 nb = arrays['pksp'].shape[2]
                 bdiag = np.arange(nb)
                 arrays['velkp_bare'] = np.ascontiguousarray(arrays['pksp'][:, :, bdiag, bdiag, :])
-            self.position_dipole_correction(level=position_dipole_level)
+            applied = self.position_dipole_correction(
+                level=position_dipole_level, strict=not automatic
+            )
+            if automatic and applied and self.rank == 0 and attr.get('verbose'):
+                print(
+                    'Position dipoles added to the velocity (internal projections; '
+                    'gradient_and_momenta(position_dipoles=False) switches them off)'
+                )
 
         ### DEV: Proposed to remove this and calculate pksp or velkp when required
         # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
@@ -2078,7 +2814,8 @@ class PAOFLOW:
         n_q: int = 600,
         pao_tol: float = 1.0e-3,
         inject: bool = True,
-    ):
+        strict: bool = True,
+    ) -> bool:
         r"""Position dipoles of the PAO orbitals in the velocity operator.
 
         Builds :math:`\mathbf d(\mathbf k)` of the Löwdin-orthonormal PAO basis
@@ -2100,13 +2837,17 @@ class PAOFLOW:
             Radial-table parameters.
         inject : bool, optional
             ``False`` only builds the tables (``'_PD_tables'``) without touching ``dHksp``.
+        strict : bool, optional
+            ``True`` (default): a failure is reported and raised (``abort_on_exception``).
+            ``False`` (the automatic default of :meth:`gradient_and_momenta`): a failure on any
+            rank prints a warning and leaves ``dHksp`` unchanged on every rank.
 
         Returns
         -------
-        None
-            Modifies ``arrays['dHksp']`` in place; caches the tables under
-            ``'_PD_tables'`` / ``'_PD_on_site'`` and the PAO catalog under
-            ``'_NL_pao_catalog'``.
+        bool
+            Whether the dipoles were built (and injected). Modifies ``arrays['dHksp']`` in
+            place; caches the tables under ``'_PD_tables'`` / ``'_PD_on_site'`` and the PAO
+            catalog under ``'_NL_pao_catalog'``.
 
         Notes
         -----
@@ -2137,34 +2878,52 @@ class PAOFLOW:
                     pao_tol=pao_tol,
                 )
 
-            from .utils.communication import gather_array, load_balancing, scatter_full
+            from .utils.communication import scatter_full_indices
 
             if attr.get('mpisize', 1) > 1:
+                # every rank builds the dipoles of the k-points it holds in the scatter_full layout
+                # of the k-distributed arrays: no gather of the nk x 3 x nawf^2 array on one rank
                 kgrid = np.asarray(arry['kgrid'])
-                nktot = kgrid.shape[1]
-                ks, ke = load_balancing(self.size, self.rank, nktot)
-                part = np.ascontiguousarray(_build(kgrid[:, ks:ke]))
-                full = (
-                    np.zeros((nktot,) + part.shape[1:], dtype=part.dtype)
-                    if self.rank == 0
-                    else None
-                )
-                gather_array(full, part)
-                if self.rank == 0:
-                    local = scatter_full(np.ascontiguousarray(full), attr['npool'])
-                else:
-                    local = scatter_full(None, attr['npool'])
+                mine = scatter_full_indices(kgrid.shape[1], attr['npool'], self.size, self.rank)
+                local = np.ascontiguousarray(_build(kgrid[:, mine]))
             else:
                 local = _build(arry['kgrid'])
+            n = arry['dHksp'].shape[2]
+            if inject and local.shape[1:] != (3, n, n):
+                raise ValueError(
+                    'the dipoles of the PAO basis (%d orbitals) do not match dHksp (%d)'
+                    % (local.shape[-1], n)
+                )
 
+            failure = None
+        except Exception as e:
+            if strict:
+                self.report_exception('position_dipole_correction')
+                if attr.get('abort_on_exception', True):
+                    raise e
+                return False
+            failure = e
+        if not strict:
+            from mpi4py import MPI
+
+            if self.comm.allreduce(failure is not None, op=MPI.LOR):
+                if self.rank == 0:
+                    print(
+                        'Warning: position dipoles skipped (%s); the velocity keeps the '
+                        'orbital-centre approximation' % (failure or 'failed on another rank')
+                    )
+                return False
+        try:
             if inject:
                 inject_dipole_velocity_into_dHksp(arry['dHksp'], arry['E_k'], arry['v_k'], local)
         except Exception as e:
             self.report_exception('position_dipole_correction')
             if attr.get('abort_on_exception', True):
                 raise e
+            return False
 
         self.report_module_time('Position dipoles')
+        return True
 
     def adaptive_smearing(
         self,
@@ -2792,6 +3551,9 @@ class PAOFLOW:
             fermi_up (float): The upper limit of the occupied energy range
             fermi_dw (float): The lower limit of the occupied energy range
             s_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
+            shc_proj (list of int): atoms (0-based, in the order of the save) whose orbitals the spin
+                current operator is projected on, (P j_s + j_s P) / 2: the contribution of a layer
+                or a site; None gives the whole cell
 
         Returns:
             None
@@ -3153,19 +3915,22 @@ class PAOFLOW:
 
     def anomalous_Hall(
         self,
-        do_ac=False,
-        emin=-1.0,
-        emax=1.0,
-        fermi_up=1.0,
-        fermi_dw=-1.0,
-        ne=501,
-        delta=0.05,
-        a_tensor=None,
-    ):
+        do_ac: bool = False,
+        emin: float = -1.0,
+        emax: float = 1.0,
+        fermi_up: float = 1.0,
+        fermi_dw: float = -1.0,
+        ne: int = 501,
+        delta: float = 0.05,
+        a_tensor: list | np.ndarray | None = None,
+        twoD: bool = False,
+    ) -> None:
         """
         Calculate the Anomalous Hall Conductivity
 
         Arguments:
+            twoD (bool): True for the sheet conductivity in units of e^2/hbar (area of the first
+                two lattice vectors) instead of S/cm
             do_ac (bool): True to calculate the Magnetic Circular Dichroism
             emin (float): The minimum energy in the range
             emax (float): The maximum energy in the range
@@ -3198,7 +3963,7 @@ class PAOFLOW:
         attr['fermi_dw'] = fermi_dw
 
         try:
-            do_anomalous_Hall(self.data_controller, do_ac)
+            do_anomalous_Hall(self.data_controller, do_ac, twoD=twoD)
         except Exception as e:
             self.report_exception('anomalous_Hall')
             if attr['abort_on_exception']:
@@ -3237,33 +4002,53 @@ class PAOFLOW:
 
     def doping(
         self,
-        tmin=300,
-        tmax=300,
-        nt=1,
-        delta=0.01,
-        emin=-1.0,
-        emax=1.0,
-        ne=1000,
-        doping_conc=None,
-        core_electrons=0.0,
-        fname='doping_',
-    ):
-        """
-        Calculate the chemical potential that corresponds to specified doping for different temperatures
+        tmin: float = 300,
+        tmax: float = 300,
+        nt: int = 1,
+        delta: float = 0.01,
+        emin: float = -1.0,
+        emax: float = 1.0,
+        ne: int = 1000,
+        doping_conc: float | None = None,
+        core_electrons: float = 0.0,
+        fname: str = 'doping_',
+    ) -> np.ndarray:
+        """Chemical potential of a doped crystal at each temperature.
 
-        Arguments:
-            tmin (float): The minimum temperature in the range
-            tmax (float): The maximum temperature in the range
-            nt (float): The number of temperature increments
-            emin (float): The minimum energy in the range
-            emax (float): The maximum energy in the range
-            ne (float): The number of energy increments
-            doping_conc(float): The amount of doping in 1/cm^3. Positive value for p type and negative value for n type
-            core_electrons(float): The number of core electrons in a system. Adding this to integrated dos allows for integration over a narrower energy window
-            fname (str): Prefix for the filename containg Doping vs Temperature
+        Parameters
+        ----------
+        tmin, tmax : float, optional
+            Temperature range (K).
+        nt : int, optional
+            Number of temperatures in ``[tmin, tmax]``.
+        delta : float, optional
+            Gaussian width of the DOS (eV) when the run has no adaptive smearing
+            (``smearing=None``).
+        emin, emax : float, optional
+            Energy window of the DOS (eV, relative to the PAOFLOW zero). It must hold every
+            valence band, or ``core_electrons`` must count the electrons below it.
+        ne : int, optional
+            Number of energies; the spacing must resolve ``delta`` (below ``delta / 3``).
+        doping_conc : float, optional
+            Carrier concentration (cm⁻³): negative for electrons (n type), positive for holes
+            (p type). None keeps the value of an earlier call (0 at first).
+        core_electrons : float, optional
+            Electrons per cell in the bands below ``emin``.
+        fname : str, optional
+            Prefix of the output file.
 
-        Returns:
-            None
+        Returns
+        -------
+        ndarray, shape (nt,)
+            :math:`\\mu(T)` (eV), on every rank. Also writes ``<fname><n|p><|doping_conc|>.dat``:
+            temperature and :math:`\\mu`.
+
+        Notes
+        -----
+        :math:`\\mu(T)` solves
+        :math:`\\int g(E) f(E; \\mu, T)\\,dE = N_\\mathrm{elec} - n\\,\\Omega` with the DOS
+        :math:`g` of the full k grid (call after :meth:`pao_eigh`), :math:`n` the carrier
+        concentration and :math:`\\Omega` the cell volume.
         """
         from .boltzmann.do_doping import do_doping
         from .spectrum.do_dos import do_dos, do_dos_adaptive
@@ -3286,9 +4071,104 @@ class PAOFLOW:
             do_dos(self.data_controller, emin, emax, ne, delta)
         else:
             do_dos_adaptive(self.data_controller, emin, emax, ne)
-        do_doping(self.data_controller, temps, ene, fname)
+        mu = do_doping(self.data_controller, temps, ene, fname)
 
         self.report_module_time('Doping')
+        return mu
+
+    def doped_transport(
+        self,
+        doping_conc: float,
+        tmin: float = 300.0,
+        tmax: float = 300.0,
+        nt: int = 1,
+        delta: float = 0.01,
+        emin: float = -10.0,
+        emax: float = 2.0,
+        ne: int = 4000,
+        core_electrons: float = 0.0,
+        scattering_channels: list | None = None,
+        tau_dict: dict | None = None,
+        fname: str = 'doped_transport_',
+    ) -> np.ndarray:
+        """Boltzmann transport of a doped semiconductor along its temperature curve.
+
+        Parameters
+        ----------
+        doping_conc : float
+            Carrier concentration (cm⁻³): negative for electrons (n type), positive for holes.
+        tmin, tmax : float, optional
+            Temperature range (K).
+        nt : int, optional
+            Number of temperatures.
+        delta, emin, emax, ne, core_electrons : optional
+            DOS of the carrier count, as in :meth:`doping`.
+        scattering_channels : list, optional
+            Relaxation-time models combined by Matthiessen's rule, as in :meth:`transport`:
+            built-in names (``'acoustic'``, ``'optical'``, ``'polar_optical'``,
+            ``'polar_acoustic'``, ``'impurity'``), ``TauModel`` or ``ScatteringChannel`` objects.
+            Empty: the constant-relaxation-time tensors (per second of relaxation time).
+        tau_dict : dict, optional
+            Material parameters of the built-in models (:mod:`PAOFLOW.boltzmann.do_tau_models`).
+            ``doping_conc`` and, unless given, ``Ef`` (the polar-optical screening, set to
+            :math:`|\\mu(T)|` at each temperature) are filled in.
+        fname : str, optional
+            Prefix of the output file.
+
+        Returns
+        -------
+        ndarray, shape (nt, 9)
+            Rows ``T, mu, sigma_xx, sigma_yy, sigma_zz, rho, S_xx, S_yy, S_zz``, on every rank:
+            conductivity in S/m (S/(m s) without channels), resistivity
+            :math:`\\rho = 3 / \\mathrm{tr}\\,\\sigma` in Ω cm (Ω cm s without channels), Seebeck
+            coefficient in µV/K. Also writes them to ``<fname><n|p><|doping_conc|>.dat`` and
+            :meth:`doping` writes :math:`\\mu(T)`.
+
+        Notes
+        -----
+        :meth:`doping` gives :math:`\\mu(T)`; :meth:`transport` then evaluates the tensors at
+        that single chemical potential, one temperature at a time. Call after
+        :meth:`gradient_and_momenta` (and :meth:`adaptive_smearing` for the adaptive kernel).
+        """
+        from os.path import join
+
+        arrays, attr = self.data_controller.data_dicts()
+        if attr['nspin'] != 1:
+            raise ValueError(
+                'doped_transport needs one spin channel (spin-degenerate or spin-orbit run); '
+                'call doping and transport per channel for a collinear magnet'
+            )
+        channels = list(scattering_channels or [])
+        params = dict(tau_dict or {})
+        params.setdefault('doping_conc', doping_conc)
+        fixed_ef = 'Ef' in params
+        temps = np.linspace(tmin, tmax, nt)
+        mu = self.doping(
+            tmin=tmin, tmax=tmax, nt=nt, delta=delta, emin=emin, emax=emax, ne=ne,
+            doping_conc=doping_conc, core_electrons=core_electrons,
+        )  # fmt: skip
+        rows = np.zeros((nt, 9))
+        for i, (temp, mu_t) in enumerate(zip(temps, mu)):
+            if not fixed_ef:
+                params['Ef'] = abs(float(mu_t))
+            self.transport(
+                tmin=temp, tmax=temp, nt=1, emin=mu_t, emax=mu_t, ne=1,
+                scattering_channels=channels, tau_dict=params, save_tensors=True,
+                write_to_file=False,
+            )  # fmt: skip
+            sigma = np.diag(arrays['sigma'][:, :, 0])
+            seebeck = np.diag(arrays['S'][:, :, 0]) * 1.0e6
+            rho = 3.0e2 / np.sum(sigma) if np.sum(sigma) != 0.0 else np.inf
+            rows[i] = [temp, mu_t, *sigma, rho, *seebeck]
+        if self.rank == 0:
+            name = '%s%s%s.dat' % (fname, 'n' if doping_conc < 0 else 'p', np.abs(doping_conc))
+            header = (
+                'T (K), mu (eV), sigma_xx, sigma_yy, sigma_zz (S/m; S/(m s) without scattering '
+                'channels), rho (Ohm cm), S_xx, S_yy, S_zz (muV/K); doping %g cm^-3' % doping_conc
+            )
+            np.savetxt(join(attr['opath'], name), rows, fmt='%14.6e', header=header)
+        self.report_module_time('Doped transport')
+        return rows
 
     def transport(
         self,
@@ -3384,6 +4264,7 @@ class PAOFLOW:
         emis_ntheta=90,
         emis_temperature=300.0,
         intraband=True,
+        temperature=None,
     ):
         r"""Compute the frequency-dependent dielectric tensor.
 
@@ -3451,6 +4332,15 @@ class PAOFLOW:
             ``intrasmear``. Default 0.05.
         intraband : bool, optional
             Include the intraband (Drude) term of metals (default ``True``).
+        temperature : float, optional
+            Electronic temperature (K) of the occupations: Fermi-Dirac
+            occupations at this temperature, with the chemical potential
+            re-determined on the interpolated grid so that the electron count
+            of the DFT-smearing occupations is conserved, replace the
+            ``smearing``/``degauss`` ones in the interband sum and in the
+            Drude weight (thermal emission of hot metals, Williams-Lax cells
+            at the lattice temperature).  ``None`` (default) keeps the DFT
+            smearing.
             ``False`` gives the interband dielectric function, to be combined
             with an ab initio (extended) Drude term
             (:func:`PAOFLOW.response.drude.extended_drude_dielectric`).
@@ -3502,8 +4392,8 @@ class PAOFLOW:
         Notes
         -----
         Benchmarked against ``epsilon.x`` on Si (insulator) and Al fcc
-        (metal); see ``examples/qe_examples/example15_Si_epsilon`` and
-        ``example17_Al_epsilon``. Plasmon frequencies agree to within a
+        (metal); the case ``examples/cases/si_optics`` has the ``epsilon.x``
+        input of Si (``eps.in``). Plasmon frequencies agree to within a
         few percent on a converged 16x16x16 k-grid.
 
         **Adaptive interband broadening** (Yates *et al.*, Phys. Rev. B
@@ -3535,6 +4425,7 @@ class PAOFLOW:
             attr['delta'] = delta
         attr['intrasmear'] = intrasmear
         attr['intraband'] = bool(intraband)
+        attr['eps_temperature_k'] = None if temperature is None else float(temperature)
         attr['emissivity'] = emissivity
         attr['emis_angles'] = np.atleast_1d(np.array(emis_angles, dtype=float))
         attr['emis_ntheta'] = int(emis_ntheta)
@@ -3589,6 +4480,14 @@ class PAOFLOW:
         shg_bin=None,
         position_dipoles=False,
         symmetry=True,
+        molecule=False,
+        coupling=None,
+        coupling_options=None,
+        complement_shift=30.0,
+        shg_terms=False,
+        fermi_surface='auto',
+        relaxation_time=None,
+        coherence_damping=1.0,
     ):
         r"""Second-order optical responses: shift and injection currents, second-harmonic generation.
 
@@ -3622,6 +4521,21 @@ class PAOFLOW:
         With ``nspin = 2`` the files hold the sum of the two channels and ``_0`` / ``_1``
         suffixed copies hold each channel.
 
+        **Metals** (a metallic channel, or ``fermi_surface=True``): the SHG and the zero-frequency
+        photocurrent come from the density-matrix equations of motion
+        (:mod:`PAOFLOW.response.density_matrix_response`), which keep the Fermi-surface terms
+        (nonlinear Drude, Berry-curvature dipole) next to the Fermi-sea ones; the shift and injection
+        files keep the :math:`\delta`-function formulas with metallic occupations (Pauli blocking).
+        Extra outputs: ``pcr_<abc>.dat`` and ``pci_<abc>.dat`` (:math:`\mu`\ A/V\ :sup:`2`), real
+        and imaginary parts of :math:`\sigma^{abc}(0;\omega,-\omega)`,
+        :math:`J^a = \mathrm{Re}\,\sigma\,\mathrm{Re}[E^bE^{c*}] - \mathrm{Im}\,\sigma\,\mathrm{Im}[E^bE^{c*}]`,
+        with the channels in ``pcr_<channel>_<abc>.dat`` / ``pci_...`` (``fermi_sea_inter``: shift,
+        :math:`\tau^0`; ``fermi_sea_intra``: injection, :math:`\propto\tau`; ``fermi_surface_mixed``:
+        Berry-curvature dipole, :math:`\propto\tau`; ``fermi_surface_drude``: :math:`\propto\tau^2`),
+        and the SHG channels in ``shgtr_<channel>_<abc>.dat`` / ``shgti_...``. A metal needs an
+        electronic ``temperature`` (the Fermi-surface terms vanish with step occupations);
+        ``fermi_energy`` defaults to 0, the DFT Fermi level.
+
         Parameters
         ----------
         nk : sequence of int
@@ -3641,7 +4555,10 @@ class PAOFLOW:
         temperature : float
             Electronic temperature (K); 0 gives step occupations (``nelec`` / spin factor bands).
         fermi_energy : float, optional
-            Chemical potential (eV) for finite temperatures or metals (default: the mid-gap).
+            Chemical potential (eV) for finite temperatures or metals. PAOFLOW Hamiltonians are
+            referred to the Fermi level, so 0.0 is the DFT Fermi level. Default: band-index
+            occupations at 0 K, the mid-gap at finite T, for insulators only; a metallic channel
+            raises without it (and a scissor raises for a metal).
         smearing : {'gauss', 'lorentz'}
             Shape of the :math:`\delta` functions.
         adaptive_smearing : float, optional
@@ -3679,6 +4596,70 @@ class PAOFLOW:
             and does nothing when they are absent (models, VASP); an array ``(nops, 3, 3)`` of
             Cartesian matrices is accepted instead (they must be lattice symmetries). ``False``
             runs the full grid.
+        molecule : bool, optional
+            A molecule in a vacuum box: the Gamma point only (``nk`` ignored), no injection
+            current, all 27 components, and the molecular quantities of
+            :mod:`PAOFLOW.response.molecular_nlo` written as ``beta_T_r_<abc>`` / ``beta_T_i_<abc>``
+            (Taylor hyperpolarizability, a.u., electrons: :math:`\beta_T = -2\epsilon_0\Omega\chi`),
+            ``beta_molecular.dat`` (:math:`\beta_\parallel` along the ground-state dipole,
+            :math:`\beta_{\rm HRS}`, depolarisation ratio) and ``dmudt_<abc>`` (the shift response
+            per molecule, the rate of change of the dipole under illumination).  The run warns
+            when orbital pairs couple across more than 0.45 of the box (minimum-image violation)
+            or when the Hamiltonian has a k-grid.  With ``nspin = 2`` the channels are occupied
+            by their own electron counts (``nelec`` may be a pair).
+        coupling : {None, 'none', 'monopole', 'hartree', 'hartree+alda'}, optional
+            Molecules only: also solve the coupled (self-consistent) second-order response
+            (:mod:`PAOFLOW.response.coupled_response`), in which the induced Hartree potential of the
+            response density (and, with ``'hartree+alda'``, the adiabatic-LDA kernel) screens the
+            field: the local-field correction that the independent-particle response above lacks.
+            ``'monopole'`` uses the atomic monopoles (self-consistent-charge form, Hubbard
+            parameters of :data:`~PAOFLOW.response.coupled_response.HUBBARD_U_HA`), ``'hartree'``
+            the density on the real-space grid with a cutoff Coulomb kernel (needs the internal
+            PAO basis). The validated molecule setting is the pseudo-atomic basis of the run's
+            pseudopotentials (``paoflow-genbasis-ps``, ``projections(basispath='BASIS_PS',
+            configuration='extended')``) with ``coupling='hartree+alda'`` (PNA: $\beta_\parallel$
+            at 1064 nm 1 105 a.u. against 1 072 ± 44 measured, $\alpha$ 114 against ~100).  Writes ``beta_coupled.dat`` (photon energy, :math:`\beta_\parallel`,
+            :math:`\beta_{\rm HRS}` and the depolarisation ratio, independent-particle and
+            coupled) and ``beta_coupled_static.dat``; the results carry the ``'coupled'`` key.
+        complement_shift : float or None, optional
+            Molecules only: energy of the PAO complement (the ``nawf - bnd`` states that the
+            projectability filter puts at the shift) in eV above the HOMO, applied to the
+            Gamma Hamiltonian before the response (:func:`~PAOFLOW.response.molecular_nlo.reshift_complement`).
+            The automatic shift of ``projectability`` sits just above the last projected band and
+            over-screens the response; 30 eV reproduces the measured polarizability and
+            hyperpolarizability of PNA. ``None`` keeps the Hamiltonian as built.
+        shg_terms : bool, optional
+            Also split the SHG susceptibility into its terms
+            (:data:`~PAOFLOW.response.nonlinear_optics.SHG_TERMS`: the interband three-band term and
+            the intraband two-band terms, each resonant at :math:`\omega` or :math:`2\omega`, the
+            intraband ones split into generalized-derivative, velocity-difference and T-odd parts;
+            they sum to the total). Writes ``shgtr_<term>_<abc>.dat`` and ``shgti_<term>_<abc>.dat``
+            (real and imaginary parts, units of ``shgr``); the results carry ``'shg_terms'``. Costs a
+            second binning of the SHG weights.
+        fermi_surface : {'auto', True, False}, optional
+            Use the density-matrix engine with the Fermi-surface terms for the SHG and the
+            zero-frequency photocurrent. ``'auto'`` switches it on for a metallic channel (bands at
+            the band-index cut overlap on the coarse grid, or a non-integer filling); ``True`` also
+            for an insulator (the photocurrent split by channel, e.g. of a doped semiconductor
+            with ``fermi_energy`` in a band). Insulators are unchanged with ``'auto'``.
+        relaxation_time : float or callable, optional
+            Intraband relaxation time :math:`\tau` (fs) of the density-matrix engine: a constant,
+            or a function of the band energy (eV -> fs, vectorised), e.g. electron-phonon rates.
+            Default: :math:`\gamma = \hbar/\tau` = ``eta``.
+        coherence_damping : float, optional
+            Damping of the second-order interband coherences of the density-matrix engine, in units
+            of ``eta`` (metals, ``fermi_surface``). 1 (default): one dephasing rate ``eta`` for every
+            coherence, so two-photon (2ω) resonances have width ``eta`` as in the insulator path;
+            2: adiabatic switching (every second-order denominator carries :math:`2i\eta`), equal
+            to the velocity-gauge Kubo response at any ``eta``. The two agree as ``eta`` → 0; at
+            finite ``eta`` they differ only where the result is broadening-dominated (2ω
+            resonances, low-energy SHG of semimetals). Insulators (the δ-function path) ignore it.
+        coupling_options : dict, optional
+            ``energies_ev`` (photon energies of the coupled solve, default ``[0, emax/2]``),
+            ``eta_ev`` (default ``eta``), ``hubbard_u`` (``{species: U (Hartree)}``), ``grid``
+            (``'coarse'`` (default), ``'full'`` or ``(n1, n2, n3)``), ``static_step`` (finite-field step, a.u.),
+            ``tol`` (GMRES tolerance), ``n_threads`` (thread pool over the solves of each
+            rank); the solves are also distributed over the MPI ranks.
 
         Returns
         -------
@@ -3698,7 +4679,12 @@ class PAOFLOW:
         import numpy as np
 
         from .hamiltonian.bloch_derivatives import orbital_positions_from_data
-        from .response.nonlinear_optics import nonlinear_optical_spectra, write_nonlinear_outputs
+        from .response.density_matrix_response import channel_band_edges, density_matrix_spectra
+        from .response.nonlinear_optics import (
+            channel_electron_counts,
+            nonlinear_optical_spectra,
+            write_nonlinear_outputs,
+        )
 
         arrays, attr = self.data_controller.data_dicts()
         total = None
@@ -3708,6 +4694,14 @@ class PAOFLOW:
                     "nonlinear_optics needs 'HRs': call it after pao_hamiltonian() and before "
                     'interpolated_hamiltonian() / pao_eigh() (or keep free_HRs=False).'
                 )
+            if molecule:
+                if tuple(int(n) for n in nk) != (1, 1, 1) and self.rank == 0:
+                    print(
+                        'Nonlinear optics: molecule=True evaluates the Gamma point only (nk ignored)'
+                    )
+                nk = (1, 1, 1)
+                injection_current = False
+                components = 'all'
             want = tuple(
                 name
                 for name, flag in (
@@ -3723,9 +4717,41 @@ class PAOFLOW:
             at = np.asarray(arrays['a_vectors'], dtype=float)
             alat = float(attr['alat'])
             volume = float(attr['omega']) if 'omega' in attr else alat**3 * abs(np.linalg.det(at))
-            nelec_value = float(attr['nelec']) if nelec is None else float(nelec)
             nspin = HRs.shape[-1]
             spin_factor = 2.0 if (nspin == 1 and not attr.get('dftSO', False)) else 1.0
+            if nspin == 2:
+                # one electron count per channel (the total would occupy nelec bands in each)
+                nelec_channel = channel_electron_counts(HRs, nelec)
+            else:
+                nelec_channel = [float(attr['nelec']) if nelec is None else float(nelec)]
+            if molecule and tuple(HRs.shape[2:5]) != (1, 1, 1) and self.rank == 0:
+                print(
+                    'WARNING: molecule=True with a %s k-grid Hamiltonian: the results are those '
+                    'of the periodic array of boxes, not of an isolated molecule'
+                    % 'x'.join(str(int(n)) for n in HRs.shape[2:5])
+                )
+            if molecule and complement_shift is not None and tuple(HRs.shape[2:5]) == (1, 1, 1):
+                from .response.molecular_nlo import reshift_complement
+
+                nocc_shift = [
+                    int(round(float(nelec_channel[s]) / spin_factor)) for s in range(nspin)
+                ]
+                HRs = np.array(HRs, dtype=complex)
+                HRs[:, :, 0, 0, 0, :], moved = reshift_complement(
+                    HRs[:, :, 0, 0, 0, :], int(attr['bnd']), nocc_shift, float(complement_shift)
+                )
+                if self.rank == 0 and attr.get('verbose', False):
+                    print(
+                        'Nonlinear optics (molecule): %d complement states moved from %s to %s eV '
+                        '(%.1f eV above the HOMO)'
+                        % (
+                            HRs.shape[0] - int(attr['bnd']),
+                            ', '.join('%.2f' % m[0] for m in moved),
+                            ', '.join('%.2f' % m[1] for m in moved),
+                            float(complement_shift),
+                        ),
+                        flush=True,
+                    )
             positions = (
                 np.asarray(orbital_positions, dtype=float)
                 if orbital_positions is not None
@@ -3769,61 +4795,270 @@ class PAOFLOW:
                 )  # fmt: skip
                 if self.rank == 0 and attr.get('verbose', False):
                     print('Nonlinear optics: position dipoles (%s) in r and r_{;a}' % level)
+            # metals: the density-matrix engine (Fermi-surface terms) for the SHG and the photocurrent
+            edges = [
+                channel_band_edges(
+                    HRs,
+                    at,
+                    alat,
+                    positions,
+                    nelec_channel[ispin],
+                    spin_factor,
+                    ispin,
+                    hopping_cutoff,
+                )  # fmt: skip
+                for ispin in range(nspin)
+            ]
+            metallic = any(e['metallic'] for e in edges)
+            if fermi_surface not in ('auto', True, False):
+                raise ValueError("fermi_surface must be 'auto', True or False")
+            use_eom = metallic if fermi_surface == 'auto' else bool(fermi_surface)
+            mu = fermi_energy
+            if use_eom:
+                if molecule:
+                    raise ValueError('molecule=True is for insulators: set fermi_surface=False')
+                if metallic and mu is None:
+                    mu = 0.0  # PAOFLOW Hamiltonians are referred to the DFT Fermi level
+                if float(temperature) <= 0.0:
+                    raise ValueError(
+                        'the Fermi-surface terms need a smooth occupation: pass the electronic '
+                        'temperature (K), e.g. temperature=300'
+                    )
+                if self.rank == 0:
+                    tau_text = (
+                        'gamma = eta' if relaxation_time is None
+                        else ('tau(e)' if callable(relaxation_time)
+                              else 'tau = %g fs' % float(relaxation_time))
+                    )  # fmt: skip
+                    print(
+                        'Nonlinear optics: %s channel, density-matrix engine with the Fermi-surface '
+                        'terms (Fermi energy %.3f eV, %g K, %s)'
+                        % ('metallic' if metallic else 'insulating', 0.0 if mu is None else mu,
+                           float(temperature), tau_text)
+                    )  # fmt: skip
+            want_delta = tuple(w for w in want if not (use_eom and w == 'shg'))
             per_spin = []
             for ispin in range(nspin):
-                per_spin.append(
-                    nonlinear_optical_spectra(
-                        HRs,
-                        at,
-                        alat,
-                        volume,
-                        positions,
-                        nelec_value,
-                        nk,
-                        energy,
-                        components=components,
-                        eta=eta,
-                        smearing=smearing,
-                        adaptive_smearing=adaptive_smearing,
-                        scissor=scissor,
-                        temperature=temperature,
-                        fermi_energy=fermi_energy,
-                        degeneracy_tol=degeneracy_tol,
-                        spin_factor=spin_factor,
-                        ispin=ispin,
-                        kblock=kblock,
-                        want=want,
-                        shg_bin=shg_bin,
-                        hopping_cutoff=hopping_cutoff,
-                        position_dipoles=dipoles,
-                        symmetry_ops_cryst=ops_cryst,
-                        comm=self.comm,
-                        progress=bool(attr.get('verbose', False)),
+                common = dict(
+                    components=components, eta=eta, scissor=scissor, temperature=temperature,
+                    fermi_energy=mu, degeneracy_tol=degeneracy_tol, spin_factor=spin_factor,
+                    ispin=ispin, kblock=kblock, hopping_cutoff=hopping_cutoff,
+                    position_dipoles=dipoles, symmetry_ops_cryst=ops_cryst, comm=self.comm,
+                    progress=bool(attr.get('verbose', False)),
+                )  # fmt: skip
+                args = (HRs, at, alat, volume, positions, nelec_channel[ispin], nk, energy)
+                result = None
+                if want_delta:
+                    result = nonlinear_optical_spectra(
+                        *args, smearing=smearing, adaptive_smearing=adaptive_smearing, want=want_delta,
+                        shg_bin=shg_bin, shg_terms=bool(shg_terms), **common,
                     )  # fmt: skip
-                )
+                if use_eom:
+                    eom_kwargs = dict(
+                        common,
+                        relaxation_time=relaxation_time,
+                        adaptive_smearing=adaptive_smearing,
+                        coherence_damping=float(coherence_damping),
+                    )
+                    if 'shg' in want:
+                        shg = density_matrix_spectra(*args, response='shg', **eom_kwargs)
+                        result = result if result is not None else dict(shg)
+                        result['shg'] = shg['shg']
+                        result['shg_terms'] = shg['channels']
+                    if 'shift' in want or 'injection' in want:
+                        dc = density_matrix_spectra(*args, response='dc', **eom_kwargs)
+                        result = result if result is not None else dict(dc)
+                        result['photocurrent'] = dc['dc']
+                        result['photocurrent_channels'] = dc['channels']
+                per_spin.append(result)
             total = dict(per_spin[0])
             if nspin == 2:
-                for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg'):
+                for key in ('shift', 'shiftm', 'injectc', 'injectm', 'shg', 'photocurrent'):
                     if key in total:
                         total[key] = per_spin[0][key] + per_spin[1][key]
+                for key in ('shg_terms', 'photocurrent_channels'):
+                    if key in total:
+                        total[key] = {
+                            term: per_spin[0][key][term] + per_spin[1][key][term]
+                            for term in per_spin[0][key]
+                        }
                 for ispin, result in enumerate(per_spin):
                     write_nonlinear_outputs(
                         self.data_controller, result, slab, suffix='_%d' % ispin
                     )
+            if molecule:
+                from .response.molecular_nlo import ionic_charges_from_data, molecular_summary
+
+                pos_bohr = positions @ at * alat
+                nocc_channels = [
+                    int(round(float(nelec_channel[s]) / spin_factor)) for s in range(nspin)
+                ]
+                ionic = ionic_charges_from_data(self.data_controller)
+                if ionic is None and self.rank == 0:
+                    print(
+                        'WARNING: no ionic charges (basis list / UPF files): the ground-state dipole '
+                        'is the electronic part only and beta_parallel is origin-dependent'
+                    )
+                mol = molecular_summary(
+                    total, HRs[:, :, 0, 0, 0, :], pos_bohr, positions, volume, nocc_channels,
+                    spin_factor, ionic=ionic,
+                )  # fmt: skip
+                violations = mol.pop('minimum_image_violations')
+                total.update(mol)
+                if 'beta_parallel_au' in total:  # collective writers (barrier inside): every rank
+                    self.data_controller.write_file_row_col(
+                        'beta_molecular.dat', energy, total['beta_parallel_au'].real
+                    )
+                    self.data_controller.write_file_row_col(
+                        'beta_hrs.dat', energy, total['beta_hrs_au']
+                    )
+                    self.data_controller.write_file_row_col(
+                        'beta_depolarization.dat', energy, total['depolarization_ratio']
+                    )
+                if self.rank == 0:
+                    if violations:
+                        worst = max(violations, key=lambda v: v[2])
+                        print(
+                            'WARNING: %d orbital pairs couple across more than 0.45 of the box '
+                            '(largest |H_ij| %.3f eV between orbitals %d and %d at %.2f of a '
+                            'lattice vector): enlarge the box, the minimum-image operators are '
+                            'not exact' % (len(violations), worst[2], worst[0], worst[1], worst[3])
+                        )
+            if molecule and coupling and coupling != 'none':
+                import os
+
+                from .response.coupled_response import coupled_molecule
+                from .response.molecular_nlo import beta_parallel, hrs_quantities
+
+                opts = dict(coupling_options or {})
+                energies_c = np.atleast_1d(
+                    np.asarray(opts.pop('energies_ev', [0.0, 0.5 * emax]), dtype=float)
+                )
+                eta_c = float(opts.pop('eta_ev', eta))
+                coupled = {}
+                for name in ('none', coupling):  # collective: the solves are split over the ranks
+                    coupled[name] = coupled_molecule(
+                        self.data_controller, HRs, pos_bohr, dipoles, nocc_channels,
+                        spin_factor, name, eta_c, energies_c, scissor_ev=scissor,
+                        progress=bool(attr.get('verbose', False)), comm=self.comm, **opts,
+                    )  # fmt: skip
+                mu = np.asarray(total['dipole_ebohr'], dtype=float)
+                for name, res in coupled.items():
+                    tensor = np.moveaxis(res['beta_T'], 0, -1)  # (3, 3, 3, ne)
+                    res['beta_parallel_au'] = beta_parallel(tensor, mu)
+                    hrs = hrs_quantities(tensor)
+                    res['beta_hrs_au'] = hrs['beta_hrs']
+                    res['depolarization_ratio'] = hrs['depolarization_ratio']
+                    if 'beta_T_static' in res:
+                        res['beta_parallel_static_au'] = float(
+                            beta_parallel(res['beta_T_static'], mu)
+                        )
+                        res['beta_hrs_static_au'] = float(
+                            hrs_quantities(res['beta_T_static'])['beta_hrs']
+                        )
+                total['coupled'] = coupled
+                ipa, cpl = coupled['none'], coupled[coupling]
+                table = np.stack(
+                    [
+                        energies_c,
+                        ipa['beta_parallel_au'].real, cpl['beta_parallel_au'].real,
+                        ipa['beta_parallel_au'].imag, cpl['beta_parallel_au'].imag,
+                        ipa['beta_hrs_au'], cpl['beta_hrs_au'],
+                        ipa['depolarization_ratio'], cpl['depolarization_ratio'],
+                    ],
+                    axis=1,
+                )  # fmt: skip
+                if self.rank == 0:
+                    np.savetxt(
+                        os.path.join(attr['opath'], 'beta_coupled.dat'), table,
+                        header='photon energy (eV); beta_parallel re (independent-particle, %s); '
+                        'beta_parallel im (ipa, %s); beta_HRS (ipa, %s); depolarisation ratio '
+                        '(ipa, %s); a.u., Taylor convention' % ((coupling,) * 4),
+                        fmt='%.6e',
+                    )  # fmt: skip
+                    if 'beta_parallel_static_au' in cpl:
+                        with open(
+                            os.path.join(attr['opath'], 'beta_coupled_static.dat'), 'w'
+                        ) as fh:
+                            fh.write(
+                                '# finite-field static beta (a.u., Taylor): beta_parallel '
+                                'beta_HRS, independent-particle then %s\n%.6e %.6e\n%.6e %.6e\n'
+                                % (
+                                    coupling,
+                                    ipa['beta_parallel_static_au'], ipa['beta_hrs_static_au'],
+                                    cpl['beta_parallel_static_au'], cpl['beta_hrs_static_au'],
+                                )
+                            )  # fmt: skip
+                    ratio = np.abs(cpl['beta_parallel_au']) / np.maximum(
+                        np.abs(ipa['beta_parallel_au']), 1.0e-300
+                    )
+                    print(
+                        'Nonlinear optics (molecule, coupled %s): beta_parallel at %s eV: '
+                        'independent-particle %s, coupled %s a.u. (ratio %s); static finite-field '
+                        '%s -> %s'
+                        % (
+                            coupling, np.round(energies_c, 3),
+                            np.round(ipa['beta_parallel_au'].real, 1),
+                            np.round(cpl['beta_parallel_au'].real, 1), np.round(ratio, 3),
+                            (
+                                '%.1f' % ipa['beta_parallel_static_au']
+                                if 'beta_parallel_static_au' in ipa
+                                else 'skipped'
+                            ),
+                            (
+                                '%.1f' % cpl['beta_parallel_static_au']
+                                if 'beta_parallel_static_au' in cpl
+                                else 'skipped'
+                            ),
+                        ),
+                        flush=True,
+                    )  # fmt: skip
             written = write_nonlinear_outputs(self.data_controller, total, slab)
             attr['nonlinear_optics'] = {
                 'nk': tuple(int(n) for n in nk), 'eta_ev': float(eta), 'scissor_ev': float(scissor),
                 'components': list(total['components']), 'nocc': int(total['nocc']),
                 'gap_ev': float(total['gap_ev']), 'twoD': bool(twoD), 'slab_height_bohr': slab,
                 'position_dipoles': (level if position_dipoles else False),
-                'symmetry': total.get('symmetry'),
+                'symmetry': total.get('symmetry'), 'molecule': bool(molecule),
+                'coupling': (coupling if molecule else None),
+                'complement_shift_ev': (complement_shift if molecule else None),
+                'shg_terms': bool(shg_terms and 'shg' in want),
+                'fermi_surface': bool(use_eom), 'metallic': bool(metallic),
+                'fermi_energy_ev': mu, 'temperature_k': float(temperature),
+                'relaxation_time_fs': (
+                    'callable' if callable(relaxation_time)
+                    else (None if relaxation_time is None else float(relaxation_time))
+                ),
+                'coherence_damping': (float(coherence_damping) if use_eom else None),
             }  # fmt: skip
+            if self.rank == 0 and molecule and 'beta_T_au' in total:
+                i0 = int(np.argmin(np.abs(energy)))
+                tensor_label = ', '.join(
+                    '%s %.1f' % (c, total['beta_T_au'][ic, i0].real)
+                    for ic, c in enumerate(total['components'])
+                    if abs(total['beta_T_au'][ic, i0].real)
+                    > 1.0e-3 * np.abs(total['beta_T_au'][:, i0]).max()
+                )
+                print(
+                    'Nonlinear optics (molecule): dipole (%.3f, %.3f, %.3f) e bohr = %.2f D; at %.2f eV '
+                    'beta_T (a.u., Taylor, electrons): %s; beta_parallel %.1f, beta_HRS %.1f, '
+                    'depolarisation ratio %.2f'
+                    % (*total['dipole_ebohr'], np.linalg.norm(total['dipole_ebohr']) * 2.541746, energy[i0], tensor_label,
+                       total['beta_parallel_au'][i0].real, total['beta_hrs_au'][i0],
+                       total['depolarization_ratio'][i0])
+                )  # fmt: skip
             if self.rank == 0:
                 sym = total.get('symmetry')
                 print(
-                    'Nonlinear optics: %d occupied bands, gap %.3f eV (direct %.3f eV), '
+                    'Nonlinear optics: %d occupied bands, %s, '
                     'scissor %.3f eV, %d k-points%s, %s; wrote %d files'
-                    % (total['nocc'], total['gap_ev'], total['direct_gap_ev'], scissor,
+                    % (total['nocc'],
+                       ('metallic: bands %d and %d overlap by %.3f eV' % (
+                           edges[0]['nocc'], edges[0]['nocc'] + 1,
+                           edges[0]['vbm'] - edges[0]['cbm'])
+                        if metallic else 'gap %.3f eV (direct %.3f eV)' % (
+                            total['gap_ev'], total['direct_gap_ev'])),
+                       scissor,
                        int(np.prod(nk)),
                        (' (%d irreducible, %d operations)' % (sym['k_irreducible'], sym['operations'])
                         if sym else ''),
@@ -3837,19 +5072,267 @@ class PAOFLOW:
         self.report_module_time('Nonlinear Optics')
         return total
 
-    def jdos(self, delta=0.1, emin=0.0, emax=10.0, ne=501, jdos_smeartype='gauss'):
+    def coupled_optical_response(
+        self,
+        nk,
+        kernels='all',
+        dielectric=True,
+        emin=0.0,
+        emax=5.0,
+        ne=51,
+        second_harmonic=False,
+        shg_energies=(0.1,),
+        components=('xyz',),
+        directions='x',
+        eta=0.1,
+        scissor=0.0,
+        lrc_alpha=0.2,
+        bootstrap_alpha=None,
+        position_dipoles=True,
+        degeneracy_tol=1.0e-4,
+        cache_gb=8.0,
+        low_memory=False,
+        fermi_energy=None,
+        temperature=0.0,
+        relaxation_time=None,
+    ):
+        r"""Dielectric function and SHG of a crystal with local fields and exchange-correlation kernels.
+
+        The macroscopic response of the self-consistent (TDDFT-level) equation of motion of the
+        density matrix in the PAO basis, at a series of nested kernel levels: independent
+        particles, + local fields (the G ≠ 0 Hartree potential of the induced density), + ALDA,
+        + a long-range kernel :math:`-\alpha/q^2` on top of Hartree + ALDA (the empirical LRC
+        :math:`\alpha` or the RPA bootstrap, two alternatives). The difference between two levels
+        is what that term does to the response. Call it right after ``pao_hamiltonian()`` (it
+        interpolates ``HRs`` on the dense grid itself) with the internal projections.
+
+        Parameters
+        ----------
+        nk : tuple of int
+            Dense k-grid (the full grid: the induced density breaks the point group).
+        kernels : 'all', str or sequence of str, optional
+            Levels of :data:`~PAOFLOW.response.coupled_crystal.CRYSTAL_KERNELS`: ``'none'``,
+            ``'hartree'``, ``'hartree+alda'``, ``'hartree+alda+lrc'``,
+            ``'hartree+alda+bootstrap'``.
+        dielectric : bool, optional
+            Compute :math:`\epsilon_M(\omega)` on ``np.linspace(emin, emax, ne)`` (eV).
+        emin, emax : float, optional
+        ne : int, optional
+        second_harmonic : bool, optional
+            Compute :math:`\chi^{(2)}(-2\omega;\omega,\omega)` at ``shg_energies`` (eV, fundamental).
+        shg_energies : sequence of float, optional
+        components : 'all', 'diag' or sequence, optional
+            SHG tensor components, as in :meth:`nonlinear_optics`.
+        directions : str or sequence, optional
+            Field directions of the dielectric tensor: ``'x'``, ``'xyz'``, ``'diag'`` or a list of
+            0, 1, 2. One direction is enough for cubic crystals.
+        eta : float, optional
+            Broadening (eV), the same :math:`i\eta` in every resonance.
+        scissor : float, optional
+            Rigid shift of the conduction bands (eV).
+        lrc_alpha : float, optional
+            :math:`\alpha` of the LRC level (Botti *et al.* 2004: 0.2 for GaAs).
+        bootstrap_alpha : float, optional
+            :math:`\alpha` of the bootstrap level; default from the static independent-particle
+            and local-field constants, :math:`4\pi\,\epsilon_M^{-1}(0)/[\epsilon_{\rm IPA}(0) - 1]`.
+        position_dipoles : bool or {'full', 'intra-atomic'}, optional
+            Löwdin position dipoles in the interband position matrix (default on: the
+            validated setting; they make the result independent of the basis).
+        degeneracy_tol : float, optional
+            Bands closer than it are treated as degenerate (eV).
+        cache_gb : float, optional
+            Memory per rank for the cached periodic-part tables on the cell grid.
+        low_memory : bool, optional
+            Store the periodic parts and their tables in single precision (half the memory;
+            slower per k-point on some machines).
+
+        Returns
+        -------
+        dict
+            Of :func:`~PAOFLOW.response.coupled_crystal.coupled_optical_spectra`: ``'epsilon'``
+            and ``'chi'`` per level, ``'static_epsilon'``, ``'alpha_lrc'``, ``'alpha_boot'``;
+            ``None`` on failure when ``abort_on_exception`` is off. Writes
+            ``cepsr_<tag>_<bb>.dat``, ``cepsi_<tag>_<bb>.dat``, ``cshgr/cshgi/cshga_<tag>_<abc>.dat``
+            (``<tag>``: ``ipa``, ``lf``, ``alda``, ``lrc``, ``boot``) and ``coupled_response.dat``,
+            and stores the run parameters in ``attr['coupled_optical_response']``.
+
+        Raises
+        ------
+        KeyError
+            Without ``HRs`` (call after ``pao_hamiltonian()``).
+        ValueError
+            Without the internal projections (the periodic parts come from the PAO basis
+            functions) or for an unknown kernel level.
+        NotImplementedError
+            For spin-polarised or spin-orbit runs (one spin channel only), and for the second
+            order of a metal.
+
+        Metals (bands at the band-index cut overlap): the occupations are Fermi-Dirac at
+        ``fermi_energy`` (default 0, the DFT Fermi level) and ``temperature`` (K, required), and the
+        intraband (Drude) density :math:`i f'\,\mathbf v\cdot\mathbf E/(\omega + i\gamma)` adds to
+        the response (its current to the macroscopic polarization, its density to the local
+        fields); :math:`\gamma = \hbar/` ``relaxation_time`` (fs; constant or a function of the
+        band energy), or ``eta``. ``kernels='all'`` means ``none``, ``hartree``, ``hartree+alda``
+        for a metal (the long-range kernels are for insulators); no static point.
+
+        Notes
+        -----
+        Validated on GaAs (norm-conserving, pseudo-atomic extended basis, position dipoles,
+        scissor 0.86 eV): :math:`\epsilon_\infty` 11.28 / 10.30 / 10.73 / 11.71 (bootstrap) /
+        12.51 (LRC) at 32³ against the measured 10.9, and the E₁ and E₂ peak heights within
+        2 and 4 % at the bootstrap level; see ``docs/internals/nonlinear-optics.md``. Each level
+        is a GMRES solve per energy and direction (several per SHG energy); the cost per k-point
+        and matrix-vector product is that of a few FFTs of the cell grid. With ultrasoft or PAW
+        pseudopotentials the periodic parts lack the augmentation charge (a warning is printed).
         """
-        Calculate the Dielectric Tensor
+        import numpy as np
 
-        Arguments:
-            delta (float): broadening parameter in eV
-            emin (float): The minimum value of energy
-            emax (float): The maximum value of energy
-            ne (float): Number of energy values between emin and emax
-            jdos_smeartype: 'gauss' or "lorentz"
+        from .response import coupled_crystal as cc
+        from .response.nonlinear_optics import parse_components
 
-        Returns:
-            None
+        arrays, attr = self.data_controller.data_dicts()
+        results = None
+        try:
+            if 'HRs' not in arrays:
+                raise KeyError(
+                    "coupled_optical_response needs 'HRs': call it after pao_hamiltonian() and "
+                    'before interpolated_hamiltonian() / pao_eigh() (or keep free_HRs=False).'
+                )
+            if 'basis' not in arrays:
+                raise ValueError(
+                    'coupled_optical_response needs the internal projections '
+                    '(projections(basispath=..., configuration=...)): the periodic parts of the '
+                    'Bloch functions are built from the PAO basis functions'
+                )
+            if attr.get('dftSO', False) or arrays['HRs'].shape[-1] != 1:
+                raise NotImplementedError(
+                    'coupled_optical_response: one spin channel without spin-orbit coupling only'
+                )
+            if arrays.get('augmentation') is not None and self.rank == 0:
+                print(
+                    'WARNING: ultrasoft / PAW pseudopotentials: the periodic parts of the coupled '
+                    'response lack the augmentation charge (validated with norm-conserving ones)'
+                )
+            if isinstance(kernels, str):
+                levels = list(cc.CRYSTAL_KERNELS) if kernels == 'all' else [kernels]
+            else:
+                levels = list(kernels)
+            axis = {'x': 0, 'y': 1, 'z': 2}
+            if isinstance(directions, str):
+                dirs = (0, 1, 2) if directions == 'diag' else tuple(axis[c] for c in directions)
+            else:
+                dirs = tuple(int(b) for b in directions)
+            comps = parse_components(components)
+            dtype = np.complex64 if low_memory else np.complex128
+            verbose = bool(attr.get('verbose', False)) and self.rank == 0
+            from .hamiltonian.bloch_derivatives import orbital_positions_from_data
+            from .response.density_matrix_response import channel_band_edges
+
+            spin_factor = 1.0 if attr.get('dftSO', False) else 2.0  # as build_crystal_channel
+            metallic = channel_band_edges(
+                arrays['HRs'], np.asarray(arrays['a_vectors'], dtype=float), float(attr['alat']),
+                orbital_positions_from_data(self.data_controller), float(attr['nelec']), spin_factor,
+            )['metallic']  # fmt: skip
+            mu = fermi_energy
+            if metallic:
+                mu = 0.0 if mu is None else mu
+                if kernels == 'all':
+                    levels = list(cc.CRYSTAL_KERNELS[:3])
+                if self.rank == 0:
+                    print(
+                        'Coupled optical response: metallic channel, Drude term at %.3f eV, %g K '
+                        '(levels %s)' % (mu, float(temperature), ', '.join(levels))
+                    )
+            grid = np.linspace(emin, emax, int(ne))
+            if metallic:
+                grid = grid[grid > 0.0]  # the Drude term has no static limit
+            channel = cc.build_crystal_channel(
+                self.data_controller, tuple(int(n) for n in nk), scissor_ev=scissor,
+                position_dipoles=position_dipoles, degeneracy_tol=degeneracy_tol,
+                coeff_dtype=dtype, comm=self.comm, progress=verbose,
+                fermi_energy=mu, temperature=temperature, relaxation_time=relaxation_time,
+            )  # fmt: skip
+            results = cc.coupled_optical_spectra(
+                channel, levels,
+                dielectric_energies_ev=(grid if dielectric else None),
+                shg_energies_ev=(list(shg_energies) if second_harmonic else None),
+                components=comps, directions=dirs, eta_ev=eta, lrc_alpha=lrc_alpha,
+                alpha_boot=bootstrap_alpha, cache_gb=cache_gb, cache_dtype=dtype, progress=verbose,
+            )  # fmt: skip
+            written = cc.write_coupled_outputs(self.data_controller, results)
+            attr['coupled_optical_response'] = {
+                'nk': tuple(int(n) for n in nk), 'levels': levels, 'eta_ev': float(eta),
+                'scissor_ev': float(scissor), 'alpha_lrc': results['alpha_lrc'],
+                'alpha_boot': results['alpha_boot'], 'position_dipoles': position_dipoles,
+                'static_epsilon': dict(results['static_epsilon']),
+                'metallic': bool(metallic), 'fermi_energy_ev': mu,
+                'temperature_k': float(temperature),
+                'relaxation_time_fs': (
+                    'callable' if callable(relaxation_time)
+                    else (None if relaxation_time is None else float(relaxation_time))
+                ),
+            }  # fmt: skip
+            if self.rank == 0:
+                static = ', '.join(
+                    '%s %.3f' % (cc.KERNEL_TAGS[level], value)
+                    for level, value in results['static_epsilon'].items()
+                )
+                print(
+                    'Coupled optical response: %d k-points, %d orbitals, grid %s, levels %s; static '
+                    'eps_%s %s%s; wrote %d files'
+                    % (int(np.prod(nk)), channel.n, 'x'.join(str(n) for n in channel.nr),
+                       ', '.join(cc.KERNEL_TAGS[level] for level in levels), 'xyz'[dirs[0]] * 2,
+                       static or '(no static point)',
+                       ('; bootstrap alpha %.4f' % results['alpha_boot']
+                        if 'hartree+alda+bootstrap' in levels else ''),
+                       len(written))
+                )  # fmt: skip
+        except Exception as e:
+            self.report_exception('coupled_optical_response')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Coupled Optical Response')
+        return results
+
+    def jdos(
+        self,
+        delta: float = 0.1,
+        emin: float = 0.0,
+        emax: float = 10.0,
+        ne: int = 501,
+        jdos_smeartype: str = 'gauss',
+    ) -> None:
+        """Joint density of states: the number of vertical transitions at each photon energy.
+
+        Parameters
+        ----------
+        delta : float, optional
+            Broadening of each transition (eV), used unless a broadening is already set.
+        emin : float, optional
+            Lowest photon energy (eV).
+        emax : float, optional
+            Highest photon energy (eV).
+        ne : int, optional
+            Number of photon energies between ``emin`` and ``emax``.
+        jdos_smeartype : str, optional
+            Line shape of a transition: ``'gauss'`` or ``'lorentz'``.
+
+        Returns
+        -------
+        None
+            Writes ``jdos.dat`` (``jdos_0.dat`` and ``jdos_1.dat`` for a collinear magnet): photon
+            energy and JDOS, normalized as a distribution of the transitions.
+
+        Notes
+        -----
+        .. math::
+
+            J(\\omega) \\propto \\sum_{nm\\mathbf{k}} w_{\\mathbf{k}} (f_{n\\mathbf{k}}
+            - f_{m\\mathbf{k}}) \\, \\delta(E_{m\\mathbf{k}} - E_{n\\mathbf{k}} - \\hbar\\omega)
+
+        over the eigenvalues, k-points and weights of the DFT save (all its bands), not the PAO
+        bands: the interpolation does not change it, and a model, which has no save, cannot use it.
         """
         from .response.do_epsilon import do_jdos
 
@@ -3867,7 +5350,39 @@ class PAOFLOW:
 
         self.report_module_time('Joint density of states')
 
-    def find_weyl_points(self, symmetrize=None, test_rad=0.01, search_grid=[8, 8, 8]):
+    def find_weyl_points(
+        self,
+        symmetrize: bool | None = None,
+        test_rad: float = 0.01,
+        search_grid: list[int] = [8, 8, 8],
+    ) -> None:
+        """Search the Brillouin zone for Weyl points: touchings of the highest occupied band and the
+        next one.
+
+        Parameters
+        ----------
+        symmetrize : bool, optional
+            Expand the candidates to their symmetry images (the symmetry operations of the save).
+            None keeps the setting of :meth:`pao_hamiltonian`.
+        test_rad : float, optional
+            Radius of the sphere of the chirality check (fractional units); the check uses 0.005.
+        search_grid : list of int, optional
+            Number of boxes along each reciprocal vector for the gap minimisation.
+
+        Returns
+        -------
+        None
+            Writes ``weyl_points.dat``: each point in Cartesian coordinates (2π/alat), its
+            chirality (the Chern number on a small sphere, ``?`` without Z2Pack) and its energy.
+
+        Notes
+        -----
+        The gap :math:`E_{N+1}(\\mathbf{k}) - E_N(\\mathbf{k})` (:math:`N` the number of electrons)
+        is minimised from every box of the search grid; minima below the tolerance are candidates.
+        With the optional ``z2pack`` and ``tbmodels`` packages each candidate gets the Chern number
+        of the occupied bands on a sphere around it, read from the ``hamiltonian.dat`` that
+        :meth:`write_Hamiltonian` writes: call that first.
+        """
         from .topology.do_find_Weyl import find_weyl
 
         try:
@@ -3955,14 +5470,20 @@ class PAOFLOW:
             berry_high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
             nk (int): Number of k-points to include in the path
             closed (bool, optional): whether or not to include the connection of the last and first points in the loop
-            method (str, {'berry','zak'}): 'berry' returns the usual berry phase. 'zak' includes the Zak phase for 1D systems which takes into account the Bloch factor exp(-iG.r)
-            accumulated over a Brillouin zone. See J. Zak, Phys. Rev. Lett. 62, 2747 (1989)
+            method (str, {'berry','zak'}): 'berry' uses the eigenvectors of H(k) in PAOFLOW's lattice gauge
+                (H(k + G) = H(k)): invariants are right, positions lack the orbital centres. 'zak' uses the
+                cell-centred states exp(-2 pi i k.s_n) c_n(k) (s_n the crystal coordinates of orbital n) and
+                closes the loop with the state at k_0 + G: across the zone, phase / 2 pi is the Wannier
+                centre along the loop. See J. Zak, Phys. Rev. Lett. 62, 2747 (1989)
 
             sub (None or list of int, optional): index of selected bands to calculate the Berry phase
-            occupied (bool, optional): calculate the Berry phase over all occupied bands (if set to True, sub is set to None)
+            occupied (bool, optional): calculate the Berry phase over all occupied bands (if set to True, sub is set to None):
+                the lowest nelec / spin factor bands (nelec electrons; spin factor 2 without spin-orbit
+                coupling for nspin = 1, else 1; nspin = 2: the bands of channel 0 below the Fermi level)
             kxlim (tuple, float): start and end points in x direction for sampling the BZ, used when kspace_method='square' .
             kylim (tuple, float): start and end points in y direction for sampling the BZ, used when kspace_method='square' .
-            eigvals (bool, optional): write overlap matrix eigenvalues
+            eigvals (bool, optional): return and write the eigenphases of the loop (the hybrid Wannier
+                centres x 2 pi) to <fname>.dat ('path': one row; 'track': one row per transverse point)
             eigvecs (bool, optional): write overlap matrix eigenvectors
             save_prd (bool, optional): save overlap matrix
             fname (str, optional): filename to save the berry phase results
@@ -5305,6 +6826,747 @@ class PAOFLOW:
         bloch = BlochHamiltonian.from_data_controller(self.data_controller, ispin=ispin)
         return simulate(experiment, basis, bloch, self_energy)
 
+    def special_displacement(
+        self,
+        temperatures,
+        supercell_matrix=None,
+        force_constants_file=None,
+        force_constants=None,
+        force_constants_supercell=None,
+        zg_dir='zg',
+        pp_dir=None,
+        prefix=None,
+        kgrid=None,
+        nbnd=None,
+        hubbard_file=None,
+        hubbard_card=None,
+        niters=15000,
+        error_thresh=0.05,
+        seed=0,
+        include_set_a=True,
+        min_freq_thz=1.0e-3,
+        reference=False,
+    ):
+        """Special displacement method (Zacharias-Giustino): one ZG supercell per temperature.
+
+        Builds, for every temperature, the single supercell configuration whose
+        clamped-ion properties equal the Williams-Lax thermal average to second
+        order in the atomic displacements (Zacharias and Giustino, PRB 94, 075125
+        (2016); PRR 2, 013357 (2020)), and writes one ``pw.x`` scf input per
+        temperature under ``<outputdir>/<zg_dir>/`` with the manifest ``zg.json``
+        and a ``<prefix>.npz`` holding the displacements and signs.  The phonons
+        come from the force constants already on the controller (``phonons()``
+        with forces) or from a ``q2r.x`` file.  After ``pw.x`` the ZG saves feed the
+        thermal workflows (unfolded spectral functions, dielectric function).
+
+        Arguments:
+            temperatures: Temperatures in kelvin (a number or a sequence).
+            supercell_matrix: Diagonal ZG supercell (scalar or three integers);
+                default: the phonon supercell of the controller.
+            force_constants_file (str, optional): ``q2r.x`` force constants of the
+                unit cell, or ``'sscha'`` for the anharmonic force constants of
+                :meth:`sscha_force_constants` at the SSCHA temperature; otherwise
+                ``arry['phonopy']`` must carry force constants.
+            force_constants (ndarray, optional): Explicit supercell force constants
+                ``(natom_sc, natom_sc, 3, 3)`` in Ry/bohr^2 (phonopy layout), e.g. the
+                thermal force constants of a displaced cell
+                (:func:`~PAOFLOW.phonon.special_displacement.thermal_force_constants`,
+                the anharmonic self-consistent iteration); takes precedence over
+                ``force_constants_file``.
+            force_constants_supercell (optional): Diagonal supercell the explicit
+                force constants refer to (default ``supercell_matrix``).
+            zg_dir (str): Sub-directory for the inputs (default ``'zg'``).
+            pp_dir, prefix, kgrid, nbnd, hubbard_file, hubbard_card: As in
+                :meth:`electron_phonon`.
+            niters (int): Maximum number of sign permutations tried.
+            error_thresh (float): Accepted relative error of the mean-square
+                displacements (``ZG.x`` ``error_thresh``).
+            seed (int): Seed of the permutations.
+            include_set_a (bool): Include the time-reversal-invariant q-points.
+            min_freq_thz (float): Modes below it are frozen.
+            reference (bool): Also write the undisplaced supercell
+                (``<prefix>_zg_ref.in``): the offset of the supercell bands from the
+                primitive ones, to which the thermal shifts are referred.
+
+        Returns:
+            None (the configurations are stored as ``arry['zg_configurations']``).
+        """
+        import numpy as np
+
+        from .phonon.io import read_hubbard_card
+        from .phonon.special_displacement import (
+            phonopy_from_q2r,
+            phonopy_with_force_constants,
+            reference_configuration,
+            write_zg_inputs,
+            zg_configuration,
+        )
+        from .phonon.structure import paoflow_to_phonopy
+
+        arry, attr = self.data_controller.data_dicts()
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+        try:
+            if force_constants_file == 'sscha':
+                force_constants_file = attr.get('sscha_force_constants_file')
+                if not force_constants_file:
+                    raise ValueError(
+                        "force_constants_file='sscha' needs sscha_force_constants() first"
+                    )
+            if force_constants is not None:
+                if force_constants_supercell is None:
+                    force_constants_supercell = supercell_matrix or attr.get(
+                        'phonon_supercell_matrix'
+                    )
+                if force_constants_supercell is None:
+                    raise ValueError('force_constants needs force_constants_supercell')
+                phonon = phonopy_with_force_constants(
+                    paoflow_to_phonopy(self.data_controller),
+                    force_constants_supercell,
+                    force_constants,
+                )
+            elif force_constants_file is not None:
+                phonon = phonopy_from_q2r(
+                    paoflow_to_phonopy(self.data_controller), force_constants_file
+                )
+            else:
+                phonon = arry.get('phonopy')
+                if phonon is None or phonon.force_constants is None:
+                    raise ValueError(
+                        'special_displacement needs force constants: run phonons() with forces '
+                        'or pass force_constants_file (q2r.x)'
+                    )
+            if supercell_matrix is None:
+                supercell_matrix = attr.get('phonon_supercell_matrix')
+            if supercell_matrix is None:
+                raise ValueError('supercell_matrix is required')
+            temps = np.atleast_1d(np.asarray(temperatures, dtype=float))
+            configurations = [
+                zg_configuration(
+                    phonon,
+                    supercell_matrix,
+                    float(T),
+                    niters=niters,
+                    error_thresh=error_thresh,
+                    seed=seed,
+                    include_set_a=include_set_a,
+                    min_freq_thz=min_freq_thz,
+                )  # fmt: skip
+                for T in temps
+            ]
+            if reference:
+                configurations.append(reference_configuration(configurations[0]))
+            arry['zg_configurations'] = configurations
+            paths = write_zg_inputs(
+                self.data_controller, configurations, zg_dir=zg_dir, pp_dir=pp_dir, prefix=prefix,
+                kgrid=kgrid, nbnd=nbnd, hubbard_card=hubbard_card,
+            )  # fmt: skip
+            if self.rank == 0:
+                for conf in configurations:
+                    if conf['temperature_k'] is None:
+                        print('Reference (undisplaced) supercell: %d atoms' % len(conf['cell']))
+                        continue
+                    print(
+                        'ZG configuration at %7.2f K: %d atoms, error %.4f after %d attempts, '
+                        'rms displacement %.4f bohr'
+                        % (
+                            conf['temperature_k'], len(conf['cell']), conf['error'], conf['attempts'],
+                            float(np.sqrt(conf['msd_configuration'].sum(axis=1).mean())),
+                        )
+                    )  # fmt: skip
+                print(
+                    'Wrote %d ZG supercell inputs under %s. Run pw.x on each; the saves are '
+                    'the input of the thermal workflows.' % (len(paths), zg_dir)
+                )
+            self.report_module_time('Special displacement (write inputs)')
+        except Exception as e:
+            self.report_exception('special_displacement')
+            if attr.get('abort_on_exception', False):
+                raise e
+
+    # ------------------------------------------------------------------ SSCHA (anharmonic phonons)
+    def _sscha_state(self) -> dict:
+        """Progress of the SSCHA run (``<sscha_dir>/state.json``, written by the SSCHA methods)."""
+        import json
+        import os
+
+        _, attr = self.data_controller.data_dicts()
+        path = os.path.join(attr['sscha']['sscha_dir'], 'state.json')
+        return json.load(open(path)) if os.path.isfile(path) else {}
+
+    def _sscha_write_state(self, **values) -> None:
+        """Update the progress file of the SSCHA run (rank 0)."""
+        import json
+        import os
+
+        if self.rank != 0:
+            return
+        _, attr = self.data_controller.data_dicts()
+        state = self._sscha_state()
+        state.update(values)
+        with open(os.path.join(attr['sscha']['sscha_dir'], 'state.json'), 'w') as handle:
+            json.dump(state, handle, indent=1)
+
+    def _sscha_matrices(self, population: int):
+        """CellConstructor matrices of a population (``pop0`` = the starting matrices)."""
+        import os
+
+        from .phonon.sscha_bridge import require_sscha
+
+        cc_phonons, _ = require_sscha()
+        _, attr = self.data_controller.data_dicts()
+        settings = attr['sscha']
+        return cc_phonons.Phonons(
+            os.path.join(settings['sscha_dir'], 'pop%d' % population, 'dyn'), settings['nqirr']
+        )
+
+    def _sscha_budget(self) -> dict:
+        """Population budget and minimiser settings of ``attr['sscha']``, recorded in ``state.json``."""
+        _, attr = self.data_controller.data_dicts()
+        keys = (
+            'population_sizes',
+            'hessian_size',
+            'min_step_dyn',
+            'kong_liu_ratio',
+            'meaningful_factor',
+        )
+        return {key: attr['sscha'][key] for key in keys}
+
+    def _sscha_start_from(self, start_from: str, nqirr: int):
+        """Matrices of ``start_from`` (an ``sscha_dir`` or a ``<dir>/dyn`` prefix) with ``nqirr`` stars."""
+        import json
+        import os
+
+        from .phonon.sscha_bridge import dynamical_matrix_files, require_sscha
+
+        cc_phonons, _ = require_sscha()
+        prefix = start_from
+        if os.path.isdir(start_from):
+            state = json.load(open(os.path.join(start_from, 'state.json')))
+            prefix = os.path.join(start_from, 'pop%d' % int(state['minimized']), 'dyn')
+        if len(dynamical_matrix_files(prefix)) != nqirr:
+            raise ValueError(
+                'start_from %s: %d dynamical matrices, the supercell has %d irreducible q'
+                % (start_from, len(dynamical_matrix_files(prefix)), nqirr)
+            )
+        return cc_phonons.Phonons(prefix, nqirr)
+
+    def sscha_setup(
+        self,
+        temperature: float,
+        supercell_matrix,
+        harmonic_dynamical_matrices: str,
+        sscha_dir: str = 'sscha',
+        kgrid=None,
+        population_sizes=(100, 100, 200, 200, 300, 300, 400, 400),
+        hessian_size: int = 800,
+        min_step_dyn: float = 0.05,
+        kong_liu_ratio: float = 0.5,
+        meaningful_factor: float = 1.0e-3,
+        pp_dir: str | None = None,
+        prefix: str | None = None,
+        conv_thr: float = 1.0e-10,
+        mixing_beta: float = 0.3,
+        positive_definite: bool = True,
+        electronic_temperature=None,
+        start_from: str | None = None,
+    ) -> None:
+        """Prepare a stochastic self-consistent harmonic approximation (SSCHA) at one temperature.
+
+        Parameters
+        ----------
+        temperature : float
+            Ionic temperature (K).
+        supercell_matrix : int or sequence of int
+            Diagonal supercell of the configurations (scalar = isotropic); its q-points must be on
+            the grid of ``harmonic_dynamical_matrices`` and include the instabilities to treat.
+        harmonic_dynamical_matrices : str
+            Path prefix ``<dir>/<prefix>.dyn`` of a ``ph.x`` q-grid run (``<prefix>.dyn0`` lists
+            the grid): the starting point and the harmonic support of the interpolation.
+        sscha_dir : str, optional
+            Directory of the run (populations, matrices, ``state.json``); an existing run with the
+            same temperature and supercell is continued.
+        kgrid : sequence of int, optional
+            k-grid of the supercell force runs (default: the parent grid divided by the supercell).
+        population_sizes : sequence of int, optional
+            Configurations per population (the last value repeats); at most ``len`` populations.
+        hessian_size : int, optional
+            Configurations of the final population of the free-energy Hessian.
+        min_step_dyn, kong_liu_ratio, meaningful_factor : float, optional
+            Minimisation step, smallest Kong-Liu effective-sample ratio, gradient threshold.
+        pp_dir : str, optional
+            ``pseudo_dir`` of the force runs (default: the save directory).
+        prefix : str, optional
+            Base pw.x prefix of the configurations (default: from the save directory).
+        conv_thr, mixing_beta : float, optional
+            Self-consistency of the force runs.
+        positive_definite : bool, optional
+            Make the imaginary harmonic frequencies positive in the starting matrices (needed for a
+            harmonically unstable lattice).
+        electronic_temperature : float or bool, optional
+            Electrons of the force runs: ``None`` (default) keeps the occupations of the parent
+            save; a temperature (K) uses Fermi-Dirac occupations at :math:`k_B T_e`; ``True`` sets
+            :math:`T_e` equal to the ionic ``temperature`` (hot electrons in equilibrium with the
+            lattice).
+        start_from : str, optional
+            Start from converged matrices of the same supercell instead of the harmonic ones: the
+            ``sscha_dir`` of another run (its last minimised population, e.g. a neighbouring
+            temperature of a scan) or a path prefix ``<dir>/dyn``. The harmonic matrices remain the
+            support of :meth:`sscha_force_constants`.
+
+        Returns
+        -------
+        None
+            Stores the settings in ``attr['sscha']``; writes ``<sscha_dir>/start`` (harmonic
+            matrices of the supercell q) and ``<sscha_dir>/pop0`` (starting matrices).
+
+        Raises
+        ------
+        ValueError
+            If ``start_from`` holds no matrices with the q-points of the supercell.
+
+        Notes
+        -----
+        The force runs use PAOFLOW's supercell writer with the cutoffs and pseudopotentials of the
+        parent save. Workflow: :meth:`sscha_population`, pw.x on its inputs,
+        :meth:`sscha_minimize`, repeated to convergence; then :meth:`sscha_hessian` and
+        :meth:`sscha_force_constants`; :meth:`sscha_status` tells which step is next.
+        """
+        import os
+
+        import numpy as np
+
+        from .phonon.io import _supercell_kgrid
+        from .phonon.sscha_bridge import RY_TO_CM1, dynamical_matrix_files, starting_matrices
+
+        arry, attr = self.data_controller.data_dicts()
+        try:
+            supercell = tuple(int(n) for n in np.broadcast_to(np.asarray(supercell_matrix), (3,)))
+            sscha_dir = os.path.abspath(sscha_dir)
+            if kgrid is None:
+                kgrid = tuple(
+                    int(n) for n in _supercell_kgrid(self.data_controller, np.diag(supercell))
+                )
+            if prefix is None:
+                prefix = os.path.basename(os.path.normpath(attr['savedir'])).replace('.save', '')
+            if electronic_temperature is True:
+                electronic_temperature = float(temperature)
+            elif electronic_temperature is False:
+                electronic_temperature = None
+            attr['sscha'] = dict(
+                temperature=float(temperature), supercell=supercell,
+                harmonic_prefix=os.path.abspath(harmonic_dynamical_matrices), sscha_dir=sscha_dir,
+                kgrid=tuple(int(n) for n in kgrid), population_sizes=[int(n) for n in population_sizes],
+                hessian_size=int(hessian_size), min_step_dyn=float(min_step_dyn),
+                kong_liu_ratio=float(kong_liu_ratio), meaningful_factor=float(meaningful_factor),
+                pp_dir=os.path.abspath(pp_dir or attr.get('fpath', '.')), prefix=prefix + '_sscha',
+                conv_thr=float(conv_thr), mixing_beta=float(mixing_beta),
+                electronic_temperature=None if electronic_temperature is None else float(electronic_temperature),
+            )  # fmt: skip
+            state = self._sscha_state() if os.path.isdir(sscha_dir) else {}
+            if state and (
+                state.get('temperature') != float(temperature)
+                or tuple(state.get('supercell', ())) != supercell
+                or state.get('electronic_temperature') != attr['sscha']['electronic_temperature']
+            ):
+                raise ValueError(
+                    '%s holds the SSCHA run at %s K, supercell %s, electronic temperature %s: use another sscha_dir'
+                    % (sscha_dir, state.get('temperature'), state.get('supercell'),
+                       state.get('electronic_temperature'))
+                )  # fmt: skip
+            same = bool(state)
+            if self.rank == 0:
+                os.makedirs(sscha_dir, exist_ok=True)
+                if not (same and os.path.isfile(os.path.join(sscha_dir, 'pop0', 'dyn1'))):
+                    matrices, harmonic_cm1, start_cm1 = starting_matrices(
+                        harmonic_dynamical_matrices, supercell, os.path.join(sscha_dir, 'start'),
+                        positive_definite=positive_definite,
+                    )  # fmt: skip
+                    nqirr = len(dynamical_matrix_files(os.path.join(sscha_dir, 'start', 'dyn')))
+                    if start_from is not None:
+                        matrices = self._sscha_start_from(start_from, nqirr)
+                        start_cm1 = np.sort(matrices.DiagonalizeSupercell()[0] * RY_TO_CM1)
+                    os.makedirs(os.path.join(sscha_dir, 'pop0'), exist_ok=True)
+                    matrices.save_qe(os.path.join(sscha_dir, 'pop0', 'dyn'))
+                    state = dict(
+                        temperature=float(temperature), supercell=list(supercell), nqirr=nqirr,
+                        generated=0, minimized=0, converged=False, hessian_population=None,
+                        electronic_temperature=attr['sscha']['electronic_temperature'],
+                        **self._sscha_budget(),
+                        start_from=None if start_from is None else os.path.abspath(start_from),
+                        harmonic_cm1=[float(w) for w in harmonic_cm1[:9]],
+                        start_cm1=[float(w) for w in start_cm1[:9]],
+                    )  # fmt: skip
+                    with open(os.path.join(sscha_dir, 'state.json'), 'w') as handle:
+                        import json
+
+                        json.dump(state, handle, indent=1)
+                    print('SSCHA %g K, supercell %s: lowest harmonic %s cm-1 -> start %s cm-1' % (
+                        temperature, 'x'.join(map(str, supercell)), np.round(harmonic_cm1[:6], 1),
+                        np.round(start_cm1[3:9], 1)))  # fmt: skip
+                else:
+                    self._sscha_write_state(**self._sscha_budget())
+                    print('SSCHA %g K: continuing %s (population %d generated, %d minimized)' % (
+                        temperature, sscha_dir, state['generated'], state['minimized']))  # fmt: skip
+            self.comm.Barrier()
+            attr['sscha']['nqirr'] = int(self._sscha_state()['nqirr'])
+        except Exception as e:
+            self.report_exception('sscha_setup')
+            if attr.get('abort_on_exception', False):
+                raise e
+        self.report_module_time('SSCHA setup')
+
+    def sscha_population(self) -> dict | None:
+        """Configurations of the next SSCHA population and their pw.x inputs.
+
+        Returns
+        -------
+        dict or None
+            ``population`` (index), ``inputs`` (the ``cfg_XXXX.in`` files to run with pw.x, outputs
+            ``cfg_XXXX.out`` next to them) and ``hessian`` (True for the final population of the
+            free-energy Hessian). A population that still waits for its forces is returned again,
+            never regenerated; ``None`` after an error.
+
+        Raises
+        ------
+        RuntimeError
+            If the run has not converged within ``len(population_sizes)`` populations.
+
+        Notes
+        -----
+        After convergence the next population (``hessian_size`` configurations) is drawn from the
+        converged matrices for :meth:`sscha_hessian`.
+        """
+        import glob
+        import os
+
+        from .phonon.sscha_bridge import generate_population
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            settings, state = attr['sscha'], self._sscha_state()
+            if (
+                state['generated'] > state['minimized']
+            ):  # pending: never regenerate (outputs may exist)
+                population = state['generated']
+                inputs = sorted(
+                    glob.glob(os.path.join(settings['sscha_dir'], 'pop%d' % population, 'cfg_*.in'))
+                )
+                hessian = state.get('hessian_population') == population
+                if self.rank == 0:
+                    print('SSCHA: population %d (%d configurations) waits for its forces, then %s' % (
+                        population, len(inputs), 'sscha_hessian' if hessian else 'sscha_minimize'))  # fmt: skip
+                return dict(population=population, inputs=inputs, hessian=hessian)
+            hessian = bool(state['converged'])
+            population = state['minimized'] + 1
+            sizes = settings['population_sizes']
+            if not hessian and population > len(sizes):
+                raise RuntimeError('SSCHA not converged after %d populations' % len(sizes))
+            size = (
+                settings['hessian_size'] if hessian else sizes[min(population - 1, len(sizes) - 1)]
+            )
+            population_dir = os.path.join(settings['sscha_dir'], 'pop%d' % population)
+            inputs = None
+            if self.rank == 0:
+                inputs = generate_population(
+                    self.data_controller, self._sscha_matrices(population - 1), settings['temperature'],
+                    size, population_dir, '%s_p%d' % (settings['prefix'], population), settings['pp_dir'],
+                    settings['kgrid'], settings['conv_thr'], settings['mixing_beta'],
+                    settings['electronic_temperature'],
+                )  # fmt: skip
+                print('SSCHA population %d: %d configurations in %s%s' % (
+                    population, len(inputs), population_dir, ' (free-energy Hessian)' if hessian else ''))  # fmt: skip
+            inputs = self.comm.bcast(inputs, root=0)
+            self._sscha_write_state(
+                generated=population, hessian_population=population if hessian else None
+            )
+            result = dict(population=population, inputs=inputs, hessian=hessian)
+        except Exception as e:
+            self.report_exception('sscha_population')
+            if attr.get('abort_on_exception', False):
+                raise e
+        self.report_module_time('SSCHA population')
+        return result
+
+    def sscha_minimize(self, forces: str = 'qe') -> dict | None:
+        """Read the forces of the last SSCHA population and minimise the free energy.
+
+        Parameters
+        ----------
+        forces : {'qe'}, optional
+            Source of the forces: the pw.x outputs ``cfg_XXXX.out`` of the population.
+
+        Returns
+        -------
+        dict or None
+            ``population``, ``converged``, ``free_energy_ry``, ``free_energy_error_ry``,
+            ``kong_liu`` (final effective-sample ratio), ``size`` (configurations read) and
+            ``lowest_cm1`` (lowest auxiliary frequencies); writes ``pop<p>/dyn*`` and
+            ``pop<p>/summary.json``. ``None`` if there is nothing to minimise.
+
+        Raises
+        ------
+        ValueError
+            For an unknown ``forces``.
+        RuntimeError
+            If fewer than 95 % of the configurations finished.
+        """
+        import json
+        import os
+
+        import numpy as np
+
+        from .phonon.sscha_bridge import load_population, minimise
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            if forces != 'qe':
+                raise ValueError("forces must be 'qe' (pw.x outputs), got %r" % forces)
+            settings, state = attr['sscha'], self._sscha_state()
+            population = state['generated']
+            if population == 0 or population == state['minimized']:
+                if self.rank == 0:
+                    print('SSCHA: nothing to minimise (call sscha_population first)')
+                return None
+            if state.get('hessian_population') == population:
+                if self.rank == 0:
+                    print(
+                        'SSCHA: population %d is the Hessian population: call sscha_hessian'
+                        % population
+                    )
+                return None
+            population_dir = os.path.join(settings['sscha_dir'], 'pop%d' % population)
+            if self.rank == 0:
+                ensemble = load_population(
+                    self._sscha_matrices(population - 1), settings['temperature'], population_dir
+                )
+                out = minimise(
+                    ensemble,
+                    settings['min_step_dyn'],
+                    settings['kong_liu_ratio'],
+                    settings['meaningful_factor'],
+                )
+                out['matrices'].save_qe(os.path.join(population_dir, 'dyn'))
+                result = dict(
+                    population=population, converged=out['converged'], free_energy_ry=out['free_energy_ry'],
+                    free_energy_error_ry=out['free_energy_error_ry'], kong_liu=out['kong_liu'],
+                    size=len(ensemble.structures),
+                    lowest_cm1=[float(w) for w in out['frequencies_cm1'][3:9]],
+                )  # fmt: skip
+                with open(os.path.join(population_dir, 'summary.json'), 'w') as handle:
+                    json.dump(result, handle, indent=1)
+                print('SSCHA population %d: converged %s, F = %.8f +- %.8f Ry, lowest auxiliary %s cm-1' % (
+                    population, out['converged'], out['free_energy_ry'], out['free_energy_error_ry'],
+                    np.round(result['lowest_cm1'][:3], 1)))  # fmt: skip
+            result = self.comm.bcast(result, root=0)
+            self._sscha_write_state(minimized=population, converged=bool(result['converged']))
+            attr['sscha']['converged'] = bool(result['converged'])
+        except Exception as e:
+            self.report_exception('sscha_minimize')
+            if attr.get('abort_on_exception', False):
+                raise e
+        self.report_module_time('SSCHA minimisation')
+        return result
+
+    def sscha_hessian(self, include_v4: bool = False) -> dict | None:
+        """Free-energy Hessian of the converged SSCHA: the physical phonons and the stability verdict.
+
+        Parameters
+        ----------
+        include_v4 : bool, optional
+            Include the fourth-order term (the bubble term alone is the usual choice).
+
+        Returns
+        -------
+        dict or None
+            ``stable`` (no mode below -0.5 meV on the supercell grid) and ``lowest_cm1`` per q
+            (``(q, frequency)`` pairs); writes ``<sscha_dir>/hessian/dyn*`` and sets
+            ``attr['sscha']['stable']``. ``None`` before the Hessian population is computed.
+        """
+        import json
+        import os
+
+        from .phonon.sscha_bridge import (
+            UNSTABLE_CM1,
+            free_energy_hessian,
+            load_population,
+            lowest_frequencies,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            settings, state = attr['sscha'], self._sscha_state()
+            population = state.get('hessian_population')
+            if not state.get('converged') or not population:
+                if self.rank == 0:
+                    print(
+                        'SSCHA: the Hessian needs a converged run and its population (sscha_population)'
+                    )
+                return None
+            if self.rank == 0:
+                matrices = self._sscha_matrices(population - 1)
+                ensemble = load_population(matrices, settings['temperature'],
+                                           os.path.join(settings['sscha_dir'], 'pop%d' % population))  # fmt: skip
+                hessian = free_energy_hessian(ensemble, include_v4=include_v4)
+                os.makedirs(os.path.join(settings['sscha_dir'], 'hessian'), exist_ok=True)
+                hessian.save_qe(os.path.join(settings['sscha_dir'], 'hessian', 'dyn'))
+                lowest = lowest_frequencies(hessian)
+                stable = all(w > UNSTABLE_CM1 for _, w in lowest)
+                result = dict(
+                    stable=stable, lowest_cm1=[(list(map(float, q)), w) for q, w in lowest]
+                )
+                with open(
+                    os.path.join(settings['sscha_dir'], 'hessian', 'summary.json'), 'w'
+                ) as handle:
+                    json.dump(result, handle, indent=1)
+                print('SSCHA %g K free-energy Hessian: lowest %.1f cm-1 -> %s' % (
+                    settings['temperature'], min(w for _, w in lowest), 'stable' if stable else 'UNSTABLE'))  # fmt: skip
+            result = self.comm.bcast(result, root=0)
+            self._sscha_write_state(hessian_done=True, stable=bool(result['stable']))
+            attr['sscha']['stable'] = bool(result['stable'])
+        except Exception as e:
+            self.report_exception('sscha_hessian')
+            if attr.get('abort_on_exception', False):
+                raise e
+        self.report_module_time('SSCHA free-energy Hessian')
+        return result
+
+    def sscha_force_constants(self, matrices: str = 'auxiliary', fine_grid=None) -> dict | None:
+        """Anharmonic force constants on the harmonic q-grid, for the phonon and electron-phonon steps.
+
+        Parameters
+        ----------
+        matrices : {'auxiliary', 'hessian'}, optional
+            ``'auxiliary'``: the converged SSCHA matrices (the Gaussian of the thermal ensemble: input
+            of :meth:`special_displacement`); ``'hessian'``: the free-energy Hessian (the physical
+            phonons: dispersions, electron-phonon coupling).
+        fine_grid : sequence of int, optional
+            Target q-grid (default: the grid of the harmonic ``ph.x`` run).
+
+        Returns
+        -------
+        dict or None
+            ``dynamical_matrices`` (path prefix ``<sscha_dir>/force_constants_<kind>/<prefix>.dyn``,
+            the ``sscha_dynamical_matrices`` of ``ElphonSystem``), ``force_constants_file`` (QE
+            ``flfrc``), ``lowest_cm1`` (lowest mode over the grid) and ``unstable_q`` (count below
+            -0.5 meV). Sets ``attr['sscha_force_constants_file']`` (auxiliary) and
+            ``attr['sscha_dynamical_matrices']``.
+
+        Notes
+        -----
+        The anharmonic correction of the supercell grid is added to the harmonic matrices of the
+        fine grid (:func:`~PAOFLOW.phonon.sscha_bridge.interpolate_correction`), so the result is
+        exact on the supercell q and keeps the harmonic dispersion elsewhere.
+        """
+        import os
+
+        from .phonon.sscha_bridge import (
+            UNSTABLE_CM1,
+            dynamical_matrix_files,
+            interpolate_correction,
+            lowest_frequencies,
+            require_sscha,
+            write_force_constants,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            if matrices not in ('auxiliary', 'hessian'):
+                raise ValueError("matrices must be 'auxiliary' or 'hessian', got %r" % matrices)
+            settings, state = attr['sscha'], self._sscha_state()
+            if not state.get('converged') or (
+                matrices == 'hessian' and not state.get('hessian_done')
+            ):
+                raise RuntimeError('sscha_force_constants(%r) needs a converged run%s' % (
+                    matrices, ' and sscha_hessian' if matrices == 'hessian' else ''))  # fmt: skip
+            harmonic_prefix = settings['harmonic_prefix']
+            grid_line = open(harmonic_prefix + '0').readline().split()
+            fine_grid = tuple(int(n) for n in (fine_grid or grid_line[:3]))
+            name = os.path.basename(harmonic_prefix)
+            out_dir = os.path.join(settings['sscha_dir'], 'force_constants_%s' % matrices)
+            prefix_out = os.path.join(out_dir, name)
+            fc_path = os.path.join(settings['sscha_dir'], '%s_sscha_%s.fc' % (name[:-4], matrices))
+            if self.rank == 0:
+                cc_phonons, _ = require_sscha()
+                source = os.path.join(settings['sscha_dir'], 'hessian', 'dyn') if matrices == 'hessian' else \
+                    os.path.join(settings['sscha_dir'], 'pop%d' % state['minimized'], 'dyn')  # fmt: skip
+                sscha_matrices = cc_phonons.Phonons(source, settings['nqirr'])
+                harmonic_coarse = cc_phonons.Phonons(
+                    os.path.join(settings['sscha_dir'], 'start', 'dyn'), settings['nqirr']
+                )
+                harmonic_fine = cc_phonons.Phonons(
+                    harmonic_prefix, len(dynamical_matrix_files(harmonic_prefix))
+                )
+                fine = interpolate_correction(
+                    sscha_matrices, harmonic_coarse, harmonic_fine, settings['supercell'], fine_grid
+                )
+                write_force_constants(fine, prefix_out, fine_grid, fc_path)
+                lowest = [w for _, w in lowest_frequencies(fine)]
+                result = dict(dynamical_matrices=prefix_out, force_constants_file=fc_path,
+                              lowest_cm1=float(min(lowest)), unstable_q=int(sum(w < UNSTABLE_CM1 for w in lowest)))  # fmt: skip
+                print('SSCHA %s force constants on %s: lowest %.1f cm-1, %d unstable q -> %s' % (
+                    matrices, 'x'.join(map(str, fine_grid)), result['lowest_cm1'], result['unstable_q'], fc_path))  # fmt: skip
+            result = self.comm.bcast(result, root=0)
+            self._sscha_write_state(exported=sorted(set(state.get('exported', [])) | {matrices}))
+            attr.setdefault('sscha_dynamical_matrices', {})[matrices] = result['dynamical_matrices']
+            if matrices == 'auxiliary':
+                attr['sscha_force_constants_file'] = result['force_constants_file']
+        except Exception as e:
+            self.report_exception('sscha_force_constants')
+            if attr.get('abort_on_exception', False):
+                raise e
+        self.report_module_time('SSCHA force constants')
+        return result
+
+    def sscha_status(self, min_fraction: float = 0.95) -> dict | None:
+        """Where the SSCHA run of :meth:`sscha_setup` stands and which step comes next.
+
+        Parameters
+        ----------
+        min_fraction : float, optional
+            Fraction of finished configurations a population needs before it is minimised (the
+            threshold of :meth:`sscha_minimize`).
+
+        Returns
+        -------
+        dict or None
+            ``stage``, the next step: ``'generate'`` (:meth:`sscha_population`), ``'forces'`` (pw.x
+            on ``missing``), ``'minimize'`` (:meth:`sscha_minimize`), ``'hessian'``
+            (:meth:`sscha_hessian`), ``'export'`` (:meth:`sscha_force_constants`), ``'done'``, or
+            ``'failed'`` (not converged within ``population_sizes``); ``population`` (pending or
+            last minimised), ``inputs`` and ``missing`` (pw.x inputs of the pending population and
+            those without a finished output), ``converged``, ``stable`` (``None`` before the
+            Hessian), ``exported``, ``temperature``, ``electronic_temperature``, ``sscha_dir`` and
+            ``history`` (the ``summary.json`` of every minimised population). ``None`` after an
+            error.
+
+        Notes
+        -----
+        Reads only files (``state.json``, the population folders,
+        :func:`~PAOFLOW.phonon.sscha_bridge.run_status`), so a driver can call it at any time, e.g.
+        from a scheduler job that decides what to submit next.
+        """
+        from .phonon.sscha_bridge import run_status
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        try:
+            settings = attr['sscha']
+            result = run_status(settings['sscha_dir'], min_fraction=min_fraction)
+            if self.rank == 0:
+                print('SSCHA %g K: next step %s (population %d, %d of %d configurations missing)' % (
+                    settings['temperature'], result['stage'], result['population'], len(result['missing']),
+                    len(result['inputs'])))  # fmt: skip
+        except Exception as e:
+            self.report_exception('sscha_status')
+            if attr.get('abort_on_exception', False):
+                raise e
+        return result
+
     def electron_phonon(
         self,
         supercell_matrix=None,
@@ -5321,9 +7583,14 @@ class PAOFLOW:
         nbnd=None,
         is_plusminus='auto',
         displacement_mode='symmetry',
+        nconfig=None,
+        seed=0,
         pthr=0.95,
         shift_type=1,
-        project_good_subspace=True,
+        project_good_subspace=None,
+        fixed_basis=True,
+        locality_cutoff=None,
+        ridge=1.0e-4,
     ):
         """Electron-phonon coupling via finite differences of the PAO H (Stage S7).
 
@@ -5382,13 +7649,40 @@ class PAOFLOW:
                 symmetry-minimal set and takes forward differences against the
                 reference supercell; ``True`` adds the explicit ``-`` for central
                 differences.
-            displacement_mode ({'symmetry', 'cartesian'}): ``'symmetry'``
+            displacement_mode ({'symmetry', 'cartesian', 'random'}): ``'symmetry'``
                 (default) uses phonopy's symmetry-reduced displacements (the full
                 Cartesian tensor is reconstructed by the symmetry expansion);
                 ``'cartesian'`` displaces every reference-cell atom explicitly
-                along x, y and z (full Cartesian derivative directly, more runs).
+                along x, y and z (full Cartesian derivative directly, more runs);
+                ``'random'`` displaces *every* supercell atom at once along a
+                random direction in ``nconfig`` configurations (plus their ``-u``
+                mirrors) and recovers the Cartesian derivatives of all atoms by
+                local least squares in the analyse phase: the route for
+                references without symmetry (thermally displaced cells, alloys).
+            nconfig (int, optional): Number of random configurations
+                (``'random'`` mode; ``2 * nconfig`` cells are written).
+            seed (int): Seed of the random directions.
             pthr (float): Projectability threshold for the analyse phase.
             shift_type (int): Hamiltonian shift scheme for the analyse phase.
+            project_good_subspace (bool, optional): Project the derivative onto
+                the projectable subspace of the reference supercell before the
+                fold. ``None`` (default) means ``not fixed_basis``: required with a
+                moving basis, harmful with the fixed one (the projector is not
+                smooth in k and the interpolated vertex overestimates lambda).
+            fixed_basis (bool): Centre the PAO orbitals of every displaced
+                supercell at the *reference* positions (default ``True``), so the
+                finite difference is the matrix of ``dV/du`` in a fixed basis: the
+                DFPT vertex in the PAO gauge up to projectability.  ``False``
+                differentiates the hopping parameters of a basis that follows the
+                atoms, which adds the basis-rotation term ``[H, dU]`` (off-diagonal
+                elements ``(eps_n - eps_m) <m|dU|n>``) to the vertex.
+            locality_cutoff (float, optional): ``'random'`` mode: radius (Bohr)
+                around the two orbital sites of a Hamiltonian element within which
+                atoms are fitted as unknowns; ``None`` (default) fits every element
+                against all atoms (needs ``nconfig >= 3 * natoms`` for a full-rank
+                fit).
+            ridge (float): ``'random'`` mode: ridge regularisation relative to the
+                mean diagonal of the normal equations (default ``1e-4``).
 
         Returns:
             None
@@ -5421,6 +7715,8 @@ class PAOFLOW:
                     nbnd=nbnd,
                     is_plusminus=is_plusminus,
                     displacement_mode=displacement_mode,
+                    nconfig=nconfig,
+                    seed=seed,
                 )
                 if self.rank == 0:
                     print(
@@ -5439,6 +7735,9 @@ class PAOFLOW:
                 pthr=pthr,
                 shift_type=shift_type,
                 project_good_subspace=project_good_subspace,
+                fixed_basis=fixed_basis,
+                locality_cutoff=locality_cutoff,
+                ridge=ridge,
             )
 
         except Exception as e:
@@ -5450,63 +7749,94 @@ class PAOFLOW:
 
     def linear_response(
         self,
-        response='shc',
-        gamma=0.01,
-        twoD=False,
-        t_odd=False,
-        full_chi2=False,
-        intraband=False,
-        interband=False,
-        s_tensor=None,
-        a_tensor=None,
-        eminH=-1.0,
-        emaxH=1.0,
-        esize=200,
-    ):
-        """
-        Calculate various linear response tensors:
-            1. Spin Hall conductivity tensors
-            2. Rashba-Edelstein effect tensors
-            3. Charge conductivity tensors
-            4. Anomolous Hall effect tensors
-        All of above tensors can be computed for both magnetic(broken time-reversible symmetry) and nonmagnetic systems.
+        response: str = 'shc',
+        gamma: float = 0.01,
+        twoD: bool = False,
+        t_odd: bool = False,
+        full_chi2: bool = False,
+        intraband: bool = False,
+        interband: bool = False,
+        s_tensor: list | np.ndarray | None = None,
+        a_tensor: list | np.ndarray | None = None,
+        eminH: float = -1.0,
+        emaxH: float = 1.0,
+        esize: int = 200,
+        delta: float = 0.05,
+    ) -> None:
+        """Linear-response tensors of tutorial03 (Eqs. 1-5): spin Hall, Rashba-Edelstein, conductivity, AHC.
 
-        Arguments:
-            response (string) :
-                response to be calculated; Acceptable strings: 'shc', 'ahc', 'ree', 'cond'
-            gamma (float):
-                spectral broadening to be used
-            t_odd (boolean):
-                If True, tensor components that is odd under time-reversible symmetry will be calculated
-            full_chi2 (boolean):
-                If True, Gamma dependent Eqn. (2) will be used to compute the tensor. Refer tutorial03 for equation reference.
-            intraband (boolean) :
-                If True, only intraband contribution <nk|oper|nk> will be calculated
-            interband (boolean) :
-                If True, only interband contribution <nk|oper|mk> (for n not equal to m) will be calculated
-            s_tensor (nested list):
-                List of tensor elements to calculate for SHE
-                                  Ex: To calculate xxx and zxy use [[0,0,0],[2,0,1]])
-                                  first index = spin polarization
-                                  second index = spin current
-                                  third index = applied electric field
-            a_tensor (nested list):
-                List of tensor elements to calculate for REE/AHE/Conductivity
-                                  Ex: [[1,2],[0,1]]
-                                  firs index: direction of the response
-                                  second index: direction of of applied electric field
-            twoD (bool):
-                True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
-            eminH (float):
-                The minimum energy in the range
-            emaxH (float):
-                The maximum energy in the range
-            esize (int):
-                The number of energy increments
+        Every branch is a limit of the Kubo-Bastin formula; :meth:`kubo_response` evaluates that formula
+        in general (exact constant-broadening kernels, finite temperature, any operator). This method keeps
+        the numbers of the tutorial03 forms.
 
-        Returns:
-            None
+        Parameters
+        ----------
+        response : {'shc', 'ree', 'cond', 'ahc'}
+            Spin Hall conductivity, Rashba-Edelstein (spin density) response, charge conductivity or
+            anomalous Hall conductivity.
+        gamma : float
+            Constant broadening of the Lorentzian spectral functions (eV), Eqs. 1, 2, 4, 5.
+        twoD : bool
+            Sheet values in units of e^2/hbar (the area of the first two lattice vectors replaces the
+            volume); the file headers say so.
+        t_odd : bool
+            Compute the time-reversal-odd part (spin Hall: Fermi-surface Eq. 1; Rashba-Edelstein:
+            Fermi-sea Eq. 3, or Eq. 2 with ``full_chi2``).
+        full_chi2 : bool
+            Fermi-sea term with finite ``gamma`` (Eq. 2) instead of the Berry-curvature limit (Eq. 3).
+        intraband, interband : bool
+            Only the intraband (Eq. 4) or interband (Eq. 5) part of the Fermi-surface term.
+        s_tensor : array_like of int, shape ``(n, 3)``, optional
+            Spin Hall components ``(spin, current, field)``, e.g. ``[[2, 0, 1]]`` for
+            :math:`\\sigma^z_{xy}`. If omitted, the ``s_tensor`` of an earlier :meth:`spin_Hall` call
+            (stored there as ``(current, field, spin)``) is reordered and used.
+        a_tensor : array_like of int, shape ``(n, 2)``, optional
+            Components ``(response, field)`` for 'ree', 'cond' and 'ahc'. If omitted, the ``a_tensor``
+            of an earlier :meth:`anomalous_Hall` call is used.
+        eminH, emaxH : float
+            Chemical-potential window (eV); ``emaxH`` is capped at the projectability shift.
+        esize : int
+            Number of chemical potentials.
+        delta : float
+            Regulariser of the energy denominators of the Berry-curvature form (Eq. 3),
+            :math:`(\\varepsilon_n-\\varepsilon_m)^2 + \\delta^2` (eV). Before 14 Nov 2026 it was fixed
+            at 0.05.
+
+        Returns
+        -------
+        None
+            Writes ``SHC_*``, ``REE_*``, ``Cond_*`` or ``AHC_*`` files to the output directory and stores
+            the tensors (``shc_tensor``, ``ree_tensor``) and settings in the DataController.
+
+        Raises
+        ------
+        ValueError
+            Unknown ``response``, or no tensor given and none stored by an earlier call.
+
+        Notes
+        -----
+        Superseded by :meth:`kubo_response` (exact constant-broadening kernels for every term and
+        observable, finite temperature); a ``FutureWarning`` says so. Signs relative to
+        :meth:`kubo_response` (tests in ``tests/unit/response/test_kubo_bastin.py``):
+        - 'cond' (Eqs. 1, 4, 5) and 'shc' (Eqs. 1, 2, 3) agree. The SHC includes the electron charge, as in
+          Guo et al. 2008.
+        - 'ree' (Eqs. 1, 2, 3) is opposite: it takes ``dHksp``, which is :math:`-\\hbar v`, as the velocity.
+        - 'ahc' Eq. 3 (as :meth:`anomalous_Hall`), :math:`\\sum_n f_n\\Omega_n`, is opposite: it gives
+          :math:`\\sigma_{xy}` for the magnetic moment along the spin axis of the run, matching Yao et al. 2004
+          for Fe.
+        - Eq. 2 of 'ahc' (``full_chi2``) agrees with the computed state, so ``full_chi2`` flips the sign of
+          the AHC.
+        See ``docs/internals/kubo-bastin.md``.
         """
+        import warnings
+
+        if self.rank == 0:
+            warnings.warn(
+                'linear_response keeps the tutorial03 equations; kubo_response evaluates the full '
+                'Kubo-Bastin formula for every term and observable (see its sign notes)',
+                FutureWarning,
+                stacklevel=2,
+            )
         arry, attr = self.data_controller.data_dicts()
         attr['response'] = response
         attr['gamma'] = gamma
@@ -5518,16 +7848,25 @@ class PAOFLOW:
         attr['interband'] = interband
         attr['t_odd'] = t_odd
         attr['full_chi2'] = full_chi2
+        attr['lr_delta'] = delta
 
-        if s_tensor is not None:
-            arry['ree_tensor'] = a_tensor
-        else:
+        # Each tensor list falls back to the one stored by an earlier call (a_tensor of
+        # anomalous_Hall, s_tensor of spin_Hall) only when it is not given here. Until
+        # 14 Nov 2026 a_tensor was read only when s_tensor was also given.
+        if a_tensor is not None:
+            arry['ree_tensor'] = np.array(a_tensor)
+        elif response != 'shc':
+            if 'a_tensor' not in arry:
+                raise ValueError(f"linear_response(response='{response}') needs a_tensor")
             arry['ree_tensor'] = arry['a_tensor']
 
         if s_tensor is not None:
-            arry['shc_tensor'] = s_tensor
-        else:
-            arry['shc_tensor'] = arry['s_tensor']
+            arry['shc_tensor'] = np.array(s_tensor)
+        elif response == 'shc':
+            if 's_tensor' not in arry:
+                raise ValueError("linear_response(response='shc') needs s_tensor")
+            # spin_Hall stores (current, field, spin); this method reads (spin, current, field)
+            arry['shc_tensor'] = np.atleast_2d(arry['s_tensor'])[:, [2, 0, 1]]
 
         if response == 'shc' or response == 'ree':
             if 'Sj' not in arry:
@@ -5569,3 +7908,292 @@ class PAOFLOW:
         calc_chi(self.data_controller)
         self.report_module_time('Linear response completed')
         self.comm.Barrier()
+
+    def kubo_response(
+        self,
+        observable: str = 'charge_current',
+        components: list | tuple = ('xy',),
+        terms: list | tuple = ('total', 'surface', 'sea'),
+        eta: float = 0.01,
+        emin: float = -1.0,
+        emax: float = 1.0,
+        ne: int = 201,
+        temperature: float = 0.0,
+        regulariser: float = 0.0,
+        projection: list | None = None,
+        operator: np.ndarray | None = None,
+        twoD: bool = False,
+        write: bool = True,
+        bands: int | None = None,
+    ) -> dict:
+        """Linear response to an electric field from the Kubo-Bastin formula at constant broadening.
+
+        One formula for every observable and every term: conductivity, anomalous and spin/orbital
+        Hall conductivities, Rashba-Edelstein (spin/orbital density), spin-orbit torque, or a user
+        operator, as the full response or its Fermi-surface / Fermi-sea parts, at any temperature.
+
+        Parameters
+        ----------
+        observable : str
+            'charge_current', 'spin_current', 'orbital_current', 'spin_density', 'orbital_density',
+            'spin_torque' or 'custom' (see :mod:`PAOFLOW.response.kubo_operators`).
+        components : sequence
+            Components as letters or indices, the field direction last: ``'xy'`` (current x, field
+            y), ``'zxy'`` (spin z, current x, field y), ``'yx'`` (spin y, field x), ``'x'``
+            (custom operator, field x).
+        terms : sequence of str
+            Any of 'total', 'surface', 'sea', 'surface_intraband', 'surface_interband' (exact at
+            constant broadening) and 'intrinsic' (the clean limit of 'sea', i.e. the Berry-curvature
+            form with the run's smearing or Fermi-Dirac occupations).
+        eta : float
+            Constant broadening :math:`\\eta = \\hbar/2\\tau` (eV).
+        emin, emax : float
+            Chemical-potential window (eV); ``emax`` is capped at the projectability shift.
+        ne : int
+            Number of chemical potentials.
+        temperature : float
+            Electronic temperature (K).
+        regulariser : float
+            :math:`\\delta` of the 'intrinsic' energy denominators (eV); 0.05 reproduces the
+            ``do_Hall`` / tutorial03 Eq. 3 values (with the opposite sign, see Notes).
+        projection : list, optional
+            Orbital projection of the response operator, as ``shc_proj`` of :meth:`spin_Hall`.
+        operator : ndarray, shape ``(nawf, nawf)``, optional
+            The matrix of ``observable='custom'`` in the PAO basis.
+        twoD : bool
+            Sheet values (e^2/hbar) for the currents.
+        write : bool
+            Write ``kubo_<observable>_<component>.dat`` (mu and one column per term).
+        bands : int, optional
+            Number of bands, from the lowest, in the band sums. Default: the bands below the
+            projectability shift of a DFT run (``bnd``; the bands above it are the shifted complement of
+            the projection, not physical states), every band of a model. ``dielectric_tensor`` uses the
+            same limit.
+
+        Returns
+        -------
+        dict
+            ``{component: {'mu': ..., term: ...}}`` on every rank, in the unit of the observable
+            (S/cm or e^2/hbar, (hbar/e) S/cm, hbar cm/V per cell, e a0 per cell).
+
+        Raises
+        ------
+        ValueError
+            Unknown observable, component or term, or a spin observable without a spinor basis.
+        KeyError
+            ``gradient_and_momenta`` has not run.
+
+        Notes
+        -----
+        :math:`\\chi_{AB}(\\mu) = -2\\int f\\,\\mathrm{Im\\,Tr}[A\\,\\partial_\\varepsilon G^R
+        \\hbar v_b\\,\\delta(\\varepsilon-H)]` per k-point, with :math:`G^R = (\\varepsilon - H +
+        i\\eta)^{-1}`, split exactly into the Fermi-surface and Fermi-sea terms of Bonbien and Manchon
+        and evaluated in closed form (:mod:`PAOFLOW.response.kubo_kernels`); finite temperatures
+        follow from the exact thermal convolution of the :math:`T = 0` response.
+
+        Sign: the Kubo-Bastin formula with :math:`\\hbar v = \\partial H/\\partial k` and the electron
+        charge :math:`q = -|e|` (:math:`q^2` for the charge current, :math:`q` for every other
+        observable), the conventions of Yao et al., PRL 92, 037204 (2004) and Guo et al., PRL 100,
+        096401 (2008). Conductivity, spin and orbital Hall values carry the sign of
+        :meth:`linear_response`, :meth:`spin_Hall` and :meth:`orbital_Hall`. Two older outputs differ.
+        The Rashba-Edelstein routes of :meth:`linear_response` are opposite, because they take
+        ``dHksp`` (:math:`-\\hbar v`) as the velocity. :meth:`anomalous_Hall` and tutorial03 Eq. 3 report
+        :math:`\\sigma_{xy}` for the magnetic moment along QE's magnetization axis, whereas this method
+        reports the computed state (QE's positive ``starting_magnetization`` puts the spins along +z, so
+        the moment points along -z). Details: ``docs/internals/kubo-bastin.md``.
+        """
+        from .projection.projection_operator import do_projection_operator, orbital_array
+        from .response.kubo_bastin import kubo_bastin_response, write_kubo_response
+        from .response.kubo_operators import OBSERVABLES
+
+        arrays, attr = self.data_controller.data_dicts()
+        if observable not in OBSERVABLES:
+            raise ValueError(
+                f'unknown observable {observable!r}; choose from {sorted(OBSERVABLES)}'
+            )
+        if 'dHksp' not in arrays:
+            raise KeyError('kubo_response needs the velocities: run gradient_and_momenta first')
+        base = OBSERVABLES[observable].base
+        if base == 'Sj' and 'Sj' not in arrays:
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+        if base == 'Lj' and 'Lj' not in arrays:
+            self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+        projector = None
+        if projection is not None:
+            if 'naw' not in arrays:
+                arrays['naw'] = orbital_array(self.data_controller)
+            projector = do_projection_operator(self.data_controller, np.array(projection))
+        if isinstance(components, str):
+            components = [components]
+        mu = np.linspace(emin, min(emax, attr['shift']), ne)
+
+        results = kubo_bastin_response(
+            self.data_controller,
+            observable,
+            components,
+            mu,
+            eta,
+            terms=terms,
+            temperature=temperature,
+            regulariser=regulariser,
+            projector=projector,
+            operator=operator,
+            two_dimensional=twoD,
+            bands=bands,
+        )
+        if write:
+            header = f'eta = {eta} eV; T = {temperature} K; regulariser = {regulariser} eV'
+            write_kubo_response(self.data_controller, observable, results, twoD, header)
+        self.report_module_time('Kubo-Bastin response')
+        return results
+
+    def kubo_optical_response(
+        self,
+        observable: str = 'charge_current',
+        components: list | tuple = ('xx', 'xy'),
+        terms: list | tuple = ('total', 'interband', 'intraband'),
+        eta: float = 0.05,
+        omega_min: float = 0.0,
+        omega_max: float | None = None,
+        nomega: int = 501,
+        mu: float = 0.0,
+        temperature: float = 0.0,
+        degenerate_threshold: float = 1.0e-4,
+        projection: list | None = None,
+        operator: np.ndarray | None = None,
+        twoD: bool = False,
+        write: bool = True,
+        bands: int | None = None,
+    ) -> dict:
+        """Frequency-dependent (optical) linear response from the Kubo-Greenwood formula.
+
+        The optical counterpart of :meth:`kubo_response`, with the same observables, components, units
+        and sign convention: optical conductivity and Hall conductivity (magneto-optics), AC spin and
+        orbital Hall, AC Edelstein, spin-orbit torque, user operators.
+
+        Parameters
+        ----------
+        observable : str
+            As :meth:`kubo_response`.
+        components : sequence
+            As :meth:`kubo_response` (field direction last), e.g. ``['xx', 'xy']``.
+        terms : sequence of str
+            'total', 'interband' (transitions between bands) and 'intraband' (Drude term of the
+            bands at the Fermi level, :math:`\\hbar/\\tau = 2\\eta`).
+        eta : float
+            Broadening (eV): the half-width of the transitions; the damping of the oscillators and
+            of the Drude term is :math:`\\gamma = 2\\eta = \\hbar/\\tau`.
+        omega_min, omega_max : float
+            Photon-energy window (eV). The default ``omega_max`` is the energy range of the bands
+            (capped at the projectability shift).
+        nomega : int
+            Number of photon energies.
+        mu : float
+            Chemical potential (eV, the energy zero of the run).
+        temperature : float
+            Electronic temperature (K); 0 uses the run's smearing for the occupations.
+        degenerate_threshold : float
+            Bands closer than this (eV) count as degenerate and enter the intraband term.
+        projection : list, optional
+            Orbital projection of the response operator, as ``shc_proj`` of :meth:`spin_Hall`.
+        operator : ndarray, shape ``(nawf, nawf)``, optional
+            The matrix of ``observable='custom'``.
+        twoD : bool
+            Sheet values (e^2/hbar) for the currents.
+        write : bool
+            Write ``kubo_optical_<observable>_<component>.dat`` (omega, Re and Im of every term).
+        bands : int, optional
+            Number of bands in the sums, as in :meth:`kubo_response` (default the bands below the
+            projectability shift of a DFT run, every band of a model).
+
+        Returns
+        -------
+        dict
+            ``{component: {'omega': ..., term: complex values}}`` on every rank.
+
+        Raises
+        ------
+        ValueError
+            Unknown observable, component or term, or a spin observable without a spinor basis.
+        KeyError
+            ``gradient_and_momenta`` has not run.
+
+        Notes
+        -----
+        .. math::
+
+            \\chi_{AB}(\\omega) = s_q\\Big[-i\\sum_{\\varepsilon_{mn}\\ne0}
+            \\frac{(f_n-f_m)A_{nm}(\\hbar v_b)_{mn}\\,(\\varepsilon_{mn}+\\hbar\\omega)}
+            {\\varepsilon_{mn}(\\varepsilon_{mn}^2-\\hbar^2\\omega^2-i\\gamma\\hbar\\omega)}
+            + \\frac{i}{\\hbar\\omega+i\\gamma}\\sum_{\\varepsilon_{mn}=0}(-f'_n)A_{nm}(\\hbar v_b)_{mn}\\Big],
+
+        :math:`\\varepsilon_{mn} = \\varepsilon_m-\\varepsilon_n`, :math:`\\gamma = 2\\eta`, summed over
+        k-points with the unit factor of the observable. Each transition is a damped (Lorentz)
+        oscillator, the lineshape of :meth:`dielectric_tensor` (``delta`` = :math:`2\\eta`) and
+        epsilon.x: no absorption below the gap of an insulator, and at :math:`\\omega = 0` the
+        interband Hall part equals the ``intrinsic`` term of :meth:`kubo_response` at any
+        :math:`\\eta`. :math:`\\mathrm{Re}\\,\\sigma_{aa}` is the absorptive part; the Hall part is
+        Eq. 7 of Yao et al., PRL 92, 037204 (2004), with the oscillator damping. The intraband part
+        at :math:`\\omega = 0` is the Boltzmann limit of :meth:`kubo_response`. With
+        :math:`\\varepsilon = 1 + i\\sigma/(\\varepsilon_0\\omega)` the charge-current response is the
+        dielectric tensor of :meth:`dielectric_tensor`, plus its antisymmetric (Hall, MCD) part.
+
+        Sign convention (as :meth:`kubo_response`): the Kubo formula with the electron charge
+        :math:`q = -|e|` (:math:`s_q = +1` for the charge current, :math:`-1` otherwise); a magnet's
+        response is that of the computed spin configuration (QE's positive ``starting_magnetization``
+        puts the spins along +z, the moment along -z). The magneto-optical outputs of
+        :meth:`anomalous_Hall` (``MCD*``) refer to the reversed moment.
+        """
+        from mpi4py import MPI
+
+        from .projection.projection_operator import do_projection_operator, orbital_array
+        from .response.kubo_operators import OBSERVABLES
+        from .response.kubo_optical import kubo_optical_response, write_kubo_optical_response
+
+        arrays, attr = self.data_controller.data_dicts()
+        if observable not in OBSERVABLES:
+            raise ValueError(
+                f'unknown observable {observable!r}; choose from {sorted(OBSERVABLES)}'
+            )
+        if 'dHksp' not in arrays:
+            raise KeyError(
+                'kubo_optical_response needs the velocities: run gradient_and_momenta first'
+            )
+        base = OBSERVABLES[observable].base
+        if base == 'Sj' and 'Sj' not in arrays:
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+        if base == 'Lj' and 'Lj' not in arrays:
+            self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+        projector = None
+        if projection is not None:
+            if 'naw' not in arrays:
+                arrays['naw'] = orbital_array(self.data_controller)
+            projector = do_projection_operator(self.data_controller, np.array(projection))
+        if isinstance(components, str):
+            components = [components]
+        if omega_max is None:
+            top = self.comm.allreduce(float(np.max(arrays['E_k'])), op=MPI.MAX)
+            bottom = self.comm.allreduce(float(np.min(arrays['E_k'])), op=MPI.MIN)
+            omega_max = min(top, attr['shift']) - bottom
+        omegas = np.linspace(omega_min, omega_max, nomega)
+
+        results = kubo_optical_response(
+            self.data_controller,
+            observable,
+            components,
+            omegas,
+            mu,
+            eta,
+            terms=terms,
+            temperature=temperature,
+            degenerate_threshold=degenerate_threshold,
+            projector=projector,
+            operator=operator,
+            two_dimensional=twoD,
+            bands=bands,
+        )
+        if write:
+            header = f'eta = {eta} eV; mu = {mu} eV; T = {temperature} K'
+            write_kubo_optical_response(self.data_controller, observable, results, twoD, header)
+        self.report_module_time('Kubo-Greenwood optical response')
+        return results

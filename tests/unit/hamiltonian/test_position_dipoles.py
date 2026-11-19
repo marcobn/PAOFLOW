@@ -36,7 +36,7 @@ from PAOFLOW.hamiltonian.position_dipoles import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SI_ONCV_DIR = REPO_ROOT / 'examples' / 'qe_examples' / 'example16' / 'Si_ONCV'
+SI_ONCV_DIR = REPO_ROOT / 'PSEUDOS' / 'library'
 SI_ONCV_UPF = 'Si_ONCV_PBE_sr.UPF'
 
 
@@ -302,6 +302,41 @@ def test_si_position_dipole_operator(si_data_controller):
     )  # s, p_z, p_x, p_y per site: (-1)^l (-1)^(odd m)
 
 
+def test_spin_orbit_position_dipole_operator_matches_the_grid_route(si_data_controller):
+    """Fully relativistic: the operator of the NLO path equals position_dipoles_on_grid (j, m_j); ad hoc:
+    spin-diagonal copies of the scalar operator."""
+    from PAOFLOW.hamiltonian.position_dipoles import position_dipoles_on_grid
+
+    dc, alat, a_vectors = si_data_controller
+    arrays, attributes = dc.data_dicts()
+    bg = np.linalg.inv(a_vectors).T
+    k_cryst = np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.25], [0.1, 0.2, 0.3]])
+    scalar = position_dipole_operator(dc, bg, alat, pao_tol=1e-2, n_q=300)(k_cryst)
+    attributes['dftSO'] = True
+    try:
+        arrays.pop('_PD_tables', None)
+        rel = position_dipole_operator(dc, bg, alat, pao_tol=1e-2, n_q=300)(k_cryst)
+        grid = position_dipoles_on_grid(dc, (k_cryst @ bg).T, pao_tol=1e-2, n_q=300)
+        attributes['adhoc_SO'] = True
+        adhoc = position_dipole_operator(dc, bg, alat, pao_tol=1e-2, n_q=300)(k_cryst)
+    finally:
+        attributes['dftSO'] = False
+        attributes.pop('adhoc_SO', None)
+        arrays.pop('_PD_tables', None)
+    assert rel.shape == (3, 3, 16, 16) and hermiticity_residual(rel) < 1e-12
+    np.testing.assert_allclose(rel, grid, atol=1e-10)
+    for k in range(3):
+        for alpha in range(3):
+            np.testing.assert_allclose(
+                np.sort(np.linalg.eigvalsh(rel[k, alpha])),
+                np.sort(np.repeat(np.linalg.eigvalsh(scalar[k, alpha]), 2)),
+                atol=1e-9,
+            )
+    np.testing.assert_allclose(adhoc[:, :, :8, :8], scalar, atol=1e-14)
+    np.testing.assert_allclose(adhoc[:, :, 8:, 8:], scalar, atol=1e-14)
+    assert np.abs(adhoc[:, :, :8, 8:]).max() == 0.0
+
+
 def test_inject_dipole_velocity_into_dHksp_is_minus_commutator():
     from PAOFLOW.hamiltonian.position_dipoles import inject_dipole_velocity_into_dHksp
 
@@ -352,3 +387,57 @@ def test_position_dipoles_on_grid_scalar_and_relativistic(si_data_controller):
                 np.sort(np.repeat(np.linalg.eigvalsh(dipole[k, alpha]), 2)),
                 atol=1e-9,
             )
+
+
+def test_ill_conditioning_warning_once_on_the_first_rank(monkeypatch):
+    """The conditioning warning is a property of the basis: one message per run, from rank 0."""
+    import sys
+    import types
+    import warnings
+
+    import PAOFLOW.hamiltonian.position_dipoles as pdip
+
+    overlap = np.diag([1.0e-6, 1.0, 2.0]).astype(complex)[None]
+    gradient = np.zeros((1, 3, 3, 3), dtype=complex)
+
+    def messages():
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            for _ in range(3):
+                overlap_sqrt_and_derivative(overlap, gradient)
+        return [w for w in caught if 'ill-conditioned' in str(w.message)]
+
+    monkeypatch.setattr(pdip, '_ILL_CONDITIONED_WARNED', False)
+    monkeypatch.delitem(sys.modules, 'mpi4py.MPI', raising=False)
+    assert len(messages()) == 1  # no MPI: once, not once per call
+
+    world = types.SimpleNamespace(Get_rank=lambda: 3)
+    fake = types.SimpleNamespace(
+        Is_initialized=lambda: True, Is_finalized=lambda: False, COMM_WORLD=world
+    )
+    monkeypatch.setitem(sys.modules, 'mpi4py.MPI', fake)
+    monkeypatch.setattr(pdip, '_ILL_CONDITIONED_WARNED', False)
+    assert messages() == []  # rank 3 stays silent
+    world.Get_rank = lambda: 0
+    shown = messages()
+    assert len(shown) == 1 and 'Shown once, by the first MPI rank' in str(shown[0].message)
+
+
+def test_position_dipoles_of_three_k_points_are_not_transposed(si_data_controller):
+    """A (3, nk = 3) grid is PAOFLOW's (3, nk) layout: the batch equals the k-points one by one.
+
+    Until November 2026 the shape-based layout check read (3, 3) as (nk, 3), so an MPI rank holding
+    exactly three k-points got the dipoles of transposed k-points.
+    """
+    from PAOFLOW.hamiltonian.position_dipoles import position_dipoles_on_grid
+
+    dc, _alat, _a_vectors = si_data_controller
+    kgrid = np.random.default_rng(5).uniform(-0.5, 0.5, size=(3, 4))
+    batch = position_dipoles_on_grid(dc, kgrid[:, :3], pao_tol=1e-2, n_q=300)
+    for k in range(3):
+        alone = position_dipoles_on_grid(dc, kgrid[:, [k]], pao_tol=1e-2, n_q=300)[0]
+        np.testing.assert_allclose(batch[k], alone, rtol=0.0, atol=1e-12)
+    rows = position_dipoles_on_grid(dc, kgrid.T, pao_tol=1e-2, n_q=300)  # (nk, 3) with nk = 4
+    np.testing.assert_allclose(
+        rows, position_dipoles_on_grid(dc, kgrid, pao_tol=1e-2, n_q=300), atol=1e-12
+    )

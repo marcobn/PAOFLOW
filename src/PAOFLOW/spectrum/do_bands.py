@@ -1,13 +1,22 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 from mpi4py import MPI
 from scipy import linalg as spl
+
+if TYPE_CHECKING:
+    from ..DataController import DataController
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
 
-def bands_calc(data_controller):
+def bands_calc(
+    data_controller: DataController, interpolation: str = 'fft_grid'
+) -> tuple[np.ndarray, np.ndarray]:
     """Compute band eigenvalues and eigenvectors scattered over MPI pools.
 
     Parameters
@@ -15,8 +24,17 @@ def bands_calc(data_controller):
     data_controller : DataController
         Object providing ``data_arrays`` and ``data_attributes``.
         Required arrays: ``HRs`` (shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``),
-        ``kq`` (shape ``(3, nkpi)``), ``R`` (shape ``(nrtot, 3)``).
+        ``kq`` (shape ``(3, nkpi)``), ``R`` (shape ``(nrtot, 3)``), and ``a_vectors``
+        for the Wigner-Seitz sum.
         Required attribute: ``npool``.
+    interpolation : {'fft_grid', 'wigner_seitz', 'wigner_seitz_pairs'}, optional
+        Fourier sum of ``HRs`` off the DFT mesh. ``'fft_grid'`` (default) sums over the FFT grid
+        as stored (:func:`band_loop_H`); ``'wigner_seitz'`` gives every grid vector its shortest
+        image in the supercell lattice
+        (:func:`PAOFLOW.hamiltonian.wigner_seitz.wigner_seitz_hamiltonian_k`);
+        ``'wigner_seitz_pairs'`` chooses the image of every orbital pair by the length of its
+        bond (:func:`PAOFLOW.hamiltonian.wigner_seitz.wigner_seitz_pair_hamiltonian_k`; needs the
+        orbital centres). All reproduce the DFT mesh exactly.
 
     Returns
     -------
@@ -40,8 +58,37 @@ def bands_calc(data_controller):
 
     kq_aux = scatter_full(arrays['kq'].T, npool).T
 
-    nawf, _, _, _, _, nspin = arrays['HRs'].shape
-    Hks_aux = band_loop_H(data_controller, kq_aux)
+    nawf, _, nk1, nk2, nk3, nspin = arrays['HRs'].shape
+    if interpolation == 'wigner_seitz':
+        from ..hamiltonian.wigner_seitz import wigner_seitz_hamiltonian_k, wigner_seitz_images
+
+        a_vectors = np.asarray(arrays['a_vectors'], dtype=float)
+        images = wigner_seitz_images((nk1, nk2, nk3), a_vectors)
+        # kq is Cartesian in 2 pi / alat and a_vectors in alat: k_cryst_i = a_i . k
+        Hks_aux = wigner_seitz_hamiltonian_k(arrays['HRs'], images, (a_vectors @ kq_aux).T)
+    elif interpolation == 'wigner_seitz_pairs':
+        from ..hamiltonian.wigner_seitz import (
+            orbital_centres_for_pairs,
+            wigner_seitz_pair_hamiltonian_k,
+            wigner_seitz_pair_images,
+        )
+
+        a_vectors = np.asarray(arrays['a_vectors'], dtype=float)
+        pair_images = wigner_seitz_pair_images(
+            (nk1, nk2, nk3), a_vectors, orbital_centres_for_pairs(data_controller)
+        )
+        Hks_aux = wigner_seitz_pair_hamiltonian_k(
+            arrays['HRs'], pair_images, (a_vectors @ kq_aux).T
+        )
+    elif interpolation == 'fft_grid':
+        Hks_aux = band_loop_H(data_controller, kq_aux)
+    else:
+        from ..hamiltonian.wigner_seitz import SUPPORTED_BAND_INTERPOLATIONS
+
+        raise ValueError(
+            'bands interpolation must be one of %s, got %r'
+            % (SUPPORTED_BAND_INTERPOLATIONS, interpolation)
+        )
 
     if np.iscomplex(arrays['kq']).any():
         E_kp_aux = np.zeros((kq_aux.shape[1], nawf, nspin), dtype=complex, order='C')
@@ -98,10 +145,12 @@ def band_loop_H(data_controller, kq_aux):
     .. math::
 
         H(\\mathbf{k}) = \\sum_{\\mathbf{R}} H(\\mathbf{R})\\,
-            e^{2\\pi i \\mathbf{k} \\cdot \\mathbf{R}}
+            e^{-2\\pi i \\mathbf{k} \\cdot \\mathbf{R}}
 
     implemented as a tensor contraction between the flattened ``HRs`` and
-    the phase factors :math:`e^{2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}`.
+    the phase factors :math:`e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}`: PAOFLOW's convention
+    (``HRs = ifftn(Hks)`` on the QE route, the hopping to the cell ``R`` at the index
+    ``-R`` for the models), the one of the FFT grid and of ``do_gradient``.
     """
     arrays, _ = data_controller.data_dicts()
 
@@ -109,7 +158,9 @@ def band_loop_H(data_controller, kq_aux):
     nawf, _, nk1, nk2, nk3, nspin = arrays['HRs'].shape
 
     HRs = np.reshape(arrays['HRs'], (nawf, nawf, nk1 * nk2 * nk3, nspin), order='C')
-    kdot = np.tensordot(arrays['R'], 2.0j * np.pi * kq_aux, axes=([1], [0]))
+    # PAOFLOW's convention: HRs = ifftn(Hks), H(k) = sum_R HRs(R) e^{-2 pi i k.R} (until 15 Nov 2026 the
+    # sign was +, which evaluated H(-k): the same energies with time reversal, mirrored paths otherwise)
+    kdot = np.tensordot(arrays['R'], -2.0j * np.pi * kq_aux, axes=([1], [0]))
     np.exp(kdot, kdot)
     Haux = np.zeros((nawf, nawf, nksize, nspin), dtype=complex, order='C')
 
@@ -119,7 +170,7 @@ def band_loop_H(data_controller, kq_aux):
     return Haux
 
 
-def do_bands(data_controller):
+def do_bands(data_controller: DataController, interpolation: str = 'fft_grid') -> None:
     """Compute the electronic band structure along a k-path via Fourier interpolation.
 
     Parameters
@@ -130,6 +181,8 @@ def do_bands(data_controller):
         ``b_vectors`` (shape ``(3, 3)``).
         Required attributes: ``alat``, ``npool``.  Either ``ibrav`` or a
         pre-loaded ``kq`` array must be present.
+    interpolation : {'fft_grid', 'wigner_seitz', 'wigner_seitz_pairs'}, optional
+        Fourier sum of ``HRs`` along the path; see :func:`bands_calc`.
 
     Returns
     -------
@@ -187,7 +240,7 @@ def do_bands(data_controller):
             arrays['kq'][:, n] = np.dot(arrays['kq'][:, n], arrays['b_vectors'])
 
         # Compute the bands along the path in the IBZ
-        arrays['E_k'], arrays['v_k'] = bands_calc(data_controller)
+        arrays['E_k'], arrays['v_k'] = bands_calc(data_controller, interpolation)
         if np.iscomplex(arrays['kq']).any():
             for ispin in range(nspin):
                 sorted_E_k = []

@@ -1,0 +1,6 @@
+ &projwfc
+    prefix = 'pt'
+    outdir = './'
+    lwrite_overlaps = .true.
+    lbinary_data = .false.
+ /

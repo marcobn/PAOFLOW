@@ -13,6 +13,41 @@ size = comm.Get_size()
 from scipy import fftpack as FFT
 
 
+def energy_and_velocity_degenerate_groups(
+    velocity_groups: list[np.ndarray], energy_groups: list[np.ndarray]
+) -> list[np.ndarray]:
+    """Bands degenerate in both the energy and the velocity component, at one k-point.
+
+    Parameters
+    ----------
+    velocity_groups : list of ndarray of int
+        Groups of consecutive bands with equal diagonal velocity (from :func:`get_degeneracies`).
+    energy_groups : list of ndarray of int
+        Groups of consecutive bands with equal energy (``degen`` of :func:`pao_eigh`).
+
+    Returns
+    -------
+    list of ndarray of int
+        The intersections with at least two bands, as consecutive index arrays.
+
+    Notes
+    -----
+    Degenerate perturbation theory for :math:`\\partial^2 E/\\partial k_i\\partial k_j` diagonalises
+    the curvature in a subspace of states with the same energy and the same velocity. Two
+    non-degenerate bands with equal velocities (both zero at a band extremum or on a mirror plane)
+    are not such a subspace; diagonalising them together reassigned their curvatures by size.
+    """
+    energy_sets = [set(int(b) for b in group) for group in energy_groups]
+    groups = []
+    for velocity_group in velocity_groups:
+        members = set(int(b) for b in velocity_group)
+        for energy_set in energy_sets:
+            common = sorted(members & energy_set)
+            if len(common) >= 2:
+                groups.append(np.array(common, dtype=int))
+    return groups
+
+
 def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
     """Compute the six unique second-order derivatives of the k-space Hamiltonian.
 
@@ -183,8 +218,16 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
                     v_aux.diagonal().reshape((1, len(v_aux.diagonal()), 1)), bnd
                 )
 
-                # vel_degen_by_spin.append(vel_degen_by_kp[vel_degen_by_kp == degen[ispin][ik]])
-                vel_degen_by_spin.append(vel_degen_by_kp[0][0])
+                # a degenerate subspace of the curvature needs equal energies AND equal velocities:
+                # bands that only share a velocity component (e.g. zero on a symmetry plane) are
+                # not degenerate, and diagonalising them together swapped their curvatures
+                # only groups below bnd: the curvature is stored for the first bnd bands
+                vel_degen_by_spin.append(
+                    energy_and_velocity_degenerate_groups(
+                        vel_degen_by_kp[0][0],
+                        [group for group in degen[ispin][ik] if group.max() < bnd],
+                    )
+                )
 
                 isp_tmp.append(dvec)
             vel_degen_by_ij.append(vel_degen_by_spin)

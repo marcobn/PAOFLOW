@@ -1,0 +1,25 @@
+{
+ "title": "Si: band unfolding of the 8-atom cubic cell onto the fcc zone",
+ "summary": "An environment-dependent Slater-Koster (EDTB) model of silicon with s, p and d orbitals on the 8-atom conventional cubic cell: its bands unfolded onto the Brillouin zone of the 2-atom fcc cell, each state weighted by its spectral weight. No DFT run; seconds.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Unfold the bands of the 8-atom cell onto the fcc zone",
+   "command": [
+    "python",
+    "silicon.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "prints the sum rule of the spectral weights; writes si_sc8_unfolded.png"
+  }
+ ],
+ "tags": [
+  "band unfolding",
+  "tight-binding model",
+  "supercell",
+  "semiconductor"
+ ],
+ "source": "examples/unfold_examples/siliconSC"
+}

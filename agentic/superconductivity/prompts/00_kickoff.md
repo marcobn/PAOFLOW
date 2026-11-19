@@ -7,7 +7,7 @@ Read AGENT_WORKFLOW.md and LESSONS_LEARNED.md in PAOFLOW's agentic/superconducti
 superconductivity workflow for <SYSTEM / PROPERTY> (e.g. "Pb: alpha^2F, Tc and the gap vs tunnelling",
 "MgB2: the two gaps vs point-contact and ARPES").
 
-Model (read-only): an electron-phonon system folder (examples/elphon/<System> layout)
+Model (read-only): an electron-phonon system folder (examples/cases/<system>_elphon layout)
 - system folder: <path>; runs to compare: superconductivity/<output folders> (eliashberg.npz, me/, me_aniso/);
   older runs: <names or "none">
 - what it computes and its known limits: <e.g. alpha^2F at 48^3/24^3 with 50 meV smearing, mu* = 0.1, isotropic ME

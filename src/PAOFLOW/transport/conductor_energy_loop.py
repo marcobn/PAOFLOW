@@ -389,8 +389,10 @@ def reduce_conductor_results(
     comm.Allreduce(MPI.IN_PLACE, acc.dos, op=MPI.SUM)
     comm.Allreduce(MPI.IN_PLACE, acc.dos_k, op=MPI.SUM)
 
+    from PAOFLOW.utils.communication import allreduce_inplace  # slices beyond the MPI count
+
     if data.symmetry.write_gf and acc.gf_out is not None:
-        comm.Allreduce(MPI.IN_PLACE, acc.gf_out, op=MPI.SUM)
+        allreduce_inplace(acc.gf_out, MPI.SUM, communicator=comm)
     if data.symmetry.write_lead_sgm and acc.rsgmL_out is not None and acc.rsgmR_out is not None:
-        comm.Allreduce(MPI.IN_PLACE, acc.rsgmL_out, op=MPI.SUM)
-        comm.Allreduce(MPI.IN_PLACE, acc.rsgmR_out, op=MPI.SUM)
+        allreduce_inplace(acc.rsgmL_out, MPI.SUM, communicator=comm)
+        allreduce_inplace(acc.rsgmR_out, MPI.SUM, communicator=comm)

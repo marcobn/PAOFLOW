@@ -1,11 +1,18 @@
-import numpy as np
+from __future__ import annotations
+
 import time
+from typing import TYPE_CHECKING
+
+import numpy as np
 from mpi4py import MPI
+
+if TYPE_CHECKING:
+    from ..DataController import DataController
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI
+from .kubo_units import conductivity_conversion, sheet_unit
 from ..utils.perturb_split import perturb_split
 from ..utils.communication import reduce_full
 from ..utils.smearing import gaussian, intgaussian
@@ -25,7 +32,7 @@ def calc_chi(data_controller):
     nk, nbnd, nspin = arry['E_k'].shape
 
     if attr['response'] == 'shc' and attr['full_chi2'] and attr['t_odd'] == False:
-        for tensor in arry['s_tensor']:
+        for tensor in arry['shc_tensor']:
             spol, ipol = tensor[0], tensor[2]
             if rank == 0:
                 start_time = time.time()
@@ -59,7 +66,7 @@ def calc_chi(data_controller):
 
     if attr['response'] == 'shc' and attr['t_odd'] == True:
         if attr['intraband'] or attr['interband']:
-            for tensor in arry['s_tensor']:
+            for tensor in arry['shc_tensor']:
                 spol, ipol = tensor[0], tensor[2]
                 if rank == 0:
                     start_time = time.time()
@@ -111,7 +118,6 @@ def calc_chi(data_controller):
             spol, ipol = tensor[0], tensor[1]
             oper_matrix1 = np.empty((nk, nbnd, nbnd, nspin), dtype=complex)
             oper_matrix2 = np.empty((nk, nbnd, nbnd, nspin), dtype=complex)
-            spol, ipol = tensor[0], tensor[1]
             for ik in range(nk):
                 for ispin in range(nspin):
                     oper_matrix1[ik, :, :, ispin], oper_matrix2[ik, :, :, ispin] = perturb_split(
@@ -141,7 +147,6 @@ def calc_chi(data_controller):
                 spol, ipol = tensor[0], tensor[1]
                 oper_matrix1 = np.empty((nk, nbnd, nbnd, nspin), dtype=complex)
                 oper_matrix2 = np.empty((nk, nbnd, nbnd, nspin), dtype=complex)
-                spol, ipol = tensor[0], tensor[1]
                 for ik in range(nk):
                     for ispin in range(nspin):
                         oper_matrix1[ik, :, :, ispin], oper_matrix2[ik, :, :, ispin] = (
@@ -181,7 +186,6 @@ def calc_chi(data_controller):
             cpol, ipol = tensor[0], tensor[1]
             oper_matrix1 = np.empty((nk, nbnd, nbnd, nspin), dtype=complex)
             oper_matrix2 = np.empty((nk, nbnd, nbnd, nspin), dtype=complex)
-            cpol, ipol = tensor[0], tensor[1]
             for ik in range(nk):
                 for ispin in range(nspin):
                     oper_matrix1[ik, :, :, ispin], oper_matrix2[ik, :, :, ispin] = perturb_split(
@@ -211,7 +215,6 @@ def calc_chi(data_controller):
                 cpol, ipol = tensor[0], tensor[1]
                 oper_matrix1 = np.empty((nk, nbnd, nbnd, nspin), dtype=complex)
                 oper_matrix2 = np.empty((nk, nbnd, nbnd, nspin), dtype=complex)
-                cpol, ipol = tensor[0], tensor[1]
                 for ik in range(nk):
                     for ispin in range(nspin):
                         oper_matrix1[ik, :, :, ispin], oper_matrix2[ik, :, :, ispin] = (
@@ -245,23 +248,52 @@ def calc_chi(data_controller):
                     print(f'Cond [{tensor[0]}{tensor[1]}] completed in {total_time:.4f} mins.')
 
 
-def calc_chi2(data_controller=None, tensor=None, prop=None, oper_matrix1=None, oper_matrix2=None):
-    """EQUATION (2)"""
+def calc_chi2(
+    data_controller: 'DataController' = None,
+    tensor: np.ndarray | None = None,
+    prop: str | None = None,
+    oper_matrix1: np.ndarray | None = None,
+    oper_matrix2: np.ndarray | None = None,
+) -> None:
+    """Fermi-sea term at finite broadening, tutorial03 Eq. (2).
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Reads ``E_k``, ``deltakp`` and the settings of :meth:`PAOFLOW.linear_response`.
+    tensor : ndarray of int
+        ``(spin, current, field)`` for 'shc', ``(response, field)`` otherwise.
+    prop : {'shc', 'ree', 'ahc'}
+    oper_matrix1, oper_matrix2 : ndarray, shape ``(nk, nbnd, nbnd, nspin)``, complex
+        Response and field operators in the band basis (:func:`perturb_split`).
+
+    Returns
+    -------
+    None
+        Writes ``SHC_EVEN_*``, ``REE_ODD_*`` or ``AHC_*`` files.
+
+    Notes
+    -----
+    .. math::
+
+        \\chi = \\pm\\frac{2}{N_k}\\sum_{k,n\\ne m} f_n\\,\\mathrm{Im}[A_{nm}B_{mn}]
+        \\frac{\\gamma^2-\\varepsilon_{nm}^2}{(\\varepsilon_{nm}^2+\\gamma^2)^2},
+
+    the Kubo-Bastin Fermi sea with the occupation taken at the band energy (sharp in the level
+    :math:`n`, Lorentzian in :math:`m`). The sign is + for 'shc' and 'ree' and - for 'ahc': as
+    :math:`\\gamma\\to 0` the 'shc'/'ree' values tend to the Berry-curvature form (Eq. 3) and the
+    'ahc' value to minus it, i.e. ``full_chi2`` flips the sign of the AHC (kept for compatibility;
+    see ``docs/internals/kubo-bastin.md``).
+    """
     arry, attr = data_controller.data_dicts()
     nk, nbnd, nspin = arry['E_k'].shape
-    attr['emaxH'] = np.amin(np.array([attr['shift'], attr['emaxH']]))
-    ene = np.linspace(attr['eminH'], attr['emaxH'], attr['esize'])
+    ene = np.linspace(attr['eminH'], min(attr['shift'], attr['emaxH']), attr['esize'])
     gamma = attr['gamma']
     deltab = 0.001
     # ------------------------------------------------------------
     # Unit conversion
     # ------------------------------------------------------------
-    if attr['twoD']:
-        av0 = arry['a_vectors'][0, :]
-        av1 = arry['a_vectors'][1, :]
-        cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
-    else:
-        cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
+    cgs_conv = conductivity_conversion(data_controller, attr['twoD'])
 
     if prop == 'shc' or prop == 'ree':
         # --------------------------------------------------------
@@ -310,8 +342,6 @@ def calc_chi2(data_controller=None, tensor=None, prop=None, oper_matrix1=None, o
         aux2_full = reduce_full(local_response, sroot=0)
         local_response = None
         if rank == 0:
-            # Average over k-points
-            aux2_full = aux2_full / aux2_full.shape[0] if False else aux2_full
             # Since reduce_full has already summed over k,now divide by total k-points.
             aux2_full /= attr['nkpnts']
 
@@ -334,6 +364,8 @@ def calc_chi2(data_controller=None, tensor=None, prop=None, oper_matrix1=None, o
             unit2 = 'Chi [hbar*(cm/V)]'
 
         # data_controller.write_file_row_col(fname,ene,aux2_full)
+        if attr['twoD']:
+            unit2 = sheet_unit(unit2)
         data_controller.write_file_row_col_units(fname, ene, aux2_full, unit1, unit2)
         aux2_full = None
     if prop == 'ahc':
@@ -382,30 +414,59 @@ def calc_chi2(data_controller=None, tensor=None, prop=None, oper_matrix1=None, o
                 fname = f'AHC_{xzy[cpol]}{xzy[ipol]}_ispin{ispin}.dat'
             unit1 = 'Energy [eV]'
             unit2 = 'AH Conductivity [S/cm]'
-            # data_controller.write_file_row_col(fname,ene,aux2_full)
+            if attr['twoD']:
+                unit2 = sheet_unit(unit2)
             data_controller.write_file_row_col_units(fname, ene, aux2_full, unit1, unit2)
             aux2_full = None
     oper_matrix1 = None
     oper_matrix2 = None
 
 
-def fermi_surf(data_controller=None, tensor=None, prop=None, oper_matrix1=None, oper_matrix2=None):
-    """Equation (4)"""
+def fermi_surf(
+    data_controller: 'DataController' = None,
+    tensor: np.ndarray | None = None,
+    prop: str | None = None,
+    oper_matrix1: np.ndarray | None = None,
+    oper_matrix2: np.ndarray | None = None,
+) -> None:
+    """Intraband part of the Fermi-surface term, tutorial03 Eq. (4).
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Reads ``E_k``, ``deltakp`` and the settings of :meth:`PAOFLOW.linear_response`.
+    tensor : ndarray of int
+        ``(spin, current, field)`` for 'shc', ``(response, field)`` otherwise.
+    prop : {'shc', 'ree', 'cond'}
+    oper_matrix1, oper_matrix2 : ndarray, shape ``(nk, nbnd, nbnd, nspin)``, complex
+        Response and field operators in the band basis.
+
+    Returns
+    -------
+    None
+        Writes ``SHC_ODD_*``, ``REE_EVEN_*`` or ``Cond_*`` files ('cond': one per spin channel when
+        ``nspin = 2``).
+
+    Notes
+    -----
+    .. math::
+
+        \\chi = \\frac{1}{2\\gamma N_k}\\sum_{k,n}\\mathrm{Re}[A_{nn}B_{nn}]\\,
+        \\delta(\\mu-\\varepsilon_n),
+
+    the small-:math:`\\gamma` limit of :math:`\\pi\\sum_n A_{nn}B_{nn}L_n(\\mu)^2`
+    (:math:`\\int\\pi L^2 = 1/2\\gamma`), i.e. the Boltzmann form with :math:`\\tau=\\hbar/2\\gamma`;
+    the delta function is the adaptive Gaussian. 'shc' and 'ree' carry an extra minus sign.
+    """
     arry, attr = data_controller.data_dicts()
     nk, nbnd, nspin = arry['E_k'].shape
     gamma = attr['gamma']
     deltab = 0.0001
-    attr['emaxH'] = np.amin(np.array([attr['shift'], attr['emaxH']]))
-    ene = np.linspace(attr['eminH'], attr['emaxH'], attr['esize'])
+    ene = np.linspace(attr['eminH'], min(attr['shift'], attr['emaxH']), attr['esize'])
     # ------------------------------------------------------------
     # Unit conversion
     # ------------------------------------------------------------
-    if attr['twoD']:
-        av0 = arry['a_vectors'][0, :]
-        av1 = arry['a_vectors'][1, :]
-        cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
-    else:
-        cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
+    cgs_conv = conductivity_conversion(data_controller, attr['twoD'])
     # ============================================================
     # SHC / REE
     # ============================================================
@@ -467,6 +528,8 @@ def fermi_surf(data_controller=None, tensor=None, prop=None, oper_matrix1=None, 
             unit1 = 'Energy [eV]'
             unit2 = 'Chi [hbar*(cm/V)]'
         # data_controller.write_file_row_col(fname,ene,aux_full)
+        if attr['twoD']:
+            unit2 = sheet_unit(unit2)
         data_controller.write_file_row_col_units(fname, ene, aux_full, unit1, unit2)
         aux_full = None
     # ============================================================
@@ -523,29 +586,64 @@ def fermi_surf(data_controller=None, tensor=None, prop=None, oper_matrix1=None, 
             unit2 = 'Conductivity [S/cm]'
 
             # data_controller.write_file_row_col(fname,ene,aux_full)
+            if attr['twoD']:
+                unit2 = sheet_unit(unit2)
             data_controller.write_file_row_col_units(fname, ene, aux_full, unit1, unit2)
             aux_full = None
         oper_matrix1 = None
         oper_matrix2 = None
 
 
-def fermi_sea(data_controller=None, tensor=None, prop=None, oper_matrix1=None, oper_matrix2=None):
-    """EQUATION (5)"""
+def fermi_sea(
+    data_controller: 'DataController' = None,
+    tensor: np.ndarray | None = None,
+    prop: str | None = None,
+    oper_matrix1: np.ndarray | None = None,
+    oper_matrix2: np.ndarray | None = None,
+) -> None:
+    """Interband part of the Fermi-surface term, tutorial03 Eq. (5).
+
+    The name is historical: the quantity stands for the interband (:math:`n\\ne m`) part of the
+    Fermi-surface term (Eq. 1), written as an occupation-weighted sum; it is not the Kubo-Bastin Fermi
+    sea.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Reads ``E_k``, ``deltakp`` and the settings of :meth:`PAOFLOW.linear_response`.
+    tensor : ndarray of int
+        ``(spin, current, field)`` for 'shc', ``(response, field)`` otherwise.
+    prop : {'shc', 'ree', 'cond'}
+    oper_matrix1, oper_matrix2 : ndarray, shape ``(nk, nbnd, nbnd, nspin)``, complex
+        Response and field operators in the band basis.
+
+    Returns
+    -------
+    None
+        Writes ``SHC_ODD_*``, ``REE_EVEN_*`` or ``Cond_*`` files.
+
+    Notes
+    -----
+    .. math::
+
+        \\chi = \\pm\\frac{2}{N_k}\\sum_{k,n\\ne m} f_n\\,\\mathrm{Re}[A_{nm}B_{mn}]
+        \\frac{\\gamma\\,(\\varepsilon_m-\\varepsilon_n)}{((\\varepsilon_m-\\varepsilon_n)^2+\\gamma^2)^2}
+        = \\pm\\frac{\\pi}{N_k}\\sum_{k,n\\ne m} f_n\\,\\mathrm{Re}[A_{nm}B_{mn}]\\,
+        L_m'(\\varepsilon_n),
+
+    with + for 'shc'/'ree' and - for 'cond'. The exact interband Fermi-surface term at constant
+    broadening, :math:`\\pi\\sum_{n\\ne m}\\mathrm{Re}[A_{nm}B_{mn}]\\int(-f')L_nL_m`, is
+    :meth:`PAOFLOW.kubo_response` with ``term='interband'``.
+    """
     arry, attr = data_controller.data_dicts()
     nk, nbnd, nspin = arry['E_k'].shape
     deltab = 0.001
     gamma = attr['gamma']
-    attr['emaxH'] = np.amin(np.array([attr['shift'], attr['emaxH']]))
-    ene = np.linspace(attr['eminH'], attr['emaxH'], attr['esize'])
+    ene = np.linspace(attr['eminH'], min(attr['shift'], attr['emaxH']), attr['esize'])
     # ------------------------------------------------------------
     # Unit conversion
     # ------------------------------------------------------------
-    if attr['twoD']:
-        av0 = arry['a_vectors'][0, :]
-        av1 = arry['a_vectors'][1, :]
-        cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
-    else:
-        cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
+    cgs_conv = conductivity_conversion(data_controller, attr['twoD'])
     # ============================================================
     # SHC / REE
     # ============================================================
@@ -614,6 +712,8 @@ def fermi_sea(data_controller=None, tensor=None, prop=None, oper_matrix1=None, o
             unit1 = 'Energy [eV]'
             unit2 = 'Chi [hbar*(cm/V)]'
         # data_controller.write_file_row_col(fname,ene,shc_aux_full)
+        if attr['twoD']:
+            unit2 = sheet_unit(unit2)
         data_controller.write_file_row_col_units(fname, ene, shc_aux_full, unit1, unit2)
         shc_aux_full = None
 
@@ -675,22 +775,16 @@ def fermi_sea(data_controller=None, tensor=None, prop=None, oper_matrix1=None, o
             unit1 = 'Energy [eV]'
             unit2 = 'Conductivity [S/cm]'
             # data_controller.write_file_row_col(fname,ene,shc_aux_full)
+            if attr['twoD']:
+                unit2 = sheet_unit(unit2)
             data_controller.write_file_row_col_units(fname, ene, shc_aux_full, unit1, unit2)
             shc_aux_full = None
         oper_matrix1 = None
         oper_matrix2 = None
 
 
-def do_spin_current(data_controller=None, tensor=None):
-    spol, jpol = tensor[0], tensor[1]
-    arry, attr = data_controller.data_dicts()
-    Sj = arry['Sj'][spol]
-    snktot, _, nawf, nawf, nspin = arry['dHksp'].shape
-    jdHksp = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
-    for ispin in range(nspin):
-        for ik in range(snktot):
-            jdHksp[ik, :, :, ispin] = 0.5 * (
-                np.dot(Sj, arry['dHksp'][ik, jpol, :, :, ispin])
-                + np.dot(arry['dHksp'][ik, jpol, :, :, ispin], Sj)
-            )
-    return jdHksp
+def do_spin_current(data_controller=None, tensor=None) -> np.ndarray:
+    """Spin current {S_spin, dH_current}/2 of ``tensor = (spin, current, ...)`` at every local k."""
+    from .do_Hall import do_spin_current as spin_current_operator
+
+    return spin_current_operator(data_controller, tensor[0], tensor[1])

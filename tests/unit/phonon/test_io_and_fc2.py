@@ -21,6 +21,7 @@ from PAOFLOW.phonon.do_phonopy import (
 from PAOFLOW.phonon.io import (
     _namelists,
     _pp_filenames,
+    occupation_lines,
     _supercell_kgrid,
     resolve_phonon_dir,
     write_displaced_supercells,
@@ -114,6 +115,31 @@ def test_namelists_contain_required_scf_settings(tmp_path):
     assert 'ibrav = 0' in text
     assert 'nat = %d' % len(phonon.supercell) in text
     assert 'ecutwfc = 40.00' in text
+
+
+def test_namelists_carry_the_parent_occupations(tmp_path):
+    """A metallic parent with Fermi-Dirac occupations at k_B T gives supercells with the same (hot electrons)."""
+    dc = _silicon_controller(tmp_path)
+    _, attr = dc.data_dicts()
+    attr.update(
+        insulator=False, qe_smearing='fd', qe_degauss=0.017734, degauss=0.1
+    )  # degauss: PAOFLOW's, eV
+    phonon = init_phonopy(dc)
+    text = _namelists(dc, phonon.supercell, prefix='silicon', pp_dir=str(tmp_path))
+    assert "occupations = 'smearing'" in text
+    assert "smearing = 'fd'" in text
+    assert 'degauss = 0.01773400' in text
+    assert "smearing = 'mp'" not in text
+
+
+def test_occupation_lines_insulator_and_fallback():
+    assert occupation_lines({'insulator': True, 'qe_smearing': 'fd', 'qe_degauss': 0.01}) == []
+    lines = occupation_lines({'insulator': False})  # older files: no qe_* attributes
+    assert lines == [
+        "    occupations = 'smearing'",
+        "    smearing = 'mp'",
+        '    degauss = 0.02000000',
+    ]
 
 
 # --------------------------------------------------------------------------- #

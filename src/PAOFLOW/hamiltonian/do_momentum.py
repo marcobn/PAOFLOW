@@ -1,5 +1,65 @@
+import numpy as np
+
+# Fixed generic direction: the common basis of a degenerate subspace diagonalises dH/dk along it.
+# Irrational, unequal components, so that no crystal symmetry maps it onto itself.
+_GENERIC_DIRECTION = np.array([1.0, np.sqrt(2.0) - 1.0, np.pi - 3.0])
+_GENERIC_DIRECTION /= np.linalg.norm(_GENERIC_DIRECTION)
+
+
+def momentum_in_eigenbasis(dhk: np.ndarray, v_k: np.ndarray, degen: list) -> np.ndarray:
+    r"""Momentum matrix of one k-point and spin in the Bloch eigenbasis, degenerate subspaces fixed.
+
+    Parameters
+    ----------
+    dhk : np.ndarray, shape ``(3, nawf, nawf)``
+        :math:`\partial H/\partial k_l` in the PAO basis.
+    v_k : np.ndarray, shape ``(nawf, nbnd)``
+        Eigenvectors (columns) at this k-point.
+    degen : list of array_like
+        Index sets of the degenerate subspaces (consecutive bands).
+
+    Returns
+    -------
+    np.ndarray, shape ``(3, nbnd, nbnd)``
+        :math:`p^l_{nm}`, Hermitian.
+
+    Notes
+    -----
+    Two requirements meet in a degenerate subspace :math:`D`:
+
+    * the elements between :math:`D` and the other bands enter products of two directions,
+      :math:`\sum_{n\in D,\,m} p^a_{nm} p^b_{mn}`, which are invariant only if :math:`p^a` and
+      :math:`p^b` use the same basis of :math:`D`. That basis is the eigenbasis of
+      :math:`\hat g\cdot\partial H/\partial\mathbf k` restricted to :math:`D`, with
+      :math:`\hat g` a fixed generic direction;
+    * the diagonal holds the band velocities of degenerate perturbation theory: the eigenvalues of
+      :math:`p^l` restricted to :math:`D`, for each direction :math:`l` separately. The block of
+      :math:`D` is replaced by their diagonal matrix (ascending order), as before.
+
+    Rotating :math:`D` separately for each direction (the former rule) made the off-diagonal
+    tensor components depend on the basis at degenerate k-points (a cubic crystal had
+    :math:`\varepsilon_{xy}\neq 0`). Diagonal components :math:`aa` are unchanged by the common
+    rotation: :math:`\sum_{n\in D}|p^a_{nm}|^2` is invariant.
+    """
+    vk = np.array(v_k, copy=True)
+    pk = vk.conj().T @ dhk @ vk
+    if len(degen) == 0:
+        return 0.5 * (pk + np.conj(np.swapaxes(pk, 1, 2)))
+    blocks = sorted({(int(d[0]), int(d[-1]) + 1) for d in degen})  # each subspace once
+    for lo, hi in blocks:
+        generic = np.einsum('l,lnm->nm', _GENERIC_DIRECTION, pk[:, lo:hi, lo:hi])
+        _, weight = np.linalg.eigh(0.5 * (generic + generic.conj().T))
+        vk[:, lo:hi] = vk[:, lo:hi] @ weight
+    pk = vk.conj().T @ dhk @ vk
+    pk = 0.5 * (pk + np.conj(np.swapaxes(pk, 1, 2)))
+    for lo, hi in blocks:
+        for l in range(3):
+            pk[l, lo:hi, lo:hi] = np.diag(np.linalg.eigvalsh(pk[l, lo:hi, lo:hi]))
+    return pk
+
+
 def do_momentum(data_controller):
-    """Compute momentum matrix elements in the Bloch eigenstate basis.
+    r"""Compute momentum matrix elements in the Bloch eigenstate basis.
 
     Parameters
     ----------
@@ -16,34 +76,23 @@ def do_momentum(data_controller):
 
         - ``pksp`` : np.ndarray, shape ``(nktot, 3, nawf, nawf, nspin)``,
           complex — the momentum matrix elements
-          :math:`\\langle n\\mathbf{k} | \\hat{p}_l | m\\mathbf{k} \\rangle`
+          :math:`\langle n\mathbf{k} | \hat{p}_l | m\mathbf{k} \rangle`
           for each Cartesian direction :math:`l`, projected onto the Bloch
           eigenstate basis and Hermitian-symmetrised.
 
     Notes
     -----
-    For each k-point and Cartesian direction :math:`l`, the momentum
-    operator matrix element is computed in the Bloch eigenstate basis via
-    :func:`perturb_split`:
+    For each k-point and Cartesian direction :math:`l`,
 
     .. math::
 
-        p^l_{nm}(\\mathbf{k}) =
-            \\langle n\\mathbf{k} | \\partial H / \\partial k_l | m\\mathbf{k} \\rangle
+        p^l_{nm}(\mathbf{k}) =
+            \langle n\mathbf{k} | \partial H / \partial k_l | m\mathbf{k} \rangle ,
+        \qquad p^l \leftarrow \frac{p^l + (p^l)^\dagger}{2}.
 
-    Hermitian symmetry is then enforced as
-
-    .. math::
-
-        p^l \\leftarrow \\frac{p^l + (p^l)^\\dagger}{2}
-
-    Degenerate subspaces at each k-point are handled by :func:`perturb_split`
-    to ensure a well-defined basis.
+    The three directions share one basis of every degenerate subspace, and the diagonal block of a
+    subspace holds the band velocities of each direction: see :func:`momentum_in_eigenbasis`.
     """
-    import numpy as np
-
-    from ..utils.perturb_split import perturb_split
-
     arry, attr = data_controller.data_dicts()
 
     nktot, _, nawf, nawf, nspin = arry['dHksp'].shape
@@ -52,21 +101,8 @@ def do_momentum(data_controller):
 
     for ispin in range(nspin):
         for ik in range(nktot):
-            for l in range(3):
-                arry['pksp'][ik, l, :, :, ispin], _ = perturb_split(
-                    arry['dHksp'][ik, l, :, :, ispin],
-                    arry['dHksp'][ik, l, :, :, ispin],
-                    arry['v_k'][ik, :, :, ispin],
-                    arry['degen'][ispin][ik],
-                )
-                #  impose hermiticity
-                arry['pksp'][ik, l, :, :, ispin] = (
-                    arry['pksp'][ik, l, :, :, ispin] + np.conj(arry['pksp'][ik, l, :, :, ispin].T)
-                ) / 2.0
-            #  arry['pksp'][ik,l,attr['bnd']:,attr['bnd']:,ispin] = 0.0
-
-    # for ispin in range(nspin):
-    #   for ik in range(nktot):
-    #     for l in range(3):
-    #        arry['pksp'][ik,l,:,:,ispin] = arry['v_k'][ik,:,:,ispin]@arry['dHksp'][ik,l,:,:,ispin]@ \
-    #                                       np.conj(arry['v_k'][ik,:,:,ispin]).T
+            arry['pksp'][ik, :, :, :, ispin] = momentum_in_eigenbasis(
+                arry['dHksp'][ik, :, :, :, ispin],
+                arry['v_k'][ik, :, :, ispin],
+                arry['degen'][ispin][ik],
+            )

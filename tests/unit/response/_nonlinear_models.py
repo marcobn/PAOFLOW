@@ -13,16 +13,12 @@ from __future__ import annotations
 
 import numpy as np
 
+from PAOFLOW.models import models as tb_models
+
 ALAT = 1.0
 
-
-def hopping_list_to_HRs(hops, nawf, ng):
-    """``HRs[i, j, -R mod ng] += h`` so that ``H(k) = sum_n exp(-2 pi i k.n) HRs[n]`` equals the lattice-gauge sum."""
-    HRs = np.zeros((nawf, nawf, ng[0], ng[1], ng[2], 1), dtype=complex)
-    for i, j, R, h in hops:
-        n = (-np.asarray(R)) % np.asarray(ng)
-        HRs[i, j, n[0], n[1], n[2], 0] += h
-    return HRs
+# ``HRs[i, j, -R mod ng] += h``: ``H(k) = sum_n exp(-2 pi i k.n) HRs[n]`` is the lattice-gauge sum
+hopping_list_to_HRs = tb_models.hoppings_to_HRs
 
 
 class ExactModel:
@@ -39,6 +35,14 @@ class ExactModel:
         self.HRs = hopping_list_to_HRs(hops, nawf, self.ng)
         self.bg = np.linalg.inv(self.at).T  # rows: reciprocal vectors in 2 pi / alat
         self.volume = self.alat**3 * abs(np.linalg.det(self.at))
+
+    @classmethod
+    def from_model(cls, model):
+        """ExactModel of a :class:`PAOFLOW.models.models.HoppingModel`."""
+        return cls(
+            list(model.hoppings), model.number_of_orbitals, model.lattice_vectors, model.alat,
+            model.orbital_positions, model.real_space_grid, nelec=model.nelec,
+        )  # fmt: skip
 
     def k_cart(self, k_cryst):
         return np.asarray(k_cryst, dtype=float) @ self.bg * 2.0 * np.pi / self.alat
@@ -98,46 +102,23 @@ def random_hopping_model(seed=0, nawf=4, time_reversal=True, cutoff=1.0, gap=Tru
 
 
 def honeycomb_model(delta=0.5, t=-1.0, t2=0.0, phi=0.0, nelec=2, alat=4.65, strain=0.0):
-    """Gapped graphene (``t2 = 0``) or the Haldane model on the honeycomb lattice (``a_1 || x``).
-
-    ``delta`` is the sublattice potential (+-delta/2), ``t`` the nearest-neighbour hopping,
-    ``t2 e^{+-i phi}`` the Haldane next-nearest hopping (time reversal broken for
-    ``t2 != 0`` and ``phi`` not a multiple of pi), ``strain`` scales one of the three bonds
-    (breaks the threefold axis).  The ``z`` direction is a 10 alat vacuum.
-    """
-    at = np.array([[1.0, 0.0, 0.0], [0.5, np.sqrt(3) / 2, 0.0], [0.0, 0.0, 10.0]])
-    tau = np.array([[1.0 / 3, 1.0 / 3, 0.0], [2.0 / 3, 2.0 / 3, 0.0]])
-    hops = [(0, 0, (0, 0, 0), 0.5 * delta), (1, 1, (0, 0, 0), -0.5 * delta)]
-    # nearest neighbours: B at tau_B + R for R in {0, -a1, -a2} relative to A
-    for R in ((0, 0, 0), (-1, 0, 0), (0, -1, 0)):
-        bond = t * (1.0 + strain) if R == (0, 0, 0) else t  # ``strain`` breaks C3
-        hops.append((0, 1, R, bond))
-        hops.append((1, 0, tuple(-np.array(R)), bond))
-    if t2 != 0.0:
-        # second neighbours: the six lattice vectors; +phi on A for the counter-clockwise set
-        for R, sign in (
-            ((1, 0, 0), 1),
-            ((0, 1, 0), -1),
-            ((-1, 1, 0), 1),
-            ((-1, 0, 0), -1),
-            ((0, -1, 0), 1),
-            ((1, -1, 0), -1),
-        ):
-            hops.append((0, 0, R, t2 * np.exp(1j * sign * phi)))
-            hops.append((1, 1, R, t2 * np.exp(-1j * sign * phi)))
-    return ExactModel(hops, 2, at, alat, tau, (6, 6, 1), nelec=nelec)
+    """Gapped graphene or the Haldane model: :func:`PAOFLOW.models.models.honeycomb_model`."""
+    return ExactModel.from_model(
+        tb_models.honeycomb_model(delta, t, t2, phi, nelec=nelec, alat=alat, strain=strain)
+    )
 
 
 def rice_mele_chain(t=1.0, dt=0.3, delta=0.4, nelec=2, alat=2.0):
-    """Rice-Mele chain along x: alternating hoppings ``t +- dt`` and staggered potential."""
-    at = np.array([[1.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]])
-    tau = np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]])
-    hops = [
-        (0, 0, (0, 0, 0), delta),
-        (1, 1, (0, 0, 0), -delta),
-        (0, 1, (0, 0, 0), t + dt),
-        (1, 0, (0, 0, 0), t + dt),
-        (1, 0, (1, 0, 0), t - dt),
-        (0, 1, (-1, 0, 0), t - dt),
-    ]
-    return ExactModel(hops, 2, at, alat, tau, (8, 1, 1), nelec=nelec)
+    """Rice-Mele chain along x: :func:`PAOFLOW.models.models.rice_mele_model`."""
+    return ExactModel.from_model(tb_models.rice_mele_model(t, dt, delta, nelec=nelec, alat=alat))
+
+
+def weyl_model(t=1.0, b=0.3):
+    """Two-band lattice Weyl semimetal: :func:`PAOFLOW.models.models.weyl_model`."""
+    return ExactModel.from_model(tb_models.weyl_model(t, b, alat=ALAT))
+
+
+def single_band_model(hoppings, at, alat, nelec, ng):
+    """One band plus a decoupled empty band: :func:`PAOFLOW.models.models.single_band_model`."""
+    model = tb_models.single_band_model(hoppings, at, alat, nelec, ng)
+    return ExactModel.from_model(model), list(model.hoppings)

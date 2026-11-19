@@ -1,0 +1,38 @@
+{
+ "title": "VASP FeRh: ferromagnetic bands, spin-polarized and with spin-orbit",
+ "summary": "B2 FeRh, ferromagnetic, from two VASP runs: collinear spin-polarized and with spin-orbit coupling. The PAO Hamiltonian (Fe 3D 4S 4P 4D 5S 5P, Rh 4D 4F 5S 5P 5D) and the band structure of each. Needs your own VASP runs and POTCAR.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "FeRh bands, collinear spin-polarized",
+   "command": [
+    "python",
+    "main_nspin2.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "needs the VASP runs of nscf_nspin2/ (vasprun.xml, WAVECAR, POTCAR); writes output_nspin2/ and FeRh_nspin2_VASP.png"
+  },
+  {
+   "label": "FeRh bands with spin-orbit coupling",
+   "command": [
+    "python",
+    "main_soc.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "needs the VASP runs of nscf_soc/ (vasprun.xml, WAVECAR, POTCAR); writes output_soc/ and FeRh_soc_VASP.png"
+  }
+ ],
+ "tags": [
+  "VASP",
+  "bands",
+  "ferromagnet",
+  "magnetic",
+  "spin-orbit",
+  "PAW"
+ ],
+ "source": "examples/recipes/vasp/example06"
+}

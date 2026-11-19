@@ -1,3 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+
+
 class DataController:
     """Central data store and I/O manager for a PAOFLOW run.
 
@@ -173,7 +181,7 @@ class DataController:
     ----------------------
     write_bands(fname, bands)
         Write per-spin band structure files ``<fname>_<ispin>.dat``.
-    write_bxsf(fname, bands, nbnd, indices)
+    write_bxsf(fname, bands, nbnd, indices, skeaf_sheets)
         Write Fermi-surface data in ``.bxsf`` format (for XCrysDen /
         SKEAF).
     write_HRs(fname)
@@ -242,7 +250,7 @@ class DataController:
             None
         """
         from glob import glob
-        from os import mkdir
+        from os import makedirs
         from os.path import exists, join
 
         from mpi4py import MPI
@@ -325,9 +333,8 @@ class DataController:
                 attr['temp'] = 0.025852
                 attr['npool'], attr['smearing'] = npool, smearing
 
-            # Create the output directory
-            if not exists(attr['opath']):
-                mkdir(attr['opath'])
+            # Create the output directory (and its parents: drivers nest run folders)
+            makedirs(attr['opath'], exist_ok=True)
 
             self.add_default_arrays()
 
@@ -335,10 +342,12 @@ class DataController:
 
             # Read inputfile, if it exsts
             if model is not None:
-                if isinstance(model, dict):
-                    from .models.models import build_TB_model
+                from .models.models import HoppingModel, build_from_hoppings, build_TB_model
 
+                if isinstance(model, dict):
                     build_TB_model(self, model)
+                elif isinstance(model, HoppingModel):
+                    build_from_hoppings(self, model)
                 else:
                     print(
                         'Check! TB model finite (nonperiodic) in one or more dimensions not implemented'
@@ -351,6 +360,9 @@ class DataController:
                         print('\nERROR: Could not build tight-binding model')
                         self.report_exception('Data Controller Initialization')
                         raise e
+                # The QE and VASP readers say whether the system is an insulator; a model does
+                # not, and the dielectric tensor then takes the smeared (metal) occupations.
+                self.data_attributes.setdefault('insulator', False)
             elif not bxsf_only:
                 try:
                     if inputfile != None:
@@ -725,17 +737,35 @@ class DataController:
                 f.writelines(f'{x:12.5f} {y:25.15e}\n' for x, y in zip(col1, col2))
         self.comm.Barrier()
 
-    def write_bxsf(self, fname, bands, nbnd, indices=None):
-        """
-        Write a file in the bxsf format
+    def write_bxsf(
+        self,
+        fname: str,
+        bands: np.ndarray,
+        nbnd: int,
+        indices: np.ndarray | list[int] | None = None,
+        skeaf_sheets: bool = True,
+    ) -> None:
+        """Write a BXSF file and, for Fermi surfaces, the per-band SKEAF sheets.
 
-        Arguments:
-            fname (str): Name of the file (written to outputdir)
-            bands (ndarray): The data array of values to be written
-            nbnd (int): Number of values from array to write
+        Parameters
+        ----------
+        fname : str
+            Name of the BXSF file (written to ``outputdir``).
+        bands : numpy.ndarray, shape ``(nk1, nk2, nk3, nbnd)``
+            Values on the k-grid (band energies in eV, or any scalar field).
+        nbnd : int
+            Number of bands to write.
+        indices : array_like of int, optional
+            Band indices of the written bands (1-based in the file).
+        skeaf_sheets : bool, optional
+            Also write ``Fermi_surf_band_{n}.bxsf`` (one band per file, Rydberg) for
+            pyskeaf.  Only band energies belong in those files: callers that write another
+            field (the Berry curvature of the Hall runs) pass ``False`` so the Fermi-surface
+            sheets of an earlier ``fermi_surface()`` call are not overwritten.
 
-        Returns:
-            None
+        Returns
+        -------
+        None
         """
         attr = self.data_attributes
 
@@ -744,7 +774,8 @@ class DataController:
             from .writers.write2bxsf4skeaf import write2bxsf4skeaf
 
             write2bxsf(self, fname, bands, nbnd, indices, attr['fermi_up'], attr['fermi_dw'])
-            write2bxsf4skeaf(self, bands, nbnd, indices)
+            if skeaf_sheets:
+                write2bxsf4skeaf(self, bands, nbnd, indices)
 
     def write_bands(self, fname, bands):
         """
@@ -769,6 +800,48 @@ class DataController:
                         ' '.join(['%6d' % ik] + ['% 14.8f' % j for j in bands[ik, :, ispin]]) + '\n'
                         for ik in range(nkpi)
                     )
+        self.comm.Barrier()
+
+    def write_berry_bands(self, fname: str, phases, kpts=None) -> None:
+        """Write the eigenphases of Wilson loops (``berry_phase(eigvals=True)``) to ``<fname>.dat``.
+
+        Parameters
+        ----------
+        fname : str
+            File stem, written to the output directory.
+        phases : array_like, shape ``(nloops, nphases)``
+            Eigenphases of each loop (radians): one row per loop, i.e. per point of the
+            transverse coordinate in ``'track'`` mode, a single row in ``'path'`` mode.
+        kpts : array_like, shape ``(nloops,)``, optional
+            Transverse coordinate of each loop; the loop index when omitted.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        Columns: the transverse coordinate, then the phases :math:`\\varphi_n` (radians). The
+        hybrid Wannier centres along the loop are :math:`\\varphi_n/2\\pi` modulo 1, in units of
+        the lattice vector spanned by the loop.
+        """
+        if self.rank == 0:
+            from os.path import join
+
+            import numpy as np
+
+            phases = np.atleast_2d(np.asarray(phases, dtype=float))
+            nloops, nphases = phases.shape
+            kpts = np.arange(nloops, dtype=float) if kpts is None else np.asarray(kpts, dtype=float)
+            header = '\t'.join(f'phi_{n + 1}' for n in range(nphases))
+            rows = (
+                f'{kpts[ik]: 2.8f}\t' + '\t'.join(f'{p: 2.12f}' for p in phases[ik]) + '\n'
+                for ik in range(nloops)
+            )
+            with open(join(self.data_attributes['opath'], fname + '.dat'), 'w') as f:
+                f.write('# Wilson-loop eigenphases (rad); Wannier centres = phi / 2 pi mod 1\n')
+                f.write(f'# k\t{header}\n')
+                f.writelines(rows)
         self.comm.Barrier()
 
     def write_kpnts_path(self, fname, path, kpnts, b_vectors):
@@ -797,7 +870,7 @@ class DataController:
                     )
                 )
 
-            if self.data_attributes['write_QE_bands'] == True:
+            if self.data_attributes.get('write_QE_bands', False):
                 with open(join(self.data_attributes['opath'], 'kpath.pwscf'), 'w') as f:
                     f.write('K_POINTS tpiba\n')
                     f.write(f'{kpnts.shape[1]}\n')
@@ -1032,7 +1105,12 @@ class DataController:
 
                 arry, attr = self.data_dicts()
 
-                HRS = np.fft.ifftn(arry['Hks'], axes=(2, 3, 4))
+                # a model keeps only HRs (the Fourier transform of the Hks of a DFT run)
+                HRS = (
+                    np.fft.ifftn(arry['Hks'], axes=(2, 3, 4))
+                    if 'Hks' in arry
+                    else np.array(arry['HRs'])
+                )
 
                 nawf, _, nk1, nk2, nk3, nspin = HRS.shape
                 # how to pad HR to make sure it's odd

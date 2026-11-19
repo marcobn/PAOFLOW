@@ -26,6 +26,9 @@ PAOFLOW ships several optional extras. Install only what you need:
 # Matplotlib + VTK plotting support (and mendeleev for the basis generator)
 pip install "PAOFLOW[graphics]"
 
+# Browser interface (paoflow-studio: setup, runs, interactive results; Plotly)
+pip install "PAOFLOW[gui]"
+
 # Boltzmann transport extras (psutil, for the core budget of the joblib workers)
 pip install "PAOFLOW[transport]"
 
@@ -68,7 +71,7 @@ The package installs five console commands:
 | `paoflow-gen` | Driver scripts from a QE run: property run, ACBN0, phonons, electron-phonon system folder |
 | `paoflow-genbasis-ps` | Atomic-orbital basis tables generated from the pseudopotentials |
 | `pyskeaf` | Extremal Fermi-surface orbits (de Haas-van Alphen frequencies and masses) |
-| `fermi-plotter` | Fermi-surface and field-direction viewer for the quantum-oscillation analysis |
+| `fermi-plotter` | Fermi-surface and field-direction viewer for the quantum-oscillation analysis (`FermiSurf_<s>.bxsf`, or a pyskeaf `Fermi_surf_band_<n>.bxsf`, converted from Rydberg; `--units` overrides the detection) |
 
 See [CLI generators](internals/cli-generators.md).
 
@@ -147,6 +150,6 @@ import PAOFLOW
 print(PAOFLOW.__version__)
 ```
 
-You should see the current version string (e.g. `3.0.0`).
+You should see the current version string (e.g. `4.0.0`).
 
 ---

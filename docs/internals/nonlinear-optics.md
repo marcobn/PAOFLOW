@@ -15,20 +15,50 @@ Phys. Rev. B **96**, 115147 (2017) and Chen, Ye, Zou, Gu, Xu and Duan, Phys. Rev
 
 ```python
 pf = PAOFLOW.PAOFLOW(savedir='GaAs.save', ...)
-pf.read_atomic_proj_QE(); pf.projectability(); pf.pao_hamiltonian()
-spectra = pf.nonlinear_optics(nk=(60, 60, 60), emax=4.0, eta=0.05, scissor=0.86,
-                              components=['xyz'])
+pf.projections(basispath='BASIS_PS', configuration='extended')   # paoflow-genbasis-ps tables
+pf.projectability(pthr=0.95)
+pf.pao_hamiltonian()
+spectra = pf.nonlinear_optics(nk=(40, 40, 40), emax=5.0, eta=0.05, scissor=0.86,
+                              components=['xyz'], position_dipoles=True, shg_terms=True)
+coupled = pf.coupled_optical_response(nk=(16, 16, 16), emax=5.0, ne=51, eta=0.1, scissor=0.86,
+                                      second_harmonic=True, shg_energies=[0.1])
 pf.finish_execution()
 ```
+
+The validated setting is the extended basis of the run's own pseudopotentials with the Löwdin position
+dipoles: on GaAs the dipoles make the SHG independent of the basis (χ_xyz(0) = 178 and 181 pm/V on two
+different bases, against 103 and 218 pm/V with the orbital centres alone), and `paoflow-gen` writes this
+setting by default (`docs/internals/cli-generators.md`).
 
 `nonlinear_optics` needs `HRs`, so it runs after `pao_hamiltonian()` (and `add_external_fields`)
 and before `interpolated_hamiltonian()` / `pao_eigh()`, which release it. It writes two-column
 files (photon energy in eV, value): `shift_<abc>.dat` and `shiftm_<abc>.dat` (µA/V²),
 `injectc_<abc>.dat` and `injectm_<abc>.dat` (A V⁻² s⁻¹), `shgr_/shgi_/shga_<abc>.dat`
 (Re, Im, |χ| in pm/V). With `twoD=True` the sheet responses are written instead (multiplied by
-the slab height: nm µA/V², nm A V⁻² s⁻¹, pm²/V). `GPAO.plot_optical` knows the prefixes.
+the slab height: nm µA/V², nm A V⁻² s⁻¹, pm²/V). With `shg_terms=True` the SHG is also split into
+its terms (section "SHG by term" below): `shgtr_<term>_<abc>.dat` and `shgti_<term>_<abc>.dat`.
 Tight-binding models (`PAOFLOW(model=...)`) work the same way, with the orbital centres taken
 from the model's `tau`/`naw` (or passed as `orbital_positions`).
+
+Figures: `GPAO.plot_nonlinear(path, response, part, two_d)` (components overlaid, 3D or sheet units),
+`GPAO.plot_shg_terms(path, component)`, `GPAO.plot_coupled_response(path, quantity, part)` (the kernel levels
+of `coupled_optical_response`) and `GPAO.plot_molecular_beta(path)`; the drawing is in
+`PAOFLOW.graphics.nonlinear_plots`.
+
+### SHG by term (`shg_terms=True`)
+
+The SHG susceptibility is the sum of the seven terms of `SHG_TERMS`, in the length-gauge form of Chen *et al.*
+(2022), Eqs. (C1)–(C3) (Hughes and Sipe 1996; Cabellos *et al.* 2009): the interband three-band term resonant at
+2ω (`interband_2w`) and at ω (`interband_w`), and the intraband two-band terms, built from the generalized
+derivative $r_{;k}$ (`intraband_2w_derivative`, `intraband_w_derivative`) or the velocity difference
+$\Delta$ (`intraband_2w_velocity`, `intraband_w_velocity`), and the T-odd term `intraband_w_todd`
+($\Delta^a_{mn}\mathrm{Re}[r^b_{nm}r^c_{mn}]$, zero with time reversal). The totals are accumulated as before (the
+split bins the same weights a second time). The ω/2ω split of the absorptive part is physical; the
+interband/intraband split depends on the form of the equations ($r_{;k}$ is itself a sum over a third band).
+GaAs, 40³ (`Workspace/PAOFLOW/validation/nonlinear_optics_GaAs/paoflow_nc/ipa_terms/REPORT.md`, with the
+equations of every term): χ_xyz(0) = −181 pm/V = +281 (interband 2ω) − 466 (intraband 2ω) − 113 (interband ω)
++ 116 (intraband ω); the velocity terms vanish (T_d is not gyrotropic); the E₁ two-photon peak is the intraband
+2ω term; the measured minimum near 2ħω = 4.6 eV is where the two 2ω terms cancel.
 
 ## Conventions
 
@@ -79,13 +109,18 @@ band-convergence as in the plane-wave sum-rule route.
 |---|---|---|
 | shift current, $J^a = \sigma^{abc}E^b(\omega)E^c(-\omega)$ | $\sigma^{abc} = \frac{\pi e^3 g_s}{\hbar^2}\int[dk]\sum_{nm} f_{nm}\,\mathrm{Im}[r^b_{mn}r^c_{nm;a} + r^c_{mn}r^b_{nm;a}]\,\delta(\omega_{nm}-\omega)$ | `shift_abc.dat`, µA/V² |
 | magnetic shift current (T-odd), $J^a = \sigma_M^{abc}\mathrm{Im}[E^bE^{c*}]$ | $-\frac{\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{nm}\mathrm{Re}[r^b_{mn}r^c_{nm;a} - r^c_{mn}r^b_{nm;a}]\delta(\omega_{nm}-\omega)$ | `shiftm_abc.dat`, µA/V² |
-| circular injection, $dJ^a/dt = \eta_C^{abc}\mathrm{Im}[E^bE^{c*}]$ | $\frac{2\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{mn}\Delta^a_{mn}\mathrm{Im}[r^b_{mn}r^c_{nm}]\delta(\omega_{nm}-\omega)$ | `injectc_abc.dat`, A V⁻² s⁻¹ |
+| circular injection, $dJ^a/dt = \eta_C^{abc}\mathrm{Im}[E^bE^{c*}]$ | $-\frac{2\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{mn}\Delta^a_{mn}\mathrm{Im}[r^b_{mn}r^c_{nm}]\delta(\omega_{nm}-\omega)$ | `injectc_abc.dat`, A V⁻² s⁻¹ |
 | magnetic injection (T-odd), $dJ^a/dt = \eta_M^{abc}\mathrm{Re}[E^bE^{c*}]$ | $-\frac{2\pi e^3 g_s}{\hbar^2}\int[dk]\sum f_{mn}\Delta^a_{mn}\mathrm{Re}[r^b_{mn}r^c_{nm}]\delta(\omega_{nm}-\omega)$ | `injectm_abc.dat`, A V⁻² s⁻¹ |
 | SHG, $P^a(2\omega) = \epsilon_0\chi^{abc}E^bE^c$ | Chen *et al.* Eqs. (C1)–(C3): the three-band term $\chi_e$ and the mixed term $\chi_i$ including the T-odd $-\Delta^a_{mn}g^{bc}_{nm}/(2\omega_{mn}^2(\omega_{mn}-\omega))$ | `shgr/shgi/shga_abc.dat`, pm/V |
 
 The field convention is $E(t) = E(\omega)e^{-i\omega t} + E(-\omega)e^{i\omega t}$; for $b = c$ the
 shift current is Eq. (2) of Wang *et al.* and twice the $\sigma^{abb}$ of Sipe and Shkrebtii (2000),
-who write $J = 2\sigma EE^*$. The injection coefficients follow Eq. (9) of Chen *et al.*
+who write $J = 2\sigma EE^*$. Every response carries the charge as $e^3$ with $e > 0$ (the
+convention the molecule mode pins against a finite field, below); for electrons all signs flip.
+The circular injection had the electron sign until November 2026; the Fermi golden rule
+($dJ/dt = q\sum\Delta_{cv}\,2\pi|qE\cdot r_{cv}|^2\delta$ for the charge $q$) and the
+density-matrix engine (`density_matrix_response`, section "Metals") fixed it, and both now agree with
+all four formulas. The injection coefficients follow Eq. (9) of Chen *et al.*
 ($\eta_C \propto$ the two-band Berry curvature $\Omega^{bc}_{mn} = -2\mathrm{Im}[r^b_{mn}r^c_{nm}]$,
 $\eta_M \propto$ the quantum metric $g^{bc}_{mn} = \mathrm{Re}[r^b_{mn}r^c_{nm}]$). The SI prefactors
 per unit of the dimensionless k-sums are $\pi e^2/\hbar = 7.647\times10^{-4}$ A/V²,
@@ -126,6 +161,16 @@ leave the shift, injection and SHG weights of a k-point unchanged ($10^{-10}$), 
 x-supercell on a 4³ grid reproduces the primitive cell on an (8, 4, 4) grid, doublets included.
 GaAs (norm-conserving, k-resolved test at a Λ point): the SHG histograms went from 2.5 % / 18 %
 differences between symmetry-equivalent k to $10^{-10}$.
+**Cluster kernels of the δ-function terms (13 November 2026).** The covariant cluster terms of the shift and
+injection currents are traces over cluster pairs, so every member pair of a cluster pair must carry the same
+δ kernel and occupation factor. Members differ in energy by up to `degeneracy_tol` (10 meV against η = 50 meV), and
+the per-pair kernels broke the trace: the forbidden circular injection of GaAs (T_d is not gyrotropic) was
+$1.1$–$1.7\times10^7$ A V⁻² s⁻¹, 10⁻³ of an allowed scale, with and without spin–orbit. `accumulate_shift_and_injection`
+now replaces the transition energy, the occupation difference and the δ width of cluster pairs by their means over
+the cluster pair (`cluster_average_operator`, $P X P$; the identity on non-degenerate bands). GaAs 40³: circular
+injection 10⁻⁵ (zero), shift current changed by 3·10⁻⁴ (scalar) / 2.6 % (spin–orbit, more clusters) of its extremum,
+SHG untouched (histogram path). Test: `test_cluster_terms_keep_the_circular_injection_antisymmetric`
+($\eta_C^{abc} = -\eta_C^{acb}$ to 10⁻¹⁰ of the natural scale with a wide tolerance; the per-pair kernels fail it).
 
 **Position dipoles (since October 28 2026).** `position_dipoles=True` (or `'intra-atomic'`) goes
 beyond the tight-binding position operator: with the Löwdin dipoles $d(\mathbf k)$ of
@@ -213,9 +258,9 @@ nm µA/V² and sheet susceptibilities in pm²/V.
 Literature targets for the examples: GaAs $\chi_{xyz}$ with a 0.86 eV scissor (Wang *et al.* 2017,
 Fig. 4; Rashkeev *et al.* 1998; Nastos *et al.* 2005) and $\sigma_{xyz}$ (Ibañez-Azpiroz *et al.* 2018);
 monolayer GeS shift current and SHG (Wang *et al.* 2017, Fig. 1; Rangel *et al.* 2017); the
-Rice–Mele shift vector (Fregoso, Morimoto and Moore 2017). The examples are in
-`examples/nlo_examples/` (`Graphene`, `GaAs`, `GeS`; the graphene one is also in `examples/TBmodel_examples/Graphene_nonlinear`),
-with the report `examples/nlo_examples/REPORT.md`.
+Rice–Mele shift vector (Fregoso, Morimoto and Moore 2017). The examples are the cases
+`examples/cases/graphene_nlo_model`, `gaas_nlo` and `ges_nlo` (and the models `mos2_nlo_model`,
+`kane_mele_nlo_model`), with the report `examples/cases/gaas_nlo/REPORT.md`.
 
 ## Performance
 
@@ -241,7 +286,7 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   does **not** change this. The cause is the Löwdin re-orthonormalisation of the PAW
   pseudo-wavefunctions in the internal projections (the raw projections and the `projwfc.x`
   ones obey the symmetry to 1e-10; the symmetry expansion, the Wigner–Seitz images, the band
-  selection and the Hamiltonian construction were ruled out, see `examples/nlo_examples/REPORT.md`
+  selection and the Hamiltonian construction were ruled out, see `examples/cases/gaas_nlo/REPORT.md`
   §3.2). With the PseudoDojo norm-conserving Ga/As set the same basis gives projections
   symmetric to 1e-10, H(k) symmetric to 3e-9 eV at every grid point, an interpolation spread of
   3e-8 meV and a real-space Hamiltonian 15 times better localised. **Fixed** (October 2026):
@@ -271,7 +316,7 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   current code (augmented projections, covariant kernels) and the position dipoles the static
   $\chi_{xyz}$ is 178 pm/V (norm-conserving) / 156 pm/V (PAW) against 103 / 120 pm/V with the
   tight-binding position operator: the dipoles close most of the gap to the measured 166–180 pm/V
-  (`examples/nlo_examples/REPORT.md` §3.2).
+  (`examples/cases/gaas_nlo/REPORT.md` §3.2).
 - **GeS numbers** (monolayer, nosym 18×18×1 nscf, 200² dense grid, η = 0.05 eV, PBE gap 1.68 eV,
   sheet units with the 18 Å cell): shift-current peaks $\sigma^{xxx} = 46$, $\sigma^{xyy} = 48$,
   $\sigma^{yxy} = 26$ nm µA/V² (about 75 µA/V² for a 0.6 nm layer, the order of magnitude of Rangel
@@ -284,15 +329,440 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   (18 bands above 0.95) is the working one. Cost at nawf = 62, 40³ k, three components with
   SHG: 15 min on 8 ranks.
 - **Memory.** The δ-kernels are evaluated in pair blocks of about 16 MB and the three-band SHG
-  term in k-chunks of about 2·10⁶ triples; the Wigner–Seitz images of `HRs` (nws × nawf² complex)
+  term in slabs of the third band index of about 2·10⁶ elements (`(k, n, n, s)` arrays, so the memory is bounded for any basis size; one k-point with many ranks deals the slabs over the ranks); the Wigner–Seitz images of `HRs` (nws × nawf² complex)
   are the largest resident array (300 MB for GaAs at 16³).
+
+## Molecules (Γ-only, many atoms) — 3 November 2026
+
+A molecule in a vacuum box is a Γ-only run: `K_POINTS automatic 1 1 1 0 0 0` or `K_POINTS gamma`
+(the gamma-tricks half G-sphere is unfolded by `read_QE_wfc` / `unfold_gamma_sphere`,
+`c(-G) = c(G)^*`, so every projection, Löwdin step and real-space route sees the full sphere; the
+`gamma` run is about 2.5× cheaper in QE and gives identical PAOFLOW results, PNA test below).
+`HRs` is then `1 × 1 × 1` and `bloch_terms_from_HRs` with the pair-resolved Wigner–Seitz images
+reduces every operator to its minimum image: `v = i[H, x]` and `w = -[x, [x, H]]` with `x = diag(τ)`,
+hence `r_nm = x_nm` (the dipole matrix) and `r_{nm;a} = -i x_nm (x_nn - x_mm)` (the dipole shift of
+the transition).  Consequences, all verified on a tight-binding chain
+(`tests/unit/response/test_nonlinear_optics_molecule.py`, study in
+`Workspace/PAOFLOW/validation/nlo_molecules/`):
+
+- **SHG = first hyperpolarizability.** With the code's convention (`P = ε0 χ E E`, charge as `e^3`
+  with `e > 0`) the Taylor hyperpolarizability of the electrons is `β_T = -2 ε0 Ω χ`, i.e.
+  `β_T [a.u.] = -2 × 0.040919 Ω[bohr^3] χ[pm/V]`: the factor 2 is the B/T convention, the sign the
+  `(-e)^3` of electrons.  Finite-field `∂²μ/∂F²` of the same model: ratio −0.500 ± 0.01 on every
+  component; real-time propagation of the density matrix: same sign, real part within 0.5 % at low ω.
+- **Shift "current" = dμ/dt.** `σ^{abb}(ω) = C_shift norm Σ 2|x^b_nm|² (x^a_nn - x^a_mm) δ(ω_nm - ω)`
+  exactly (1e-10): the absorption rate times the dipole shift of the transition.  Per molecule
+  (`σ Ω`, A m³ V⁻²) it is the rate of change of the dipole under illumination, not a DC current.
+- **Injection vanishes** (no band velocities: `v_nn = 0` exactly); what is printed is rounding
+  noise scaled by the large SI prefactor.
+- **Minimum image.** Exact only when every coupled pair lies inside the Wigner–Seitz cell of the
+  box; outputs are invariant under wrapping the coordinates and `Ω χ` is independent of the box
+  (1e-14 / 1e-10).  Measured hopping range of a Löwdin PAO Hamiltonian (Pb, 18 orbitals): 1.3 eV at
+  3.6 Å, 0.17 eV at 7 Å, 0.02 eV at 10 Å, < 5 meV beyond 12 Å, so the box must satisfy
+  `L/2 > min(D, ~12 Å)` with `D` the molecular extent; `molecule=True` warns on pairs coupling
+  across more than 0.45 of a lattice vector (`molecular_nlo.minimum_image_violations`).
+- **Degeneracies** are handled by the covariant clusters: D3h selection rules hold to 1e-16 on a
+  degenerate triangle.
+
+`PAOFLOW.nonlinear_optics(..., molecule=True)` forces `nk = (1, 1, 1)`, all 27 components and no
+injection, and writes `beta_T_r_<abc>` / `beta_T_i_<abc>` (a.u.), `beta_molecular.dat`
+(`β_∥ = (1/5) Σ (β_iij + β_iji + β_jii) μ̂_j`, EFISH), `beta_hrs.dat`
+(`sqrt(<β_ZZZ²> + <β_XZZ²>)`, exact SO(3) quadrature, any tensor) and `beta_depolarization.dat`,
+plus `dmudt_<abc>` (`PAOFLOW.response.molecular_nlo`).  The ground-state dipole used for `β_∥` is
+the tight-binding electronic one (`-g_s Σ_occ <x>`, orbital centres), without the nuclear term.
+
+**Memory and parallelism.** The three-band SHG term runs in slabs of the third band index
+(`(k, n, n, s)` arrays, about 2·10⁶ elements each, `band_slab`), so the memory no longer grows as
+`n³`: measured on a random molecular model, peak RSS 0.86 GB at `n = 480` (the old k-chunking
+would have needed ~14 GB) and the time is `∝ n³` with 209 s at `n = 480` on 8 threads.  With one
+k-point and several MPI ranks the pair blocks of the δ-kernels and the band slabs are dealt over
+the ranks (`work=(rank, size)`), summed by the existing `Allreduce`.  `_ws_lattice_pairs` and
+`enumerate_pao_pairs` are vectorised over the column sites / images (identical output), and the
+Bloch sums of the position-dipole tables are assembled site pair by site pair from the stored
+blocks instead of a padded `(npairs, nawf, nawf)` stack (`_grouped_blocks`; the stack was 406 GB
+for a 54-atom cell with 864 orbitals), which matters for `nat` of tens to thousands.
+
+**Spin.** `nspin = 2` occupies each channel with its own electron count
+(`channel_electron_counts`: bands at or below `E_F` on the coarse grid, or `nelec=(n_0, n_1)`);
+before, `nelec` bands were occupied in both channels.
+
+**PNA (p-nitroaniline, 16 atoms, 20 × 16 × 12 Å, PBE, 70 Ry, 160 standard orbitals, 29 bands with
+projectability > 0.95, PAO levels within 6 meV of DFT):** `χ_xxx(0) = 11.60 pm/V` in the box,
+`β_T,xxx = -24.6·10³ a.u.`, `β_∥ = 13.1·10³ a.u.`, `β_HRS = 9.8·10³ a.u.`, depolarisation ratio 3.9;
+with the intra-atomic position dipoles `β_∥ = 14.9·10³`; with a 1.5 eV scissor to the vapour charge-transfer band
+`β_∥(1064 nm) = 8.2–9.4·10³` against the gas-phase EFISH 1072 ± 44 a.u. (Kaatz et al. 1998): the uncoupled response
+is 8× the measurement, 4–5× the coupled TDDFT/CC values (local-field screening missing). The ground-state dipole that
+orients β_∥ includes the ionic charges (`ionic_charges_from_data`), 3.9 D here (Mulliken-type, vs 6.2–6.9 D).  Independent-particle PBE values are an
+order of magnitude above the coupled/experimental PNA numbers (~1·10³ a.u. static), as expected
+without local-field screening and with the KS gap; the gamma-tricks and full-sphere saves agree to
+1e-5.
+
+## Coupled (local-field) response of molecules — `response/coupled_response.py`, 3–4 November 2026
+
+The molecule mode above is an independent-particle response: the electrons see the external field
+only. The induced Hartree (and exchange-correlation) potential of the response density screens the
+field inside a polar molecule, and for push-pull chromophores that screening reduces $\beta$ by a
+factor 3–5 (coupled versus uncoupled Kohn–Sham response). `nonlinear_optics(molecule=True,
+coupling=...)` solves that coupled response for the SHG hyperpolarizability next to the
+independent-particle spectrum.
+
+**Formalism** (atomic units, one closed-shell channel, orthonormal PAO basis, Gamma Hamiltonian $H$,
+dipole operator $D_a$, $P = g_s\sum_{\rm occ}|n\rangle\langle n|$, electron charge $-1$ so the
+coupling is $+\mathbf E\cdot\mathbf D$ and $\mu_a = -\mathrm{Tr}[PD_a] + \sum_I Z_IR_{I,a}$):
+
+- first order at $\omega$, in the eigenbasis of $H$,
+  $\delta P_{nm} = \dfrac{f_m - f_n}{\omega - \epsilon_n + \epsilon_m + i\eta}\,[V^{\rm ext} + K[\delta P]]_{nm}$,
+  a linear system on the particle-hole blocks solved with GMRES (`first_order_density`);
+- second order for $E_b(\omega_1)$, $E_c(\omega_2)$ (`second_order_density`): the particle-hole
+  blocks obey
+  $(\omega_\sigma - \epsilon_n + \epsilon_m + i\eta)\,\delta P^{(2)}_{nm} = S_{nm} + (f_m - f_n)[K[\delta P^{(2)}] + \tfrac12 V_g]_{nm}$
+  with $S = \tfrac12([V^{(1)}_b,\delta P_c] + [V^{(1)}_c,\delta P_b])$, $V^{(1)} = V^{\rm ext} + K[\delta P]$
+  and $V_g = g_{xc}\,\delta n_b\delta n_c$; the occupied-occupied and empty-empty blocks follow from
+  $P^2 = g_sP$, $\delta P^{(2)}_{oo} = -\tfrac12(\delta P_b\delta P_c + \delta P_c\delta P_b)_{oo}/g_s$
+  (plus sign for the empty block), and their induced potential enters the particle-hole source;
+- $\beta^T_{abc}(-\omega_\sigma;\omega_1,\omega_2) = -2\,\mathrm{Tr}[\delta P^{(2)}_{bc}D_a]$ (Taylor
+  convention, the same as the molecule mode), $\alpha_{ab}(\omega) = -\mathrm{Tr}[\delta P_bD_a]$;
+- the static finite-field route (`finite_field_density`, Pulay-DIIS self-consistency of
+  $H + \mathbf E\cdot\mathbf D + K[P - P_0]$; `static_hyperpolarizability`, Richardson-extrapolated
+  central differences with a step set by the gap, `auto_field_step`) is the reference that the
+  frequency-domain solve reproduces at $\omega\to 0$.
+
+**Kernels** (`CoulombKernel.apply(dP) -> dV`, `second_order(dP1, dP2) -> g_xc dn1 dn2`):
+
+| `coupling` | kernel | needs |
+|---|---|---|
+| `'none'` | independent particles (regression target) | — |
+| `'monopole'` | Hartree of the atomic monopoles, $\delta V_{\mu\mu} = \sum_B\gamma_{A(\mu)B}\delta q_B$, Ohno–Klopman $\gamma_{AB} = [R^2 + (2/(U_A+U_B))^2]^{-1/2}$, $\gamma_{AA} = U_A$ (DFTB `mio` Hubbard values, `coupling_options['hubbard_u']` overrides) | basis records (atom labels, centres) |
+| `'hartree'` | density $\delta n(\mathbf r) = \sum\phi_\mu\phi_\nu\delta P_{\nu\mu}$ on the FFT grid, Poisson solve with the spherical cutoff $v(G) = 4\pi[1-\cos(GR_c)]/G^2$, $R_c$ half the shortest cell height (exact open boundaries for a molecule inside that sphere), projection $\int\phi_\mu\delta V\phi_\nu$ | internal PAO basis (`pao_orbitals_on_grid`, grid twice the wavefunction sphere; `grid='coarse'` halves it) |
+| `'hartree+alda'` | plus $f_{xc}$, $g_{xc}$ of the PW92 LDA at the PAO ground-state density (`lda_kernels`, zero below $10^{-8}$) | same |
+
+Outputs: `beta_coupled.dat` (photon energy, $\beta_\parallel$ real and imaginary, $\beta_{\rm HRS}$,
+depolarisation ratio, independent-particle and coupled), `beta_coupled_static.dat` (finite-field
+values), the `'coupled'` key of the result (`alpha`, `beta_T` `(ne, 3, 3, 3)`, static tensors) and a
+one-line summary. The IPA of the same solver is always computed and printed with the ratio.
+
+**Validation** (`tests/unit/response/test_coupled_response.py`): with the kernel off the solver
+reproduces `nonlinear_optical_spectra` (static to $3\cdot10^{-3}$, off-resonant real parts to 1 %;
+the imaginary parts differ by a few per cent because the sum over states carries $\eta$ in the
+resonant denominators only); frequency-domain $\omega\to 0$ equals the finite-field tensor with and
+without the kernel ($2\cdot10^{-3}$); Kleinman symmetry of the static tensor; origin independence;
+monopole screening lowers $\alpha$ and $|\beta|$; PW92 against the tabulated $\epsilon_c$; the grid
+Poisson solve against the analytic Gaussian repulsion integrals of `utils/pyints` ($2\cdot10^{-3}$).
+
+**PNA** (`Workspace/PAOFLOW/validation/nlo_molecules/coupled/REPORT.md`): the response space decides the
+result. With all 160 PAO states the complement that the projectability filter puts at the shift energy (131 states,
+degenerate 5.06 eV above the HOMO, full dipole strength) carries two thirds of the independent-particle $\alpha$
+and over-screens $\beta$: Hartree + ALDA gives $\beta_\parallel(1064\,{\rm nm})$ = 396 a.u. Restricted to the 29
+projected states (`coupling_options={'active': 'projected'}`), no scissor, Hartree + ALDA gives
+$\beta_\parallel(0)$ = 808 and $\beta_\parallel(1064\,{\rm nm})$ = 1 172 a.u. against the measured 1 072 ± 44,
+TDDFT 978 / 2 127 and coupled cluster 1 579–1 797, where the independent-particle values are 18 376 / 94 959;
+$\alpha_{\rm iso}$ of that space is 42 a.u. (the three empty states hold the charge transfer, not the atomic
+polarizability; measured ~100). Keeping the complement but at a physical energy (the molecule-mode default
+`complement_shift=30.0` eV above the HOMO, applied to the Gamma Hamiltonian by `reshift_complement`; `None` keeps
+the automatic shift) gives $\alpha_{\rm iso}$ = 101–121 and $\beta_\parallel(1064\,{\rm nm})$ = 1 026–1 077 with the full space, and the
+coupled charge-transfer resonance falls at 4.10 eV against the 4.2 eV vapour band (no scissor: the kernel supplies
+the blue shift that the 1.5 eV scissor of the independent-particle comparison mimicked). The nscf Kohn–Sham states
+themselves (no PAO basis) give the same $\beta$ within 15 % and a slowly converging $\alpha$. Those numbers used
+the generic all-electron `BASIS/` tables; on the proper pseudo-atomic basis of the run's pseudopotentials
+(`paoflow-genbasis-ps` → `BASIS_PS`, occupied projectabilities > 0.993, projected block 26 + 4 states) the
+default gives $\beta_\parallel(1064\,{\rm nm})$ = 1 068 (standard) / 1 105 (extended) and $\alpha_{\rm iso}$ = 88 / 114.
+**The molecule setting is `BASIS_PS` + `configuration='extended'` + `coupling='hartree+alda'`** (decision of
+Nov 4 2026), coarse grid (the default), threshold 0.95 (0.9 changes the result by 1–2 %). The monopole kernel
+gives 1 853 / 3 296. Coarse grid (`grid='coarse'`) equals the full grid to three digits at an eighth of the memory.
+The solves are distributed over the MPI ranks and a thread pool (`coupling_options['n_threads']`).
+
+**Limits.** One closed-shell channel (`nspin = 2` raises); scalar-relativistic bases; the grid route
+needs the internal PAO basis and holds the `(N_r × n)` orbital table in memory (PNA: 160 orbitals on
+202 × 152 × 118, 4.6 GB real); exchange (hybrid) kernels and the periodic (crystal, slab) version are
+the open items of the plan.
+
+## Coupled linear response of crystals: local fields, ALDA, long-range kernels — `response/coupled_crystal.py`, 4 November 2026
+
+The crystal version of the coupled response (plan: `PAOFLOW.wiki/PAOFLOW_NLO_crystal_local_fields_plan.md`).
+For a crystal $\chi$ is the response to the macroscopic field, so the cell-averaged ($\mathbf G = 0$) Hartree
+term is excluded by definition and the kernel adds the microscopic local fields ($\mathbf G \neq 0$ Hartree),
+the adiabatic-LDA term and, optionally, a long-range term $-\alpha/q^2$ (LRC of Botti et al. 2004 with a given
+$\alpha$, or the head of the RPA-bootstrap kernel of Sharma et al. 2011 / Rigamonti et al. 2015,
+`bootstrap_alpha`), the part of the exact kernel that carries the electron–hole attraction and that ALDA lacks.
+
+**Formalism.** Per $\mathbf k$ of a dense grid, in the band basis of the interpolated PAO Hamiltonian
+(`build_crystal_channel` mirrors the IPA driver: Bloch terms from `HRs`, `band_geometry` with the position
+dipoles and the scissor-consistent velocities), for a unit field $E_b$:
+
+$$\delta P_{nm}(\mathbf k) = \frac{f_m - f_n}{\omega - \epsilon_n + \epsilon_m + i\eta}
+\Big[r^b + \delta V_{\rm Hxc}[\delta n] + \alpha\,\mathbf P\cdot\mathbf r\Big]_{nm}(\mathbf k),\qquad
+\delta n(\mathbf r) = \sum_{\mathbf k} w_{\mathbf k}\sum_{\mu\nu}u^*_{\mu\mathbf k}u_{\nu\mathbf k}\,\delta P^{\rm orb}_{\nu\mu}(\mathbf k),$$
+
+$\delta V_H(\mathbf G \neq 0) = 4\pi\,\delta n(\mathbf G)/G^2$, $\delta V_H(0) = 0$, plus $f_{xc}[n_0]\,\delta n$,
+$\mathbf P = -\Omega^{-1}\sum_{\mathbf k}w_{\mathbf k}\,\mathrm{Tr}[\delta P\,\mathbf r]$ and
+$\epsilon_{M,ab} = \delta_{ab} + 4\pi P_a/E_b$. The periodic parts $u_{\mu\mathbf k}$ are the Löwdin PAO Bloch
+functions at every $\mathbf k$ of the dense grid (`periodic_parts_at_k`: the plane-wave sphere of `ecutwfc`
+around $\mathbf k$, `calc_atwfc_k`, `ortho_atwfc_k`), stored as sphere coefficients and transformed to the cell
+grid on the fly (`sphere_to_grid`, the wavefunction grid by default, `grid_factor=2` alias-free). The unknown of
+the GMRES solve is the pair $(\delta n, \mathbf P)$ on every rank (identical after the Allreduce of the density
+and the polarization), the matrix-vector product is one pass over the local k-points (`first_order_crystal`);
+`dielectric_function_crystal` returns $\epsilon_M(\omega)$ for the requested field directions. The ALDA kernel
+uses the ground-state density of the occupied interpolated states (`CrystalChannel.ground_state_density`);
+`read_charge_density` reads QE's `charge-density.dat` for the basis-completeness diagnostic.
+
+**Tests** (`tests/unit/response/test_coupled_crystal.py`): periodic Hartree of a cosine density (analytic,
+$\mathbf G = 0$ dropped), Miller sphere and sphere-to-grid normalisation, kernel off against the sum over states
+of a synthetic channel ($10^{-10}$), the long-range kernel against its closed form
+$\chi = (1 - \alpha\chi_0)^{-1}\chi_0$ ($10^{-7}$), neutrality of the Hartree-screened density and the density
+sum rule.
+
+**GaAs** (`Workspace/PAOFLOW/validation/nonlinear_optics_GaAs/paoflow_nc/coupled/`): pseudo-atomic extended
+basis (54 orbitals; valence projectabilities 0.999–1.000 against 0.85–0.88 on the all-electron set), position
+dipoles, scissor 0.86 eV; the independent-particle baseline on that basis gives $|\chi_{xyz}(0)|$ = 180.9 pm/V at
+40³ (178.4 on the all-electron set, 166–180 measured). $\epsilon_{xx}(0)$ at 24³: independent particles 11.36,
+local fields 10.38 (−8.6 %), + ALDA 10.81 (+4.2 % on top, −4.8 % net; measured $\epsilon_\infty$ 10.9); the levels
+are nested (each adds one kernel term; the long-range variants are alternatives on the Hartree + ALDA base): at 16³
+the long-range term adds +8.8 % on top of Hartree + ALDA with the bootstrap head ($\alpha$ = 0.108) or +17.8 % with
+the LRC $\alpha$ = 0.2 (+3.7 % / +12.3 % against the independent particles) and sharpens the E1/E2 region; kernel off
+reproduces `dielectric_tensor` to 0.2 %, and the PAO ground-state density matches the DFT charge density to 0.5 %
+(`read_charge_density`, the check that caught a units error in the first periodic parts). Full tables in the report
+of that folder.
+
+**Second order** (`second_order_crystal`, `shg_crystal`): the length-gauge equation of motion (Aversa and
+Sipe 1995) with the dressed first-order potentials $V_b = r^b + \delta V_b$,
+
+$$(2\omega - \omega'_{nm} + i\eta)\,\delta P^{(2)}_{nm} = S_{nm} + (f_m - f_n)\big[K[\delta P^{(2)}] + \tfrac12 V_g\big]_{nm},\qquad
+S = \tfrac12\big([V_b,\delta P_c] + [V_c,\delta P_b]\big) + \tfrac{i}{2}\big[(\delta P_c)_{;b} + (\delta P_b)_{;c}\big],$$
+
+where the covariant derivative of the first-order density,
+$(\delta P_c)_{nm;b} = (f_m - f_n)[(V_c)_{nm;b}/d_{nm} + (v^b_{\rm intra}V_c - V_cv^b_{\rm intra})_{nm}/d_{nm}^2]$ with
+$d_{nm} = \omega - \omega'_{nm} + i\eta$, is the intraband term of the length gauge: for $r^c$ it uses the
+generalized derivative $r^c_{;b}$ and the U(N)-covariant $\Delta$ term of `band_geometry`, for the induced
+potential the orbital-basis derivative by central differences of its projection on the periodic parts at
+$\mathbf k \pm h\hat e_b$ plus $i[r^b, \delta V]$ (`band_potential_derivative`). The occupied-occupied and
+empty-empty blocks follow from $P^2 = g_sP$ and their induced potential enters the source; the particle-hole
+blocks are solved as at first order (GMRES on the induced density and polarization at $2\omega$). The
+polarization is the current, $P^{(2)}_a = J_a/(-2i\omega)$ with the scissor-consistent interband velocity
+$i\omega'_{mn}r^a_{mn}$ and the diagonal band velocities; $\chi^{(2)}$ in pm/V with the sign convention of
+`nonlinear_optical_spectra` (24.43 pm/V per atomic unit). **Regression** (`test_coupled_crystal.py`, a
+two-orbital polar crystal on 6³): with the kernel off the real parts of five components agree with
+`nonlinear_optical_spectra` to 0.05–0.4 % off resonance and 1–4 % near the $2\omega$ resonance; the
+imaginary parts differ off resonance by the damping placement (a few per cent of the dominant component).
+
+**Long-range kernel at second order** (fixed 4 November 2026, after the GaAs decomposition showed the
+bootstrap and LRC terms *reducing* $\chi^{(2)}$ by exactly the inverse of the linear enhancement). The
+macroscopic field $\alpha\mathbf P$ dresses each first-order leg completely: the potential
+$\alpha\,\mathbf P^{(1)}_b\cdot\mathbf r$, its covariant derivative $\alpha\,P^{(1)}_{b,d}\,r^d_{;a}$, and the
+*direction* of the derivative of the other leg, which is the effective field
+$\hat e_b + \alpha\mathbf P^{(1)}_b$ (the intraband velocity and $r_{;}$ are contracted with it), so that the
+source is the kernel-off bilinear form evaluated at the two effective fields. The $2\omega$ feedback uses the
+macroscopic polarization of the current, $J/(-2i\omega)$ with the physical sign (the first-order solve's
+convention; the e > 0 output convention of `nonlinear_optical_spectra` is applied only to the result): the
+population (diagonal) part of $\delta P^{(2)}$ carries an intraband polarization that
+${\rm Tr}[r_{\rm inter}\delta P^{(2)}]$ misses (a third of the total on the test crystal). With an LRC-only
+kernel the result must be $\chi^{(2)}_{\rm LRC} = F(2\omega)\,\chi^{(2)}_0\,F(\omega)F(\omega)$ with
+$F = (1 - \alpha\chi^{(1)})^{-1}$: the dressing reproduces $\chi^{(2)}_0 F F$ to $10^{-13}$ and the feedback
+$F(2\omega)\chi^{(2)}_0$ to $0.4\,\%$ at $\eta = 5$ meV ($4\,\%$ at 50 meV, linear in $\eta$ and independent of the
+grid: the current- and position-based polarizations of the $2\omega$ response differ by $O(\eta)$),
+`test_long_range_kernel_second_order_closed_form`. Grid-only kernels (Hartree, ALDA) do not use the
+macroscopic polarization and were not affected; an LRC-only kernel (`grid_active` False) skips the density.
+
+**Limits.** One spin channel, norm-conserving; full k-grid (the induced density breaks the point group); the
+bootstrap is the head-only form (one number), the full $\mathbf G\mathbf G'$ body is not implemented.
+
+**From a script: `PAOFLOW.coupled_optical_response`** (6 November 2026). After `pao_hamiltonian()` with the
+internal projections: `coupled_optical_response(nk, kernels='all', dielectric=True, emin, emax, ne,
+second_harmonic=False, shg_energies=(0.1,), components=('xyz',), directions='x', eta=0.1, scissor=0.0,
+lrc_alpha=0.2, bootstrap_alpha=None, position_dipoles=True, cache_gb=8.0, low_memory=False)` builds the channel
+(`build_crystal_channel`) and runs `coupled_optical_spectra`, which computes every requested level of
+`CRYSTAL_KERNELS` in turn (`kernel_for_level`; the bootstrap α from the static independent-particle and local-field
+constants unless given). Files (`write_coupled_outputs`), with the level tags `ipa`, `lf`, `alda`, `lrc`,
+`boot`: `cepsr_<tag>_<bb>.dat`, `cepsi_<tag>_<bb>.dat`, `cshgr/cshgi/cshga_<tag>_<abc>.dat` and the summary
+`coupled_response.dat` (static constants, α of the long-range levels). It raises for spin-polarised or
+spin-orbit runs and without the internal projections, and warns for ultrasoft/PAW pseudopotentials (the periodic
+parts lack the augmentation charge). GaAs at 32³ (the GaAs report, section 4): ε∞ 11.28 / 10.30 / 10.73 / 11.71
+(bootstrap) / 12.51 (LRC) against the measured 10.9, and the E₁ and E₂ peak heights within 2 and 4 % at the
+bootstrap level, with E₁ and E₂ 0.1 and 0.3 eV too high at every level (rigid scissor). Tests:
+`test_coupled_optical_spectra_nested_levels_and_bootstrap`, `test_coupled_optical_spectra_second_order_and_errors`.
+
+## Metals: the density-matrix engine — `response/density_matrix_response.py`, 12 November 2026
+
+The convergent insulator form (Chen *et al.*) uses sum rules over filled bands; with a Fermi surface the
+occupations depend on k and the intraband position acts on them. `density_matrix_spectra` therefore solves the
+length-gauge equations of motion order by order without those rearrangements. With the perturbation
+$e\mathbf E\cdot\mathbf r$ and $\mathbf r = \mathbf r_i + \mathbf r_e$, $[r_e^c, O]_{nm} = i O_{nm;c}$,
+
+$$(\hbar\Omega + i\Gamma_{nm} - \varepsilon_{nm})\rho^{(N)}_{nm} = eE^c\big([r_i^c,\rho^{(N-1)}]_{nm} + i\rho^{(N-1)}_{nm;c}\big),\qquad \rho^{(0)}_{nm} = f_n\delta_{nm},$$
+
+$\Gamma = \eta$ between degenerate clusters (dephasing), $\Gamma = \gamma = \hbar/\tau$ inside them (intraband
+relaxation). First order: $\rho^{(1)}_{\rm inter} = -f_{nm}r^b_{nm}/(\omega - \varepsilon_{nm} + i\eta)$ and
+$\rho^{(1)}_{\rm intra} = i\,\partial_bf/(\omega + i\gamma)$, $\partial_b f = f'(\varepsilon)v^b_{\rm intra}$ (covariant).
+The current $J^a = e\,\mathrm{Tr}[v^a\rho^{(2)}]$ (charge $+e$, the module convention) is evaluated with the
+k-derivative moved onto the vertex,
+
+$$\sum_k\mathrm{Tr}[v^a\rho^{(2)}] = \sum_k\sum_{nm}\Big(A_{nm}[r_i^c,\rho^{(1)}]_{nm} - i(A_{;c})_{nm}\rho^{(1)}_{nm}\Big),\quad A_{nm} = v^a_{mn}g_{nm},\ g_{nm} = \frac{1}{\hbar\Omega - \varepsilon_{nm} + i\Gamma_{nm}},$$
+
+$(A_{;c})_{nm} = (v^a_{;c})_{mn}g_{nm} + v^a_{mn}(\Delta^c_{nm} - i\partial_c\Gamma_{nm})g_{nm}^2$, with
+$v^a_{;c} = i[v^c_{\rm intra}, r^a] + i\varepsilon'\circ r^a_{;c} + M^{ac}$ and the intra-cluster inverse mass
+$M^{ac} = (w^{ac} + [G^c, v^a])_{\rm intra}$, $G^c_{pq} = v^c_{pq}/\omega_{pq}$ (`band_curvature`). Why by parts: the
+direct form has the resonant double pole $1/(\omega - \varepsilon_{nm} + i\eta)^2$ and $f''$; on a uniform grid both
+converge slowly (the T-even shift current of strained gapped graphene was off by 10–40 % at 400², η = 0.02, and is
+within 1–3 % by parts). The double pole now sits on $g$, off resonance at zero frequency.
+
+**Channels** (by the first-order density they come from; they sum to the total):
+
+| channel | origin | zero-frequency limit |
+|---|---|---|
+| `fermi_sea_inter` | $\rho^{(1)}_{\rm inter}$ → interband elements of $\rho^{(2)}$ | shift current (+ the T-odd gyration), $\tau^0$ |
+| `fermi_sea_intra` | $\rho^{(1)}_{\rm inter}$ → populations | injection, $\tau\,(\eta_M\,\mathrm{Re} + \ldots)$, $\propto\tau$ |
+| `fermi_surface_mixed` | $\rho^{(1)}_{\rm intra}$ through $[r_i^c,\cdot]$ | Berry-curvature dipole $iD^{b,ac}/(\omega+i\gamma) + iD^{c,ab}/(-\omega+i\gamma)$, $\propto\tau$ |
+| `fermi_surface_drude` | $\rho^{(1)}_{\rm intra}$ through the intraband vertex | nonlinear Drude $2e^3\int f\,\partial_a\partial_b\partial_c\varepsilon/(\omega^2+\gamma^2)$, $\propto\tau^2$ |
+
+with $D^{b,ac} = \int[dk]\sum_n \partial_b f_n\,\Omega^{ac}_n$. **Outputs and conventions.** SHG:
+$\chi = P/(\epsilon_0E^2)$, $P = J/(-2i\omega)$, both field orders averaged. Photocurrent:
+$J^a = \sigma^{abc}E^b(\omega)E^c(-\omega)$, i.e. $J = \mathrm{Re}\,\sigma\,\mathrm{Re}[E^bE^{c*}] -
+\mathrm{Im}\,\sigma\,\mathrm{Im}[E^bE^{c*}]$; for an insulator $\mathrm{Re}\,\sigma_{\rm sea,inter} \to$ `shift`,
+$\sigma_{\rm sea,intra} \to \tau(\eta_M - i\eta_C)$. Without `relaxation_time`, $\gamma = \eta$ (one damping, as the
+insulator formulas). A callable τ(ε) (eV → fs) enters γ and, through central differences, $\partial_c\Gamma$.
+The Fermi-surface channels need a smooth occupation: Fermi–Dirac at `temperature` (they vanish with steps). Scissor:
+insulators only. `PAOFLOW.nonlinear_optics(fermi_surface='auto')` switches the engine on for a metallic channel
+(`channel_band_edges`: bands `nocc`, `nocc+1` overlap on the coarse grid, or a non-integer filling); there the SHG
+and `pcr_/pci_` come from it, and `shift_`/`inject*_` keep the δ-function formulas with metallic occupations
+(Pauli blocking). Insulators are unchanged with `'auto'`.
+
+**Zero-frequency populations: real and virtual** (12 November 2026; plan wiki `PAOFLOW_NLO_gyration_plan.md`).
+Summed over the two field orders, the populations driven by the interband first-order density are pure
+Lorentzians (the principal parts cancel exactly):
+
+$$\rho^{(2)}_{nn'} = -\sum_m f_{nm}\big[r^c_{nm}r^b_{mn'}K(\hbar\omega-\varepsilon_{mn}) + r^b_{nm}r^c_{mn'}K(\hbar\omega+\varepsilon_{mn})\big],\qquad K_{\rm relax}(x) = \frac{2\eta/\gamma}{x^2+\eta^2}.$$
+
+Near resonance $K_{\rm relax}$ is the golden rule times $\tau$ (injection); away from it, $2\eta/\gamma x^2$ is the
+off-resonant **dressing** of the Floquet state times $2\eta/\gamma$. The coherences carry an off-resonant
+principal-value term (mostly T-even; for two bands $\propto\sum_{\mathbf k}\partial_a\Omega^{bc}\,\mathcal P/(\omega-\omega_{cv})$)
+that the dressing cancels, after an integration by parts over k, only for $\gamma = 2\eta$, the value of adiabatic
+switching (second order grows as $e^{2\eta t}$). This is the exact statement that a clean insulator driven below its
+gap carries no DC current ($J_{\rm DC} = \sum_{\mathbf k}\partial_{\mathbf k}\varepsilon^F$ over full Floquet bands).
+Relaxing every population with $\gamma$ (the first implementation, `populations='relaxation'`) leaves a spurious
+current $D(\eta/\gamma - \tfrac12)$ that grows with τ in a clean metal. The default (`populations='hybrid'`) splits
+the kernel,
+
+$$K_{\rm hybrid}(x) = \frac{2\pi}{\gamma}\,\delta(x) + \mathrm{Re}\frac{1}{(x+i\eta)^2},$$
+
+real (absorbed) populations with the physical $\tau = \hbar/\gamma$ and a short-tailed Gaussian $\delta$ (width η, or
+the Yates widths of `adaptive_smearing`, the injection kernel of `nonlinear_optical_spectra`), virtual ones with the
+adiabatic weight $\mathrm{Re}[(x+i\eta)^{-2}] = (x^2-\eta^2)/(x^2+\eta^2)^2 \to 1/x^2$, which carries no δ weight. A
+Lorentzian δ would count its own $\eta/x^2$ tails twice. The pair formula with $K_{\rm relax}$ reproduces the
+commutator path to $10^{-15}$; SHG populations ($\hbar\Omega = 2\hbar\omega$) keep $1/(\hbar\Omega+i\gamma)$.
+
+**Damping and the clean limit (derivation and references, plan G1–G2).** With fields switched on adiabatically
+($\mathbf E \propto e^{\eta t}$) every first-order denominator carries $+i\eta$ and every second-order one $+2i\eta$,
+coherences and populations alike. In that scheme the principal-value term of the coherences and the virtual
+populations are one integration by parts apart: the virtual kernel is
+$\mathrm{Re}[(x+i\eta)^{-2}] = -\partial_x\mathrm{Re}[(x+i\eta)^{-1}]$, the derivative of the regularized principal
+value $\mathcal P_\eta(1/x)$ of the coherences, and $\partial_{k_a}$ of the detuning is the velocity difference, so
+$\sum_{\mathbf k}$ of the two cancels exactly for any η (no δ′ remainder: the regularization is common to both); what
+remains is the resonant part — shift, gyration, injection and magnetic injection, the four δ-function terms of
+`nonlinear_optical_spectra` — plus, in metals, the Fermi-surface channels. For two bands the circular coherence term
+is $\propto\sum_{\mathbf k}\partial_a\Omega^{bc}\,\mathcal P_\eta/(\omega-\omega_{cv})$ and the dressing term
+$\propto\sum_{\mathbf k}\Omega^{bc}\Delta^a_{cv}\,\mathrm{Re}[(\omega-\omega_{cv}+i\eta)^{-2}]$. Below the gap nothing is
+resonant and the DC current vanishes, the Floquet statement ($J_{\rm DC} = \sum_{\mathbf k}\partial_{\mathbf k}\varepsilon^F$
+over full bands; Belinicher *et al.*'s "no DC photocurrent in the transparent region in the steady state"). The
+`'hybrid'` populations keep this cancellation and replace only the resonant part's $1/2\eta$ by the physical τ.
+
+References built for it (tests and `Workspace/PAOFLOW/validation/nlo_metals/gyration/`):
+
+- **Velocity gauge (Kubo)**, `tests/unit/response/_velocity_gauge.py`: $H(\mathbf k+\boldsymbol\kappa)$, vertices
+  $h^a, h^{ab}, h^{abc}$ of the atomic gauge (Peierls is exact for the orbital-centre position operator),
+  $\kappa(\omega) = iE/(\omega+i\eta)$, second order at $\Omega + 2i\eta$, evaluated from the density-matrix expansion.
+  With the engine set to the same adiabatic prescription (`populations='relaxation'` with γ = 2η,
+  `coherence_damping=2`) the zero-frequency photocurrents of the strained Haldane model (shift, gyration, both
+  injections, below and above the gap) agree to $10^{-13}$–$10^{-14}$ on the same grid: exact gauge equivalence. The
+  SHG agrees once both are converged (the velocity gauge cancels $1/\omega^2$ terms only through k-space sum rules and
+  converges slowly: 28 % apart at 8³, $<10^{-4}$ from 16³ at 0.6 eV; 0.7 % at 32³ at the 2ω resonance, 1.2 eV).
+- **Real time** (`realtime_reference.py`): exact 2×2 propagation of every k under $H(\mathbf k+\boldsymbol\kappa(t))$, no
+  damping, sin² ramp, ±E₀ averaged (cancels the odd orders), helicity-odd and φ-odd combinations. Below the gap
+  (0.30 eV) the DC current goes to zero as the ramp becomes adiabatic; at $\hbar\omega$ = gap/2 the two-photon band edge
+  leaves non-perturbative transients. The gyration current at 350² is 0.268 / 0.0806 µA/V² at 1.0 / 1.4 eV, within 1–2.5 % of the converged `shiftm` (0.262 / 0.081, η = 5 meV, 2400²); the δ-function and engine values on the same 350² grid at η = 10 meV are under-resolved there (0.031 at 1.4 eV).
+
+**`coherence_damping` (decided 13 November 2026: default 1, exposed in `PAOFLOW.nonlinear_optics`).** The
+second-order interband coherences of the engine are damped with `coherence_damping` × η. With 1 (default) every
+coherence has one dephasing rate η, so two-photon (2ω) resonances have width η, the convention of the insulator path
+(`shg_from_histograms`: $E_b - 2\omega - i\eta$) and of the convergent form of Chen *et al.*; with 2 (adiabatic
+switching, every second-order denominator $+2i\eta$) the engine equals the velocity-gauge Kubo response at any η,
+SHG included. The two agree as η → 0. At η = 50 meV (`Workspace/PAOFLOW/validation/nlo_metals/gyration/
+coherence_damping_study.py`): gapped graphene SHG within a few % away from resonances and ~27 % lower at the 2ω
+resonance with 2 (twice the linewidth); metals: DC above the interband threshold 1–2 %, the quantized circular
+photocurrent of the Weyl model < 1 %, the Pauli-blocked tails of doped graphene (small) 30–50 %, the low-energy SHG
+of the Weyl semimetal 35–94 % (all 2ω resonances of the cones). Default 1 keeps the switch between the insulator and
+metal paths (`fermi_surface='auto'`) continuous; use 2 to compare with Kubo or adiabatic theory, and report
+η-convergence for resonance-dominated features. The value is in `attr['nonlinear_optics']['coherence_damping']`
+(None on the insulator path). The damping of the SHG populations (γ or 2η) changes the SHG by 0.1 %.
+
+**Metals: what the relaxation model decides.** In a metal the in-gap rectification is not fixed by the clean limit
+alone. Onishi, Watanabe, Morimoto and Nagaosa (PRB 106, 235110, 2022) show that the sub-gap photocurrent of P- and
+T-broken metals is finite when the relaxation rate goes to zero before the output frequency (the clean-limit
+perturbation theory, dressed bands with bare occupations) and vanishes in the steady state when scattering relaxes
+toward the dressed equilibrium (the Ward identity); Shi, Matsyshyn, Song and Sodemann (PRB 107, 125151, 2023) find
+finite in-gap rectification with Boltzmann relaxation toward the bare $f_0$, the Berry-dipole part being
+dissipationless. The engine relaxes real carriers toward the bare $f_0$ (Boltzmann, as Sodemann–Fu and Shi *et al.*)
+and lets the virtual dressing follow the field adiabatically; its T-odd Fermi-surface currents of metals inside the
+optical gap carry that model dependence.
+
+**Validation** (`tests/unit/response/test_density_matrix_response.py`, 11 tests, ~45 s; figures and numbers in
+`Workspace/PAOFLOW/validation/nlo_metals/REPORT.md`):
+
+| check | model | agreement |
+|---|---|---|
+| static χ⁽²⁾ vs the finite-field $\frac{1}{2\epsilon_0}\partial^2P/\partial E^2$ (charge $+e$) | molecule in a box, Γ | 2·10⁻³ (the Chen form too) |
+| SHG below the gap vs the Chen form | T-broken random hopping, 10³, η = 2 meV | 1 % of the tensor scale; Im differs by O(η/ω) ($P = J/(-2i\omega)$ vs $\omega+i\eta$) |
+| DC shift and injection | strained gapped graphene (T-even) 400², Haldane 200² | Re σ = `shift` 3 %; with τ = 300 fs ≠ ħ/η, −Im σ (all channels) = τη_C 0.5 %, Re σ_pop = τη_M 1 % (Gaussian δ) |
+| no DC current below the gap (Floquet) | strained Haldane, 0.46–0.70 eV | hybrid: ∝ η, independent of τ; relaxation: finite, ∝ 1/γ |
+| gyration current (T-odd circular) | strained Haldane, φ-odd part | `shiftm` to 0.5 % (800², 10 meV) |
+| quantized CPGE trace (de Juan *et al.*) | two-band Weyl model, 60³, adaptive widths | 0.995 / 0.999 at 0.5 / 0.7 eV (was 1.14 / 0.93 with the relaxation kernel) |
+| velocity-gauge Kubo, same adiabatic damping | strained Haldane, 150² and 300² | zero-frequency photocurrents to 10⁻¹³; SHG when converged (16³–32³) |
+| nonlinear Drude closed form | one T-broken band (odd 2nd harmonics) | 0.5 %, τ² |
+| Berry-curvature dipole | doped strained gapped graphene (T-even), 300² | 0.2 %, ∝ τ, Drude = 0 |
+| τ(ε) wiring, guards, orchestrator files and plots | | |
+
+**Reading the injection rate from the engine.** $-\mathrm{Im}\,\sigma/\tau$ of the `fermi_sea_intra` channel equals the
+injection rate (the δ-function `injectc`) only for $\omega\tau\gg1$. At finite τ the channel also holds the
+τ-independent virtual populations of the hybrid kernel. In a metal the Fermi-surface channels add τ-independent
+circular terms as well: the Berry-curvature dipole $\tau/(1-i\omega\tau)\to1/\omega$, which is even under time
+reversal and allowed. In the trace these terms appear divided by τ.
+
+- CoSi (80³, 10 K): the population channel gives 4.055 quanta at τ = 2000 fs, the δ-function value. At τ = 20 fs
+  (ωτ = 1.5–7.6) it gives 3.65.
+- Two-band Weyl model with its node at $E_F$: within 1 % at τ ≥ 200 fs, 6–8 % off at 20 fs, scaling as 1/τ.
+
+Use a long τ, or the δ-function path, for the rate. The time-odd Drude residual grows as τ², so at long τ it dominates
+the total circular current until k is converged (`validation/nlo_metals/CoSi/REPORT.md`, 15 Nov 2026).
+
+The physical models of these tables (gapped and strained graphene, the Haldane model, the Rice–Mele chain, the
+two-band Weyl semimetal, the single bands) are library models, `PAOFLOW.models.models` (`honeycomb_model`,
+`rice_mele_model`, `weyl_model`, `single_band_model`, each a `HoppingModel`), also reachable as
+`PAOFLOW(model={'label': 'honeycomb', ...})`; the tests wrap them with exact atomic-gauge operators
+(`tests/unit/response/_nonlinear_models.py`). The random-hopping model and the molecule in a box stay test fixtures.
+Two insulating models join them: `kane_mele_model` (spinful honeycomb with staggered potential, intrinsic and
+Rashba spin-orbit coupling; the band-edge shift current changes sign at the quantum-spin-Hall / trivial transition
+λ_v = 3√3 λ_SO) and `tmd_model` (three-band d-orbital model of MoS₂, WS₂, MoSe₂, WSe₂, MoTe₂, WTe₂, G.-B. Liu
+et al., Phys. Rev. B 88, 085433 (2013), with on-site λ L_z S_z), label `'tmd'`. A `HoppingModel` can also be
+passed directly, `PAOFLOW(model=kane_mele_model(...))`. Every model reachable through `PAOFLOW(model=...)` stores
+h(i → j, **R**) at the `HRs` index −**R** with one centre per orbital and spin-orbitals in block order (all orbitals up,
+then all down). The PythTB route follows the same conventions since 13 Nov 2026: before, it stored +**R** and gave
+spinful models the centres (A, A, B, B), so its shift currents broke the point-group selection rules and
+time-reversal-odd PythTB bands came out at −**k**. The hard-coded `'Kane_Mele'` label is now `kane_mele_model`.
+
+The circular injection of `nonlinear_optical_spectra` had the electron sign; the Fermi golden rule and this engine
+fixed it (section *Conventions*). The first comparison of the gyration current set the interband channel alone
+against `shiftm` and found a mismatch: that channel also holds the T-even off-resonant term above, which only the full
+response (and the φ-odd combination) removes. **Closed:** the velocity-gauge (Kubo) and damping-free real-time
+references (plan G2) and the full derivation (G1), 12 November; the coherence damping, 13 November (default η,
+option 2η, above). **Cost:** every photon energy re-solves the k-block
+($O(n^3)$ products per component and field order); fine for DC spectra of tens of energies, a spectral (pole)
+representation is the next optimisation. Position dipoles enter through $r$, $r_{;a}$; the intra-cluster dipole
+connection is not in $M$ (matters only for degenerate clusters with dipoles).
 
 ## Not implemented (follow-ups)
 
-Position dipoles beyond the tight-binding approximation (`position_dipoles.py` in $r$ and $r_{;a}$),
-the U(N)-covariant derivative for degenerate bands and the symmetry reduction of the k-grid are planned
-in [nonlinear-optics-phase2-plan.md](nonlinear-optics-phase2-plan.md); k-resolved integrand maps and a
-Rust kernel for the post-`eigh` algebra come after.
+The $\mathbf G\mathbf G'$ body of the bootstrap kernel and frequency-dependent kernels; spin-orbit coupling and
+ultrasoft/PAW augmentation in the coupled crystal response; a k-dependent quasiparticle correction instead of the
+rigid scissor (it places E₁ and E₂ of GaAs 0.1 and 0.3 eV too high); k-resolved integrand maps; a Rust kernel for
+the post-`eigh` algebra.
 
 ## References
 
@@ -302,3 +772,4 @@ Rust kernel for the post-`eigh` algebra come after.
 - C. Aversa and J. E. Sipe, Phys. Rev. B **52**, 14636 (1995); S. N. Rashkeev, W. R. L. Lambrecht and B. Segall, Phys. Rev. B **57**, 3905 (1998); F. Nastos, B. Olejnik, K. Schwarz and J. E. Sipe, Phys. Rev. B **72**, 045223 (2005).
 - J. Ibañez-Azpiroz, S. S. Tsirkin and I. Souza, *Ab initio calculation of the shift photocurrent by Wannier interpolation*, Phys. Rev. B **97**, 245143 (2018).
 - B. M. Fregoso, T. Morimoto and J. E. Moore, Phys. Rev. B **96**, 075421 (2017); T. Rangel *et al.*, Phys. Rev. Lett. **119**, 067402 (2017).
+- Metals: I. Sodemann and L. Fu, Phys. Rev. Lett. **115**, 216806 (2015) (Berry-curvature dipole); F. de Juan, A. G. Grushin, T. Morimoto and J. E. Moore, Nat. Commun. **8**, 15995 (2017) (quantized CPGE); D. E. Parker, T. Morimoto, J. Orenstein and J. E. Moore, Phys. Rev. B **99**, 045121 (2019); D. J. Passos *et al.*, Phys. Rev. B **97**, 235446 (2018); H. Watanabe and Y. Yanase, Phys. Rev. X **11**, 011001 (2021); T. Holder, D. Kaplan and B. Yan, Phys. Rev. Research **2**, 033100 (2020).

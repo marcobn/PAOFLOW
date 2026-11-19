@@ -139,7 +139,8 @@ def test_check_direct_dielectric_gap_warns_only_on_mismatch():
     )
 
     omega = np.arange(0.01, 10.0 + 1e-9, 0.01)
-    eps2 = np.where(omega >= 2.5, 20.0, 0.0)
+    # thresholds between grid points: omega >= 2.5 includes 2.5 or not with the round-off of arange
+    eps2 = np.where(omega >= 2.495, 20.0, 0.0)
     assert dielectric_onset_ev(omega, eps2) == pytest.approx(2.5)
     assert np.isnan(dielectric_onset_ev(omega, np.zeros_like(omega)))
     with warnings.catch_warnings():
@@ -151,7 +152,7 @@ def test_check_direct_dielectric_gap_warns_only_on_mismatch():
     with pytest.warns(UserWarning, match='onset 3.20 eV vs the direct gap 2.55 eV'):
         out = check_direct_dielectric_gap(
             {'direct_gap_dft_ev': 2.55},
-            (omega, np.ones_like(omega), np.where(omega >= 3.2, 20.0, 0.0)),
+            (omega, np.ones_like(omega), np.where(omega >= 3.195, 20.0, 0.0)),
         )
     assert not out['consistent']
     # the components are averaged; ``direct_gap_ev`` is the fallback key

@@ -6,6 +6,8 @@ import numpy as np
 from mpi4py import MPI
 from numpy.typing import NDArray
 
+from ..utils.constants import AU
+
 
 def uniform_grid_from_kpoints(
     kpoints_cart: NDArray[np.float64], b_vectors: NDArray[np.float64]
@@ -66,6 +68,40 @@ def uniform_grid_from_kpoints(
     return (n1, n2, n3), tuple(shift)
 
 
+def qe_occupations(output_elem: ET.Element) -> tuple[str | None, float | None]:
+    """Smearing type and width of the ``pw.x`` run (``data-file-schema.xml``).
+
+    Parameters
+    ----------
+    output_elem : xml.etree.ElementTree.Element
+        The ``output`` element of ``data-file-schema.xml``.
+
+    Returns
+    -------
+    smearing : str or None
+        QE's name of the smearing (``'gaussian'``, ``'mp'``, ``'mv'``, ``'fd'``), as accepted by
+        the ``smearing`` keyword of ``pw.x``; ``None`` for fixed occupations.
+    degauss_ry : float or None
+        The width in Ry (``degauss`` of the ``pw.x`` input); ``None`` for fixed occupations.
+
+    Notes
+    -----
+    The schema stores the width in Hartree (``<smearing degauss="0.01">mp</smearing>`` for
+    ``degauss = 0.02`` Ry), so
+
+    .. math::
+
+        \\sigma_{\\mathrm{Ry}} = 2\\,\\sigma_{\\mathrm{Ha}}.
+
+    For Fermi-Dirac occupations (``'fd'``) the width is the electronic temperature
+    :math:`k_B T`.
+    """
+    smearing = output_elem.find('band_structure/smearing')
+    if smearing is None:
+        return None, None
+    return smearing.text.strip(), 2.0 * float(smearing.attrib['degauss'])
+
+
 def parse_qe_data_file_schema(data_controller, fname):
     """Parse the ``data-file-schema.xml`` file produced by Quantum ESPRESSO (≥7.0).
 
@@ -91,7 +127,7 @@ def parse_qe_data_file_schema(data_controller, fname):
 
     verbose = attr['verbose']
 
-    Hart2eV = 2 * 13.60569193
+    Hart2eV = AU  # CODATA 2018, as QE 7.x writes the save
 
     tree = ET.parse(fname)
     root = tree.getroot()
@@ -135,10 +171,8 @@ def parse_qe_data_file_schema(data_controller, fname):
         atoms.append(latoms[i].attrib['name'].strip())
         tau[i, :] = np.array(latoms[i].text.split(), dtype=float)
 
-    insulator = True
-    smearing = elem.find('band_structure/smearing')
-    if smearing is not None:
-        insulator = False
+    qe_smearing, qe_degauss = qe_occupations(elem)
+    insulator = qe_smearing is None
 
     dftMag = False
     mag_elem = elem.find('magnetization/do_magnetization')
@@ -269,6 +303,8 @@ def parse_qe_data_file_schema(data_controller, fname):
         ('dftSO', dftSO),
         ('dftMAG', dftMag),
         ('insulator', insulator),
+        ('qe_smearing', qe_smearing),  # pw.x smearing type of the run (None: fixed occupations)
+        ('qe_degauss', qe_degauss),  # its width in Ry (not PAOFLOW's own 'degauss', in eV)
     ]
     for s, v in attrs:
         attr[s] = v
@@ -321,7 +357,7 @@ def parse_qe_data_file(data_controller, fpath, fname):
 
     verbose = attr['verbose']
 
-    Hart2eV = 2 * 13.60569193
+    Hart2eV = AU  # CODATA 2018, as QE 7.x writes the save
 
     tree = ET.parse(join(fpath, fname))
     root = tree.getroot()

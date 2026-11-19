@@ -1,7 +1,7 @@
 &control
     calculation = 'scf'
     prefix      = 'pt'
-    pseudo_dir = '../pseudos/'
+    pseudo_dir = '../../../../PSEUDOS/library/'
     outdir='./'
 /
 &system
@@ -25,7 +25,7 @@ CELL_PARAMETERS (angstrom)
         0.0000000000         2.8072099686         0.0000000000
         0.0000000000         0.0000000000        7.94000000000
 ATOMIC_SPECIES
-Pt  0.0 Pt.rel-pbe-n-kjpaw_psl.1.0.0.UPF
+Pt  0.0 Pt.rel-pz-n-rrkjus_psl.0.1.UPF
 ATOMIC_POSITIONS crystal
 Pt     0.000000000         0.000000000         0.000000000
 Pt     0.500000000         0.500000000         0.250000000

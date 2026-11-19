@@ -133,6 +133,7 @@ def do_pdos_adaptive(data_controller, emin, emax, ne):
     approach follows Yates *et al.*, Phys. Rev. B **75**, 195121 (2007).
     """
     from ..utils.smearing import gaussian, metpax
+    from .do_dos import resolvable_widths
 
     arrays = data_controller.data_arrays
     attributes = data_controller.data_attributes
@@ -153,12 +154,14 @@ def do_pdos_adaptive(data_controller, emin, emax, ne):
         v_kaux = np.real(np.abs(arrays['v_k'][:, :, :, ispin]) ** 2)
 
         taux = np.zeros((arrays['deltakp'].shape[0], nawf), dtype=float)
+        spacing = ene[1] - ene[0] if ne > 1 else 0.0
+        widths = resolvable_widths(arrays['deltakp'][:, :, ispin], spacing)
 
         for n in range(ne):
             if attributes['smearing'] == 'gauss':
-                taux = gaussian(ene[n], E_k, arrays['deltakp'][:, :, ispin])
+                taux = gaussian(ene[n], E_k, widths)
             elif attributes['smearing'] == 'm-p':
-                taux = metpax(ene[n], E_k, arrays['deltakp'][:, :, ispin])
+                taux = metpax(ene[n], E_k, widths)
             pdosaux[:, n] = np.einsum('kb,kmb->m', taux, v_kaux)
 
         pdos = np.zeros((nawf, ne), dtype=float) if rank == 0 else None

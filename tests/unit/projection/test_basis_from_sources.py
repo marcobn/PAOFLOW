@@ -10,7 +10,7 @@ import pytest
 from PAOFLOW.projection.do_atwfc_proj import build_basis_from_sources
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-UPF_DIR = REPO_ROOT / 'examples' / 'qe_examples' / 'example10'
+UPF_DIR = REPO_ROOT / 'PSEUDOS' / 'library'
 BASIS = REPO_ROOT / 'BASIS'
 
 

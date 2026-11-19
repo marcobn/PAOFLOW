@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from scipy.special import expit
 
 from PAOFLOW.transport.calculators.transmittance import interpolate_transmittance
 
@@ -27,8 +28,8 @@ def build_bias_grid(vmin: float, vmax: float, nv: int) -> np.ndarray:
 
 
 def fermi_dirac(E: np.ndarray, mu: float, sigma: float) -> np.ndarray:
-    """
-    Compute the Fermi-Dirac distribution.
+    r"""
+    Compute the Fermi-Dirac occupation.
 
     Parameters
     ----------
@@ -37,14 +38,23 @@ def fermi_dirac(E: np.ndarray, mu: float, sigma: float) -> np.ndarray:
     `mu` : float
         Chemical potential.
     `sigma` : float
-        Broadening factor (eV).
+        Broadening factor (eV), :math:`k_B T`.
 
     Returns
     -------
     `f` : ndarray
-        Fermi-Dirac values.
+        Fermi-Dirac occupations, 1 below `mu` and 0 above it.
+
+    Notes
+    -----
+    .. math::
+        f(E) = \frac{1}{e^{(E-\mu)/\sigma} + 1},
+
+    evaluated as the logistic function of :math:`-(E-\mu)/\sigma`, which does not overflow.
+    Before 15 November 2026 this returned :math:`1 - f`, and ``compute_current_vs_bias``
+    returned the current with the opposite sign.
     """
-    return 1.0 / (np.exp(-(E - mu) / sigma) + 1.0)
+    return expit(-(np.asarray(E) - mu) / sigma)
 
 
 def locate(xx: np.ndarray, x: float) -> int:
@@ -129,7 +139,12 @@ def compute_current_vs_bias(
     .. math::
         I(V) = \int dE \; T(E) [f(E - \mu_L) - f(E - \mu_R)]
 
-    The integration mesh is refined to resolve the energy window around the chemical potentials.
+    The integration mesh is refined to resolve the energy window around the chemical potentials, which
+    extends ``10 * sigma + 3 dE`` beyond them (clipped to the energy grid).
+
+    The current is positive for :math:`\mu_L > \mu_R` (electrons flow from left to right), in units
+    of :math:`2e/h` times eV, the same convention as ``Transport.compute_current_self_consistent``.
+    Before 15 November 2026 ``fermi_dirac`` returned :math:`1 - f` and the sign was the opposite.
     """
     ne = len(egrid)
     de_old = (egrid[-1] - egrid[0]) / (ne - 1)
@@ -139,9 +154,15 @@ def compute_current_vs_bias(
         muL_v = mu_L * V
         muR_v = mu_R * V
 
+        # The Fermi window extends several sigma beyond both chemical potentials: the former margin of
+        # sigma + 3 dE kept only tanh(sigma / (2 sigma)) of the current on fine energy grids (dE << sigma).
+        # The window is clipped to the energy grid instead of skipping the bias point.
+        margin = 10.0 * sigma + 3 * de_old
+        low = max(min(muL_v, muR_v) - margin, egrid[0])
+        high = min(max(muL_v, muR_v) + margin, egrid[-1] - 0.5 * de_old)
         try:
-            i_start = locate(egrid, min(muL_v, muR_v) - sigma - 3 * de_old)
-            i_end = locate(egrid, max(muL_v, muR_v) + sigma + 3 * de_old)
+            i_start = locate(egrid, low)
+            i_end = locate(egrid, high)
         except ValueError:
             continue
 

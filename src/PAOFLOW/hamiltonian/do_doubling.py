@@ -137,11 +137,14 @@ def doubling_HRs(data_controller):
 
         arry['HRs'] = HR_double
         HR_double = None
+        shift_bohr = arry['a_vectors'][0, :] * attr['alat']
+        centres = _current_orbital_centres(data_controller)
+        tau_scale = 1.0 if attr.get('tau_units', 'bohr') == 'alat' else attr['alat']
         arry['tau'] = np.append(
-            arry['tau'], arry['tau'][:, :] + arry['a_vectors'][0, :] * attr['alat'], axis=0
+            arry['tau'], arry['tau'][:, :] + arry['a_vectors'][0, :] * tau_scale, axis=0
         )
         arry['a_vectors'][0, :] = 2 * arry['a_vectors'][0, :]
-        doubling_attr_arry(data_controller)
+        doubling_attr_arry(data_controller, shift_bohr=shift_bohr, centres_bohr=centres)
 
     # This construction is doubling along the Y direction ny times
     for dy in range(ny):
@@ -193,11 +196,14 @@ def doubling_HRs(data_controller):
 
         arry['HRs'] = HR_double
         HR_double = None
+        shift_bohr = arry['a_vectors'][1, :] * attr['alat']
+        centres = _current_orbital_centres(data_controller)
+        tau_scale = 1.0 if attr.get('tau_units', 'bohr') == 'alat' else attr['alat']
         arry['tau'] = np.append(
-            arry['tau'], arry['tau'][:, :] + arry['a_vectors'][1, :] * attr['alat'], axis=0
+            arry['tau'], arry['tau'][:, :] + arry['a_vectors'][1, :] * tau_scale, axis=0
         )
         arry['a_vectors'][1, :] = 2 * arry['a_vectors'][1, :]
-        doubling_attr_arry(data_controller)
+        doubling_attr_arry(data_controller, shift_bohr=shift_bohr, centres_bohr=centres)
 
     # This construction is doubling along the Z direction nz times
     for dz in range(nz):
@@ -249,14 +255,28 @@ def doubling_HRs(data_controller):
 
         arry['HRs'] = HR_double
         HR_double = None
+        shift_bohr = arry['a_vectors'][2, :] * attr['alat']
+        centres = _current_orbital_centres(data_controller)
+        tau_scale = 1.0 if attr.get('tau_units', 'bohr') == 'alat' else attr['alat']
         arry['tau'] = np.append(
-            arry['tau'], arry['tau'][:, :] + arry['a_vectors'][2, :] * attr['alat'], axis=0
+            arry['tau'], arry['tau'][:, :] + arry['a_vectors'][2, :] * tau_scale, axis=0
         )
         arry['a_vectors'][2, :] = 2 * arry['a_vectors'][2, :]
-        doubling_attr_arry(data_controller)
+        doubling_attr_arry(data_controller, shift_bohr=shift_bohr, centres_bohr=centres)
 
 
-def doubling_attr_arry(data_controller):
+def _current_orbital_centres(data_controller) -> np.ndarray | None:
+    """Orbital centres (bohr) before a doubling step, or None when they cannot be assigned."""
+    from .orbital_centres import orbital_centres_bohr
+
+    arry, attr = data_controller.data_dicts()
+    try:
+        return orbital_centres_bohr(arry, attr)
+    except (KeyError, ValueError):
+        return None
+
+
+def doubling_attr_arry(data_controller, shift_bohr=None, centres_bohr=None):
     """Update all scalar and array metadata after a cell-doubling step.
 
     Parameters
@@ -265,7 +285,7 @@ def doubling_attr_arry(data_controller):
         Object providing ``data_arrays`` and ``data_attributes``.
         Attributes updated: ``omega``, ``nawf``, ``natoms`` (if present),
         ``nelec`` (if present), ``nbnds`` (if present), ``bnd`` (if present).
-        Arrays updated: ``naw``, ``sh``, ``nl``, ``atoms`` (if present),
+        Arrays updated: ``b_vectors``, ``naw``, ``sh``, ``nl``, ``atoms`` (if present),
         ``Sj`` (if present), ``Dnm`` (if present).
 
     Returns
@@ -275,12 +295,22 @@ def doubling_attr_arry(data_controller):
 
     Notes
     -----
-    Called automatically by :func:`doubling_HRs` after each doubling step.
-    The cell volume ``omega`` is recomputed from the updated ``a_vectors``
-    and ``alat``.  The spin operator ``Sj`` and the interatomic distance
-    matrix ``Dnm`` are extended block-diagonally if already present.
+    Called automatically by :func:`doubling_HRs` after each doubling step, with the Cartesian
+    shift of the replica, ``shift_bohr`` (the lattice vector before the step, bohr), and the
+    orbital centres before the step, ``centres_bohr``.
+    The cell volume ``omega`` and the reciprocal vectors ``b_vectors`` are recomputed from the
+    updated ``a_vectors`` and ``alat``.  The spin operator ``Sj`` is extended block-diagonally.
+    ``Dnm`` (:math:`\\tau_n - \\tau_m`, bohr) becomes ``[[D, D - shift], [D + shift, D]]``, the
+    orbital centres ``orbital_centres`` ``[c, c + shift]``. Until 16 Nov 2026 ``Dnm`` was extended
+    block-diagonally (zero between the replicas), which gave the band velocities of doubled cells
+    a spurious term, and the models' ``tau`` (alat units) was shifted in bohr.
     """
     arry, attr = data_controller.data_dicts()
+
+    # the reciprocal vectors of the doubled cell (2 pi / alat units, a_i . b_j = delta_ij); they
+    # were left at those of the original cell, which put every later k-point off its grid
+    if 'b_vectors' in arry:
+        arry['b_vectors'] = np.linalg.inv(np.asarray(arry['a_vectors'], dtype=float)).T
 
     # recalculating volume
     attr['omega'] = attr['alat'] ** 3 * arry['a_vectors'][0, :].dot(
@@ -316,13 +346,22 @@ def doubling_attr_arry(data_controller):
         Sj_double = None
 
     if 'Dnm' in arry:
-        Dnm_double = np.zeros((attr['nawf'], attr['nawf'], 3), dtype=float)
-        for i in range(3):
-            Dnm = arry['Dnm'][:, :, i]
-            Dnm_double[:, :, i] = la.block_diag(*[Dnm, Dnm])
+        Dnm = np.asarray(arry['Dnm'], dtype=float)
+        shift = np.zeros(3) if shift_bohr is None else np.asarray(shift_bohr, dtype=float)
+        # Dnm[n, m] = tau_n - tau_m: the replica (second block) sits at tau + shift
+        arry['Dnm'] = np.concatenate(
+            [
+                np.concatenate([Dnm, Dnm - shift], axis=1),
+                np.concatenate([Dnm + shift, Dnm], axis=1),
+            ],
+            axis=0,
+        )
 
-        arry['Dnm'] = Dnm_double
-        Dnm_double = None
+    if centres_bohr is not None and shift_bohr is not None:
+        centres = np.asarray(centres_bohr, dtype=float)
+        arry['orbital_centres'] = np.vstack(
+            [centres, centres + np.asarray(shift_bohr, dtype=float)]
+        )
 
     # If the SOC is included pertubative
     if 'adhoc_SO' in attr and (attr['adhoc_SO']):

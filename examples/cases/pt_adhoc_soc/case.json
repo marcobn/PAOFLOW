@@ -1,0 +1,92 @@
+{
+ "title": "Pt: spin Hall conductivity with ad hoc spin-orbit coupling",
+ "summary": "A scalar-relativistic Pt calculation; the spin-orbit coupling of the d shell (lambda_d = 0.553 eV) is added to the PAO Hamiltonian, then the spin Hall conductivity is computed as with a fully relativistic run.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "pt.save",
+  "prefix": "pt",
+  "projector": "internal",
+  "properties": [
+   "bands",
+   "dos",
+   "spin_Hall",
+   "topology",
+   "hamiltonian_changes"
+  ],
+  "ibrav": 2,
+  "nk": 1000,
+  "do_pdos": false,
+  "emin": -8.0,
+  "emax": 4.0,
+  "interpolate": true,
+  "nfft": 24,
+  "band_path": "gG-X-W-K-gG-L-U-W-L-K|U-X",
+  "high_sym": [
+   [
+    "gG",
+    "0",
+    "0",
+    "0"
+   ],
+   [
+    "X",
+    "0.5",
+    "0",
+    "0.5"
+   ],
+   [
+    "W",
+    "0.5",
+    "0.25",
+    "0.75"
+   ],
+   [
+    "K",
+    "0.375",
+    "0.375",
+    "0.75"
+   ],
+   [
+    "L",
+    "0.5",
+    "0.5",
+    "0.5"
+   ],
+   [
+    "U",
+    "0.625",
+    "0.25",
+    "0.625"
+   ]
+  ],
+  "adhoc_soc": [
+   [
+    "Pt",
+    "0.0",
+    "0.553"
+   ]
+  ],
+  "std_basis": "standard"
+ },
+ "pseudopotentials": [
+  "library/Pt.pz-n-rrkjus_psl.0.1_ld1-6.3.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "tags": [
+  "spin Hall",
+  "ad hoc spin-orbit",
+  "metal"
+ ],
+ "source": "examples/qe_examples/example07"
+}

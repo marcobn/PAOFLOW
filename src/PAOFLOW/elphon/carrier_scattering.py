@@ -346,6 +346,7 @@ def carrier_scattering_dense_q(
     comm=None,
     allow_missing_long_range: bool = False,
     coupling_source: str = 'epw',
+    phonon_at_q: Callable | None = None,
     save_dir: str | None = None,
     pseudo_dir: str | None = None,
     prefix: str | None = None,
@@ -356,6 +357,7 @@ def carrier_scattering_dense_q(
     cache_dir: str | None = None,
     cache_tag: str | None = None,
     long_range=None,
+    cell_dtype: str = 'complex128',
 ) -> dict:
     """State-resolved electron-phonon scattering rates on the dense PAO grid.
 
@@ -422,6 +424,10 @@ def carrier_scattering_dense_q(
         ``'epw'`` reads EPW's ``.epb`` files from ``coupling_dir``; ``'dfpt'`` computes the
         coarse vertex from the ``ph.x`` outputs in ``coupling_dir`` and the nscf
         wavefunctions of ``save_dir`` (:func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`).
+    phonon_at_q : callable, optional
+        ``q_cryst -> (freq_thz, z)`` of the dense-q phonons (e.g. the SSCHA matrices of
+        :meth:`~PAOFLOW.elphon.workflows.system.ElphonSystem.phonon_interpolator`); ``None``
+        builds it from the coupling source (the ``ph.x`` matrices).
     save_dir, pseudo_dir, prefix, basis, unfold, basis_shells, unfold_tol, cache_dir, cache_tag
         ``coupling_source='dfpt'`` and cache options of
         :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`.
@@ -430,6 +436,9 @@ def carrier_scattering_dense_q(
         restore it at every dense q (:class:`~PAOFLOW.elphon.long_range.LongRangeModel`); the
         phonons must be built with the same model (``phonon_at_q=None`` or
         :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.phonon_interp_from_dyn` with ``long_range``).
+    cell_dtype : {'complex128', 'complex64'}, optional
+        Storage precision of the node-shared vertex
+        (:func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`).
 
     Returns
     -------
@@ -482,13 +491,14 @@ def carrier_scattering_dense_q(
         raise ValueError('screening_eps_dft needs screening_eps (the target dielectric constant).')
 
     vertex = prepare_dense_vertex(
-        A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, None,
+        A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, phonon_at_q,
         source=coupling_source, masses_amu=masses_amu, tau_cryst=tau_cryst,
         orbital_positions=orbital_positions, comm=comm,
         allow_missing_long_range=allow_missing_long_range,
         long_range=long_range,
         save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
         basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
+        cell_dtype=cell_dtype,
     )  # fmt: skip
     g_ReRp, phonon_at_q = vertex['g_ReRp'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']

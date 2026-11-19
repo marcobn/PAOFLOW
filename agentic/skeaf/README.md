@@ -38,7 +38,7 @@ The calculation folders are only read: outputs go to `projects/<system>/`, and n
 
 ## Worked example
 
-`../../examples/qo_analysis_examples/NbSn2/` is the complete NbSn2 analysis on bundled data:
+`../../examples/cases/nbsn2_qo_analysis/` is the complete NbSn2 analysis on bundled data:
 - `main.py` (SOC) and `main_sr.py` (scalar-relativistic);
 - `expected_results.json`.
 

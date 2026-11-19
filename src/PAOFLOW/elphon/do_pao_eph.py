@@ -420,6 +420,34 @@ def phonon_modes_from_force_constants(
     return np.sign(w2) * np.sqrt(np.abs(w2)) * RY_TO_THZ, ev.T
 
 
+def gamma_zero_mask(freq_thz, gamma_modes='all', acoustic_thz=0.1):
+    """Modes of the Gamma point excluded from ``lambda``.
+
+    Parameters
+    ----------
+    freq_thz : array_like, shape (nmode,)
+        Phonon frequencies at Gamma.
+    gamma_modes : {'all', 'acoustic'}
+        ``'all'`` drops every mode at Gamma (the QE convention, which avoids the
+        acoustic ``1/omega`` blow-up at one q of the grid); ``'acoustic'`` drops
+        only the modes below ``acoustic_thz`` and keeps the optical ones (the
+        supercell route, where Gamma is the only q and carries every mode).
+    acoustic_thz : float
+        Threshold of the acoustic modes (THz).
+
+    Returns
+    -------
+    ndarray of bool, shape (nmode,)
+        ``True`` for the modes to zero.
+    """
+    freq_thz = np.asarray(freq_thz, dtype=float)
+    if gamma_modes == 'all':
+        return np.ones(freq_thz.shape, dtype=bool)
+    if gamma_modes == 'acoustic':
+        return np.abs(freq_thz) < float(acoustic_thz)
+    raise ValueError("gamma_modes must be 'all' or 'acoustic', got %r" % (gamma_modes,))
+
+
 def eliashberg_from_qe_coupling(
     A,
     HRs,
@@ -449,6 +477,8 @@ def eliashberg_from_qe_coupling(
     pseudo_dir=None,
     prefix=None,
     basis='auto',
+    gamma_modes='all',
+    gamma_acoustic_thz=0.1,
 ):
     """Isotropic Eliashberg properties from QE's coarse ``el_ph_mat`` (PAO route).
 
@@ -640,7 +670,8 @@ def eliashberg_from_qe_coupling(
         res = lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freq_thz)
         lam = res['lambda_qnu'][isig].copy()
         if np.linalg.norm(q_cryst - np.round(q_cryst)) < 1.0e-6:
-            lam[:] = 0.0  # zero the Gamma acoustic blow-up (QE convention)
+            # Gamma: every mode (QE convention) or only the acoustic ones.
+            lam[gamma_zero_mask(freq_thz, gamma_modes, gamma_acoustic_thz)] = 0.0
         lam_qv[iq] = lam
         om_qv[iq] = np.abs(freq_thz)
         dos_ef[iq] = res['dos_ef'][isig]

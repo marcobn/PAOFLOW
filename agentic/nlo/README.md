@@ -6,8 +6,8 @@ calculations, for any non-centrosymmetric crystal: the SHG susceptibility χ^{(2
 (bulk photovoltaic effect), the circular and magnetic injection currents, and the magnetic shift
 current of T-broken crystals, in 3D or as sheet responses of 2D crystals.
 
-The model is an output folder of `PAOFLOW.nonlinear_optics` (`examples/nlo_examples/<System>`
-layout: QE scf/nscf inputs, `main.py`, `output/`); the adapter `NonlinearModel` of
+The model is an output folder of `PAOFLOW.nonlinear_optics` (the layout of the cases
+`examples/cases/gaas_nlo`, `ges_nlo` and `graphene_nlo_model`: QE scf/nscf inputs, `main.py`, `output/`); the adapter `NonlinearModel` of
 `PAOFLOW.agentic.nlo` opens it read-only and gives spectra, tensors, static values, peaks,
 onsets, the point-group constraints (`symmetry`: forbidden components, relations between the
 allowed ones, the symmetry error of the run), the Kleinman check and the unit conversions
@@ -28,7 +28,7 @@ publication figures and a report. You steer it with the prompts.
 
 - **Install PAOFLOW with the extra:** `pip install -e ".[thermo_optics]"` (matplotlib, pillow,
   PyMuPDF for PDF sources).
-- **Have a finished calculation:** an `examples/nlo_examples/<System>`-like folder with the
+- **Have a finished calculation:** a folder like the case `examples/cases/gaas_nlo` with the
   `output*/` of `main.py` (`shift_`, `shiftm_`, `injectc_`, `injectm_`, `shgr_`, `shgi_`,
   `shga_<abc>.dat`), its `main.py` (grid, η, scissor, components, `twoD`) and the QE inputs
   (ultrasoft / PAW inputs need the augmented projections of October 2026 or later: `LESSONS_LEARNED.md` #2). The folder stays read-only.
@@ -61,7 +61,7 @@ Then paste `prompts/00_kickoff.md` with its `<...>` fields filled in. Continue w
 
 ## Worked example
 
-`examples/nlo_examples/REPORT.md` (in the repository): GaAs χ_xyz and σ_xyz against the
+`examples/cases/gaas_nlo/REPORT.md` (in the repository): GaAs χ_xyz and σ_xyz against the
 low-frequency SHG measurements and published calculations, monolayer GeS against the shift-current
 literature, gapped graphene against the D3h selection rules; the symmetry and tolerance diagnostics
 behind the defaults of `nonlinear_optics`.

@@ -92,11 +92,12 @@ def double_axis(sph: SparseHamiltonian, axis: int) -> SparseHamiltonian:
     contrast, allocates the full ``(2 nawf, 2 nawf, ...)`` array and pays
     four times the memory per doubling.
 
-    The intra-cell orbital position differences ``dnm``, which enter the
-    velocity operator, are kept on the diagonal blocks and zeroed on the
-    off-diagonal ones.  This follows the dense convention exactly: the
-    dense driver rebuilds ``Dnm`` for the doubled cell as a block-diagonal
-    repeat, which leaves cross-replica pairs at zero.
+    The intra-cell orbital position differences ``dnm`` (:math:`\\tau_n - \\tau_m`), which enter the
+    velocity operator, are those of the doubled cell, as in the dense driver: kept on the diagonal
+    blocks, shifted by the replica's offset (``a_axis * alat``) on the off-diagonal ones, ``-shift``
+    into the replica and ``+shift`` out of it. Until 16 Nov 2026 both the dense and this kernel set
+    the cross-replica pairs to zero, which gave the band velocities of doubled cells a spurious
+    band-diagonal term.
     """
     sph._require_bonds('double_axis')
     triples = sph.R_int[sph.ridx].astype(np.int64)
@@ -140,8 +141,9 @@ def double_axis(sph: SparseHamiltonian, axis: int) -> SparseHamiltonian:
     )
     new_triples = np.concatenate((t_diag, t_diag, t_ur, t_ll))
     vals = np.concatenate((sph.vals[even], sph.vals[even], sph.vals[odd], sph.vals[odd]))
-    zeros = np.zeros((int(odd.sum()), 3))
-    dnm = np.concatenate((sph.dnm[even], sph.dnm[even], zeros, zeros))
+    # replica at +a_axis (bohr): tau_n - tau_m gains -shift into the replica, +shift out of it
+    shift = sph.a_vectors[axis, :] * sph.alat
+    dnm = np.concatenate((sph.dnm[even], sph.dnm[even], sph.dnm[odd] - shift, sph.dnm[odd] + shift))
 
     a_vectors = sph.a_vectors.copy()
     a_vectors[axis, :] *= 2.0

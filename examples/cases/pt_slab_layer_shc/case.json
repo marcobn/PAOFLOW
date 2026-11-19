@@ -1,0 +1,64 @@
+{
+ "title": "Pt slab: layer-resolved spin Hall conductivity",
+ "summary": "A four-layer Pt slab: the spin Hall conductivity of the whole slab and of its first layer (projection of the spin current on the atoms of the layer).",
+ "workflow": "run",
+ "answers": {
+  "savedir": "pt.save",
+  "prefix": "pt",
+  "projector": "internal",
+  "properties": [
+   "bands",
+   "spin_Hall"
+  ],
+  "ibrav": 0,
+  "spin_orbit": true,
+  "nk": 100,
+  "band_path": "G-X-Y-G",
+  "high_sym": [
+   [
+    "G",
+    "0",
+    "0",
+    "0"
+   ],
+   [
+    "X",
+    "0.5",
+    "0",
+    "0"
+   ],
+   [
+    "Y",
+    "0",
+    "0.5",
+    "0"
+   ]
+  ],
+  "emin": -1.0,
+  "emax": 1.0,
+  "ne": 1001,
+  "interpolate": true,
+  "nfft": 10,
+  "shc_atoms": [
+   "1"
+  ],
+  "std_basis": "minimal"
+ },
+ "pseudopotentials": [
+  "library/Pt.rel-pz-n-rrkjus_psl.0.1.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  }
+ ],
+ "tags": [
+  "spin Hall",
+  "slab",
+  "layer projection",
+  "spin-orbit"
+ ],
+ "source": "examples/qe_examples/example14"
+}

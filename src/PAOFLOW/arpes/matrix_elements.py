@@ -2,9 +2,11 @@
 
 Notes
 -----
-For a state :math:`|n\\mathbf k\\rangle = \\sum_i c_{i,n\\mathbf k}|\\phi_i,\\mathbf k\\rangle`
-(cell-periodic gauge, :class:`~PAOFLOW.arpes.bloch.BlochHamiltonian`) and a photoelectron of
-momentum :math:`\\mathbf k_f`,
+For a state :math:`|n\\mathbf k\\rangle = \\sum_i c_{i,n\\mathbf k}|\\phi_i,\\mathbf k\\rangle` with the
+coefficients in chinook's **atomic gauge**, :math:`c_{i} = c^{\\rm cell}_{i}e^{-i\\mathbf k\\cdot\\boldsymbol\\tau_i}`
+(:class:`~PAOFLOW.arpes.bloch.BlochHamiltonian` gives the cell-periodic :math:`c^{\\rm cell}`;
+:func:`~PAOFLOW.arpes.experiment.simulate` converts them), and a photoelectron of momentum
+:math:`\\mathbf k_f`,
 
 .. math::
 
@@ -45,7 +47,9 @@ def dipole_matrix_elements(
     ----------
     basis : PhotoemissionBasis
     eigenvectors : ndarray ``(nk, nawf, nb)``, complex
-        Columns are the states (cell-periodic gauge).
+        Columns are the states in the atomic gauge, ``c^cell_i e^{-i k.tau_i}`` (the
+        eigenvectors of :class:`~PAOFLOW.arpes.bloch.BlochHamiltonian` times this phase; without
+        it the interference between the atoms of the cell is wrong).
     k_final : ndarray ``(nk, nb, 3)``
         Photoelectron momenta (1/Å); rows of zero norm are states that do not emit.
     radial : RadialIntegrals

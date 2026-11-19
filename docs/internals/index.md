@@ -19,6 +19,8 @@ overview
 :caption: Development Environment
 
 dev-environment
+mpi-large-collectives-plan
+containers-plan
 
 ```
 
@@ -64,15 +66,29 @@ release
 :caption: Major Subsystems
 
 internal-basis
+wigner-seitz-interpolation
 acbn0
 nonlocal-velocity
 position-dipoles
+kubo-bastin
 scattering-channels
+landauer-3d-and-hall
+magnetic-fields
+spin-response
+negf-finite-bias-plan
+negf-finite-bias
+negf-3d-electrostatics-plan
+negf-3d-electrostatics
 Electron-Phonon-Coupling
 nonlinear-optics
 nonlinear-optics-phase2-plan
 dfpt-coupling-port
 long-range-elphon-plan
+finite-difference-vertex
+special-displacement-plan
+special-displacement
+sscha-integration-plan
+sscha
 arpes-chinook-plan
 arpes
 elphon-examples-layout-plan
@@ -81,8 +97,11 @@ agentic-transport
 agentic-superconductivity
 agentic-arpes
 agentic-nlo
+agentic-sscha
+agentic-campaign
 sk-edtb
 cli-generators
+web-gui-plan
 
 ```
 

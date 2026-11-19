@@ -5,7 +5,7 @@ extension of :class:`PAOFLOW.inputs.read_upf.UPF` to expose Kleinman--Bylander
 beta projectors and their coupling matrix ``D_{ij}``.
 
 The tests use real norm-conserving UPF files that ship with the repository
-under ``examples/``.
+under ``PSEUDOS/library``.
 """
 
 from __future__ import annotations
@@ -18,17 +18,13 @@ import pytest
 from PAOFLOW.inputs.read_upf import UPF
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+PSEUDO_LIBRARY = REPO_ROOT / 'PSEUDOS' / 'library'
 
 # Representative UPF v2 NC pseudos available in-repo.
 UPFS = {
-    'Si_ONCV': REPO_ROOT
-    / 'examples'
-    / 'qe_examples'
-    / 'example16'
-    / 'Si_ONCV'
-    / 'Si_ONCV_PBE_sr.UPF',
-    'Si_TM': REPO_ROOT / 'examples' / 'acbn0_examples' / 'Si' / 'Si.pbe-tm-new-gipaw-v2.1.UPF',
-    'Mn': REPO_ROOT / 'examples' / 'acbn0_examples' / 'MnO' / 'Mn.upf',
+    'Si_ONCV': PSEUDO_LIBRARY / 'Si_ONCV_PBE_sr.UPF',
+    'Si_TM': PSEUDO_LIBRARY / 'Si.pbe-tm-new-gipaw-v2.1.UPF',
+    'Mn': PSEUDO_LIBRARY / 'Mn_ONCV_PBE_sr.upf',
 }
 
 

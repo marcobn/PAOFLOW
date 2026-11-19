@@ -2,7 +2,7 @@
     calculation='nscf'
     restart_mode='from_scratch',
     prefix='alp',
-   pseudo_dir = '../pseudos/',
+    pseudo_dir = '../../../../PSEUDOS/library/',
     outdir='./'
  /
  &system

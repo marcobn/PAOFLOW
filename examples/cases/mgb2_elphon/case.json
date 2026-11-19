@@ -1,0 +1,111 @@
+{
+ "title": "MgB2: two-gap superconductivity (anisotropic Migdal-Eliashberg) and the sigma-band kink",
+ "summary": "Electron-phonon system folder of MgB2: the coarse coupling from the ph.x dvscf files, interpolated in the PAO basis with pair-resolved Wigner-Seitz sums: alpha^2F, lambda and Tc, the Fermi-surface pair coupling, the isotropic and anisotropic Migdal-Eliashberg gaps (the sigma and pi gaps), the ARPES kink of the sigma band and the phonon dispersion.",
+ "workflow": "scripts",
+ "pseudopotentials": [
+  "nc-sr-05_pbe_standard_upf/Mg.upf",
+  "nc-sr-05_pbe_standard_upf/B.upf"
+ ],
+ "pseudo_dir": "qe",
+ "qe": [],
+ "steps": [
+  {
+   "label": "Quantum ESPRESSO: scf, ph.x, nscf",
+   "command": [
+    "bash",
+    "run_qe.sh"
+   ],
+   "cwd": "qe",
+   "ranks_env": "NP",
+   "qe_launch": true,
+   "note": "qe/phonon: scf and ph.x on the 3^3 q-grid (fildvscf); qe/nscf: the 6^3 nscf, started from a copy of the scf charge density (run_qe.sh does it); NP ranks, 8 by default"
+  },
+  {
+   "label": "Pseudo-atom basis",
+   "command": [
+    "paoflow-genbasis-ps",
+    "--pseudo-dir",
+    "qe",
+    "--out",
+    "BASIS_PS"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "note": "BASIS_PS: 40 orbitals (standard)"
+  },
+  {
+   "label": "Eliashberg function and Fermi-surface coupling",
+   "command": [
+    "python",
+    "eliashberg.py"
+   ],
+   "cwd": "superconductivity",
+   "mpi": true,
+   "note": "24^3 k = q with the Fermi-surface coupling (8 min on 20 ranks)"
+  },
+  {
+   "label": "Migdal-Eliashberg (isotropic)",
+   "command": [
+    "python",
+    "me.py"
+   ],
+   "cwd": "superconductivity",
+   "mpi": false,
+   "note": "serial, seconds"
+  },
+  {
+   "label": "Migdal-Eliashberg (anisotropic)",
+   "command": [
+    "python",
+    "me_aniso.py",
+    "--linear-temps",
+    "5",
+    "60",
+    "12"
+   ],
+   "cwd": "superconductivity",
+   "mpi": false,
+   "note": "serial, seconds"
+  },
+  {
+   "label": "Figures (gaps)",
+   "command": [
+    "python",
+    "plot_me.py"
+   ],
+   "cwd": "superconductivity",
+   "mpi": false,
+   "interactive": true,
+   "note": "or the Results tab"
+  },
+  {
+   "label": "ARPES kink of the sigma band",
+   "command": [
+    "python",
+    "arpes.py"
+   ],
+   "cwd": "arpes",
+   "mpi": false,
+   "note": "anisotropic self-energy from superconductivity/output/fs_coupling.npz"
+  },
+  {
+   "label": "Phonon dispersion",
+   "command": [
+    "python",
+    "phonons.py"
+   ],
+   "cwd": "phonons",
+   "mpi": false,
+   "note": "q2r + matdyn in PAOFLOW -> phonons/output"
+  }
+ ],
+ "tags": [
+  "electron-phonon",
+  "superconductivity",
+  "anisotropic Migdal-Eliashberg",
+  "two-gap",
+  "ARPES",
+  "metal"
+ ],
+ "source": "examples/elphon/MgB2"
+}

@@ -25,7 +25,7 @@ def do_topology(data_controller):
         Writes one or more output files to ``opath`` depending on the
         flags set in ``data_attributes``:
 
-        - ``Z2.dim`` — 2-D and 3-D Z2 topological invariants
+        - ``Z2.dim`` — 2-D and 3-D Z2 topological invariants, legacy (see Notes)
           (when ``nspin == 1`` and ``spin_Hall`` is ``True``).
         - Berry curvature, Chern numbers, or spin Hall conductivity files
           (controlled by ``Berry`` and ``spin_Hall`` flags).
@@ -40,6 +40,14 @@ def do_topology(data_controller):
     conductivity are evaluated via the Kubo-formula approach.  Momentum
     matrix elements are computed using the Fourier-differentiated Hamiltonian
     with the Dnm correction for non-primitive bases.
+
+    The Pfaffian Z2 written to ``Z2.dim`` is a legacy output, kept unchanged: it takes the
+    eigenvectors of each TRIM from independent diagonalizations, so the branch of
+    :math:`\\sqrt{\\det w}` is not fixed by a continuous gauge, and for ``adhoc_SO`` the
+    time-reversal matrix pairs the orbitals :math:`(i, i+1)` instead of PAOFLOW's block-ordered
+    spinors. Compute Z2 indices with Z2Pack (``mirror_chern_number``, whose fallback is the Z2
+    index over half the zone, or ``z2pack`` on the ``hamiltonian.dat`` of ``write_Hamiltonian``)
+    or from the Wilson-loop flows of ``berry_phase(eigvals=True)``.
     """
     from mpi4py import MPI
 
@@ -186,7 +194,9 @@ def do_topology(data_controller):
         dHRs = gather_full(dHRs, npool)
         if rank != 0:
             dHRs = np.zeros((nk1 * nk2 * nk3, nawf, nawf, nspin), dtype=complex)
-        comm.Bcast(dHRs)
+        from ..utils.communication import bcast_array
+
+        bcast_array(dHRs)  # in slices: nk x nawf^2 can exceed the MPI count
         dHRs = np.moveaxis(dHRs, 0, 2)
 
         # Compute dH(k)/dk on the path
@@ -246,7 +256,9 @@ def do_topology(data_controller):
                 d2HRs = gather_full(d2HRs, npool)
                 if rank != 0:
                     d2HRs = np.zeros((nk1 * nk2 * nk3, nawf, nawf, nspin), dtype=complex)
-                comm.Bcast(d2HRs)
+                from ..utils.communication import bcast_array
+
+                bcast_array(d2HRs)
                 d2HRs = np.moveaxis(d2HRs, 0, 2)
 
                 # Compute d2H(k)/dk*dkp on the path
@@ -405,7 +417,7 @@ def band_loop_H(HRaux, R, kq, nawf, nspin):
     .. math::
 
         H(\\mathbf{k}) = \\sum_{\\mathbf{R}}
-            H(\\mathbf{R})\\, e^{2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}
+            H(\\mathbf{R})\\, e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}
 
     via a tensor contraction between ``HRaux`` and the phase matrix.
     This is a local variant of the same function in ``do_bands.py``,
@@ -413,7 +425,7 @@ def band_loop_H(HRaux, R, kq, nawf, nspin):
     ``DataController`` instance.
     """
     kdot = np.zeros((kq.shape[1], R.shape[0]), dtype=complex, order='C')
-    kdot = np.tensordot(R, 2.0j * np.pi * kq, axes=([1], [0]))
+    kdot = np.tensordot(R, -2.0j * np.pi * kq, axes=([1], [0]))  # H(k), PAOFLOW's convention
     np.exp(kdot, kdot)
 
     Haux = np.zeros((nawf, nawf, kq.shape[1], nspin), dtype=complex, order='C')

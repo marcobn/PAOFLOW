@@ -1,0 +1,47 @@
+{
+ "title": "GaAs: second-harmonic generation and shift current",
+ "summary": "Bulk GaAs with PAW pseudopotentials on a 62-orbital PAO basis (internal projections, all-electron augmenting shells): chi_xyz(omega) and the shift and injection currents with a 0.86 eV scissor from PAOFLOW.nonlinear_optics. Holds the validation report of the non-linear optics (graphene model, GaAs, GeS) and the script of its figures.",
+ "workflow": "scripts",
+ "pseudopotentials": [
+  "library/Ga.pbe-dn-kjpaw_psl.1.0.0.UPF",
+  "library/As.pbe-n-kjpaw_psl.1.0.0.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the 16^3 grid"
+  }
+ ],
+ "steps": [
+  {
+   "label": "Shift current, injection currents and SHG of GaAs",
+   "command": ["python", "main.py"],
+   "cwd": ".",
+   "mpi": true,
+   "interactive": false,
+   "note": "40^3 k-points: about 2.5 min on 8 ranks; writes output/"
+  },
+  {
+   "label": "Figures of the validation report",
+   "command": ["python", "make_report_figures.py"],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "figures/fig2_gaas from output/; Fig. 1 and 3 from ../graphene_nlo_model/output and ../ges_nlo/output when those cases sit next to this one"
+  }
+ ],
+ "tags": [
+  "non-linear optics",
+  "SHG",
+  "shift current",
+  "PAW",
+  "semiconductor"
+ ],
+ "source": "examples/nlo_examples/GaAs"
+}

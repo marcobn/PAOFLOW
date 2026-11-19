@@ -698,7 +698,7 @@ def find_extremal(
     geom: SliceGeometry,
     *,
     min_freq_kT: float = 0.0,
-    allow_near_walls: bool = False,
+    allow_near_walls: bool = True,
 ) -> list[ExtremalOrbit]:
     """Find extremal orbits within each chunk (Fortran lines 1965–2050).
 
@@ -706,8 +706,14 @@ def find_extremal(
     flag the orbit as extremal if its area is a local min, local max, or
     equals its predecessor's.  Compute curvature from the 3-point neighbourhood
     and convert centroid to RUC fractional coords.  Apply ``minextfreq`` cutoff
-    and (optionally) reject orbits whose bbox lies within 2·std of a supercell
-    wall (matching Fortran's ``allowextnearwalls`` default-no behaviour).
+    and, with ``allow_near_walls=False``, reject orbits whose bbox lies within
+    2·std of a supercell wall (Fortran's ``allowextnearwalls = n``).
+
+    The default is True, as in :meth:`PAOFLOW.PAOFLOW.pyskeaf`: the wall test
+    also discards genuine closed orbits that happen to come close to a wall
+    (on an open cubic-band surface, closed 37-78 kT orbits at 30-60 degrees
+    from [001] towards [100] were lost). A ``config.in`` still sets the option
+    explicitly (its ``y``/``n`` line).
     """
     n_slices = geom.numx
     dk = geom.zkseparation

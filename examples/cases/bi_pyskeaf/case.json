@@ -1,0 +1,41 @@
+{
+ "title": "Bi: de Haas-van Alphen frequencies (pyskeaf)",
+ "summary": "Rhombohedral bismuth: PAO Hamiltonian on the internal projections, Fermi surface on a 32^3 grid and the extremal-orbit (de Haas-van Alphen) frequencies and cyclotron masses with pyskeaf, for a field rotated from the trigonal to a binary axis. The Fermi surface of that run comes with the case, so the pyskeaf step also runs without QE.",
+ "workflow": "scripts",
+ "pseudopotentials": [
+  "library/Bi_PseudoDojo05_PBE_sr.upf"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "Bi2.scf.in",
+   "label": "Self-consistent run (18x18x18 k grid, read by PAOFLOW)"
+  }
+ ],
+ "steps": [
+  {
+   "label": "PAO Hamiltonian, Fermi surface and pyskeaf",
+   "command": ["python", "main.py"],
+   "cwd": ".",
+   "mpi": true,
+   "interactive": false,
+   "note": "needs Bi2.save; generates BASIS_PS, writes output/Fermi_surf_band_*.bxsf, qo_EF_0_freqvsangle_*.out and plot_frequencies.png"
+  },
+  {
+   "label": "pyskeaf on the shipped Fermi surface (no QE run needed)",
+   "command": ["python", "main_skeaf.py", "bxsf"],
+   "cwd": ".",
+   "mpi": true,
+   "interactive": false,
+   "note": "about 40 s on 4 ranks; results in bxsf/ (python main_skeaf.py alone reruns pyskeaf on output/)"
+  }
+ ],
+ "tags": [
+  "quantum oscillations",
+  "dHvA",
+  "Fermi surface",
+  "pyskeaf",
+  "semimetal"
+ ],
+ "source": "examples/pyskeaf_examples/Bi"
+}

@@ -260,10 +260,19 @@ def simulate(
 
     weights = np.zeros(energies.shape)
     eps = np.asarray(experiment.polarization, dtype=complex)
+    positions = work_basis.positions  # (nawf, 3), Å
     for s0 in range(0, nkpt, experiment.kblock):
         s1 = min(s0 + experiment.kblock, nkpt)
+        # The matrix element is written in chinook's atomic gauge, c^at_i = c^cell_i e^{-i k.tau_i}
+        # (the Bloch sum over the orbital positions); BlochHamiltonian gives the cell-periodic
+        # coefficients. Without this phase the interference between the atoms of the cell is wrong
+        # (graphene: the dark corridor on the wrong side of K). Fixed 15 November 2026.
+        atomic = (
+            vectors_all[s0:s1][:, :, bands]
+            * np.exp(-1j * (kpoints[s0:s1] @ positions.T))[:, :, None]
+        )
         M = dipole_matrix_elements(
-            work_basis, vectors_all[s0:s1][:, :, bands], k_final[s0:s1], radial,
+            work_basis, atomic, k_final[s0:s1], radial,
             escape_depth=experiment.escape_depth,
             k_hamiltonian=kpoints[s0:s1] if experiment.position_phase else None,
         )  # fmt: skip

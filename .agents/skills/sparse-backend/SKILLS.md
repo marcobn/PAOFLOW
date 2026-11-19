@@ -187,8 +187,11 @@ are *plausibly wrong* — off by conventions, not by crashes.
   edits. (Scale limit: see below.)
 - **Gradient coefficient per bond**: `1j * (alat*Rcart_l + Dnm_l) * val`,
   replicating `do_gradient` including the diagonal tight-binding `Dnm`
-  correction. `Dnm` lives per bond (`dnm`), zeroed on cross-replica bonds by
-  doubling — exactly the dense `block_diag` semantics. The dense `Dnm`
+  correction. `Dnm` lives per bond (`dnm`) and is the doubled cell's
+  `tau_n - tau_m`: doubling keeps it on the diagonal blocks and shifts it by
+  `-+ a_axis * alat` on the cross-replica ones, as the dense kernel does
+  (both zeroed those pairs until 16 Nov 2026, a spurious band-diagonal
+  velocity in doubled cells). The dense `Dnm`
   array is deleted at conversion; do not resurrect it (it is O(nawf²)).
 - **ARPACK returns shift-inverted eigenpairs in transformed-problem order.**
   Sort *before* truncating the guard pairs (`_sorted_lowest`), or copies of
@@ -379,7 +382,9 @@ Ask, in order:
 
 ```bash
 python -m pytest tests/unit/sparse -q          # component + parity tests
-cd examples/qe_examples/example01
+paoflow-gen --example si_sparse_backend -d /tmp/si_sparse   # the case: QE inputs + main_sparse.py
+cd /tmp/si_sparse                               # pw.x scf/nscf + projwfc.x, or copy tests/data/silicon/silicon.save
+cp <repo>/tests/integration/qe/example01/main.py .
 python main.py                                  # clean dense reference -> output/
 mpirun -n 4 python main_sparse.py               # sparse -> output_sparse/
 # open compare_sparse.ipynb, run all cells, judge visually

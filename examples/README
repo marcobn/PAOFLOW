@@ -1,78 +1,60 @@
-PAOFLOW examples, one folder per topic. Every folder has its own README with the
-inputs, the steps and, where a reference run exists, the numbers.
+PAOFLOW examples
 
-Quantum ESPRESSO examples: ./qe_examples/
+Every example is a case: ./cases/<name>/
 
-- example01 : Si with spd pseudopotential
-- example02 : Al with spd pseudopotential
-- example03 : Pt with lsda (nspin = 2)
-- example04 : Fe non collinear with spin orbit - Anomalous Hall conductivity
-- example05 : Pt non collinear with spin orbit - Spin Hall conductivity
-- example06 : AlP with non self consistent ACBN0
-- example07 : Al starting from projections with overlap matrix of the atomic orbital (prior to orthogonalization)
-- example08 : 2D SnTe - Spin Hall conductivity
-- example09 : Weyl point search in MoP2
-- example10 : Transport in GaAs with temperature and energy dependent model for relaxation time
-- example11 : Calculating Rashba-Edelstein tensor elements in left handed elemental tellurium
-- example12 : Bi bilayer nanoribbon site projected band structure
-- example13 : Bi bilayer Z2 calculation using Z2Pack interface : SOC from QE and ad_hoc_SOC
-- example14 : Layer resolved Pt spin Hall conductivity
-- example15 : Si with a norm-conserving pseudopotential, internal projections and dielectric tensor
-- example16 : minimal vs standard vs extended basis presets of the internal projections
-- example17 : SnTe monolayer (PAW, fully relativistic) with the minimal internal projections in the augmented spinor metric; mirror Chern number
+- One folder per calculation: its inputs (Quantum ESPRESSO, VASP or a model Hamiltonian), a
+  README.md and case.json. The pseudopotentials live once in ../PSEUDOS (mostly ../PSEUDOS/library)
+  and are copied in with the case.
+- PAOFLOW Studio: Setup tab, "Examples...", pick a case and a folder: Studio copies it and lists
+  its runs in the Runs tab. Command line: `paoflow-gen --example <name>` (`paoflow-gen --example
+  list` shows the cases).
+- Two kinds of case. A *generator* case gives the workflow of paoflow-gen and the answers of its
+  form: Studio fills the form, and the drivers (main.py, plot.py) are written from it. A *scripts*
+  case brings its own drivers (models, analyses, multi-stage folders, recipes): Studio opens Runs
+  on its steps, with no form.
+- The reference outputs of the generator cases are in the integration-test tarballs (the releases
+  tagged integration-assets-*), not in the repository.
 
-New-style property workflows: ./new_examples/
+Generator cases
 
-- Driver and plotting scripts in the layout written by paoflow-gen (property workflows, ACBN0, band unfolding)
+- Property runs: si_bands_transport, al_dos_transport, pt_spin_polarized (nspin = 2),
+  fe_anomalous_hall, pt_spin_hall, alp_hubbard_optics (Hubbard shifts + dielectric tensor),
+  pt_adhoc_soc (ad hoc spin-orbit), snte_spin_texture (2D), mop2_weyl_points,
+  gaas_doped_transport (doping and scattering models), te_rashba_edelstein,
+  bi_ribbon_edge_states (site-projected bands), bi_bilayer_z2 (Z2 invariant), pt_slab_layer_shc
+  (layer-resolved spin Hall), si_optics (dielectric function, JDOS), snte_mirror_chern,
+  pd_spin_susceptibility.
+- Landauer transport: al_bulk_landauer, alh_junction_landauer (eigenchannels).
+- ACBN0 / eACBN0: gaas_acbn0, mgo_acbn0, mno_acbn0 (antiferromagnetic), si_acbn0, zno_acbn0.
+- These cases use PAOFLOW's internal projections on the bases generated from their
+  pseudopotentials; projwfc.x stays an option in the form (Studio then writes proj.in and adds the
+  projwfc.x run).
 
-VASP examples: ./vasp_examples/
+Scripts cases
 
-- example01 : Si
-- example02 : Pt (with SOC)
-- example03 : Fe (with SOC, FM)
-- example04 : MnF2 (nspin=2, collinear AFM)
-- example05 : Mn3Ir (with SOC, noncollinear 120 degree AFM)
-- example06 : FeRh (with SOC, FM) & (nspin = 2, FM)
-- example07 : CrI3 monolayer (nspin = 2, FM) & (with SOC, FM)
+- Electron-phonon system folders (system.py, qe/, phonons/, coupling/, superconductivity/,
+  optics/, transport/, arpes/; the layout `paoflow-gen elphon` writes): si_elphon
+  (phonon-assisted absorption, emissivity, mobility, ARPES), pb_elphon (Eliashberg function, Tc,
+  Migdal-Eliashberg gap, resistivity, infrared optics, ARPES kink, special displacements),
+  mgb2_elphon (anisotropic two-gap Migdal-Eliashberg), sic_elphon (polar crystal: Frohlich
+  coupling, quadrupoles, mobility).
+- Non-linear optics: gaas_nlo (PAW GaAs, with REPORT.md: the comparison with the literature),
+  ges_nlo (monolayer GeS), graphene_nlo_model, kane_mele_nlo_model, mos2_nlo_model (shift and
+  injection currents, second-harmonic generation).
+- Tight-binding models run through PAOFLOW(model=...): graphene_tb_model (with the list of the
+  model labels), graphene_berry_phase_model, cubium_tb_model, kane_mele_tb_model,
+  si_slater_koster_model. The model runs of paoflow-gen / Studio (workflow tb_model) cover the
+  built-in models.
+- Band unfolding: si_supercell_unfold, tbg_unfold (twisted bilayer graphene, dense and sparse).
+- Quantum oscillations: bi_pyskeaf (extremal orbits with pyskeaf), nbsn2_qo_analysis (computed
+  frequencies against measured quantum oscillations).
+- VASP: vasp_overview (the notebook of all seven systems) and vasp_si_bands, vasp_pt_spin_hall,
+  vasp_fe_anomalous_hall, vasp_mnf2_afm_bands, vasp_mn3ir_noncollinear_bands, vasp_ferh_bands,
+  vasp_cri3_monolayer_bands.
+- Basis presets on norm-conserving and ultrasoft, scalar and fully relativistic pseudopotentials:
+  si_oncv_basis_presets, si_uspp_basis_presets, pt_oncv_basis_presets, pt_uspp_basis_presets.
+- Sparse backend on a doubled cell: si_sparse_backend.
+- Low-level Transport calls of a conductor with a defect: al_transport_defect.
 
-Electron-phonon coupling: ./elphon/
-
-- One system folder each (system.py, qe/, phonons/, coupling/, superconductivity/, optics/,
-  transport/, arpes/): Si (phonon-assisted absorption, emissivity, mobility, ARPES), Pb
-  (Eliashberg function, Tc, Migdal-Eliashberg gap, resistivity, infrared optics, ARPES kink),
-  MgB2 (anisotropic two-gap Migdal-Eliashberg), SiC (polar crystal: Frohlich coupling,
-  quadrupoles, mobility). The same layout is written by `paoflow-gen elphon`.
-
-Non-linear optics: ./nlo_examples/
-
-- Shift current, injection currents and second-harmonic generation: gapped graphene
-  (tight-binding model), GaAs (PAW) and monolayer GeS; REPORT.md compares with the literature.
-
-ACBN0 examples: ./acbn0_examples/
-
-- ACBN0 / eACBN0 Hubbard U and V in MgO, ZnO, MnO (antiferromagnetic) and others, with the
-  internal projections (no projwfc.x).
-
-Tight-binding models: ./TBmodel_examples/
-
-- Analytical tight-binding model Hamiltonians (Kane-Mele, graphene, cubium, Slater-Koster)
-
-Band unfolding: ./unfold_examples/
-
-- Supercell band structures unfolded to the primitive cell (DFT-PAO and tight-binding)
-
-Quantum transport (Landauer-Buttiker): ./transport_examples/
-
-- example01 : Transmission through a bulk system (Al)
-- example02 : Transmission through a left lead-conductor-right lead system (AlH)
-
-Quantum oscillations: ./pyskeaf_examples/ and ./qo_analysis_examples/
-
-- Extremal Fermi-surface orbits with pyskeaf (de Haas-van Alphen frequencies and masses) and the
-  comparison of the computed frequencies with measured quantum oscillations
-
-Plotting: ./plot_examples/
-
-- Scripts that plot the outputs of the property workflows (bands, DOS, transport, optics, phonons)
-
-clean_runs.py removes the outputs of every example folder.
+The Results and Plots tabs of paoflow-studio show the outputs of any case. clean_runs.py removes
+the outputs of runs made in place, keeping inputs, data and references.

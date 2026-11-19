@@ -51,8 +51,9 @@ def compute_kpoint_self_energies(
     shift_corr : float
         On-site energy shift (eV) applied to the correlation self-energy.
     leads_are_identical : bool
-        If ``True``, the left self-energy reuses the right transfer matrices and
-        its iteration count is excluded from the returned sum.
+        If ``True`` and ``shift_L == shift_R``, the left self-energy reuses the
+        right transfer matrices and its iteration count is excluded from the
+        returned sum. Leads with different shifts (a bias) are computed apart.
     niterx : int
         Maximum number of transfer-matrix iterations.
     transfer_thr : float
@@ -90,6 +91,9 @@ def compute_kpoint_self_energies(
         ie_buff=1,
     )
 
+    # identical leads share the transfer matrices only at the same energy origin: under a bias
+    # (shift_L != shift_R) the left lead must be computed from its own shifted blocks
+    leads_are_identical = leads_are_identical and shift_L == shift_R
     sigma_R, sigma_L, niter_R, niter_L = build_self_energies_from_blocks(
         blc_00R=blc_blocks['blc_00R'].at_k(ik),
         blc_01R=blc_blocks['blc_01R'].at_k(ik),

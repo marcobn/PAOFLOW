@@ -12,7 +12,7 @@ Use the `PAOFLOW.agentic.qo_analysis` subpackage and follow its playbook. Do not
    - `agentic/skeaf/AGENT_WORKFLOW.md`: operating rules, Stages 0–10, decision tree.
    - `agentic/skeaf/LESSONS_LEARNED.md`: pitfalls (symptom → cause → fix).
    - The prompt library for users is in `agentic/skeaf/prompts/`.
-2. **Write an analysis script** from `agentic/skeaf/templates/analysis_template.py` into `agentic/skeaf/projects/<system>/`. Inputs are Python arguments (no config files). The worked example is `examples/qo_analysis_examples/NbSn2/main.py`.
+2. **Write an analysis script** from `agentic/skeaf/templates/analysis_template.py` into `agentic/skeaf/projects/<system>/`. Inputs are Python arguments (no config files). The worked example is `examples/cases/nbsn2_qo_analysis/main.py`.
 3. **Non-negotiable rules:**
    - never overwrite pyskeaf output folders;
    - ask before heavy computations (new pyskeaf runs, `breakdown_network`) and smoke-test one angle first;

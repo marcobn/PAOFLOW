@@ -37,6 +37,8 @@ Three levels, all returning ``Sigma(omega, T)`` on an energy grid relative to th
 
 from __future__ import annotations
 
+from typing import Callable
+
 from collections.abc import Sequence
 
 import numpy as np
@@ -230,6 +232,7 @@ def fan_migdal_self_energy(
     comm=None,
     allow_missing_long_range: bool = False,
     coupling_source: str = 'epw',
+    phonon_at_q: Callable | None = None,
     save_dir: str | None = None,
     pseudo_dir: str | None = None,
     prefix: str | None = None,
@@ -240,6 +243,7 @@ def fan_migdal_self_energy(
     cache_dir: str | None = None,
     cache_tag: str | None = None,
     long_range=None,
+    cell_dtype: str = 'complex128',
 ) -> dict:
     """Band-resolved Fan-Migdal self-energy at arbitrary k-points from the dense-q vertex.
 
@@ -274,7 +278,7 @@ def fan_migdal_self_energy(
         (:func:`~PAOFLOW.elphon.carrier_scattering.fermi_levels_for_doping`).
     eps_acoustic_cm, screening_eps, screening_eps_dft, tau_cryst, species, orbital_positions,
     ispin, comm, allow_missing_long_range, coupling_source, save_dir, pseudo_dir, prefix, basis,
-    unfold, basis_shells, unfold_tol, cache_dir, cache_tag, long_range
+    unfold, basis_shells, unfold_tol, cache_dir, cache_tag, long_range, cell_dtype, phonon_at_q
         As :func:`~PAOFLOW.elphon.carrier_scattering.carrier_scattering_dense_q`.
 
     Returns
@@ -311,12 +315,13 @@ def fan_migdal_self_energy(
         raise ValueError('screening_eps_dft needs screening_eps (the target dielectric constant).')
 
     vertex = prepare_dense_vertex(
-        A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, None,
+        A, kpts_cryst, bg, at, coupling_dir, qgrid_coarse, None, ng, phonon_at_q,
         source=coupling_source, masses_amu=masses_amu, tau_cryst=tau_cryst,
         orbital_positions=orbital_positions, comm=comm,
         allow_missing_long_range=allow_missing_long_range, long_range=long_range,
         save_dir=save_dir, pseudo_dir=pseudo_dir, prefix=prefix, basis=basis, unfold=unfold,
         basis_shells=basis_shells, unfold_tol=unfold_tol, cache_dir=cache_dir, cache_tag=cache_tag,
+        cell_dtype=cell_dtype,
     )  # fmt: skip
     g_ReRp, phonon_at_q = vertex['g_ReRp'], vertex['phonon_at_q']
     Nint_p, W_p, Midx_p = vertex['phonon_ws']
@@ -402,7 +407,9 @@ def fan_migdal_self_energy(
                 w, eta, eps_acoustic, weight=q_weight,
             )[0]  # fmt: skip
     if size > 1:
-        comm.Allreduce(MPI.IN_PLACE, sigma, op=MPI.SUM)
+        from ..utils.communication import allreduce_inplace  # slices beyond the MPI count
+
+        allreduce_inplace(sigma, MPI.SUM, communicator=comm)
     comm.Barrier()
     vertex['window'].Free()
     release_dense_electrons(electrons)

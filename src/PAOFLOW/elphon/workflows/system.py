@@ -1,6 +1,6 @@
 """One configuration per system: :class:`ElphonSystem`, its electrons and its coupling arguments.
 
-A system folder (``examples/elphon/<System>``) holds the QE runs under ``qe/`` and one
+A system folder (``examples/cases/<system>_elphon``) holds the QE runs under ``qe/`` and one
 ``system.py`` that builds an :class:`ElphonSystem`; the workflow drivers of its
 subfolders (``superconductivity/``, ``optics/``, ``transport/``, ``arpes/``, ...) load that
 file with :func:`load_system` and call the functions of this subpackage.  The physics stays
@@ -15,7 +15,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 from types import ModuleType
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -168,7 +168,7 @@ class Electrons:
 
 @dataclass
 class ElphonSystem:
-    """Configuration of one crystal for the electron-phonon workflows.
+    r"""Configuration of one crystal for the electron-phonon workflows.
 
     Parameters
     ----------
@@ -181,9 +181,13 @@ class ElphonSystem:
         cell by :func:`~PAOFLOW.elphon.elph_bloch.atom_masses`).
     nelec : float
         Valence electrons of the cell (locates the Fermi level or the gap).
-    coupling_source : {'dfpt', 'epw'}
+    coupling_source : {'dfpt', 'epw', 'fd'}
         ``'dfpt'``: PAOFLOW's native vertex from the ``ph.x`` ``dvscf`` files and the nscf
-        wavefunctions; ``'epw'``: EPW's ``.epb`` files of an ``epbwrite`` run.
+        wavefunctions; ``'epw'``: EPW's ``.epb`` files of an ``epbwrite`` run; ``'fd'``: the
+        finite-difference derivatives of a cell that is its own unit cell (a thermally
+        displaced or alloy supercell, ``electron_phonon(supercell_matrix=1)``), read from
+        ``fd_dir``; the save is the reference cell's, the q-grid is ``(1, 1, 1)`` and the
+        phonons are the cell's Gamma modes from the forces of the same displaced runs.
     coarse_grid : tuple of int
         nscf k-grid (EPW ``nk1..3``).
     qgrid : tuple of int, optional
@@ -222,6 +226,38 @@ class ElphonSystem:
         (``None`` disables it).
     spin_degeneracy : float, optional
         2 without spin-orbit coupling, 1 with it; ``None`` reads it from the save.
+    fd_dir : str, optional
+        ``coupling_source='fd'``: the electron-phonon directory of the displaced runs
+        (``displacements.json``, ``tmp_*/`` saves, ``pw.x`` outputs next to the inputs).
+    fd_options : dict, optional
+        ``coupling_source='fd'``: options of the derivative fit
+        (:func:`~PAOFLOW.elphon.fd_vertex.fd_cell_derivatives`: ``fixed_basis``,
+        ``locality_cutoff``, ``ridge``, ``project_good_subspace``, ``verify_saves``); the
+        basis, configuration and ``pthr`` come from the system.
+    vertex_dtype : {'complex128', 'complex64'}, optional
+        Storage precision of the node-shared ``g(R_e, R_p)`` of the dense-q drivers
+        (``cell_dtype`` of :func:`~PAOFLOW.elphon.do_pao_eph_dense_q.prepare_dense_vertex`);
+        ``'complex64'`` halves the per-node memory of large (spinor) cells.
+    vertex_bands : {'good', 'all'}, optional
+        Bands of the coupling save that rotate the DFPT / EPW vertex into the PAO basis.
+        ``'good'`` (default): the ``bnd`` bands above the projectability threshold, the
+        subspace of the PAO Hamiltonian
+        :math:`H = A_c\varepsilon_cA_c^\dagger + \eta(1 - A_c(A_c^\dagger A_c)^{-1}A_c^\dagger)`,
+        so the vertex and the bands it is interpolated with live in the same space and the
+        result does not depend on ``nbnd`` of the nscf.  ``'all'``: every band of the save
+        (the behaviour before 5 Nov 2026), which feeds the poorly projectable bands into the
+        vertex and makes it depend on ``nbnd`` (Nb, 8^3 DFPT: lambda 1.045 with 20 bands,
+        0.677 with 40, 1.189 for both with ``'good'``); kept for comparisons.
+    phonon_source : {'dfpt', 'sscha'}, optional
+        Phonons of the dense-q drivers: ``'dfpt'`` (default) interpolates the ``ph.x``
+        dynamical matrices of the coupling directory; ``'sscha'`` the anharmonic matrices of
+        ``sscha_dynamical_matrices`` (``PAOFLOW.sscha_force_constants``) on the same q-grid. The
+        coarse vertex is Cartesian and does not change; frequencies and polarisations do, so
+        alpha^2F, lambda and the transport functions follow the temperature of the SSCHA.
+    sscha_dynamical_matrices : str, optional
+        ``phonon_source='sscha'``: path prefix ``<dir>/<prefix>.dyn`` of the SSCHA matrices
+        (``<prefix>.dyn0 ... dynN``) on the coupling q-grid, e.g.
+        ``'sscha_T2800/force_constants_hessian/tan.dyn'``.
     """
 
     prefix: str
@@ -245,15 +281,36 @@ class ElphonSystem:
     quadrupoles: str | None = None
     cache_dir: str | None = 'cache'
     spin_degeneracy: float | None = None
+    fd_dir: str | None = None
+    fd_options: dict = field(default_factory=dict)
+    vertex_dtype: str = 'complex128'
+    vertex_bands: str = 'good'
+    phonon_source: str = 'dfpt'
+    sscha_dynamical_matrices: str | None = None
     extra: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.coupling_source not in ('dfpt', 'epw'):
+        if self.vertex_bands not in ('good', 'all'):
+            raise ValueError("vertex_bands must be 'good' or 'all', got %r" % self.vertex_bands)
+        if self.phonon_source not in ('dfpt', 'sscha'):
+            raise ValueError("phonon_source must be 'dfpt' or 'sscha', got %r" % self.phonon_source)
+        if self.phonon_source == 'sscha' and not self.sscha_dynamical_matrices:
             raise ValueError(
-                "coupling_source must be 'dfpt' or 'epw', got %r" % self.coupling_source
+                "phonon_source='sscha' needs sscha_dynamical_matrices (<dir>/<prefix>.dyn)"
+            )
+        if self.coupling_source not in ('dfpt', 'epw', 'fd'):
+            raise ValueError(
+                "coupling_source must be 'dfpt', 'epw' or 'fd', got %r" % self.coupling_source
             )
         self.root = os.path.abspath(self.root)
         self.coarse_grid = tuple(int(n) for n in self.coarse_grid)
+        if self.coupling_source == 'fd':
+            if not self.fd_dir:
+                raise ValueError("coupling_source='fd' needs fd_dir (the displaced-runs directory)")
+            if self.qgrid is None:
+                self.qgrid = (1, 1, 1)
+            if tuple(int(n) for n in self.qgrid) != (1, 1, 1):
+                raise ValueError("coupling_source='fd' is Gamma-only: qgrid must be (1, 1, 1)")
         self.qgrid = self.coarse_grid if self.qgrid is None else tuple(int(n) for n in self.qgrid)
         if any(k % q for k, q in zip(self.coarse_grid, self.qgrid)):
             raise ValueError(
@@ -302,7 +359,9 @@ class ElphonSystem:
 
     @property
     def coupling_dir(self) -> str:
-        """Where the coarse coupling is read from: the phonon directory (dfpt) or the nscf one (epw)."""
+        """Where the coarse coupling is read from: the phonon directory (dfpt), the nscf one (epw) or the displaced runs (fd)."""
+        if self.coupling_source == 'fd':
+            return self.path(self.fd_dir)
         return self.phonon_path if self.coupling_source == 'dfpt' else self.nscf_path
 
     @property
@@ -329,6 +388,20 @@ class ElphonSystem:
         FileNotFoundError
             Missing nscf save, ``ph.x`` outputs (dfpt) or ``.epb`` files (epw).
         """
+        if self.coupling_source == 'fd':
+            manifest = os.path.join(self.coupling_dir, 'displacements.json')
+            if not os.path.isfile(manifest):
+                raise FileNotFoundError(
+                    '%s not found: generate the displaced cells with '
+                    'electron_phonon(supercell_matrix=1, ...) and run pw.x on them first.'
+                    % manifest
+                )
+            if not os.path.isdir(self.save_path):
+                raise FileNotFoundError(
+                    '%s not found: run pw.x on the reference and displaced cells in %s first '
+                    '(run_fd.sh).' % (self.save_path, self.coupling_dir)
+                )
+            return
         if not os.path.isdir(self.save_path):
             raise FileNotFoundError(
                 '%s not found: run the pw.x nscf in %s first.' % (self.save_path, self.nscf_path)
@@ -365,6 +438,67 @@ class ElphonSystem:
             save_overlaps=self.save_overlaps,
             verbose=False,
         )
+
+    def rotation_projections(self, coupling: PAOElectrons) -> NDArray[np.complex128]:
+        r"""Projections that rotate the coupling into the PAO basis (see ``vertex_bands``).
+
+        Parameters
+        ----------
+        coupling : PAOElectrons
+            The PAO run on the coupling save.
+
+        Returns
+        -------
+        ndarray ``(nbnd, nawf, nk)``
+            ``coupling.projections`` itself for ``vertex_bands='all'`` (or when every band is
+            good); otherwise a copy with the rows of the bands ``>= bnd`` set to zero, which is
+            the band restriction of
+            :meth:`~PAOFLOW.elphon.dfpt_vertex.CoarseVertexSetup.pao_vertex_k` (``bands``) and,
+            for EPW, the intersection with the kept bands.
+
+        Notes
+        -----
+        The PAO Hamiltonian is built from the ``bnd`` bands whose projectability exceeds
+        ``pthr`` and completes the rest of the orbital space at the shift :math:`\eta`.  A vertex
+        rotated with every band, :math:`g = A_{k+q}^{T} d\,A_k^{*}` over ``nbnd`` bands, carries
+        the components of the poorly projectable bands, which the Hamiltonian replaces by the
+        completion; restricted to the good bands, the two live in the same subspace.
+        """
+        A = coupling.projections
+        if A is None or self.vertex_bands == 'all':
+            return A
+        bnd = self.good_bands(coupling.data_controller)
+        if bnd >= A.shape[0]:
+            return A
+        A = np.array(A, copy=True)
+        A[bnd:] = 0.0
+        return A
+
+    @staticmethod
+    def good_bands(data_controller) -> int:
+        """Number of bands of the PAO Hamiltonian (``bnd``: projectability above ``pthr``)."""
+        return int(data_controller.data_dicts()[1]['bnd'])
+
+    def vertex_cache_tag(self, data_controller) -> str:
+        """Cache tag of the coarse vertex: the basis signature, plus the rotation subspace.
+
+        Parameters
+        ----------
+        data_controller : DataController
+            Of the coupling save.
+
+        Returns
+        -------
+        str
+            :func:`~PAOFLOW.elphon.coupling_cache.basis_tag` with ``|bands=good<bnd>`` appended
+            for the DFPT and EPW sources with ``vertex_bands='good'``, so that a vertex rotated
+            with every band (the caches written before 5 Nov 2026) is never reused for it; the
+            finite-difference source does not rotate and keeps the plain tag.
+        """
+        tag = basis_tag(data_controller, self.pthr)
+        if self.coupling_source != 'fd' and self.vertex_bands == 'good':
+            tag = '%s|bands=good%d' % (tag, self.good_bands(data_controller))
+        return tag
 
     def electrons(
         self,
@@ -415,9 +549,10 @@ class ElphonSystem:
             'electrons_dft': kind(coupling),
             'electrons_hubbard': format_hubbard_info(coupling.hubbard),
         }
+        rotation = self.rotation_projections(coupling)
         if electrons_save is None:
             return Electrons(
-                coupling.projections,
+                rotation,
                 coupling.HRs,
                 coupling.nscf,
                 coupling.data_controller,
@@ -442,7 +577,7 @@ class ElphonSystem:
             electrons_hubbard=format_hubbard_info(electrons.hubbard),
         )
         return Electrons(
-            coupling.projections,
+            rotation,
             electrons.HRs,
             nscf,
             coupling.data_controller,
@@ -519,8 +654,8 @@ class ElphonSystem:
         dict
             ``coupling_source``, ``save_dir``, ``long_range``,
             ``allow_missing_long_range``, ``masses_amu``, ``tau_cryst``, ``species``,
-            ``orbital_positions`` and, optionally, ``sym_rots``, ``cache_dir``,
-            ``cache_tag``.
+            ``orbital_positions``, ``cell_dtype`` and, optionally, ``sym_rots``, ``cache_dir``,
+            ``cache_tag``, (``'fd'``) ``fd_options`` and (``phonon_source='sscha'``) ``phonon_at_q``.
         """
         nscf = electrons.nscf
         kwargs = dict(
@@ -532,13 +667,63 @@ class ElphonSystem:
             tau_cryst=nscf['tau_cryst'],
             species=nscf['atom_names'],
             orbital_positions=nscf['orbital_positions'],
+            cell_dtype=self.vertex_dtype,
         )
         if symmetry:
             kwargs['sym_rots'] = nscf['s_cryst']
         if cache and self.cache_path:
             kwargs['cache_dir'] = self.cache_path
-            kwargs['cache_tag'] = basis_tag(electrons.data_controller, self.pthr)
+            kwargs['cache_tag'] = self.vertex_cache_tag(electrons.data_controller)
+        if self.phonon_source == 'sscha':
+            kwargs['phonon_at_q'] = self.phonon_interpolator(electrons)
+        if self.coupling_source == 'fd':
+            kwargs['fd_options'] = dict(
+                basispath=self.basis_path,
+                configuration=self.configuration,
+                pthr=self.pthr,
+                **self.fd_options,
+            )
         return kwargs
+
+    def phonon_interpolator(self, electrons: Electrons) -> Callable | None:
+        """Dense-q phonon interpolator of the anharmonic (SSCHA) matrices, or ``None`` for DFPT.
+
+        Parameters
+        ----------
+        electrons : Electrons
+            Of :meth:`electrons` (lattice, atomic positions).
+
+        Returns
+        -------
+        callable or None
+            ``phonon_at_q(q_cryst) -> (freq_thz, z)`` built from ``sscha_dynamical_matrices`` on
+            :attr:`qgrid` (atom-pair Wigner-Seitz images, as the DFPT route), or ``None`` with
+            ``phonon_source='dfpt'`` (the drivers then use the ``ph.x`` matrices).
+
+        Raises
+        ------
+        ValueError
+            If the SSCHA matrices are missing or do not cover :attr:`qgrid`.
+        """
+        if self.phonon_source != 'sscha':
+            return None
+        from ..do_pao_eph_dense_q import phonon_interp_from_dyn
+        from ...phonon.sscha_bridge import dynamical_matrix_files
+
+        prefix = self.path(self.sscha_dynamical_matrices)
+        paths = dynamical_matrix_files(prefix)
+        if not paths:
+            raise ValueError('no SSCHA dynamical matrices %s1 ...' % prefix)
+        nscf = electrons.nscf
+        atom_positions = nscf['tau_cryst'] if nscf.get('orbital_positions') is not None else None
+        return phonon_interp_from_dyn(
+            paths,
+            self.qgrid,
+            nscf['bg'],
+            nscf['at'],
+            atom_positions,
+            long_range=self.long_range_model(),
+        )
 
     def positional_arguments(self, electrons: Electrons) -> tuple:
         """``(A, HRs, kpts_cryst, bg, at, alat, omega, coupling_dir, qgrid, coarse_grid)``.

@@ -12,6 +12,40 @@ Testing is a first-class part of contributing to PAOFLOW. Good tests protect eve
 
 **Integration tests** (`tests/integration/`) run a minimal end-to-end workflow and compare output against known-good reference data. We keep them fast by using lower accuracy settings (reduced grid sizes and k-points) and staging large prerequisites as release assets rather than committing them to the repository.
 
+### Unit-test data
+
+Unit tests never read `examples/`. Examples change for their users (new inputs, other grids, a
+different layout) and a test that borrows their files breaks, or silently skips, when they do.
+
+- Small data files live in `tests/data/` (a QE save of bulk Si, reference outputs, BXSF grids,
+  model parameters); `tests/data/README.md` lists each fixture, its source and its readers.
+- Pseudopotentials live once in `PSEUDOS/library/`, which the example cases share.
+- Data too large to track (a 1 GB save, a 5 GB MPI buffer) sit behind an environment variable and
+  the test skips with the variable's name, so a missing file is never mistaken for a pass.
+
+CI runs `tests/unit` in the `unit-tests` job (`-m "not slow and not integration"`), split into
+groups that run in parallel.
+
+### Three tiers
+
+- **Properties on model Hamiltonians** (`tests/unit/closed_forms`, and the model tests of each
+  subpackage): every property against a closed form. Examples: the van Hove DOS of a chain, the
+  Drude weight, the Wiedemann-Franz and Mott laws, the f-sum rule of the interband dielectric
+  function, the quantized anomalous Hall conductivity of a Chern insulator, the Weyl nodes of the
+  lattice Weyl model, the spin of a Rashba gas, the degenerate electron gas of `doping`. Seconds
+  each, nothing to download, and nothing stored that could carry a bug forward.
+- **Projections on small QE saves** (`tests/integration/projections`): the readers, projwfc.x and
+  the internal bases, the PAO Hamiltonian, checked against the DFT eigenvalues of the saves. One
+  tarball of a few saves, rebuilt on a laptop with
+  `.github/assets_generation/projections/build_assets.sh`.
+- **Generated drivers** (`tests/unit/gen/test_driver_smoke.py`): a property `main.py` written by the
+  generator runs end to end on the silicon save of `tests/data`, including the restart branch and
+  `plot.py --all`.
+
+The QE regression jobs (`qe-integration-tests`, reference outputs of the examples) still run; they
+compare against stored outputs, which also store any bug present when they were made (the Hubbard
+reference of example06 and the acoustic channel of example10 did).
+
 ## Running Tests
 
 ```bash
@@ -35,6 +69,31 @@ pytest -q tests/integration -m "integration and not slow"
 ```
 
 Drop the `-q` flag if you'd like more detailed output.
+
+### PAOFLOW Studio (browser interface)
+
+The server, the form resolver, the results layer and the run manager have unit tests in
+`tests/unit/gui`, `tests/unit/gen` and `tests/unit/results`.
+
+`tests/integration/gui/test_browser.py` drives the three tabs in headless Chrome through Selenium.
+It is marked `integration` and `slow`, and it skips when Selenium or Chrome is missing:
+
+```bash
+pytest -q tests/integration/gui
+```
+
+`tests/unit/gui/test_static_js.py` and the pre-commit hook `js-check` (`.github/lint/check_js.py`) check the
+front-end modules. They parse each module with `node --check`, which is skipped without Node, and they refuse
+`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `eval` and `new Function`.
+
+The pre-commit hook `biome` lints and formats the same files (JavaScript and CSS) with Biome 2.6.6: the
+recommended rules, single quotes, line width 100 (`biome.json`). pre-commit installs Biome in its own Node
+environment. With a local binary, the same check is
+
+```bash
+biome ci            # check only, as CI does
+biome check --write # apply the formatter and the safe fixes
+```
 
 ## Integration Test Patterns
 

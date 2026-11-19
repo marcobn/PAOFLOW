@@ -97,3 +97,49 @@ def do_density(data_controller, nr1, nr2, nr3):
     if rank == 0:
         if attr['verbose']:
             print('Total charge = ', np.real(np.sum(rho)).round(3))
+
+
+def pao_orbitals_on_grid(
+    data_controller, nr: tuple[int, int, int] | None = None, ik: int = 0
+) -> tuple[np.ndarray, dict]:
+    r"""Orthonormal PAO orbitals of one k-point on the real-space FFT grid.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        After ``projections`` with the internal basis (``arrays['basis']``, ``kgrid``,
+        ``a_vectors``, ``b_vectors``; ``ecutwfc``, ``ecutrho``, ``alat``, ``omega``).
+    nr : tuple of int, optional
+        FFT grid; default twice the wavefunction sphere along each axis (the orbital products
+        are then represented without aliasing).
+    ik : int, optional
+        k-point index (0, the Gamma point, for a molecule).
+
+    Returns
+    -------
+    phi : ndarray ``(nawf, nr1, nr2, nr3)``, complex
+        Orbitals normalised as :math:`\sum_r |\phi(r)|^2\,\Omega/N_r = 1`.
+    info : dict
+        ``'nr'``, ``'at_bohr'`` (rows, bohr), ``'bg_inv_bohr'`` (rows, bohr^-1), ``'omega'``.
+    """
+    from ..projection.do_atwfc_proj import calc_atwfc_k, calc_gkspace, fft_allwfc_G2R, ortho_atwfc_k
+
+    arry, attr = data_controller.data_dicts()
+    if 'basis' not in arry or not len(arry['basis']):
+        raise ValueError('pao_orbitals_on_grid needs the internal PAO basis (projections())')
+    gkspace = calc_gkspace(data_controller, int(ik), gamma_only=False)
+    atwfc = calc_atwfc_k(arry['basis'], gkspace, dftSO=bool(attr.get('dftSO', False)))
+    ortho = ortho_atwfc_k(atwfc)
+    mill = np.asarray(gkspace['mill'])
+    if nr is None:
+        nr = tuple(int(2 * (2 * np.abs(mill[i]).max() + 1)) for i in range(3))
+    nr = tuple(int(n) for n in nr)
+    phi = fft_allwfc_G2R(ortho, gkspace, nr[0], nr[1], nr[2], float(attr['omega']))
+    alat = float(attr['alat'])
+    info = {
+        'nr': nr,
+        'at_bohr': np.asarray(arry['a_vectors'], dtype=float) * alat,
+        'bg_inv_bohr': np.asarray(arry['b_vectors'], dtype=float) * (2.0 * np.pi / alat),
+        'omega': float(attr['omega']),
+    }
+    return phi, info

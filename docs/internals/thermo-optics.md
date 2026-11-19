@@ -6,7 +6,7 @@ the form of the data:
 tables, free text, vector or scanned PDF figures, slide decks or images. The
 same tools served an absorption edge, emissivity spectra, free-carrier
 absorption and refractive indices of Si. The model is an electron-phonon
-*system folder* (`examples/elphon/<System>` layout: `system.py`, the `optics/`
+*system folder* (`examples/cases/<system>_elphon` layout: `system.py`, the `optics/`
 workflow of `PAOFLOW.elphon.workflows`); the adapter `paoflow_optics.OpticsModel`
 reads it. The sibling packages `PAOFLOW.agentic.transport`,
 `PAOFLOW.agentic.superconductivity` and `PAOFLOW.agentic.arpes` reuse this

@@ -135,6 +135,26 @@ def _hermitian(block: NDArray[np.complex128]) -> NDArray[np.complex128]:
     return 0.5 * (block + np.conjugate(np.swapaxes(block, -1, -2)))
 
 
+def hamiltonian_block(terms: BlochTerms, k_cryst: NDArray[np.float64]) -> NDArray[np.complex128]:
+    """``H(k)`` alone (orbital basis, eV, Hermitised) at a block of k-points.
+
+    Parameters
+    ----------
+    terms : BlochTerms
+    k_cryst : ndarray ``(nb, 3)``
+        Crystal coordinates.
+
+    Returns
+    -------
+    ndarray ``(nb, nawf, nawf)``
+        The ``H`` of :func:`hamiltonian_derivatives_block` without the nine derivative matrices
+        (a tenth of the memory: band edges, Fermi levels).
+    """
+    k = np.atleast_2d(np.asarray(k_cryst, dtype=float))
+    phases = np.exp(-2j * np.pi * (k @ terms.cells.T))
+    return _hermitian((phases @ terms.hamiltonian_cells).reshape(-1, terms.nawf, terms.nawf))
+
+
 def hamiltonian_derivatives_block(
     terms: BlochTerms, k_cryst: NDArray[np.float64]
 ) -> tuple[NDArray[np.complex128], NDArray[np.complex128], NDArray[np.complex128]]:

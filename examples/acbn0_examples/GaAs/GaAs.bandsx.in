@@ -1,6 +1,0 @@
-&BANDS
-  prefix = 'GaAs'
-  outdir = './'
-  filband = 'GaAs.bands.dat'
-  lsym = .true.
-/

@@ -1,0 +1,47 @@
+{
+ "title": "bcc Fe: anomalous Hall conductivity and Berry curvature",
+ "summary": "Ferromagnetic iron with spin-orbit coupling (noncollinear): Berry curvature along the band path and the anomalous Hall conductivity sigma_xy(E), with its AC part.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "fe.save",
+  "prefix": "fe",
+  "projector": "internal",
+  "properties": [
+   "bands",
+   "dos",
+   "anomalous_Hall",
+   "topology"
+  ],
+  "ibrav": 3,
+  "nk": 2000,
+  "spin_orbit": true,
+  "do_pdos": false,
+  "emin": -8.0,
+  "emax": 4.0,
+  "interpolate": true,
+  "nfft": 24,
+  "std_basis": "minimal"
+ },
+ "pseudopotentials": [
+  "library/Fe.rel-pz-spn-rrkjus_psl.0.2.1.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "tags": [
+  "anomalous Hall",
+  "Berry curvature",
+  "spin-orbit",
+  "magnet"
+ ],
+ "source": "examples/qe_examples/example04"
+}

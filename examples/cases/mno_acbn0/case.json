@@ -1,0 +1,36 @@
+{
+ "title": "MnO (antiferromagnetic): ACBN0 Hubbard U",
+ "summary": "Self-consistent on-site U Hubbard parameters from the PAO density (ACBN0 runs pw.x and projwfc.x itself), then the corrected bands.",
+ "workflow": "acbn0",
+ "answers": {
+  "savedir": "MnO.save",
+  "prefix": "MnO",
+  "projector": "internal",
+  "use_intersite_v": false,
+  "hubbard": [
+   [
+    "MnA-3d",
+    "0.5"
+   ],
+   [
+    "MnB-3d",
+    "0.5"
+   ],
+   [
+    "O-2p",
+    "0.5"
+   ]
+  ]
+ },
+ "pseudopotentials": [
+  "library/Mn_ONCV_PBE_sr.upf",
+  "library/O_ONCV_PBE_sr.upf"
+ ],
+ "qe": [],
+ "tags": [
+  "ACBN0",
+  "Hubbard U",
+  "antiferromagnet"
+ ],
+ "source": "examples/acbn0_examples/MnO"
+}

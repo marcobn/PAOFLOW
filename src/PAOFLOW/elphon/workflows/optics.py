@@ -486,6 +486,8 @@ def direct_dielectric(
     configuration: str = 'extended',
     pthr: float = 0.95,
     smearing: str | None = None,
+    temperature_k: float | None = None,
+    position_dipoles: bool = True,
 ) -> None:
     """Direct dielectric function on the extended PAO basis (PAOFLOW's optical route).
 
@@ -512,11 +514,18 @@ def direct_dielectric(
         Projectability threshold.
     smearing : str, optional
         PAOFLOW smearing of the Fermi level (metals: ``'gauss'``).
+    temperature_k : float, optional
+        Electronic temperature of the occupations (``dielectric_tensor(temperature=)``):
+        the thermal cells of the special displacement method use their lattice temperature.
+    position_dipoles : bool, optional
+        Add the Löwdin position dipoles ``i[H, d]`` to the velocities (default); ``False`` keeps
+        the plain tight-binding velocities, the check to run when the PAO overlap of the basis
+        is ill-conditioned (the dipoles amplify its nearly dependent combinations).
 
     Notes
     -----
     Runs ``projections`` -> ``projectability`` -> ``pao_hamiltonian`` ->
-    ``interpolated_hamiltonian`` -> ``pao_eigh`` -> ``gradient_and_momenta(position_dipoles=True)``
+    ``interpolated_hamiltonian`` -> ``pao_eigh`` -> ``gradient_and_momenta(position_dipoles=...)``
     -> ``dielectric_tensor(d_tensor='diag')``.
     """
     from ...PAOFLOW import PAOFLOW
@@ -537,8 +546,9 @@ def direct_dielectric(
     pf.pao_hamiltonian()
     pf.interpolated_hamiltonian(nfft1=nfft, nfft2=nfft, nfft3=nfft)
     pf.pao_eigh()
-    pf.gradient_and_momenta(position_dipoles=True)
+    pf.gradient_and_momenta(position_dipoles=bool(position_dipoles))
     pf.dielectric_tensor(
-        emin=emin, emax=emax, ne=ne, d_tensor='diag', delta=delta, intraband=intraband
-    )
+        emin=emin, emax=emax, ne=ne, d_tensor='diag', delta=delta, intraband=intraband,
+        temperature=temperature_k,
+    )  # fmt: skip
     pf.finish_execution()

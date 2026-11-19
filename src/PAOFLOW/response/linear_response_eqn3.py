@@ -5,6 +5,8 @@ from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI
 from ..utils.perturb_split import perturb_split
 from ..utils.communication import reduce_full
 from ..utils.smearing import intgaussian, intmetpax
+from .kubo_kernels import berry_curvature
+from .kubo_units import sheet_unit
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -66,10 +68,11 @@ def calc_chi(data_controller):
 def calc_chi2(data_controller=None, tensor=None):
     arry, attr = data_controller.data_dicts()
     nk, nbnd, nspin = arry['E_k'].shape
-    deltap = 0.05
-    attr['emaxH'] = np.amin(np.array([attr['shift'], attr['emaxH']]))
+    # regulariser of the energy denominators (linear_response(delta=...), 0.05 eV until 14 Nov 2026)
+    deltap = attr.get('lr_delta', 0.05)
+    emax = min(attr['shift'], attr['emaxH'])
 
-    ene = np.linspace(attr['eminH'], attr['emaxH'], attr['esize'])
+    ene = np.linspace(attr['eminH'], emax, attr['esize'])
     esize = attr['esize']
 
     # ============================================================
@@ -128,16 +131,12 @@ def calc_chi2(data_controller=None, tensor=None):
     Om_znkaux = np.zeros((nk, nbnd, nspin), dtype=float)
     for ispin in range(nspin):
         for ik in range(nk):
-            E = arry['E_k'][ik, :, ispin]
-            # ----------------------------------------------------
-            # E_nm = (E_n - E_m)^2 + deltap^2
-            # ----------------------------------------------------
-            E_nm = (E - E[:, None]) ** 2 + deltap**2
-            E_nm[E_nm < 1.0e-4] = np.inf
-            numerator = np.imag(oper_matrix1[ik, :, :, ispin] * oper_matrix2[ik, :, :, ispin].T)
-            Om_znkaux[ik, :, ispin] = -2.0 * np.sum(numerator / E_nm, axis=1)
-            numerator = None
-            E_nm = None
+            Om_znkaux[ik, :, ispin] = berry_curvature(
+                arry['E_k'][ik, :, ispin],
+                oper_matrix1[ik, :, :, ispin],
+                oper_matrix2[ik, :, :, ispin],
+                deltap,
+            )
     oper_matrix1 = None
     oper_matrix2 = None
 
@@ -213,23 +212,16 @@ def calc_chi2(data_controller=None, tensor=None):
         fname = f'AHC_{xzy[cpol]}{xzy[ipol]}.dat'
         unit1 = 'Energy [eV]'
         unit2 = 'AH Conductivity [S/cm]'
+    if attr['twoD']:
+        unit2 = sheet_unit(unit2)
     # data_controller.write_file_row_col(fname,ene,Om_zk)
     data_controller.write_file_row_col_units(fname, ene, Om_zk, unit1, unit2)
     ene = None
     Om_zk = None
 
 
-def spin_current(data_controller=None, tensor=None):
-    arry, attr = data_controller.data_dicts()
-    nk, nbnd, nspin = arry['E_k'].shape
-    spol, jspol, ipol = tensor
-    Sj = arry['Sj'][spol]
-    snktot, _, nawf, nawf, nspin = arry['dHksp'].shape
-    jdHksp = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
-    for ispin in range(nspin):
-        for ik in range(snktot):
-            jdHksp[ik, :, :, ispin] = 0.5 * (
-                np.dot(Sj, arry['dHksp'][ik, jspol, :, :, ispin])
-                + np.dot(arry['dHksp'][ik, jspol, :, :, ispin], Sj)
-            )
-    return jdHksp
+def spin_current(data_controller=None, tensor=None) -> np.ndarray:
+    """Spin current {S_spin, dH_current}/2 of ``tensor = (spin, current, ...)`` at every local k."""
+    from .do_Hall import do_spin_current as spin_current_operator
+
+    return spin_current_operator(data_controller, tensor[0], tensor[1])

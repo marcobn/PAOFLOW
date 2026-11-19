@@ -26,6 +26,18 @@ This means you get consistent augmentation across the periodic table without nee
 
 The `"extended"` preset also enables j-resolved radials for spin-orbit pseudopotentials through a new pseudo-atom basis generator (`BASIS_PS/`). This fixes previous rank-deficiency issues that were causing spurious artifact bands in spin-orbit calculations.
 
+**Which radial function each spinor record takes (fixed 13 November 2026).** An $l > 0$ shell gives
+$2(2l+1)$ records, which `assign_jm` labels as the $2l$ states $|j = l - \tfrac12, m_j\rangle$ followed
+by the $2l + 2$ states $|j = l + \tfrac12, m_j\rangle$ (increasing $m_j$). Each record must carry the radial
+function of its own $j$ (`spinor_record_sources`): $2l$ on the $j = l - \tfrac12$ table, $2l + 2$ on the
+$j = l + \tfrac12$ one. The builders used to attach them per block of $2l + 1$, so
+$|l + \tfrac12, -(l + \tfrac12)\rangle$ took the $j = l - \tfrac12$ function; the basis then broke time
+reversal ($m_j \to -m_j$) and the rotations. In TaAs this put 1.8 meV of time-reversal and up to 8 meV of
+point-group error into the PAO Hamiltonian near $E_F$ (spurious time-odd photocurrents); with the fix both
+are at the scalar-relativistic level ($10^{-13}$ eV, $\le 40\,\mu$eV). The UPF route
+(`build_pswfc_basis_all`) now pairs the two pseudo-orbitals of a shell by their `jchi` (PseudoDojo lists
+$j = l + \tfrac12$ first). Tests: `tests/unit/projection/test_spinor_radials.py`.
+
 ## Ultrasoft and PAW pseudopotentials: the augmented metric
 
 The pseudo-wavefunctions of an ultrasoft or PAW calculation are orthonormal in the metric
@@ -94,7 +106,7 @@ UPF basis already, nor with spin-orbit). On PAW GaAs (example10, 62 orbitals):
 | `BASIS_PS` extended (generator) | 17 | 1.00 | 0.99 | 0.99 → 0.89 |
 
 The all-electron polarisation shells are more complete than the box states of the generator,
-so the default route is the first; the GaAs example of `examples/nlo_examples` uses it with
+so the default route is the first; the GaAs case `examples/cases/gaas_nlo` uses it with
 `pthr = 0.95`.
 
 ## The generator with ultrasoft / PAW pseudopotentials
@@ -148,7 +160,8 @@ $6\times10^{-6}$ (0.73 with the plain overlap), 32 of 38 bands project above 0.9
 minimal basis, and the symmetry of the Hamiltonian on the scf grid is exact ($10^{-13}$ eV).
 Tests: `tests/unit/projection/test_spinor_augmentation.py` (the $f$ matrices are projectors on
 the $j$ subspaces that sum to the identity; `Q_so` against the QE loop; the spinor overlap; the
-SnTe metric, skipped without `examples/qe_examples/example17/SnTe.save`).
+SnTe metric, skipped unless `PAOFLOW_TEST_SNTE_SAVE` points to a `SnTe.save` of the case
+`examples/cases/snte_mirror_chern`).
 
 ## VASP input: POTCAR datasets, the augmented metric and the generated basis
 
@@ -218,13 +231,18 @@ relativistic UPFs otherwise). `r_box`, `n_points` and `save_basis` (tables writt
 `projections(basispath=BASIS, configuration={...})` of the VASP examples still works and now
 takes the pseudo-orbitals from the POTCAR and the augmenting shells from the tables, in the
 augmented metric; with spin-orbit coupling this mixed route goes through
-`build_mixed_basis_with_tables` (scalar pseudo-orbitals in both $j$ blocks, j-resolved tables when
-present), where `build_basis_from_sources` used to refuse it and every shell came from the tables.
+`build_mixed_basis_with_tables` (the j-resolved pseudo-orbitals of fully relativistic UPFs, scalar
+ones in both $j$ blocks, j-resolved tables when present), where `build_basis_from_sources` used to
+refuse it and every shell came from the tables. Two fixes of 17 Nov 2026 on this route: the records
+of a j-resolved shell take the radial function of their own $j$ (`spinor_record_sources`, as in
+`build_aewfc_basis` since 13 Nov; the Kramers pairs were split by 1 meV in Pt and 4 meV in a Bi
+bilayer on the grid, up to 0.4 eV between grid points), and the pseudo-orbitals of a fully
+relativistic UPF keep both $j$ functions (both blocks took the $j = l - 1/2$ one).
 
-Si (example01 of `examples/vasp_examples`, 18 bands): `minimal` 8 orbitals, 4 bands above
+Si (the case `examples/cases/vasp_si_bands`, 18 bands): `minimal` 8 orbitals, 4 bands above
 0.95; `standard` 26 orbitals, 12 bands; `extended` 44 orbitals, 16 bands (the shipped
 all-electron tables with `3S 3P 3D 4S 4P 4D`: 36 orbitals, 15 bands). Pt with spin-orbit
-coupling (example02): the spinor metric with the scalar datasets couples the spins diagonally,
+coupling (`vasp_pt_spin_hall`): the spinor metric with the scalar datasets couples the spins diagonally,
 $\langle\psi|S|\psi\rangle - 1 = 2\times10^{-6}$, 12 of 20 bands above 0.95 with `5D 6S 6P 7S 7P`.
 Tests: `tests/unit/inputs/test_read_potcar.py`, `tests/unit/test_basis_gen_potcar.py`,
 `tests/unit/projection/test_vasp_augmented_projections.py`,
@@ -232,7 +250,8 @@ Tests: `tests/unit/inputs/test_read_potcar.py`, `tests/unit/test_basis_gen_potca
 without `PAOFLOW_POTCAR_DIR` / `../potpaw_PBE_64` and `../example01` next to the repository).
 
 Not covered: the PAW augmentation of the position dipoles with spin-orbit coupling
-(scalar-relativistic only), Gamma-only WAVECARs, ultrasoft POTCARs (`LPAW = F`).
+(scalar-relativistic only; the dipoles themselves cover spin-orbit runs with norm-conserving
+pseudopotentials, `position-dipoles.md`), Gamma-only WAVECARs, ultrasoft POTCARs (`LPAW = F`).
 
 ## Files
 

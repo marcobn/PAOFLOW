@@ -60,7 +60,11 @@ e^{-i(\mathbf k_f-\mathbf k)\cdot\boldsymbol\tau_i}\,s_i\sum_{l'=l_i\pm1} B^{l'}
 B^{l'}_i(k) = i^{l'}\!\int_0^\infty\! dr\,\chi_i(r)\,r^2 j_{l'}(kr),
 $$
 
-with $\chi_i = rR_i$ the PAO radial table of the orbital (`arrays['basis'][i]['wfc']`), $G$
+Here $c_{i,n\mathbf k}$ are the coefficients in chinook's atomic gauge, $c^{\rm cell}_{i,n\mathbf k}\,e^{-i\mathbf k\cdot\boldsymbol\tau_i}$:
+`simulate` multiplies the cell-periodic eigenvectors of `BlochHamiltonian` by this phase before the
+matrix element. Without it (before 15 November 2026) the interference between the atoms of a cell was
+wrong: graphene's dark corridor came out on the Γ side of K. One-atom cells are unaffected.
+With $\chi_i = rR_i$ the PAO radial table of the orbital (`arrays['basis'][i]['wfc']`), $G$
 the real Gaunt coefficients of the dipole operator ($x, y, z$ are real $l = 1$ harmonics;
 `hamiltonian/_two_center.real_gaunt_coefficient`), $Y_{l'm'}$ the real harmonics, $s_i$ the
 sign of QE's harmonic relative to the standard one (`harmonics.qe_harmonic`), $\sigma_i$ a
@@ -103,7 +107,7 @@ or a callable `f(w, energies, kpoints, bands)` evaluated per k-block. Sources:
 
 ## Examples
 
-One generic driver, `arpes/arpes.py` of every system folder (`examples/elphon/<System>`, a
+One generic driver, `arpes/arpes.py` of every system folder (`examples/cases/<system>_elphon`, a
 copy of `src/PAOFLOW/gen/elphon_templates/arpes/arpes.py` built on
 `PAOFLOW.elphon.workflows.arpes`), with the per-system settings in the `ARPES` dictionary of
 `system.py` and `--self-energy {isotropic, anisotropic, fan-migdal}`: Pb (metal: the kink from

@@ -461,13 +461,22 @@ def _ws_lattice_pairs(
         np.round(np.asarray(column_positions_cryst, dtype=float), 8), axis=0, return_inverse=True
     )
     tol = 1.0e-6
-    weights = np.zeros((cells.shape[0], len(row_sites), len(column_sites)))
+    ncell, nshift = cells.shape[0], rws.shape[0]
+    weights = np.zeros((ncell, len(row_sites), len(column_sites)))
+    cells_cart = (sign * cells) @ at  # (ncell, 3)
+    columns_cart = np.asarray(column_sites) @ at  # (ncol, 3)
+    # column sites in chunks so that the (ncell, chunk, nshift) projections stay ~2e7 numbers:
+    # one site per chunk for the dense grids of crystals, hundreds for a single-cell box
+    col_chunk = max(1, int(2.0e7 // max(ncell * nshift, 1)))
     for a, site_a in enumerate(row_sites):
-        for b, site_b in enumerate(column_sites):
-            proj = ((sign * cells + site_b - site_a) @ at) @ rws.T - half[None, :]
-            inside = np.all(proj <= tol, axis=1)
-            degeneracy = 1 + np.count_nonzero(np.abs(proj) < tol, axis=1)
-            weights[inside, a, b] = 1.0 / degeneracy[inside]
+        origin = cells_cart - (site_a @ at)[None, :]  # (ncell, 3)
+        for c0 in range(0, len(column_sites), col_chunk):
+            cols = columns_cart[c0 : c0 + col_chunk]
+            sep = origin[:, None, :] + cols[None, :, :]  # (ncell, nc, 3)
+            proj = sep @ rws.T - half[None, None, :]  # (ncell, nc, nshift)
+            inside = np.all(proj <= tol, axis=2)
+            degeneracy = 1 + np.count_nonzero(np.abs(proj) < tol, axis=2)
+            weights[:, a, c0 : c0 + col_chunk] = np.where(inside, 1.0 / degeneracy, 0.0)
     keep = np.any(weights > 0.0, axis=(1, 2))
     Nint = cells[keep]
     W = weights[keep][:, np.ravel(site_of_row)][:, :, np.ravel(site_of_column)]
@@ -1261,13 +1270,43 @@ def band_vertex(
     return np.matmul(left, Vk[:, None])  # (nb, nmode, m, n)
 
 
+#: Memory budget (bytes) of one k-block of the dense vertex kernel (three complex temporaries of
+#: ``kblock * nawf^2 * max(ncart, nmode)`` elements in :func:`band_vertex`).
+DENSE_BLOCK_BYTES = 4.0e9
+
+
+def dense_block_size(nawf, ncart, nmode, budget_bytes=None, kmax=4096, kmin=8):
+    """Number of dense k-points per block of the vertex kernel for a memory budget.
+
+    The historical block of 4096 k-points is kept whenever it fits (every primitive cell), so
+    existing results are unchanged; large cells (a 144-orbital, 24-mode supercell needs
+    ~100 GB at 4096) get the largest block within ``budget_bytes``.
+
+    Parameters
+    ----------
+    nawf, ncart, nmode : int
+        Orbitals, Cartesian displacement components and phonon modes of the vertex.
+    budget_bytes : float, optional
+        Memory for the block temporaries (default :data:`DENSE_BLOCK_BYTES`).
+    kmax, kmin : int
+        Bounds of the block size.
+
+    Returns
+    -------
+    int
+    """
+    budget = DENSE_BLOCK_BYTES if budget_bytes is None else float(budget_bytes)
+    per_k = 3 * 16 * int(nawf) * int(nawf) * max(int(ncart), int(nmode), 1)
+    return int(max(kmin, min(kmax, budget // per_k)))
+
+
 def lambda_q_dense_ws_fast(
     gR,
     electrons,
     q_cryst,
     zmass,
     freqs_thz,
-    kblock=4096,
+    kblock=None,
     pair_coupling=None,
     pair_weights=None,
     pair_q_weight=None,
@@ -1292,6 +1331,9 @@ def lambda_q_dense_ws_fast(
     zmass : ndarray ``(nmode, ncart)``
     freqs_thz : ndarray ``(nmode,)``
     kblock : int, optional
+        Dense k-points per block; ``None`` (default) takes :func:`dense_block_size`
+        (4096 for primitive cells, fewer for large supercells so that the block
+        temporaries stay within :data:`DENSE_BLOCK_BYTES`).
     pair_coupling : FermiSurfacePairCoupling, optional
         Also accumulate the state-resolved Fermi-surface coupling of the
         anisotropic Migdal-Eliashberg equations
@@ -1323,6 +1365,8 @@ def lambda_q_dense_ws_fast(
     nawf = electrons['nawf']
     nkd = Nk**3
     nmode = zmass.shape[0]
+    if kblock is None:
+        kblock = dense_block_size(nawf, gR.shape[2], nmode)
     gn_flat = vertex_ws_coefficients(gR, electrons)
 
     shift = np.asarray(q_cryst, dtype=float) * Nk

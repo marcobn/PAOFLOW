@@ -97,3 +97,22 @@ def test_average_orbits_unwraps_periodic_ruc_coordinates():
 
     assert len(averaged) == 1
     assert np.all(np.abs(averaged[0].avg_xyz_ruc - np.round(averaged[0].avg_xyz_ruc)) < 0.02)
+
+
+def test_find_extremal_keeps_orbits_near_the_walls_by_default():
+    """A closed orbit whose box comes within 2 std of a super-cell wall is a genuine extremum: the
+    library keeps it by default, like PAOFLOW.pyskeaf (allow_wall_orbits=True); the Fortran rule
+    (allowextnearwalls = n) is still available."""
+    near_wall = [0.004, 0.50]  # min_xy_frac[0] = 0.001 < 2 * std = 0.004
+    chunks = match_chunks(
+        [
+            [_orbit(1, near_wall, area=3.0)],
+            [_orbit(2, near_wall, area=1.0)],
+            [_orbit(3, near_wall, area=3.0)],
+        ]
+    )
+    geom = SimpleNamespace(
+        numx=3, zkseparation=0.1, maxlreciplat=1.0, rotation=np.eye(3), plr_inverse=np.eye(3)
+    )
+    assert len(find_extremal(chunks, geom)) == 1
+    assert find_extremal(chunks, geom, allow_near_walls=False) == []

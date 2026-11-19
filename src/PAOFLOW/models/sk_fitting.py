@@ -951,19 +951,25 @@ class SKFitter:
 
     # ── 2j. Fitting ───────────────────────────────────────────
 
-    def _run_single_trial(self, p_init, alpha, n_data, max_nfev, ftol, xtol, gtol):
+    def _run_single_trial(self, p_init, alpha, n_data, max_nfev, ftol, xtol, gtol, weights=None):
         """Run one least-squares trial from a given initial point.
 
-        Returns ``(rmse, p_opt, OptimizeResult)``.
+        ``weights`` (shape ``(Nk, nawf)`` or None) multiply the eigenvalue
+        residuals and their Jacobian rows. Returns ``(rmse, p_opt,
+        OptimizeResult)``, the RMSE weighted as in :meth:`fit`.
         """
         use_reg = alpha > 0.0
         reg_w = self._reg_weights
         last_jac = [None]
+        w = None if weights is None else np.asarray(weights, dtype=float).ravel()
 
         def fun(p):
             E_sk, dE_dp = self._eigenvalues_and_jacobian(p)
             res_data = (E_sk - self.E_pao).ravel()
             J_data = dE_dp.reshape(n_data, self.n_params)
+            if w is not None:
+                res_data = w * res_data
+                J_data = w[:, None] * J_data
             if use_reg:
                 last_jac[0] = np.vstack([J_data, np.diag(alpha * reg_w)])
                 return np.concatenate([res_data, alpha * reg_w * p])
@@ -983,8 +989,25 @@ class SKFitter:
             gtol=gtol,
             max_nfev=max_nfev,
         )
-        rmse = np.sqrt(np.mean(res.fun[:n_data] ** 2))
+        if w is None:
+            rmse = np.sqrt(np.mean(res.fun[:n_data] ** 2))
+        else:
+            rmse = np.sqrt(np.sum(res.fun[:n_data] ** 2) / np.sum(w**2))
         return rmse, res.x.copy(), res
+
+    def _band_weights(self, band_weights) -> np.ndarray | None:
+        """Band weights of :meth:`fit` broadcast to ``(Nk, nawf)`` (None: unit weights)."""
+        if band_weights is None:
+            return None
+        weights = np.asarray(band_weights, dtype=float)
+        if weights.shape not in ((self.nawf,), (self.Nk, self.nawf)):
+            raise ValueError(
+                f'band_weights must have shape ({self.nawf},) or ({self.Nk}, {self.nawf}), '
+                f'not {weights.shape}'
+            )
+        if np.any(weights < 0) or not np.any(weights > 0):
+            raise ValueError('band_weights must be non-negative, with at least one positive')
+        return np.broadcast_to(weights, (self.Nk, self.nawf)).copy()
 
     def fit(
         self,
@@ -996,8 +1019,9 @@ class SKFitter:
         gtol: float = 1e-12,
         alpha: float = 0.0,
         n_jobs: int = 1,
+        band_weights: np.ndarray | None = None,
     ) -> dict:
-        """Run multi-start least-squares optimisation.
+        r"""Run multi-start least-squares optimisation.
 
         Parameters
         ----------
@@ -1022,18 +1046,28 @@ class SKFitter:
             Requires ``joblib`` when ``n_jobs != 1``.
             Capped at this process' core budget, which under ``mpirun`` is its
             share of the node (see :mod:`PAOFLOW.utils.parallel_resources`).
+        band_weights : array_like, optional
+            Weight :math:`w_n` of every band (shape ``(nawf,)``, bands in
+            ascending order at each k) or :math:`w_{n\mathbf k}` (shape
+            ``(Nk, nawf)``), non-negative. The residuals become
+            :math:`w_{n\mathbf k}(E^{\rm SK}_{n\mathbf k} - E^{\rm PAO}_{n\mathbf k})`:
+            weight 1 on the bands to reproduce (e.g. the valence bands) and 0
+            on the others. None (default) weighs every band 1.
 
         Returns
         -------
         dict
             ``p_opt`` : best parameter vector.
-            ``rmse`` : best RMSE (eV) (data-only, excluding penalty).
-            ``max_err`` : max absolute error (eV).
+            ``rmse`` : best RMSE (eV) (data-only, excluding penalty); with
+            ``band_weights``, :math:`\sqrt{\sum w^2\delta^2/\sum w^2}`.
+            ``max_err`` : max absolute error (eV), over the bands of nonzero
+            weight.
             ``all_results`` : list of ``(rmse, p, OptimizeResult)`` sorted by RMSE.
             ``param_labels`` : parameter names.
         """
         Nk, nawf = self.Nk, self.nawf
         n_data = Nk * nawf
+        weights = self._band_weights(band_weights)
 
         # Hopping scale for initialisation
         E_half = 0.5 * (self.E_pao.max() - self.E_pao.min())
@@ -1064,6 +1098,7 @@ class SKFitter:
             ftol=ftol,
             xtol=xtol,
             gtol=gtol,
+            weights=weights,
         )
 
         if self.verbose:
@@ -1094,9 +1129,11 @@ class SKFitter:
                 if rmse < best_so_far:
                     best_so_far = rmse
                 if self.verbose:
-                    rmse_init = np.sqrt(
-                        np.mean((self.eigenvalues(p_init) - self.E_pao).ravel() ** 2)
-                    )
+                    delta = self.eigenvalues(p_init) - self.E_pao
+                    if weights is None:
+                        rmse_init = np.sqrt(np.mean(delta**2))
+                    else:
+                        rmse_init = np.sqrt(np.sum((weights * delta) ** 2) / np.sum(weights**2))
                     print(
                         f'{trial + 1:5d}  {rmse_init * 1000:15.2f}  '
                         f'{rmse * 1000:16.2f}  {res.nfev:5d}{tag}'
@@ -1106,6 +1143,9 @@ class SKFitter:
         all_results.sort(key=lambda x: x[0])
         best_rmse, best_p, best_res = all_results[0]
         best_data_res = best_res.fun[:n_data]
+        if weights is not None:
+            fitted = weights.ravel() > 0
+            best_data_res = best_data_res[fitted] / weights.ravel()[fitted]
 
         if self.verbose:
             if use_parallel:
@@ -1160,9 +1200,12 @@ class SKFitter:
 
         # ── SK-param dict for one shell ──
         def _build_hop(p_hop):
-            # Single configuration (one shell per l): flat SK dict, keyed by
-            # SK integral name ('sss', 'sps', ...) — the legacy format.
-            if not self.is_multiconfig:
+            # One shell per l and no configuration labels: flat SK dict, keyed
+            # by SK integral name ('sss', 'sps', ...) — the legacy format. With
+            # configuration labels the atoms below carry 'configuration', and
+            # models.Slater_Koster then reads every shell's hoppings by shell
+            # pair ('3S-3P'), even with one shell per l.
+            if not self.is_multiconfig and not self.config_dict:
                 d = {}
                 for ga, gb in self.hop_pair_list:
                     start = self.hop_pair_start[(ga, gb)]
@@ -1170,7 +1213,7 @@ class SKFitter:
                     for lk, sk_k in enumerate(active):
                         d[SK_PARAM_NAMES[sk_k]] = float(p_hop[start + lk])
                 return d
-            # Multi-configuration: one SK sub-dict per shell-pair, keyed by
+            # Configuration labels: one SK sub-dict per shell-pair, keyed by
             # configuration labels ordered by group index (e.g. '3S-4S',
             # '3S-3P').  This matches the canonicalisation used by
             # models.Slater_Koster, which orders pairs by config-list index.

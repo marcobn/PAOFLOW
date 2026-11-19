@@ -1,5 +1,6 @@
 import os
 import re
+from typing import Any
 
 import numpy as np
 import scipy.fft as FFT
@@ -132,6 +133,38 @@ def radialfft_simpson(r, f, l, qmesh, volume):
     return fq
 
 
+def spinor_record_sources(l: int, j_minus_source: Any, j_plus_source: Any) -> list[Any]:
+    r"""Radial source of each of the :math:`2(2l+1)` spin-orbit records of an :math:`l > 0` shell.
+
+    Parameters
+    ----------
+    l : int
+        Orbital angular momentum, ``l > 0``.
+    j_minus_source, j_plus_source
+        The radial function (table entry, UPF orbital index, ...) of :math:`j = l - 1/2` and of
+        :math:`j = l + 1/2`.
+
+    Returns
+    -------
+    list
+        ``2 (2l + 1)`` items: ``j_minus_source`` for the first ``2l`` records, ``j_plus_source``
+        for the last ``2l + 2``.
+
+    Notes
+    -----
+    :func:`assign_jm` labels the records of a shell as the :math:`2l` states
+    :math:`|j = l - 1/2, m_j\rangle` followed by the :math:`2l + 2` states
+    :math:`|j = l + 1/2, m_j\rangle`, each with increasing :math:`m_j`. A radial function attached
+    per block of :math:`2l + 1` records gives :math:`|l + 1/2, -(l + 1/2)\rangle` the
+    :math:`j = l - 1/2` radial function: the basis then breaks time reversal (which maps
+    :math:`m_j \to -m_j`) and the rotations, by an amount set by the difference of the two
+    radial functions (meV in the PAO Hamiltonian of TaAs, 13 Nov 2026).
+    """
+    if l < 1:
+        raise ValueError('spin-orbit split shells have l > 0, got l = %d' % l)
+    return [j_minus_source] * (2 * l) + [j_plus_source] * (2 * l + 2)
+
+
 def assign_jm(basis):
     """Assign total-angular-momentum composite index ``jm`` to spin-orbit basis functions.
 
@@ -187,6 +220,50 @@ def assign_jm(basis):
             raise NotImplementedError('l > 3 not implemented')
 
 
+def _upf_record_sources(pswfc: list[dict], upf_j: list[float], spin_orbit: bool) -> list[list[int]]:
+    """Pseudo-orbital whose radial function each basis record of :func:`build_pswfc_basis_all` takes.
+
+    Parameters
+    ----------
+    pswfc : list of dict
+        Pseudo-orbitals of one UPF, in file order (``label``, ``wfc``).
+    upf_j : list of float
+        Their ``jchi`` (fully relativistic UPF; empty otherwise).
+    spin_orbit : bool
+
+    Returns
+    -------
+    list of list of int
+        For each pseudo-orbital, the indices (into ``pswfc``) of the radial functions of the
+        ``2l + 1`` records it emits.
+
+    Notes
+    -----
+    Without spin-orbit every record takes its own pseudo-orbital. With spin-orbit, the two
+    consecutive pseudo-orbitals of an ``l > 0`` shell (same label) emit ``2 (2l + 1)`` records
+    that :func:`assign_jm` labels ``j = l - 1/2`` (2l) then ``j = l + 1/2`` (2l + 2): each takes
+    the pseudo-orbital of its own ``j`` (:func:`spinor_record_sources`), whatever the order of
+    the two in the file (PseudoDojo lists ``j = l + 1/2`` first).
+    """
+    angular = ['SPDF'.find(pao['label'][1].upper()) for pao in pswfc]
+    sources = [[index] * (2 * l + 1) for index, l in enumerate(angular)]
+    if not spin_orbit:
+        return sources
+    index = 0
+    while index < len(pswfc) - 1:
+        l = angular[index]
+        if l > 0 and angular[index + 1] == l and pswfc[index + 1]['label'] == pswfc[index]['label']:
+            j_minus, j_plus = index, index + 1
+            if len(upf_j) == len(pswfc) and upf_j[index] > upf_j[index + 1]:
+                j_minus, j_plus = index + 1, index
+            records = spinor_record_sources(l, j_minus, j_plus)
+            sources[index], sources[index + 1] = records[: 2 * l + 1], records[2 * l + 1 :]
+            index += 2
+        else:
+            index += 1
+    return sources
+
+
 def build_pswfc_basis_all(data_controller):
     """Construct the pseudopotential wavefunction basis set from UPF files for all atoms.
 
@@ -238,7 +315,9 @@ def build_pswfc_basis_all(data_controller):
         atom = arry['atoms'][na]
         tau = arry['tau'][na]
         r, pswfc, pseudo = read_pswfc_from_upf(data_controller, atom)
-        per_atom.append((atom, tau, pswfc, pseudo, r))
+        # jchi of each pseudo-orbital (fully relativistic UPF; empty otherwise)
+        upf_j = list(arry['jchia'].get(atom, []))
+        per_atom.append((atom, tau, pswfc, pseudo, r, upf_j))
         task_offset.append(len(tasks))
         for pao in pswfc:
             l = 'SPDF'.find(pao['label'][1].upper())
@@ -249,10 +328,11 @@ def build_pswfc_basis_all(data_controller):
     wfc_g_list = _parallel_radialfft(tasks, qmesh, volume)
 
     # ----- Pass 2: build the basis dictionaries (cheap, replicated).
-    for na, (atom, tau, pswfc, pseudo, r) in enumerate(per_atom):
+    for na, (atom, tau, pswfc, pseudo, r, upf_j) in enumerate(per_atom):
         if verbose and rank == 0:
             print(f'atom: {atom:2s}  pseudo: {pseudo:30s}  tau: {tau}')
 
+        record_sources = _upf_record_sources(pswfc, upf_j, bool(attr['dftSO']))
         a_shells = []
         jchia = []
         s = 0.5
@@ -268,7 +348,7 @@ def build_pswfc_basis_all(data_controller):
 
             wfc_g = wfc_g_list[task_offset[na] + ish]
 
-            for m in range(1, 2 * l + 2):
+            for m, source in zip(range(1, 2 * l + 2), record_sources[ish]):
                 basis.append(
                     {
                         'atom': atom,
@@ -277,9 +357,9 @@ def build_pswfc_basis_all(data_controller):
                         'm': m,
                         'label': pao['label'],
                         'r': r,
-                        'wfc': pao['wfc'].copy(),
+                        'wfc': pswfc[source]['wfc'].copy(),
                         'qmesh': qmesh,
-                        'wfc_g': wfc_g,
+                        'wfc_g': wfc_g_list[task_offset[na] + source],
                     }
                 )
                 if verbose and rank == 0:
@@ -417,9 +497,9 @@ def build_aewfc_basis(data_controller):
     wfc_g_list = _parallel_radialfft(tasks, qmesh, volume)
 
     # ----- Pass 2: build the basis dictionaries (cheap, replicated).
-    # SO emits 2*(2l+1) records per shell with the same ordering as
-    # before (first (2l+1) -> j=l-1/2 block, second -> j=l+1/2 block).
-    # ``assign_jm`` relies on that ordering.
+    # SO emits 2*(2l+1) records per shell, labelled by ``assign_jm`` as
+    # the 2l states j=l-1/2 followed by the 2l+2 states j=l+1/2; each
+    # record carries the radial table of its own j (spinor_record_sources).
     for na, (atom, tau, shell_records) in enumerate(per_atom):
         ash = []
         jchia = []
@@ -449,24 +529,29 @@ def build_aewfc_basis(data_controller):
             else:
                 block_entries = [entries[0]]
 
-            for be in block_entries:
+            if so and l > 0:
+                # one radial table per (j, m_j) record, in the order of ``assign_jm``
+                record_entries = spinor_record_sources(l, block_entries[0], block_entries[1])
+            else:
+                record_entries = [be for be in block_entries for _ in range(2 * l + 1)]
+            for record, be in enumerate(record_entries):
                 wfc_g = wfc_g_list[be['task_idx']]
-                for m in range(1, 2 * l + 2):
-                    basis.append(
-                        {
-                            'atom': atom,
-                            'tau': tau,
-                            'l': l,
-                            'm': m,
-                            'label': shell_lbl,
-                            'r': be['r'],
-                            'wfc': be['wfc'].copy(),
-                            'qmesh': qmesh,
-                            'wfc_g': wfc_g,
-                        }
-                    )
-                    if verbose and rank == 0:
-                        print(f'      atwfc: {len(basis):3d}  {shell_lbl}  l={l:d}, m={m:-d}')
+                m = record % (2 * l + 1) + 1
+                basis.append(
+                    {
+                        'atom': atom,
+                        'tau': tau,
+                        'l': l,
+                        'm': m,
+                        'label': shell_lbl,
+                        'r': be['r'],
+                        'wfc': be['wfc'].copy(),
+                        'qmesh': qmesh,
+                        'wfc_g': wfc_g,
+                    }
+                )
+                if verbose and rank == 0:
+                    print(f'      atwfc: {len(basis):3d}  {shell_lbl}  l={l:d}, m={m:-d}')
 
         if atom not in shells:
             shells[atom] = ash
@@ -830,6 +915,52 @@ def fft_wfc_R2G(wfc, igwx, mill, omega):
     return wfcg
 
 
+def unfold_gamma_sphere(wfc, mill):
+    """Full-sphere plane-wave coefficients from the half sphere stored by a gamma-tricks run.
+
+    Parameters
+    ----------
+    wfc : array_like, shape ``(nbnd, igwx)``
+        Coefficients :math:`c_n(\\mathbf G)` stored by Quantum ESPRESSO with ``gamma_only``:
+        ``G = 0`` once and one member of every ``+G / -G`` pair.
+    mill : array_like, shape ``(3, igwx)``, int
+        Their Miller indices.
+
+    Returns
+    -------
+    wfc_full : np.ndarray, shape ``(nbnd, 2 igwx - 1)``, complex
+        The coefficients on the full sphere, ``c_n(-G) = c_n(G)^*`` appended for every ``G != 0``.
+    mill_full : np.ndarray, shape ``(3, 2 igwx - 1)``, int
+        The Miller indices of the full sphere, the stored ones first.
+
+    Raises
+    ------
+    ValueError
+        If ``G = 0`` is not stored exactly once, or if both members of a pair are stored (the
+        block is then not a gamma-tricks half sphere).
+
+    Notes
+    -----
+    With gamma tricks the wavefunctions are real in space, :math:`\\psi(\\mathbf r) =
+    \\psi(\\mathbf r)^*`, hence :math:`c(-\\mathbf G) = c(\\mathbf G)^*` and the half sphere
+    determines the full one.  Every inner product downstream (Loewdin orthonormalisation,
+    atomic-wavefunction overlaps, projections, augmentation) is a plain sum over the stored
+    G-vectors, so it is correct only on the unfolded set; the stored normalisation of QE
+    (:math:`|c(0)|^2 + 2\\sum_{G>0}|c(G)|^2 = 1`) is the full-sphere norm already.
+    """
+    wfc = np.asarray(wfc)
+    mill = np.asarray(mill, dtype=np.int64)
+    nonzero = np.any(mill != 0, axis=0)
+    if np.count_nonzero(~nonzero) != 1:
+        raise ValueError('gamma-tricks block: G = 0 must be stored exactly once')
+    keys = {tuple(g) for g in mill.T}
+    if any((-g[0], -g[1], -g[2]) in keys for g in mill[:, nonzero].T):
+        raise ValueError('gamma-tricks block: both members of a +G/-G pair are stored')
+    mill_full = np.concatenate([mill, -mill[:, nonzero]], axis=1)
+    wfc_full = np.concatenate([wfc, np.conj(wfc[:, nonzero])], axis=1)
+    return wfc_full, mill_full
+
+
 def read_QE_wfc(data_controller, ik, ispin, orthonormalize=True):
     """Read Quantum ESPRESSO wavefunction coefficients from a Fortran binary ``wfc*.dat`` file.
 
@@ -852,7 +983,9 @@ def read_QE_wfc(data_controller, ik, ispin, orthonormalize=True):
     -------
     gkspace : dict
         G-space descriptor with keys ``'xk'``, ``'igwx'``, ``'mill'``,
-        ``'bg'``, ``'gamma_only'``.
+        ``'bg'``, ``'gamma_only'``.  A gamma-tricks file (``K_POINTS gamma``) is unfolded to
+        the full G-sphere by :func:`unfold_gamma_sphere`; ``'gamma_only'`` is then ``False``
+        and ``'gamma_unfolded'`` is ``True``.
     wfc : dict
         Wavefunction data with keys ``'wfc'`` (complex array), ``'npol'``,
         ``'nbnd'``, ``'ispin'``.
@@ -888,7 +1021,7 @@ def read_QE_wfc(data_controller, ik, ispin, orthonormalize=True):
 
             xk = np.frombuffer(record[1:7], np.float64)
             ispin = record[7]
-            gamma_only = record[8] != 0
+            gamma_only = bool(record[8] != 0)
             # scalef = np.frombuffer(record[9:], np.float64)[0]
             # print('ik =', ik, '  ispin =', ispin, '  gamma_only =', gamma_only, '  scalef =', scalef)
             # print('xk =', xk)
@@ -938,10 +1071,27 @@ def read_QE_wfc(data_controller, ik, ispin, orthonormalize=True):
         except:
             raise Exception('no wfc file found')
 
+    wfc = np.asarray(wfc)
+    unfolded = False
+    if gamma_only:
+        # K_POINTS gamma: QE stores half of the G-sphere (real wavefunctions); every inner
+        # product below needs the full sphere.
+        if npol != 1:
+            raise ValueError('gamma-tricks wavefunctions with npol != 1')
+        wfc, mill = unfold_gamma_sphere(wfc, mill)
+        igwx = int(mill.shape[1])
+        gamma_only, unfolded = False, True
     # ``scalef`` is deliberately not applied: Loewdin orthonormalisation makes
     # ``owfc`` independent of any global scale on the input (and QE writes it as 1).
-    owfc = loewdin_orthonormalize(wfc) if orthonormalize else np.asarray(wfc)
-    gkspace = {'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': gamma_only}
+    owfc = loewdin_orthonormalize(wfc) if orthonormalize else wfc
+    gkspace = {
+        'xk': xk,
+        'igwx': igwx,
+        'mill': mill,
+        'bg': bg,
+        'gamma_only': gamma_only,
+        'gamma_unfolded': unfolded,
+    }
     return gkspace, {'wfc': owfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin}
 
 

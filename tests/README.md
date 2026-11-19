@@ -6,9 +6,8 @@ This folder contains unit and integration tests for PAOFLOW.
 
 - unit/: fast, isolated tests of small units
 - integration/: run smaller, modified versions of examples
-- integration/examples/: example-derived inputs and scripts used by integration tests
-- fixtures/: shared test data
-- utils/: shared test helpers
+- data/: tracked fixtures of the unit tests (see data/README.md); the unit tests never read
+  examples/, and the pseudopotentials they need are in PSEUDOS/library/
 
 ## Running tests
 

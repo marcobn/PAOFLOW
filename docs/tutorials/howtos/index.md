@@ -11,6 +11,18 @@ How-Tos assume you have already worked through [Tutorial 01](../tutorial01.ipynb
 :class-container: tutorials-grid
 
 :::{grid-item-card}
+:link: browser-gui
+:link-type: doc
+:class-card: landing-card
+
+{octicon}`browser;1.8em;sd-text-muted`
+
+**Working in the browser**
+
+Generate the drivers, run them and plot the results with PAOFLOW Studio (`paoflow-studio`).
+:::
+
+:::{grid-item-card}
 :link: sparse-workflow
 :link-type: doc
 :class-card: landing-card
@@ -40,6 +52,7 @@ Assign measured dHvA/SdH/torque frequencies to Fermi-surface sheets, with chance
 :hidden:
 :maxdepth: 2
 
+browser-gui
 sparse-workflow
 qo_analysis
 ```

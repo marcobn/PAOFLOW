@@ -1,0 +1,34 @@
+{
+ "title": "SnTe monolayer: mirror Chern number",
+ "summary": "The SnTe (001) monolayer with fully relativistic PAW pseudopotentials and the minimal internal projections in the augmented spinor metric: mirror Chern number of the horizontal mirror (Z2Pack).",
+ "workflow": "run",
+ "answers": {
+  "savedir": "SnTe.save",
+  "prefix": "SnTe",
+  "projector": "internal",
+  "properties": [
+   "mirror_chern"
+  ],
+  "is_2d": true,
+  "spin_orbit": true,
+  "std_basis": "minimal"
+ },
+ "pseudopotentials": [
+  "library/Sn.rel-pbe-dn-kjpaw_psl.1.0.0.UPF",
+  "library/Te.rel-pbe-dn-kjpaw_psl.1.0.0.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  }
+ ],
+ "tags": [
+  "2D",
+  "mirror Chern",
+  "topological crystalline insulator",
+  "PAW"
+ ],
+ "source": "examples/qe_examples/example17"
+}

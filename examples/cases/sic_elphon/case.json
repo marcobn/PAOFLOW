@@ -1,0 +1,149 @@
+{
+ "title": "3C-SiC: polar electron-phonon coupling (Froehlich, quadrupoles) and mobility",
+ "summary": "Electron-phonon system folder of cubic SiC, the polar case: the long-range dipole (Froehlich) and quadrupole model subtracted and restored around the PAO interpolation, the phonons with the LO-TO splitting, the 1/|q| coupling of the LO mode, the dynamical quadrupoles from single-q ph.x runs and the electron and hole mobilities.",
+ "workflow": "scripts",
+ "pseudopotentials": [
+  "nc-sr-05_pbe_standard_upf/Si.upf",
+  "nc-sr-05_pbe_standard_upf/C.upf"
+ ],
+ "pseudo_dir": "qe",
+ "qe": [],
+ "steps": [
+  {
+   "label": "Quantum ESPRESSO: scf, ph.x, nscf",
+   "command": [
+    "bash",
+    "run_qe.sh"
+   ],
+   "cwd": "qe",
+   "ranks_env": "NP",
+   "qe_launch": true,
+   "note": "qe/phonon: scf and ph.x on the 6^3 q-grid with epsil (eps_inf, Z*) and fildvscf; qe/nscf: the 6^3 nscf on the irreducible wedge, started from a copy of the scf charge density (run_qe.sh does it); NP ranks, 8 by default"
+  },
+  {
+   "label": "Pseudo-atom basis",
+   "command": [
+    "paoflow-genbasis-ps",
+    "--pseudo-dir",
+    "qe",
+    "--out",
+    "BASIS_PS",
+    "--preset",
+    "standard"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "note": "Si and C tables (26 orbitals)"
+  },
+  {
+   "label": "Phonon dispersion (LO-TO)",
+   "command": [
+    "python",
+    "phonons.py"
+   ],
+   "cwd": "phonons",
+   "mpi": false,
+   "note": "q2r + matdyn in PAOFLOW with the dipole term -> phonons/output"
+  },
+  {
+   "label": "Long-range check",
+   "command": [
+    "python",
+    "long_range_check.py"
+   ],
+   "cwd": "coupling",
+   "mpi": true,
+   "note": "|g_LO(Gamma, q)| along Gamma-X with and without the dipole model"
+  },
+  {
+   "label": "Carrier mobility",
+   "command": [
+    "python",
+    "mobility.py"
+   ],
+   "cwd": "transport",
+   "mpi": true,
+   "note": "36^3 k = q, SERTA/MRTA with the polar coupling (5 min on 8 ranks)"
+  },
+  {
+   "label": "Figures (mobility)",
+   "command": [
+    "python",
+    "plot_mobility.py"
+   ],
+   "cwd": "transport",
+   "mpi": false,
+   "interactive": true,
+   "note": "or the Results tab"
+  },
+  {
+   "label": "Quadrupoles: ph.x inputs",
+   "command": [
+    "python",
+    "quadrupoles.py",
+    "--write-inputs"
+   ],
+   "cwd": "coupling",
+   "mpi": false,
+   "note": "twelve single-q ph.x inputs and run.sh under qe/phonon/quadrupoles"
+  },
+  {
+   "label": "Quadrupoles: ph.x runs",
+   "command": [
+    "bash",
+    "run.sh"
+   ],
+   "cwd": "qe/phonon/quadrupoles",
+   "mpi": false,
+   "ranks_env": "NP",
+   "note": "ph.x with fildrho on each q (needs the scf wavefunctions of qe/phonon)"
+  },
+  {
+   "label": "Quadrupoles: fit",
+   "command": [
+    "python",
+    "quadrupoles.py",
+    "--extract"
+   ],
+   "cwd": "coupling",
+   "mpi": false,
+   "note": "Z* check and Q -> coupling/quadrupole.fmt"
+  },
+  {
+   "label": "Long-range check with the quadrupoles",
+   "command": [
+    "python",
+    "long_range_check.py",
+    "--quadrupoles",
+    "quadrupole.fmt"
+   ],
+   "cwd": "coupling",
+   "mpi": true,
+   "note": "adds the dipole + quadrupole curve"
+  },
+  {
+   "label": "Carrier mobility with the quadrupoles",
+   "command": [
+    "python",
+    "mobility.py",
+    "--quadrupoles",
+    "coupling/quadrupole.fmt",
+    "--tag",
+    "output_quadrupole"
+   ],
+   "cwd": "transport",
+   "mpi": true,
+   "note": "the path of --quadrupoles is relative to the system folder; the converged values of README.md use --nk 60 --nq 60"
+  }
+ ],
+ "tags": [
+  "electron-phonon",
+  "polar",
+  "Froehlich",
+  "quadrupoles",
+  "LO-TO",
+  "mobility",
+  "semiconductor"
+ ],
+ "source": "examples/elphon/SiC"
+}

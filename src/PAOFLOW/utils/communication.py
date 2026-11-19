@@ -1,9 +1,121 @@
+from __future__ import annotations
+
 import numpy as np
 from mpi4py import MPI
+from numpy.typing import NDArray
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
+
+#: Largest element count one MPI call takes: a C ``int`` (MPI libraries without the MPI-4
+#: large-count interface, e.g. Open MPI 5.0, reject more with ``MPI_ERR_ARG``).
+MAX_MPI_COUNT = 2**31 - 1
+
+#: Bytes one collective call moves at most; larger transfers run in rounds (also a guard for
+#: MPI libraries that mishandle single messages over 2 GiB).
+MAX_MESSAGE_BYTES = 2**30
+
+
+def _row_datatype(mpidtype: MPI.Datatype, row_len: int) -> MPI.Datatype:
+    """Committed contiguous MPI datatype of one row of ``row_len`` elements (free it after use).
+
+    Parameters
+    ----------
+    mpidtype : MPI.Datatype
+        Datatype of one element.
+    row_len : int
+        Elements per row (the product of the trailing dimensions of the array).
+
+    Returns
+    -------
+    MPI.Datatype
+        ``mpidtype.Create_contiguous(row_len)``, committed.
+
+    Raises
+    ------
+    ValueError
+        If a single row exceeds :data:`MAX_MPI_COUNT` elements.
+    """
+    if row_len > MAX_MPI_COUNT:
+        raise ValueError(
+            f'one row of {row_len} elements exceeds the MPI count limit ({MAX_MPI_COUNT})'
+        )
+    rowtype = mpidtype.Create_contiguous(max(1, int(row_len)))
+    rowtype.Commit()
+    return rowtype
+
+
+def _row_rounds(counts: NDArray[np.int64], row_bytes: int, nranks: int) -> tuple[int, int]:
+    """Rows per rank per round and number of rounds of a row-wise scatter or gather.
+
+    Parameters
+    ----------
+    counts : ndarray of int, shape ``(nranks,)``
+        Rows of every rank.
+    row_bytes : int
+        Bytes of one row.
+    nranks : int
+        Number of ranks taking part.
+
+    Returns
+    -------
+    rows_per_round : int
+        At most this many rows per rank in one call, so that one call moves at most
+        :data:`MAX_MESSAGE_BYTES` (at least one row).
+    nrounds : int
+        Number of calls (``0`` when no rank holds a row).
+
+    Notes
+    -----
+    Every rank computes the same pair from the same broadcast layout, so all ranks make the same
+    number of collective calls.
+    """
+    rows_per_round = max(1, MAX_MESSAGE_BYTES // max(1, int(nranks) * int(row_bytes)))
+    most = int(np.max(counts)) if len(counts) else 0
+    return rows_per_round, -(-most // rows_per_round)
+
+
+def scatter_full_indices(
+    nsize: int, npool: int, nranks: int | None = None, rank_index: int | None = None
+) -> NDArray[np.int64]:
+    """Global first-axis indices that :func:`scatter_full` gives one rank, in order.
+
+    Parameters
+    ----------
+    nsize : int
+        Length of the scattered axis.
+    npool : int
+        Pools of :func:`scatter_full`.
+    nranks, rank_index : int, optional
+        Number of ranks and the rank (default: ``MPI.COMM_WORLD``).
+
+    Returns
+    -------
+    ndarray of int, shape ``(n_local,)``
+        ``scatter_full(arr, npool)`` on rank ``rank_index`` equals ``arr[indices]``.
+
+    Notes
+    -----
+    Lets every rank compute its own rows of a k-distributed array directly, instead of computing
+    another partition, gathering it on one rank and scattering it again.
+    """
+    nranks = size if nranks is None else int(nranks)
+    rank_index = rank if rank_index is None else int(rank_index)
+    indices = []
+    nchunks = nsize // nranks
+    chunk_e = 0
+    if nchunks != 0:
+        for pool in range(npool):
+            chunk_s, chunk_e = load_balancing(npool, pool, nchunks)
+            sizes = load_sizes(nranks, (chunk_e - chunk_s) * nranks, 1)
+            first = chunk_s * nranks + sizes[rank_index, 1]
+            indices.extend(range(first, first + sizes[rank_index, 2]))
+    if nsize % nranks != 0:
+        sizes = load_sizes(nranks, nsize - chunk_e * nranks, 1)
+        first = chunk_e * nranks + sizes[rank_index, 1]
+        indices.extend(range(first, first + sizes[rank_index, 2]))
+    return np.array(indices, dtype=np.int64)
 
 
 def load_balancing(size, rank, n):
@@ -71,7 +183,7 @@ def load_sizes(size, n, dim):
 
 
 # Scatters first dimension of an array of arbitrary length
-def scatter_array(arr, sroot=0):
+def scatter_array(arr: np.ndarray | None, sroot: int = 0) -> np.ndarray:
     """Scatter the first dimension of an array to all MPI ranks.
 
     Parameters
@@ -94,51 +206,58 @@ def scatter_array(arr, sroot=0):
     Uses ``MPI.Scatterv`` for variable-count scatter so that the array
     does not need to be exactly divisible by the number of ranks.  Shape
     and dtype are broadcast from ``sroot`` before the transfer.
+
+    Counts and offsets are in rows (a contiguous MPI datatype of the trailing dimensions) and the
+    transfer runs in rounds of at most :data:`MAX_MESSAGE_BYTES`. When even the row offsets would
+    exceed the C ``int`` of the MPI interface (more than :data:`MAX_MPI_COUNT` rows), every round
+    is staged in a buffer of at most that size on ``sroot``. The data layout is that of an
+    element-wise ``Scatterv``: the result is the same, bit for bit.
     """
-    # Compute data type and shape of the scattered array on this process
-    pydtype = None
-    auxlen = None
-
-    # An array to store the size and dimensions of scattered arrays
-    lsizes = np.empty((size, 3), dtype=int)
+    layout = None
     if rank == sroot:
-        pydtype = arr.dtype
-        auxshape = np.array(list(arr.shape))
-        auxlen = len(auxshape)
-        lsizes = load_sizes(size, arr.shape[0], np.prod(arr.shape[1:]))
+        sizes = load_sizes(size, arr.shape[0], 1)
+        layout = (sizes[:, 2].copy(), sizes[:, 1].copy(), tuple(arr.shape[1:]), arr.dtype.str)
+    counts, starts, tail, dtype_str = comm.bcast(layout, root=sroot)
+    pydtype = np.dtype(dtype_str)
+    row_len = max(1, int(np.prod(tail, dtype=np.int64)))
 
-    # Broadcast the data type and dimension of the scattered array
-    pydtype = comm.bcast(pydtype, root=sroot)
-    auxlen = comm.bcast(auxlen, root=sroot)
+    arraux = np.empty((int(counts[rank]),) + tuple(tail), dtype=pydtype)
+    recv = arraux.reshape(-1, row_len)
+    send = np.ascontiguousarray(arr).reshape(-1, row_len) if rank == sroot else None
+    # offsets in rows fit a C int: send straight from the array; otherwise stage every round
+    staged = int(np.sum(counts)) > MAX_MPI_COUNT
 
-    # An array to store the shape of array's dimensions
-    if rank != sroot:
-        auxshape = np.zeros((auxlen,), dtype=int)
-
-    # Broadcast the shape of each dimension
-    for i in np.arange(auxlen):
-        auxshape[i] = comm.bcast(auxshape[i], root=sroot)
-
-    comm.Bcast([auxshape, MPI.INT], root=sroot)
-    comm.Bcast([lsizes, MPI.INT], root=sroot)
-
-    # Change the first dimension of auxshape to the correct size for scatter
-    auxshape[0] = lsizes[rank][2]
-
-    # Initialize aux array
-    arraux = np.empty(auxshape, dtype=pydtype)
-
-    # Get the datatype for the MPI transfer
-    mpidtype = MPI._typedict[np.dtype(pydtype).char]
-
-    # Scatter the data according to load_sizes
-    comm.Scatterv([arr, lsizes[:, 0], lsizes[:, 1], mpidtype], [arraux, mpidtype], root=sroot)
+    rowtype = _row_datatype(MPI._typedict[pydtype.char], row_len)
+    try:
+        per_round, nrounds = _row_rounds(counts, row_len * pydtype.itemsize, size)
+        for step in range(nrounds):
+            offset = step * per_round
+            round_counts = np.clip(counts - offset, 0, per_round).astype(np.int64)
+            mine = int(round_counts[rank])
+            sendbuf = None
+            if staged:
+                displs = np.concatenate(([0], np.cumsum(round_counts)[:-1])).astype(np.int64)
+                if rank == sroot:
+                    stage = np.empty((int(round_counts.sum()), row_len), dtype=pydtype)
+                    for r in range(size):
+                        if round_counts[r]:
+                            first = int(starts[r]) + offset
+                            stage[displs[r] : displs[r] + round_counts[r]] = send[
+                                first : first + round_counts[r]
+                            ]
+                    sendbuf = [stage, round_counts, displs, rowtype]
+            elif rank == sroot:
+                displs = (starts + np.minimum(offset, counts)).astype(np.int64)
+                sendbuf = [send, round_counts, displs, rowtype]
+            comm.Scatterv(sendbuf, [recv[offset : offset + mine], rowtype], root=sroot)
+    finally:
+        rowtype.Free()
 
     return arraux
 
 
 # Gathers first dimension of an array of arbitrary length
-def gather_array(arr, arraux, sroot=0):
+def gather_array(arr: np.ndarray | None, arraux: np.ndarray, sroot: int = 0) -> None:
     """Gather local sub-arrays into a full array on ``sroot``.
 
     Parameters
@@ -157,24 +276,67 @@ def gather_array(arr, arraux, sroot=0):
     None
         The result is written directly into ``arr`` on ``sroot``.
 
+    Raises
+    ------
+    ValueError
+        If ``arr`` on ``sroot`` is not C-contiguous (the rows are written in place).
+
     Notes
     -----
     Uses ``MPI.Gatherv`` with offsets computed from :func:`load_sizes`.
     The layout is consistent with :func:`scatter_array`.
+
+    Counts and offsets are in rows (a contiguous MPI datatype of the trailing dimensions) and the
+    transfer runs in rounds of at most :data:`MAX_MESSAGE_BYTES`, so arrays of more than
+    :data:`MAX_MPI_COUNT` elements gather without overflowing the C ``int`` of the MPI interface;
+    with more rows than that, every round is staged in a buffer on ``sroot``. The result is the
+    same, bit for bit.
     """
-    # An array to store the size and dimensions of gathered arrays
-    lsizes = np.empty((size, 3), dtype=int)
+    layout = None
     if rank == sroot:
-        lsizes = load_sizes(size, arr.shape[0], np.prod(arr.shape[1:]))
+        if not arr.flags.c_contiguous:
+            raise ValueError('gather_array writes into arr in place: it must be C-contiguous')
+        sizes = load_sizes(size, arr.shape[0], 1)
+        layout = (
+            sizes[:, 2].copy(),
+            sizes[:, 1].copy(),
+            int(np.prod(arr.shape[1:], dtype=np.int64)),
+        )
+    counts, starts, row_len = comm.bcast(layout, root=sroot)
+    row_len = max(1, row_len)
 
-    # Broadcast the data offsets
-    comm.Bcast([lsizes, MPI.INT], root=sroot)
+    pydtype = np.dtype(arraux.dtype)
+    send = np.ascontiguousarray(arraux).reshape(int(counts[rank]), row_len)
+    recv = arr.reshape(-1, row_len) if rank == sroot else None
+    # offsets in rows fit a C int: receive straight into the array; otherwise stage every round
+    staged = int(np.sum(counts)) > MAX_MPI_COUNT
 
-    # Get the datatype for the MPI transfer
-    mpidtype = MPI._typedict[np.dtype(arraux.dtype).char]
-
-    # Gather the data according to load_sizes
-    comm.Gatherv([arraux, mpidtype], [arr, lsizes[:, 0], lsizes[:, 1], mpidtype], root=sroot)
+    rowtype = _row_datatype(MPI._typedict[pydtype.char], row_len)
+    try:
+        per_round, nrounds = _row_rounds(counts, row_len * pydtype.itemsize, size)
+        for step in range(nrounds):
+            offset = step * per_round
+            round_counts = np.clip(counts - offset, 0, per_round).astype(np.int64)
+            mine = int(round_counts[rank])
+            recvbuf = None
+            if staged:
+                displs = np.concatenate(([0], np.cumsum(round_counts)[:-1])).astype(np.int64)
+                if rank == sroot:
+                    stage = np.empty((int(round_counts.sum()), row_len), dtype=pydtype)
+                    recvbuf = [stage, round_counts, displs, rowtype]
+            elif rank == sroot:
+                displs = (starts + np.minimum(offset, counts)).astype(np.int64)
+                recvbuf = [recv, round_counts, displs, rowtype]
+            comm.Gatherv([send[offset : offset + mine], rowtype], recvbuf, root=sroot)
+            if staged and rank == sroot:
+                for r in range(size):
+                    if round_counts[r]:
+                        first = int(starts[r]) + offset
+                        recv[first : first + round_counts[r]] = stage[
+                            displs[r] : displs[r] + round_counts[r]
+                        ]
+    finally:
+        rowtype.Free()
 
 
 def scatter_full(arr, npool, sroot=0):
@@ -386,7 +548,52 @@ def gather_scatter(arr, scatter_axis, npool):
 # ================================================================
 # NEW FUNCTION
 # ================================================================
-def reduce_full(arr, sroot=0):
+def _flat_view(arr: np.ndarray) -> np.ndarray:
+    """One-dimensional view of a C- or Fortran-contiguous array (writes reach ``arr``).
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Contiguous array.
+
+    Returns
+    -------
+    np.ndarray
+        ``arr`` as a flat view in its memory order.
+
+    Raises
+    ------
+    ValueError
+        If ``arr`` is not contiguous (no flat view exists).
+    """
+    if not (arr.flags.c_contiguous or arr.flags.f_contiguous):
+        raise ValueError('the array must be contiguous for an in-place MPI operation')
+    return arr.reshape(-1, order='A')
+
+
+def _steps(nelements: int, step: int) -> list[tuple[int, int]]:
+    """``(first, last)`` slices of ``nelements`` elements in pieces of at most ``step``.
+
+    Parameters
+    ----------
+    nelements : int
+        Elements to cover.
+    step : int
+        Largest piece.
+
+    Returns
+    -------
+    list of tuple of int
+        ``[(0, step), (step, 2 step), ...]``, the last one ending at ``nelements``; one piece for an
+        empty buffer, so that every rank makes at least one call.
+    """
+    nelements, step = int(nelements), max(1, int(step))
+    if nelements == 0:
+        return [(0, 0)]
+    return [(first, min(first + step, nelements)) for first in range(0, nelements, step)]
+
+
+def reduce_full(arr: np.ndarray, sroot: int = 0) -> np.ndarray | None:
     """
     - Sum an array over all MPI ranks and return the result on sroot.
     Parameters
@@ -403,14 +610,93 @@ def reduce_full(arr, sroot=0):
     numpy.ndarray or None
         Sum over all MPI ranks on sroot.
         None on all other ranks.
+
+    Notes
+    -----
+    Arrays of more than :data:`MAX_MPI_COUNT` elements are reduced in slices of that size; smaller
+    ones in one call, as before (the summation order of MPI, hence the last bits, can depend on the
+    message size).
     """
-    if rank == sroot:
-        arr_full = np.empty_like(arr)
-    else:
-        arr_full = None
-    comm.Reduce(arr, arr_full, op=MPI.SUM, root=sroot)
+    source = np.ascontiguousarray(arr)
+    arr_full = np.empty_like(source) if rank == sroot else None
+    flat_in = source.reshape(-1)
+    flat_out = arr_full.reshape(-1) if arr_full is not None else None
+    for first, last in _steps(flat_in.size, MAX_MPI_COUNT):
+        out = flat_out[first:last] if flat_out is not None else None
+        comm.Reduce(flat_in[first:last], out, op=MPI.SUM, root=sroot)
 
     return arr_full
+
+
+def bcast_array(arr: np.ndarray, root: int = 0, communicator: MPI.Comm | None = None) -> np.ndarray:
+    """Broadcast a NumPy array in place, in slices that fit the MPI count.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Contiguous array of the same shape and dtype on every rank; ``root`` holds the data.
+    root : int, optional
+        Rank that holds the data (default ``0``).
+    communicator : MPI.Comm, optional
+        Default ``MPI.COMM_WORLD``.
+
+    Returns
+    -------
+    np.ndarray
+        ``arr``, overwritten on every rank with the data of ``root``.
+
+    Raises
+    ------
+    ValueError
+        If ``arr`` is not contiguous.
+
+    Notes
+    -----
+    Slices of at most :data:`MAX_MPI_COUNT` elements and :data:`MAX_MESSAGE_BYTES`; a broadcast
+    only copies, so the slicing does not change any value.
+    """
+    world = comm if communicator is None else communicator
+    flat = _flat_view(arr)
+    step = min(MAX_MPI_COUNT, MAX_MESSAGE_BYTES // max(1, arr.itemsize))
+    for first, last in _steps(flat.size, step):
+        world.Bcast(flat[first:last], root=root)
+    return arr
+
+
+def allreduce_inplace(
+    arr: np.ndarray, op: MPI.Op = MPI.SUM, communicator: MPI.Comm | None = None
+) -> np.ndarray:
+    """``Allreduce`` of a NumPy array in place (``MPI.IN_PLACE``), in slices that fit the MPI count.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Contiguous local array; the same shape and dtype on every rank.
+    op : MPI.Op, optional
+        Reduction (default ``MPI.SUM``).
+    communicator : MPI.Comm, optional
+        Default ``MPI.COMM_WORLD``.
+
+    Returns
+    -------
+    np.ndarray
+        ``arr``, overwritten with the reduction on every rank.
+
+    Raises
+    ------
+    ValueError
+        If ``arr`` is not contiguous.
+
+    Notes
+    -----
+    Arrays of more than :data:`MAX_MPI_COUNT` elements are reduced in slices of that size; smaller
+    ones in one call, exactly as ``comm.Allreduce(MPI.IN_PLACE, arr, op=op)``.
+    """
+    world = comm if communicator is None else communicator
+    flat = _flat_view(arr)
+    for first, last in _steps(flat.size, MAX_MPI_COUNT):
+        world.Allreduce(MPI.IN_PLACE, flat[first:last], op=op)
+    return arr
 
 
 def gen_window(array, root=0):

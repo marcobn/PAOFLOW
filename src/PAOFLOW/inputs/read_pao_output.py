@@ -23,6 +23,15 @@ def read_band_path_PAO(fname):
     npnts = []
     with open(fname, 'r') as f:
         ls = f.readline().split()
+        try:
+            float(ls[0])
+        except (ValueError, IndexError):
+            pass
+        else:
+            raise ValueError(
+                '%s holds "position label" lines (sparse backend); read it with '
+                'PAOFLOW.results.loaders.read_kpath' % fname
+            )
         while not len(ls) == 0:
             tags.append(ls[0])
             npnts.append(int(ls[1]))
@@ -45,34 +54,35 @@ def read_band_path_PAO(fname):
 
 
 def read_dos_PAO(fname):
-    """Read a two-column PAOFLOW DOS output file.
+    """Read a two-column PAOFLOW output file (DOS, PDOS, Hall and optical spectra).
+
+    The file is parsed by :func:`PAOFLOW.results.columns.read_columns`, the reader the browser
+    interface uses as well, so ``#`` header lines (``write_file_row_col_units``, ``np.savetxt``)
+    are accepted.
 
     Parameters
     ----------
     fname : str
-        Path to the DOS file (first column energy in eV, second column DOS).
+        Path to the file (first column energy in eV, second column the value).
 
     Returns
     -------
     es : np.ndarray
         Energy values (eV).
     dos : np.ndarray
-        Density of states.
+        The second column.
+
+    Raises
+    ------
+    ValueError
+        If the file has fewer than two numeric columns.
     """
-    import numpy as np
+    from ..results.columns import read_columns
 
-    es = []
-    dos = []
-    with open(fname, 'r') as f:
-        for l in f.readlines():
-            ls = l.split()
-            es.append(float(ls[0]))
-            dos.append(float(ls[1]))
-
-    es = np.array(es)
-    dos = np.array(dos)
-
-    return es, dos
+    data, _header = read_columns(fname)
+    if data.ndim != 2 or data.shape[0] == 0 or data.shape[1] < 2:
+        raise ValueError('%s: expected two numeric columns' % fname)
+    return data[:, 0].copy(), data[:, 1].copy()
 
 
 def read_bands_PAO(fname):
@@ -87,15 +97,18 @@ def read_bands_PAO(fname):
     -------
     np.ndarray, shape ``(nbnd, nkpts)``
         Band energies (eV) with rows indexed by band and columns by k-point.
+
+    Raises
+    ------
+    ValueError
+        If the file holds no band table.
     """
-    import numpy as np
+    from ..results.columns import read_columns
 
-    bands = []
-    with open(fname, 'r') as f:
-        for l in f.readlines():
-            bands.append([float(v) for v in l.split()[1:]])
-
-    return np.array(bands).T
+    data, _header = read_columns(fname)
+    if data.ndim != 2 or data.shape[0] == 0 or data.shape[1] < 2:
+        raise ValueError('%s: expected a k index and the band energies on every row' % fname)
+    return data[:, 1:].T.copy()
 
 
 def read_site_projected(path: Path) -> pd.DataFrame:
@@ -132,7 +145,7 @@ def read_transport_PAO(fname):
     fname : str
         Path to the transport output file.  Each row contains temperature,
         energy, and six independent tensor components (diagonal and
-        off-diagonal: xx, yy, zz, xy, xz, yz).
+        off-diagonal: xx, yy, zz, xy, xz, yz), one block of rows per temperature.
 
     Returns
     -------
@@ -142,43 +155,34 @@ def read_transport_PAO(fname):
         Temperature grid (K).
     tensors : np.ndarray, shape ``(ntemp, nene, 3, 3)``
         Symmetric transport tensor at each temperature and energy.
+
+    Raises
+    ------
+    ValueError
+        If the file is not a tensor table (``hall_trace`` holds T, E and one value; ``hall`` and
+        ``nernst`` hold 9 and 27 components).
     """
     import numpy as np
 
-    nene = 0
-    ntemp = 0
-    enes = temps = tensors = None
+    from ..results.columns import read_columns
 
-    with open(fname, 'r') as f:
-        lines = f.readlines()
-
-        nl = len(lines)
-        ftemp = float(lines[ntemp].split()[0])
-        ptemp = ftemp
-        while ftemp == ptemp and nene < nl - 1:
-            nene += 1
-            ptemp = float(lines[nene].split()[0])
-        if nene == nl - 1:
-            nene += 1
-
-        while ntemp * nene < nl:
-            ntemp += 1
-
-        enes = np.empty(nene, dtype=float)
-        temps = np.empty(ntemp, dtype=float)
-        tensors = np.empty((ntemp, nene, 3, 3), dtype=float)
-
-        iL = 0
-        for i in range(ntemp):
-            temps[i] = float(lines[iL].split()[0])
-            for j in range(nene):
-                ls = lines[iL].split()
-                if i == 0:
-                    enes[j] = float(ls[1])
-                for k in range(3):
-                    tensors[i, j, k, k] = float(ls[2 + k])
-                for ik, k in enumerate([(0, 1), (0, 2), [1, 2]]):
-                    tensors[i, j, k[0], k[1]] = tensors[i, j, k[1], k[0]] = float(ls[5 + ik])
-                iL += 1
-
-        return enes, temps, tensors
+    data, _header = read_columns(fname)
+    if data.ndim != 2 or data.shape[0] == 0 or data.shape[1] != 8:
+        width = data.shape[1] if data.ndim == 2 and data.size else 0
+        raise ValueError(
+            '%s: expected T, E and six tensor components per row, found %d columns '
+            '(hall_trace, hall and nernst files have other layouts)' % (fname, width)
+        )
+    first = data[:, 0]
+    nene = int(np.argmax(first != first[0])) if np.any(first != first[0]) else len(first)
+    ntemp = -(-len(first) // nene)
+    enes = data[:nene, 1].copy()
+    temps = first[::nene][:ntemp].copy()
+    tensors = np.empty((ntemp, nene, 3, 3), dtype=float)
+    for i in range(ntemp):
+        block = data[i * nene : (i + 1) * nene]
+        for k in range(3):
+            tensors[i, : len(block), k, k] = block[:, 2 + k]
+        for ik, (a, b) in enumerate(((0, 1), (0, 2), (1, 2))):
+            tensors[i, : len(block), a, b] = tensors[i, : len(block), b, a] = block[:, 5 + ik]
+    return enes, temps, tensors

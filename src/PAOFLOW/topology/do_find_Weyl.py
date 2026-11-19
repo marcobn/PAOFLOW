@@ -79,13 +79,16 @@ def build_Hk(
     .. math::
 
         H(\\mathbf{k}) = \\sum_{\\mathbf{R}}
-                         H(\\mathbf{R})\\,e^{2\\pi i\\mathbf{k}\\cdot\\mathbf{R}}
+                         H(\\mathbf{R})\\,e^{-2\\pi i\\mathbf{k}\\cdot\\mathbf{R}}
+
+    (PAOFLOW's convention, ``HRs = ifftn(Hks)``; the sign was ``+`` until 15 November 2026,
+    which put the nodes of a crystal without P and T at :math:`-\\mathbf{k}`).
 
     The dot product :math:`\\mathbf{k}\\cdot\\mathbf{R}` is accumulated in
     real arithmetic before exponentiation, and the R-sum is a single
     ``ZGEMV`` call with no temporaries.
     """
-    phase = np.exp((2.0j * np.pi) * (R @ kq))
+    phase = np.exp((-2.0j * np.pi) * (R @ kq))
     return HRpack.dot(phase).reshape(nawf, nawf)
 
 
@@ -121,7 +124,7 @@ def build_Hk_batch(
     flops), so amortising that traffic over a block of k-points is much
     faster per point.
     """
-    phases = np.exp((2.0j * np.pi) * (kq @ R.T))
+    phases = np.exp((-2.0j * np.pi) * (kq @ R.T))
     return phases.dot(HRpack.T).reshape(-1, nawf, nawf)
 
 
@@ -341,6 +344,35 @@ def get_search_grid(
     return np.array(np.meshgrid(nk1_arr, nk2_arr, nk3_arr, indexing='ij')).T.reshape(-1, 3)
 
 
+def merge_duplicate_candidates(
+    candidates: NDArray[np.floating], tolerance: float = 1.0e-4
+) -> NDArray[np.floating]:
+    """Keep one of the candidates that coincide modulo a reciprocal lattice vector.
+
+    Parameters
+    ----------
+    candidates : ndarray, shape (n, 3)
+        Crystal coordinates of the band touchings.
+    tolerance : float, optional
+        Distance (crystal units) below which two candidates are the same point.
+
+    Returns
+    -------
+    ndarray, shape (m, 3)
+        The first of every group, in the order found.
+
+    Notes
+    -----
+    The gap minimisation starts from every box of the search grid, so a node is found once per
+    box that converges to it (a node on a box boundary, from every box around it).
+    """
+    kept: list[NDArray[np.floating]] = []
+    for point in np.atleast_2d(candidates):
+        if not any(np.all(np.abs((point - other + 0.5) % 1.0 - 0.5) < tolerance) for other in kept):
+            kept.append(point)
+    return np.array(kept).reshape(-1, 3)
+
+
 def find_weyl(data_controller: DataController, test_rad: float, search_grid: list[int]) -> None:
     """Locate and classify Weyl points in the Brillouin zone.
 
@@ -388,21 +420,18 @@ def find_weyl(data_controller: DataController, test_rad: float, search_grid: lis
 
     arry, attr = data_controller.data_dicts()
 
-    symf = attr['symmetrize']
-    nelec, verbose = attr['nelec'], attr['verbose']
-    HRs, symops, b_vectors, TR_flag = (
-        arry['HRs'],
-        arry['sym_rot'],
-        arry['b_vectors'],
-        arry['sym_TR'],
-    )
+    nelec, verbose = int(round(attr['nelec'])), attr['verbose']  # an index: a model gives a float
+    # a model has no symmetry operations: no symmetry images
+    symf = bool(attr.get('symmetrize', False)) and 'sym_rot' in arry
+    HRs, b_vectors = arry['HRs'], arry['b_vectors']
+    symops, TR_flag = arry.get('sym_rot'), arry.get('sym_TR')
 
     nawf, _, nk1, nk2, nk3, nspin = HRs.shape
     R = get_R_grid_fft(nk1, nk2, nk3)
 
     HRpack = pack_HR(np.reshape(HRs, (nawf, nawf, nk1 * nk2 * nk3, nspin)))
 
-    mag_soc = np.logical_and(attr['dftMAG'], attr['dftSO'])
+    mag_soc = np.logical_and(attr.get('dftMAG', False), attr.get('dftSO', False))
 
     CAND, _ = find_min(
         HRpack,
@@ -419,6 +448,7 @@ def find_weyl(data_controller: DataController, test_rad: float, search_grid: lis
         # get all equiv k
         CAND = get_equiv_k(CAND, symops, TR_flag, mag_soc)
     CAND = comm.bcast(CAND if rank == 0 else None, root=0)
+    CAND = merge_duplicate_candidates(CAND)
 
     eigs = band_energies(HRpack, nawf, CAND, R)
     ene = eigs[:, nelec]

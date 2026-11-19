@@ -1,0 +1,42 @@
+{
+ "title": "GaAs: eACBN0 Hubbard U and intersite V",
+ "summary": "Self-consistent on-site U and intersite V Hubbard parameters from the PAO density (ACBN0 runs pw.x and projwfc.x itself), then the corrected bands.",
+ "workflow": "acbn0",
+ "answers": {
+  "savedir": "GaAs.save",
+  "prefix": "GaAs",
+  "projector": "internal",
+  "use_intersite_v": true,
+  "hubbard": [
+   [
+    "Ga-4s",
+    "0.5"
+   ],
+   [
+    "Ga-4p",
+    "0.5"
+   ],
+   [
+    "As-4s",
+    "0.5"
+   ],
+   [
+    "As-4p",
+    "0.5"
+   ]
+  ]
+ },
+ "pseudopotentials": [
+  "library/Ga.pbe-dn-kjpaw_psl.1.0.0.UPF",
+  "library/As.pbe-n-kjpaw_psl.1.0.0.UPF"
+ ],
+ "qe": [],
+ "tags": [
+  "ACBN0",
+  "Hubbard U",
+  "intersite V",
+  "semiconductor",
+  "PAW"
+ ],
+ "source": "examples/acbn0_examples/GaAs"
+}

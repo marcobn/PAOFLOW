@@ -10,8 +10,10 @@ usage() {
 Usage: [environment variables] create_assets.sh [options] [example01 example02 ...]
 
 Options:
-  --qe                   Run QE on examples and create/update *.save folders.
-  --paoflow-examples     Run PAOFLOW from examples and write Reference folders.
+  --qe                   Run QE in tests/integration/<family>/<example> (pseudopotentials from
+                         PSEUDOS/library) and create/update the *.save folders there.
+  --paoflow-examples     Run main.py in each job folder and move its output to Reference/ there
+                         (a local look; the published references come from --paoflow-test).
   --paoflow-test         Run PAOFLOW from tests and stage Reference folders.
   --all                  Run --qe + --paoflow-examples + --paoflow-test.
                          If no mode option is passed, the script runs all modes.
@@ -35,11 +37,11 @@ resolve_examples_root() {
   local script_dir repo_root
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
   repo_root="$(cd "$script_dir/../../.." && pwd)"
-  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "$SLURM_SUBMIT_DIR/examples/transport_examples" ]]; then
-    echo "$SLURM_SUBMIT_DIR/examples/transport_examples"
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "$SLURM_SUBMIT_DIR/tests/integration/transport" ]]; then
+    echo "$SLURM_SUBMIT_DIR/tests/integration/transport"
     return
   fi
-  echo "$repo_root/examples/transport_examples"
+  echo "$repo_root/tests/integration/transport"
 }
 
 resolve_tests_root() {
@@ -77,8 +79,8 @@ normalize_example_selector() {
     selector="${selector#"$EXAMPLES_ROOT"/}"
   fi
 
-  if [[ "$selector" == examples/transport_examples/* ]]; then
-    selector="${selector#examples/transport_examples/}"
+  if [[ "$selector" == tests/integration/transport/* ]]; then
+    selector="${selector#tests/integration/transport/}"
   fi
 
   printf '%s\n' "${selector%%/*}"
@@ -436,7 +438,7 @@ fi
 
 EXAMPLES_ROOT="$(resolve_examples_root)"
 TESTS_ROOT="$(resolve_tests_root)"
-REPO_ROOT="$(cd "$EXAMPLES_ROOT/../.." && pwd)"
+REPO_ROOT="$(cd "$EXAMPLES_ROOT/../../.." && pwd)"  # EXAMPLES_ROOT: <repo>/tests/integration/<family>
 LOG_DIR="$EXAMPLES_ROOT/logs"
 mkdir -p "$LOG_DIR"
 

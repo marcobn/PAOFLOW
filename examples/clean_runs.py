@@ -15,7 +15,7 @@ Usage
     python examples/clean_runs.py --apply
 
     # Restrict to one or more example subtrees:
-    python examples/clean_runs.py --apply qe_examples/example01 vasp_examples
+    python examples/clean_runs.py --apply cases/si_bands_transport cases/vasp_si_bands
 """
 
 from __future__ import annotations
@@ -27,6 +27,13 @@ from pathlib import Path
 
 # Files kept by exact basename (case-sensitive on POSIX).
 KEEP_NAMES = {
+    'case.json',  # cases/: workflow and answers of the case
+    'expected_results.json',  # nbsn2_qo_analysis: the numbers its test checks
+    '.gitkeep',  # *_elphon/cache: the vertex cache folder
+    'Si_SK_params.json',  # si_supercell_unfold: model inputs
+    'Si_geometry.json',
+    'Si_geometry_sc8.json',
+    'C_EDTB_DD_params.json',  # tbg_unfold: model input
     'inputfile.xml',
     'POTCAR',
     'INCAR',
@@ -45,7 +52,9 @@ KEEP_SUFFIXES = {
     '.yaml',  # transport_examples configs
     '.yml',
     '.sh',  # job scripts shipped with examples
-    '.bxsf',  # pyskeaf_examples Fermi-surface inputs
+    '.bxsf',  # cases/bi_pyskeaf/bxsf Fermi-surface inputs
+    '.csv',  # measured or digitised data (gaas_nlo/data, nbsn2_qo_analysis/data)
+    '.fmt',  # sic_elphon/coupling/quadrupole.fmt
 }
 
 # Basename prefixes that are always kept (e.g. README, README.md, README.rst).
@@ -54,8 +63,9 @@ KEEP_PREFIXES = ('README',)
 # Directory names whose entire subtree is preserved verbatim.
 # - Reference/Reference2: curated expected outputs.
 # - BASIS: per-tutorial atomic basis files (inputs to PAOFLOW).
-# - data_files: shipped reference data consumed by examples/plot_examples/.
-KEEP_DIRS = {'Reference', 'Reference2', 'BASIS', 'data_files'}
+# - calc, data: inputs and measured data of the analyses (nbsn2_qo_analysis, gaas_nlo).
+# - figures: the figures of a report shipped with a case (gaas_nlo/REPORT.md).
+KEEP_DIRS = {'Reference', 'Reference2', 'BASIS', 'calc', 'data', 'figures'}
 
 # Directory name suffixes (lowercase) whose entire subtree is removed.
 # e.g. 'pt.save', 'silicon.save', ... produced by pw.x.

@@ -21,7 +21,7 @@ Read `LESSONS_LEARNED.md` once before starting.
 
 ## The model pipeline
 
-A system folder of the `examples/nlo_examples/<System>` layout: QE `scf.in` / `nscf.in` (uniform grid, symmetry-reduced or `nosym`; ultrasoft / PAW pseudopotentials are projected in the augmented metric since October 2026, check the projectability vector: `LESSONS_LEARNED.md` #2), optionally `relax.in`, a `BASIS_PS/` generated from the pseudopotentials when the repository tables project the valence bands below 0.95, and `main.py`:
+A system folder of the layout of the cases `examples/cases/gaas_nlo` and `ges_nlo`: QE `scf.in` / `nscf.in` (uniform grid, symmetry-reduced or `nosym`; ultrasoft / PAW pseudopotentials are projected in the augmented metric since October 2026, check the projectability vector: `LESSONS_LEARNED.md` #2), optionally `relax.in`, a `BASIS_PS/` generated from the pseudopotentials when the repository tables project the valence bands below 0.95, and `main.py`:
 
 | step | what | cost |
 |---|---|---|
@@ -150,4 +150,4 @@ model - experiment discrepancy
 
 ## Worked example
 
-`examples/nlo_examples/REPORT.md`: GaAs (χ_xyz(0) = 110 pm/V at 40³ against 166–180 pm/V measured at 0.12 eV and 207–245 pm/V from TDDFT + scissor; peak 610 pm/V at 2.63 eV; σ_xyz −30 µA/V² at 3.9 eV; symmetry error bar 5 % from the symmetry-expanded Hamiltonian), monolayer GeS (sheet σ^{xxx} 46 nm µA/V², literature 100–150 µA/V² with a thickness convention), gapped graphene (D3h relations to 1e-15).
+`examples/cases/gaas_nlo/REPORT.md`: GaAs (χ_xyz(0) = 110 pm/V at 40³ against 166–180 pm/V measured at 0.12 eV and 207–245 pm/V from TDDFT + scissor; peak 610 pm/V at 2.63 eV; σ_xyz −30 µA/V² at 3.9 eV; symmetry error bar 5 % from the symmetry-expanded Hamiltonian), monolayer GeS (sheet σ^{xxx} 46 nm µA/V², literature 100–150 µA/V² with a thickness convention), gapped graphene (D3h relations to 1e-15).

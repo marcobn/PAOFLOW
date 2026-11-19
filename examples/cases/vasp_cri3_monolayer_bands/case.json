@@ -1,0 +1,38 @@
+{
+ "title": "VASP CrI3 monolayer: ferromagnetic bands, spin-polarized and with spin-orbit",
+ "summary": "Monolayer CrI3, a 2D ferromagnet, from two VASP runs: collinear spin-polarized and with spin-orbit coupling. The PAO Hamiltonian (Cr 3D 4S 4P 4D 5S 5P 5D, I 5S 5P 5D 6S 6P 4F) and the bands along G-M-K-G. Needs your own VASP runs and POTCAR.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "CrI3 bands, collinear spin-polarized",
+   "command": [
+    "python",
+    "main_nspin2.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "needs the VASP runs of nscf_nspin2/ (vasprun.xml, WAVECAR, POTCAR); writes output_nspin2/ and CrI3_nspin2_VASP.png"
+  },
+  {
+   "label": "CrI3 bands with spin-orbit coupling",
+   "command": [
+    "python",
+    "main_soc.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "needs the VASP runs of nscf_soc/ (vasprun.xml, WAVECAR, POTCAR); writes output_soc/ and CrI3_soc_VASP.png"
+  }
+ ],
+ "tags": [
+  "VASP",
+  "bands",
+  "ferromagnet",
+  "2D",
+  "spin-orbit",
+  "PAW"
+ ],
+ "source": "examples/recipes/vasp/example07"
+}

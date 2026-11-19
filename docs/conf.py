@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 project = 'PAOFLOW'
 author = 'PAOFLOW developers'
-release = '3.0.1'
+release = '4.0.0'
 
 extensions = [
     'myst_nb',
@@ -120,6 +120,11 @@ html_show_sourcelink = False
 html_theme_options = {
     'github_url': 'https://github.com/marcobn/PAOFLOW',
     'show_nav_level': 0,
+    # the sidebar (_templates/sidebar-tree.html) expands only the branch of the current page: drawn
+    # whole, it put the ~450 API pages on every page and the build time grew as pages x pages
+    # (166 s -> 49 s locally, Nov 2026; Read the Docs had reached its 30-minute limit)
+    'collapse_navigation': True,
+    'navigation_depth': 2,
     'show_toc_level': 2,
     'navigation_with_keys': True,
     'navbar_start': ['navbar-logo'],

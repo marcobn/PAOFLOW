@@ -128,8 +128,9 @@ def read_matrix(
         raise ValueError('Unspecified ispin for spin-polarized case')
     ivr = ivr.T
 
-    # Check grid dimensions
-    nrtot_par = opr.H.shape[2]
+    # Transverse lattice vectors of the block (opr.H is allocated on the transverse k-points,
+    # which may outnumber them when configure_energy_grid(nk=...) asks for a denser mesh)
+    nrtot_par = opr.ivr_par.shape[1]
     A = np.zeros((dim1, dim2, nrtot_par), dtype=complex)
     S = np.zeros((dim1, dim2, nrtot_par), dtype=complex)
 
@@ -164,11 +165,11 @@ def read_matrix(
                 ivr_aux[i] = opr.ivr_par[j, ir_par]
                 j += 1
 
-        matches = [ir for ir in range(nrtot) if np.array_equal(ivr[:, ir], ivr_aux)]
-        if not matches:
+        matches = np.flatnonzero(np.all(ivr[:, :nrtot] == ivr_aux[:, None], axis=0))
+        if matches.size == 0:
             raise ValueError(f'3D R-vector {ivr_aux} not found for ir_par={ir_par}')
 
-        ind = matches[0]
+        ind = int(matches[0])
 
         A_loc = arry['HRs'][ind, :, :]
 
@@ -188,14 +189,15 @@ def read_matrix(
             } and np.all(ivr_aux == 0):
                 S_loc[:] = np.eye(nawf)
 
+        # A[i, j] = A_loc^T[irows[i], icols[j]] for the selected (non-negative) rows and columns
         A_loc_T = A_loc.T
         S_loc_T = S_loc.T
-        for j in range(dim2):
-            for i in range(dim1):
-                if icols[j] < 0 or irows[i] < 0:
-                    continue
-                A[i, j, ir_par] = A_loc_T[irows[i], icols[j]]
-                S[i, j, ir_par] = S_loc_T[irows[i], icols[j]]
+        rows = np.flatnonzero(np.asarray(irows[:dim1]) >= 0)
+        cols = np.flatnonzero(np.asarray(icols[:dim2]) >= 0)
+        source_rows = np.asarray(irows)[rows]
+        source_cols = np.asarray(icols)[cols]
+        A[np.ix_(rows, cols, [ir_par])] = A_loc_T[np.ix_(source_rows, source_cols)][:, :, None]
+        S[np.ix_(rows, cols, [ir_par])] = S_loc_T[np.ix_(source_rows, source_cols)][:, :, None]
 
     opr.H = fourier_transform_real_to_kspace(A, opr.wr_par, opr.table_par)
     opr.S = fourier_transform_real_to_kspace(S, opr.wr_par, opr.table_par)

@@ -2,7 +2,7 @@
 
 Exercises the reference-cell displacement bookkeeping and the two-phase QE input
 generation using a single-atom fcc aluminium stub controller, mirroring the
-``examples/new_qe_examples/phonon_examples/Al`` setup.
+Al phonon setup of the old examples.
 """
 
 import json

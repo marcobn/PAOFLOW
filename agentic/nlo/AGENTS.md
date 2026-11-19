@@ -13,8 +13,8 @@ susceptibility and d coefficients, shift current, injection currents, magnetic r
      `symmetry_error`, `kleinman_error`).
    - The shared toolkit `PAOFLOW.agentic.thermo_optics`: `ingest`, `digitize`, `datasets`,
      `units`, `metrics`, `plotting`.
-   - The model is an output folder of `PAOFLOW.nonlinear_optics` (`examples/nlo_examples/<System>`
-     layout). New runs are `main.py` edits (NK, ETA, SCISSOR, COMPONENTS, `twoD`) run into a new
+   - The model is an output folder of `PAOFLOW.nonlinear_optics` (the layout of the cases
+     `examples/cases/gaas_nlo`, `ges_nlo`, `graphene_nlo_model`). New runs are `main.py` edits (NK, ETA, SCISSOR, COMPONENTS, `twoD`) run into a new
      `--outputdir`/`output_<label>`; never into an existing output. `nonlinear_optics` needs `HRs`
      (call it right after `pao_hamiltonian`), 10 meV degeneracy tolerance for DFT Hamiltonians,
      and, for ultrasoft / PAW inputs, the augmented projections of October 2026 or later (`LESSONS_LEARNED.md` #2) for symmetric results.

@@ -1,0 +1,46 @@
+{
+ "title": "Pt: spin Hall conductivity (fully relativistic)",
+ "summary": "Platinum with spin-orbit coupling from fully relativistic pseudopotentials: spin Berry curvature along the band path and the spin Hall conductivity sigma^z_xy(E).",
+ "workflow": "run",
+ "answers": {
+  "savedir": "pt.save",
+  "prefix": "pt",
+  "projector": "internal",
+  "properties": [
+   "bands",
+   "dos",
+   "spin_Hall",
+   "topology"
+  ],
+  "ibrav": 2,
+  "nk": 2000,
+  "spin_orbit": true,
+  "do_pdos": false,
+  "emin": -8.0,
+  "emax": 4.0,
+  "interpolate": true,
+  "nfft": 24,
+  "std_basis": "minimal"
+ },
+ "pseudopotentials": [
+  "library/Pt.rel-pz-n-rrkjus_psl.0.1.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "tags": [
+  "spin Hall",
+  "spin-orbit",
+  "metal"
+ ],
+ "source": "examples/qe_examples/example05"
+}

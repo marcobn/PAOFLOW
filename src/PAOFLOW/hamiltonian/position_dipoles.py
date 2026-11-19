@@ -53,6 +53,7 @@ vectorised over the orbitals of a site pair in :mod:`PAOFLOW.hamiltonian.two_cen
 
 from __future__ import annotations
 
+import sys
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -176,30 +177,35 @@ def enumerate_pao_pairs(
     N1, N2, N3 = _lattice_search_bounds(a_cart, max_pair_cut)
 
     pairs: list[PAOPair] = []
-    for bra, bra_site in enumerate(pao_catalog.sites):
-        for ket, ket_site in enumerate(pao_catalog.sites):
-            cut = cutoffs[bra] + cutoffs[ket] + extra_pad
-            if cut <= 0.0:
-                continue
-            cut2 = cut * cut
-            for n1 in range(-N1, N1 + 1):
-                for n2 in range(-N2, N2 + 1):
-                    for n3 in range(-N3, N3 + 1):
-                        deltaR = n1 * a_cart[0] + n2 * a_cart[1] + n3 * a_cart[2]
-                        displacement = ket_site.tau + deltaR - bra_site.tau
-                        d2 = float(displacement @ displacement)
-                        if d2 > cut2:
-                            continue
-                        pairs.append(
-                            PAOPair(
-                                bra_site=bra,
-                                ket_site=ket,
-                                deltaR_lattice=(n1, n2, n3),
-                                deltaR_cart=deltaR.copy(),
-                                displacement=displacement.copy(),
-                                distance=float(np.sqrt(d2)),
-                            )
-                        )
+    images = np.array(
+        [
+            (n1, n2, n3)
+            for n1 in range(-N1, N1 + 1)
+            for n2 in range(-N2, N2 + 1)
+            for n3 in range(-N3, N3 + 1)
+        ],
+        dtype=int,
+    ).reshape(-1, 3)  # the loop order of the original nested enumeration
+    deltaR_all = images @ a_cart  # (nimg, 3)
+    taus = np.array([site.tau for site in pao_catalog.sites], dtype=float).reshape(-1, 3)
+    cut_arr = np.asarray(cutoffs, dtype=float)
+    for bra in range(len(pao_catalog.sites)):
+        cut = cut_arr[bra] + cut_arr + extra_pad  # (nket,)
+        # (nket, nimg, 3) displacements of every ket image from the bra site
+        disp = taus[:, None, :] + deltaR_all[None, :, :] - taus[bra][None, None, :]
+        d2 = np.einsum('kid,kid->ki', disp, disp)
+        keep = (cut[:, None] > 0.0) & (d2 <= (cut * cut)[:, None])
+        for ket, img in np.argwhere(keep):  # ket outer, image inner: the original order
+            pairs.append(
+                PAOPair(
+                    bra_site=int(bra),
+                    ket_site=int(ket),
+                    deltaR_lattice=(int(images[img, 0]), int(images[img, 1]), int(images[img, 2])),
+                    deltaR_cart=deltaR_all[img].copy(),
+                    displacement=disp[ket, img].copy(),
+                    distance=float(np.sqrt(d2[ket, img])),
+                )
+            )
     return pairs
 
 
@@ -309,8 +315,53 @@ def build_position_tables(
     )
 
 
+def _grouped_blocks(
+    tables: PositionTables,
+) -> list[tuple[slice, slice, np.ndarray, np.ndarray, np.ndarray]]:
+    """Pair blocks grouped by site pair: ``(rows, cols, translations (np, 3), overlap (np, nb, nk),
+    dipole (np, 3, nb, nk))`` per group, cached on the tables.
+
+    The Bloch sums are assembled group by group into the ``(nawf, nawf)`` k-space matrices, so the
+    memory is that of the blocks themselves and never ``npairs x nawf^2`` (for a 54-atom cell with
+    864 orbitals the padded stack of the 24 000 pairs would be 950 GB).
+    """
+    cached = getattr(tables, '_grouped', None)
+    if cached is not None:
+        return cached
+    groups: dict = {}
+    for p, pair in enumerate(tables.pairs):
+        groups.setdefault((pair.bra_site, pair.ket_site), []).append(p)
+    out = []
+    has_dipole = len(tables.dipole) == len(tables.pairs) and len(tables.pairs) > 0
+    for (bra, ket), index in groups.items():
+        rows = slice(
+            tables.basis_offsets[bra], tables.basis_offsets[bra] + tables.orbitals_per_site[bra]
+        )
+        cols = slice(
+            tables.basis_offsets[ket], tables.basis_offsets[ket] + tables.orbitals_per_site[ket]
+        )
+        translations = np.array([tables.pairs[p].deltaR_cart for p in index], dtype=float).reshape(
+            -1, 3
+        )
+        overlap = np.stack([np.asarray(tables.overlap[p], dtype=float) for p in index])
+        dipole = (
+            np.stack([np.asarray(tables.dipole[p], dtype=float) for p in index])
+            if has_dipole
+            else np.zeros((len(index), 3) + overlap.shape[1:])
+        )
+        out.append((rows, cols, translations, overlap, dipole))
+    try:
+        tables._grouped = out
+    except AttributeError:
+        pass
+    return out
+
+
 def _stacked_blocks(tables: PositionTables) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Pair blocks padded to full ``(nawf, nawf)`` matrices, stacked along the pair axis."""
+    """Pair blocks padded to full ``(nawf, nawf)`` matrices, stacked along the pair axis.
+
+    Kept for small bases and tests; ``npairs x nawf^2`` memory (see :func:`_grouped_blocks`).
+    """
     npairs, nawf = len(tables.pairs), tables.nawf
     overlap = np.zeros((npairs, nawf, nawf))
     dipole = np.zeros((npairs, 3, nawf, nawf))
@@ -358,17 +409,23 @@ def assemble_position_kspace(
     -----
     The phase carries the lattice translation only, as the Hamiltonian of
     :func:`~PAOFLOW.elphon.elph_bloch.band_velocities`; the orbital centres enter through
-    :math:`\boldsymbol\tau` in :func:`lowdin_dipole_kspace`.
+    :math:`\boldsymbol\tau` in :func:`lowdin_dipole_kspace`.  The sums are accumulated site pair by
+    site pair from the stored blocks (:func:`_grouped_blocks`), so the memory is the k-space
+    matrices only.
     """
     k_points_cart = np.asarray(k_points_cart, dtype=float)
     if k_points_cart.ndim != 2 or k_points_cart.shape[1] != 3:
         raise ValueError('k_points_cart must have shape (nk, 3).')
-    overlap, dipole, translations = _stacked_blocks(tables)
-    phases = np.exp(1j * (k_points_cart @ translations.T))  # (nk, npairs)
-    overlap_k = np.tensordot(phases, overlap, axes=(1, 0))
-    dipole_k = np.tensordot(phases, dipole, axes=(1, 0))
-    gradient_phases = phases[:, :, None] * (1j * translations)[None, :, :]  # (nk, npairs, 3)
-    overlap_gradient_k = np.tensordot(gradient_phases, overlap, axes=(1, 0))  # (nk, 3, nawf, nawf)
+    nk, nawf = k_points_cart.shape[0], tables.nawf
+    overlap_k = np.zeros((nk, nawf, nawf), dtype=complex)
+    overlap_gradient_k = np.zeros((nk, 3, nawf, nawf), dtype=complex)
+    dipole_k = np.zeros((nk, 3, nawf, nawf), dtype=complex)
+    for rows, cols, translations, overlap, dipole in _grouped_blocks(tables):
+        phases = np.exp(1j * (k_points_cart @ translations.T))  # (nk, np)
+        overlap_k[:, rows, cols] += np.tensordot(phases, overlap, axes=(1, 0))
+        dipole_k[:, :, rows, cols] += np.tensordot(phases, dipole, axes=(1, 0))
+        gradient_phases = phases[:, :, None] * (1j * translations)[None, :, :]  # (nk, np, 3)
+        overlap_gradient_k[:, :, rows, cols] += np.tensordot(gradient_phases, overlap, axes=(1, 0))
     return overlap_k, overlap_gradient_k, dipole_k
 
 
@@ -392,22 +449,12 @@ def assemble_overlap_kspace(
     k_points_cart = np.asarray(k_points_cart, dtype=float)
     if k_points_cart.ndim != 2 or k_points_cart.shape[1] != 3:
         raise ValueError('k_points_cart must have shape (nk, 3).')
-    npairs, nawf = len(tables.pairs), tables.nawf
-    overlap = np.zeros((npairs, nawf, nawf))
-    translations = np.zeros((npairs, 3))
-    for p, pair in enumerate(tables.pairs):
-        rows = slice(
-            tables.basis_offsets[pair.bra_site],
-            tables.basis_offsets[pair.bra_site] + tables.orbitals_per_site[pair.bra_site],
-        )
-        cols = slice(
-            tables.basis_offsets[pair.ket_site],
-            tables.basis_offsets[pair.ket_site] + tables.orbitals_per_site[pair.ket_site],
-        )
-        overlap[p, rows, cols] = tables.overlap[p]
-        translations[p] = pair.deltaR_cart
-    phases = np.exp(1j * (k_points_cart @ translations.T))
-    return np.tensordot(phases, overlap, axes=(1, 0))
+    nk, nawf = k_points_cart.shape[0], tables.nawf
+    overlap_k = np.zeros((nk, nawf, nawf), dtype=complex)
+    for rows, cols, translations, overlap, _dipole in _grouped_blocks(tables):
+        phases = np.exp(1j * (k_points_cart @ translations.T))
+        overlap_k[:, rows, cols] += np.tensordot(phases, overlap, axes=(1, 0))
+    return overlap_k
 
 
 def on_site_dipoles(tables: PositionTables) -> NDArray[np.float64]:
@@ -432,6 +479,19 @@ def on_site_dipoles(tables: PositionTables) -> NDArray[np.float64]:
         )
         dipole[:, block, block] = tables.dipole[p]
     return dipole
+
+
+#: The ill-conditioning warning of :func:`overlap_sqrt_and_derivative` is shown once, by the first
+#: MPI rank (it is a property of the basis, not of the k chunk or of the rank).
+_ILL_CONDITIONED_WARNED = False
+
+
+def _first_rank() -> bool:
+    """True on MPI rank 0 and without MPI (``mpi4py`` is read only when already loaded)."""
+    mpi = sys.modules.get('mpi4py.MPI')
+    if mpi is None or not mpi.Is_initialized() or mpi.Is_finalized():
+        return True
+    return mpi.COMM_WORLD.Get_rank() == 0
 
 
 def overlap_sqrt_and_derivative(
@@ -473,11 +533,19 @@ def overlap_sqrt_and_derivative(
             f'the PAO overlap S(k) is not positive definite (smallest eigenvalue '
             f'{eigenvalues.min():.3e}): linearly dependent orbitals'
         )
-    if eigenvalues.min() < 1.0e-4 * eigenvalues.max():
+    global _ILL_CONDITIONED_WARNED
+    ill_conditioned = eigenvalues.min() < 1.0e-4 * eigenvalues.max()
+    if ill_conditioned and not _ILL_CONDITIONED_WARNED and _first_rank():
+        _ILL_CONDITIONED_WARNED = True
         warnings.warn(
-            'the PAO overlap S(k) is ill-conditioned (eigenvalues %.1e .. %.1e): the Löwdin '
-            'position dipoles amplify the nearly dependent combinations; use a basis without '
-            'redundant shells (for ultrasoft / PAW the UPF orbitals plus augmentation shells)'
+            'the PAO overlap S(k) is ill-conditioned (eigenvalues %.1e .. %.1e): some combinations '
+            'of the basis orbitals are nearly linearly dependent, whatever the pseudopotential '
+            '(typically diffuse shells, such as the 4S/4P/5S/5P of the extended preset, '
+            'overlapping the orbitals of the neighbours in a dense crystal). The Löwdin position '
+            'dipoles amplify the quadrature noise of those combinations; the optical response is '
+            'usually unaffected (Si, extended basis: eps2 changes by 1.5 %% when the most diffuse '
+            'shell is dropped). To check, compare with configuration="standard" or without the '
+            'outermost shells. Shown once, by the first MPI rank.'
             % (eigenvalues.min(), eigenvalues.max()),
             RuntimeWarning,
             stacklevel=2,
@@ -864,6 +932,59 @@ def augmentation_kspace(
     return dS, dS_grad, dX
 
 
+def relativistic_dipoles(dipole: NDArray[np.complex128], pao_catalog) -> NDArray[np.complex128]:
+    r"""Scalar PAO dipoles (no orbital signs) in the relativistic :math:`(j, m_j)` basis of a spin-orbit run.
+
+    Parameters
+    ----------
+    dipole : ndarray ``(nk, 3, n, n)``
+        :math:`\mathbf d(\mathbf k)` of the scalar PAO orbitals, before :func:`tesseral_signs`.
+    pao_catalog : PAOCatalog
+
+    Returns
+    -------
+    ndarray ``(nk, 3, 2n, 2n)``
+        The spin-doubled operator rotated with
+        :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.scalar_to_jm_matrix` (the odd-``|m|`` sign is
+        inside the shell transform) and :math:`(-1)^l` per channel on both indices: the basis of
+        the relativistic ``HRs`` (``assign_jm`` order).
+    """
+    from .nonlocal_velocity import _pao_jm_channel_info, scalar_to_jm_matrix
+
+    n_rel = 2 * pao_catalog.total_nlm
+    parity = np.ones(n_rel)
+    for site in pao_catalog.sites:
+        for l_p, _col0, n_m, rel_col0 in _pao_jm_channel_info(site):
+            parity[rel_col0 : rel_col0 + 2 * n_m] = (-1.0) ** l_p
+    rotated = np.stack(
+        [scalar_to_jm_matrix(dipole[:, alpha], pao_catalog) for alpha in range(3)], axis=1
+    )
+    return rotated * parity[None, None, :, None] * parity[None, None, None, :]
+
+
+def _j_radial_mismatch(arrays: dict) -> tuple[float, str]:
+    """Largest 1 - <R_{l-1/2}|R_{l+1/2}> over the j-split shells of ``arrays['atomic_basis']``."""
+    groups: dict[tuple, list] = {}
+    for record in arrays.get('atomic_basis') or []:
+        if int(record.get('l', 0)) > 0:
+            groups.setdefault((record['atom'], record['label'], int(record['l'])), []).append(
+                record
+            )
+    worst, where = 0.0, ''
+    for key, records in groups.items():
+        first, last = records[0], records[-1]
+        if first['wfc'] is last['wfc'] or len(first['wfc']) != len(last['wfc']):
+            continue
+        r = np.asarray(first['r'], dtype=float)
+        a, b = np.asarray(first['wfc'], dtype=float), np.asarray(last['wfc'], dtype=float)
+        norm = np.sqrt(np.trapezoid(a * a, r) * np.trapezoid(b * b, r))
+        if norm > 0.0:
+            mismatch = 1.0 - abs(np.trapezoid(a * b, r)) / norm
+            if mismatch > worst:
+                worst, where = float(mismatch), f'{key[0]} {key[1]}'
+    return worst, where
+
+
 def position_dipole_operator(
     data_controller,
     bg: NDArray[np.float64],
@@ -906,7 +1027,8 @@ def position_dipole_operator(
     Raises
     ------
     NotImplementedError
-        For fully-relativistic runs (scalar-relativistic bases only).
+        For a fully relativistic run with ultrasoft / PAW species (the augmentation of the
+        dipoles has no spinor version).
 
     Notes
     -----
@@ -914,12 +1036,16 @@ def position_dipole_operator(
     ``[-0.5, 0.5)``), applies the Löwdin formula, symmetrises the result
     (:math:`(\mathbf d + \mathbf d^\dagger)/2` removes the quadrature noise) and restores
     PAOFLOW's tesseral signs on both orbital indices (:func:`tesseral_signs`).
+
+    Spin-orbit runs (13 Nov 2026): fully relativistic bases get the scalar operator rotated to the
+    :math:`(j, m_j)` basis (:func:`relativistic_dipoles`, as :func:`position_dipoles_on_grid`),
+    ad-hoc spin-orbit the spin-diagonal doubling. The radial functions are one per shell and
+    :math:`l`: with j-resolved tables both :math:`j = l \pm 1/2` use the :math:`j = l - 1/2` one,
+    exact when they coincide; the largest mismatch is printed when it exceeds :math:`10^{-3}`.
     """
     arrays, attributes = data_controller.data_dicts()
-    if bool(attributes.get('dftSO', False)):
-        raise NotImplementedError(
-            'position_dipole_operator supports scalar-relativistic runs only.'
-        )
+    spin_orbit = bool(attributes.get('dftSO', False))
+    fully_relativistic = spin_orbit and not bool(attributes.get('adhoc_SO', False))
     if level not in DIPOLE_LEVELS:
         raise ValueError(f'level must be one of {DIPOLE_LEVELS}, got {level!r}')
     pao_catalog = load_pao_orbitals(data_controller)
@@ -935,6 +1061,18 @@ def position_dipole_operator(
         aug = build_projector_augmentation(
             data_controller, pao_catalog, q_max=q_max, n_q=n_q, pao_tol=pao_tol
         )
+    if fully_relativistic and aug is not None:
+        raise NotImplementedError(
+            'position dipoles with spin-orbit coupling: the ultrasoft / PAW augmentation has no '
+            'spinor version (norm-conserving pseudopotentials only)'
+        )
+    if fully_relativistic:
+        mismatch, shell = _j_radial_mismatch(arrays)
+        if mismatch > 1.0e-3 and _first_rank():
+            print(
+                'WARNING: position dipoles use one radial function per shell; the j = l -+ 1/2 '
+                f'tables of {shell} differ by 1 - overlap = {mismatch:.1e}'
+            )
 
     def dipoles(k_cryst: NDArray[np.float64]) -> NDArray[np.complex128]:
         folded = k_cryst - np.floor(k_cryst + 0.5)
@@ -954,7 +1092,16 @@ def position_dipole_operator(
             on_site=on_site,
         )
         dipole = 0.5 * (dipole + np.conj(np.transpose(dipole, (0, 1, 3, 2))))
-        return dipole * sign_matrix
+        if fully_relativistic:
+            return relativistic_dipoles(dipole, pao_catalog)
+        dipole = dipole * sign_matrix
+        if spin_orbit:  # ad-hoc spin-orbit: [up; down] blocks
+            n = pao_catalog.total_nlm
+            doubled = np.zeros(dipole.shape[:2] + (2 * n, 2 * n), dtype=complex)
+            doubled[:, :, :n, :n] = dipole
+            doubled[:, :, n:, n:] = dipole
+            return doubled
+        return dipole
 
     return dipoles
 
@@ -977,7 +1124,8 @@ def position_dipoles_on_grid(
         ``alat``, ``dftSO``, ``adhoc_SO``).  The tables are cached under
         ``'_PD_tables'`` / ``'_PD_on_site'`` so repeated calls (MPI slices) are cheap.
     kgrid_2pi_alat : ndarray, shape ``(3, nk)`` or ``(nk, 3)``
-        Cartesian k-points in units of :math:`2\pi/a` (PAOFLOW's ``arrays['kgrid']``).
+        Cartesian k-points in units of :math:`2\pi/a` (PAOFLOW's ``arrays['kgrid']``). A first
+        axis of length 3 is read as ``(3, nk)``, also for ``nk = 3``.
     level : {'full', 'intra-atomic'}, optional
         See :func:`lowdin_dipole_kspace`.
     q_max, n_q, pao_tol : optional
@@ -998,7 +1146,7 @@ def position_dipoles_on_grid(
     (global, or the rank's slice under MPI, as in
     :meth:`PAOFLOW.PAOFLOW.position_dipole_correction`).
     """
-    from .nonlocal_velocity import _kgrid_to_cart, _pao_jm_channel_info, scalar_to_jm_matrix
+    from .nonlocal_velocity import _kgrid_to_cart
 
     arrays, attributes = data_controller.data_dicts()
     if level not in DIPOLE_LEVELS:
@@ -1017,8 +1165,9 @@ def position_dipoles_on_grid(
         arrays['_PD_on_site'],
     )
     k_cart = _kgrid_to_cart(kgrid_2pi_alat, alat)
-    # blocks of k keep the Bloch sums (nk, 3, nawf, nawf) within a few hundred MB
-    kblock = max(1, int(2.0e8 // (3 * 16 * tables.nawf**2)))
+    # blocks of k keep the Bloch sums and the Loewdin temporaries, ~16 complex (nawf, nawf)
+    # per k, within about 1 GB
+    kblock = max(1, int(1.0e9 // (16 * 16 * tables.nawf**2)))
     dipole = np.empty((k_cart.shape[0], 3, tables.nawf, tables.nawf), dtype=complex)
     for start in range(0, k_cart.shape[0], kblock):
         overlap_k, overlap_gradient_k, dipole_k = assemble_position_kspace(
@@ -1035,16 +1184,7 @@ def position_dipoles_on_grid(
     dipole = 0.5 * (dipole + np.conj(np.transpose(dipole, (0, 1, 3, 2))))
     fully_rel = bool(attributes.get('dftSO', False)) and not bool(attributes.get('adhoc_SO', False))
     if fully_rel:
-        # odd-|m| sign inside the shell transform; (-1)^l per channel on both indices
-        n_rel = 2 * pao_catalog.total_nlm
-        parity = np.ones(n_rel)
-        for site in pao_catalog.sites:
-            for l_p, _col0, n_m, rel_col0 in _pao_jm_channel_info(site):
-                parity[rel_col0 : rel_col0 + 2 * n_m] = (-1.0) ** l_p
-        rotated = np.stack(
-            [scalar_to_jm_matrix(dipole[:, alpha], pao_catalog) for alpha in range(3)], axis=1
-        )
-        return rotated * parity[None, None, :, None] * parity[None, None, None, :]
+        return relativistic_dipoles(dipole, pao_catalog)
     signs = pao_orbital_signs(pao_catalog)
     dipole = dipole * signs[None, None, :, None] * signs[None, None, None, :]
     if bool(attributes.get('dftSO', False)):  # ad-hoc spin-orbit: [up; down] blocks

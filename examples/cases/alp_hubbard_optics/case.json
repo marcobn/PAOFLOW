@@ -1,0 +1,58 @@
+{
+ "title": "AlP: Hubbard-corrected bands, transport and dielectric function",
+ "summary": "A fixed on-site correction (-U/2 on the Al and P p orbitals, the non-self-consistent ACBN0 values) opens the gap; then DOS, transport and the optical dielectric tensor.",
+ "workflow": "run",
+ "answers": {
+  "savedir": "alp.save",
+  "prefix": "alp",
+  "projector": "internal",
+  "properties": [
+   "bands",
+   "dos",
+   "transport",
+   "optical",
+   "hamiltonian_changes"
+  ],
+  "ibrav": 2,
+  "nk": 2000,
+  "do_pdos": false,
+  "emin": -8.0,
+  "emax": 5.0,
+  "interpolate": true,
+  "nfft": 24,
+  "hubbard_shifts": [
+   [
+    "Al-3p",
+    "0.1"
+   ],
+   [
+    "P-3p",
+    "2.31"
+   ]
+  ],
+  "std_basis": "standard"
+ },
+ "pseudopotentials": [
+  "library/Al.pbe-mt_fhi.UPF",
+  "library/P.pbe-mt_fhi.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "tags": [
+  "Hubbard",
+  "optics",
+  "transport",
+  "semiconductor"
+ ],
+ "source": "examples/qe_examples/example06"
+}

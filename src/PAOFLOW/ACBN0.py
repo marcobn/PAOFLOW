@@ -1286,14 +1286,17 @@ class ACBN0:
         den_J = Naa.real + Nbb.real
         return den_U, den_J
 
-    def _projwfc_hubbard_manifolds(self, state_lines):
+    def _projwfc_hubbard_manifolds(
+        self, state_lines: list[str]
+    ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """Build the Hubbard manifolds from ``projwfc.x`` ``state #`` lines.
 
         Returns a dict mapping each Hubbard orbital key to
         ``(basis_dm, basis_2e)`` PAO-index arrays, where ``basis_dm`` is the
         density-matrix manifold (all atoms of the species, matching L) and
         ``basis_2e`` is the single representative shell used for the
-        two-electron integrals.
+        two-electron integrals: the shell on the first atom of the species,
+        selected by the atom index of the ``state #`` lines.
 
         Selection is label-aware: the projwfc ``wfc N`` index is mapped to
         the pseudo's N-th ``PP_PSWFC`` shell label (via
@@ -1306,20 +1309,22 @@ class ACBN0:
         for orb in self.uVals:
             ostates = []
             ustates = []
+            atom_of_state = {}
             species_label = orb.split('-')[0]
             horb = self.hubbard_orbital(orb)
             shell_label = self._shell_label(orb)
             labels = self.basis_labels.get(species_label)
             for n, sl in enumerate(state_lines):
                 mat = re.search(
-                    r'atom\s+\d+\s*\(\s*(\S+)\s*\)\s*,\s*wfc\s+(\d+)\s*\(\s*l\s*=\s*(\d+)',
+                    r'atom\s+(\d+)\s*\(\s*(\S+)\s*\)\s*,\s*wfc\s+(\d+)\s*\(\s*l\s*=\s*(\d+)',
                     sl,
                 )
                 if mat is None:
                     continue
-                oele = mat.group(1).strip()
-                wfc_idx = int(mat.group(2))
-                oL = int(mat.group(3))
+                atom_idx = int(mat.group(1))
+                oele = mat.group(2).strip()
+                wfc_idx = int(mat.group(3))
+                oL = int(mat.group(4))
                 if oL != horb:
                     continue
                 # Map wfc index -> pseudo shell label and keep only the
@@ -1331,17 +1336,14 @@ class ACBN0:
                     ostates.append(n)
                     if species_label == oele:
                         ustates.append(n)
+                        atom_of_state[n] = atom_idx
             if not ustates:
                 raise RuntimeError(
                     f'No projwfc states matched Hubbard manifold {orb!r} '
                     f'(species {species_label!r}, shell {shell_label!r}).'
                 )
-            sstates = [ustates[0]]
-            for us in ustates[1:]:
-                if us == 1 + sstates[-1]:
-                    sstates.append(us)
-                else:
-                    break
+            first_atom = atom_of_state[ustates[0]]
+            sstates = [state for state in ustates if atom_of_state[state] == first_atom]
             manifolds[orb] = (np.array(ostates), np.array(sstates))
         return manifolds
 
@@ -1385,15 +1387,26 @@ class ACBN0:
         """
         return orb.split('-')[1].upper()
 
-    def _local_hubbard_manifolds(self):
+    def _local_hubbard_manifolds(self) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """Build the Hubbard manifolds from the local-basis PAO metadata.
 
         Selection is by shell *label* (not merely by angular momentum), so
         polarization shells that share the Hubbard L (e.g. ``4P`` alongside
         the ``3P`` valence shell in the ``standard`` basis) are excluded.
 
-        Returns a dict mapping each Hubbard orbital key to
-        ``(basis_dm, basis_2e)`` PAO-index arrays.
+        Returns
+        -------
+        dict
+            Maps each Hubbard orbital key to ``(basis_dm, basis_2e)`` PAO-index
+            arrays: ``basis_dm`` is the shell on every atom of the species,
+            ``basis_2e`` the shell on the first atom of the species.
+
+        Notes
+        -----
+        The site of ``basis_2e`` is chosen by the ``atom`` column of
+        ``pao_basis.dat``. Selecting the first contiguous run of PAO indices
+        instead (the rule before November 2026) merged two atoms of the species
+        whenever their Hubbard shells were adjacent in the PAO list.
         """
         meta = self._load_pao_basis_meta()
         manifolds = {}
@@ -1404,6 +1417,7 @@ class ACBN0:
 
             ostates = []
             ustates = []
+            atom_of_state = {}
             for e in meta:
                 if e['l'] != horb or e['label'].upper() != shell_label:
                     continue
@@ -1411,20 +1425,15 @@ class ACBN0:
                     ostates.append(e['index'])
                     if species_label == e['elem']:
                         ustates.append(e['index'])
+                        atom_of_state[e['index']] = e['atom']
             if not ustates:
                 raise RuntimeError(
                     f'No PAO orbitals matched Hubbard manifold {orb!r} '
                     f'(species {species_label!r}, shell {shell_label!r}) in '
                     f'{join(self.outputdir, "pao_basis.dat")}.'
                 )
-            # First contiguous run of the species' orbitals = the valence
-            # shell on the first matching atom.
-            sstates = [ustates[0]]
-            for us in ustates[1:]:
-                if us == 1 + sstates[-1]:
-                    sstates.append(us)
-                else:
-                    break
+            first_atom = atom_of_state[ustates[0]]
+            sstates = [state for state in ustates if atom_of_state[state] == first_atom]
             manifolds[orb] = (np.array(ostates), np.array(sstates))
         return manifolds
 
@@ -1652,7 +1661,14 @@ class ACBN0:
         nkpnts = Hks.shape[2]
         return [eigh(Hks[:, :, ik], Sks[:, :, ik]) for ik in range(nkpnts)]
 
-    def Dk(self, basis_dm, basis_2e, Hks, Sks, eigvec_cache=None):
+    def Dk(
+        self,
+        basis_dm: np.ndarray,
+        basis_2e: np.ndarray,
+        Hks: np.ndarray,
+        Sks: np.ndarray,
+        eigvec_cache: list | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Build the per-k density matrix ``D(k)`` and the per-k Mulliken
         projection ``n_{lm}(k)`` on ``basis_2e`` for the occupied manifold.
 
@@ -1666,6 +1682,20 @@ class ACBN0:
             If provided, the per-k generalized eigenproblem is *not*
             re-solved; values from the cache are used instead.  Produced by
             :meth:`_eigh_all_k`.
+
+        Returns
+        -------
+        D_k : (nbasis, nbasis, nkpnts) complex ndarray
+            Renormalized density matrix per k-point (numerators of U and J).
+        nlm_k : (len(basis_2e), nbasis, nkpnts) complex ndarray
+            Mulliken projection of each occupied state on ``basis_2e``
+            (bare occupations, denominators of U and J).
+
+        Notes
+        -----
+        Every k-point enters both arrays. Until November 2026 the first
+        k-point was set to zero in ``nlm_k`` only, which lowered the bare
+        occupations by its weight and raised U by about twice that fraction.
         """
         from scipy.linalg import eigh
 
@@ -1700,7 +1730,6 @@ class ACBN0:
 
             D_k[:, :, ik] = np.tensordot(np.conj(evec2 * lm_dm), evec2, axes=([1], [1]))
 
-        nlm_k[:, :, 0] = 0
         return D_k, nlm_k
 
     def Nmm(self, nlm, Hks, kwght):
@@ -2337,15 +2366,16 @@ class eACBN0(ACBN0):
 
     def _pair_density_matrices(
         self,
-        basis_I,
-        basis_J,
-        Hks,
-        Sks,
-        kpnts,
-        kwght,
-        R_bohr,
-        eigvec_cache=None,
-    ):
+        basis_I: np.ndarray,
+        basis_J: np.ndarray,
+        Hks: np.ndarray,
+        Sks: np.ndarray,
+        kpnts: np.ndarray,
+        kwght: np.ndarray,
+        R_bohr: np.ndarray,
+        eigvec_cache: list | None = None,
+        degeneracy_tol: float = 1e-6,
+    ) -> dict[str, np.ndarray]:
         """Compute spin-channel pair density matrices following Eqs. (2),
         (4) and (5) of Phys. Rev. Research 2, 043410 (2020).
 
@@ -2365,6 +2395,11 @@ class eACBN0(ACBN0):
             Brillouin-zone integration weights.
         R_bohr : (3,) ndarray
             Lattice translation applied to atom J, in Bohr.
+        eigvec_cache : list of (eig, vec) or None, optional
+            Per-k eigendecompositions from :meth:`_eigh_all_k`.
+        degeneracy_tol : float, optional
+            Occupied states closer than this (eV) form one degenerate
+            multiplet for the band weight (see Notes).
 
         Returns
         -------
@@ -2376,6 +2411,27 @@ class eACBN0(ACBN0):
             ``'n_IJ'``, ``'n_JI'`` with the same R conventions.  All
             shapes are ``(n_I, n_I)``, ``(n_J, n_J)``, ``(n_I, n_J)``,
             ``(n_J, n_I)`` respectively.
+
+        Notes
+        -----
+        The band weight of Eq. (4) is the Mulliken projection of a state on
+        the two shells of the pair,
+
+        .. math::
+
+            W_{mn} = \\tfrac12\\sum_{\\alpha\\in I\\cup J}
+                \\big[c^*_{\\alpha m}(Sc)_{\\alpha n} + (Sc)^*_{\\alpha m}c_{\\alpha n}\\big],
+
+        and the renormalized matrices are
+        :math:`P = \\sum_{mn} |\\psi_m\\rangle W_{mn}\\langle\\psi_n|` with
+        :math:`W` kept inside each degenerate multiplet of occupied states and
+        zero between multiplets. For non-degenerate states this is the
+        per-band weight :math:`N_m = W_{mm}`. Inside a multiplet the pair
+        weight need not commute with the rotations that relate equally valid
+        Bloch states (for a pair of different shells, e.g. s on I and p on J),
+        and only the operator form is independent of the eigensolver's choice
+        of basis. Until November 2026 the per-band diagonal was used inside
+        multiplets as well, which made such V values depend on that choice.
         """
         from scipy.linalg import eigh
 
@@ -2388,7 +2444,7 @@ class eACBN0(ACBN0):
         # Block layout: each entry is (key, left coefficients, right coefficients,
         # phase factor). The same four blocks are filled for the bare ``n_*``
         # and the renormalised ``P_*`` matrices, the only difference being
-        # whether the right-hand-side carries the band weight ``N_w``.
+        # whether the right-hand-side carries the band weight matrix.
         block_shapes = {
             'II': (n_I, n_I),
             'JJ': (n_J, n_J),
@@ -2428,12 +2484,18 @@ class eACBN0(ACBN0):
             cJ = evec[basis_J, :]
             sJ = Sv[basis_J, :]
 
-            # Mulliken band weight on the (I+J) manifold (Eq. 4):
-            #   N_w[m] = Σ_{α∈I+J} Re( c*_α (S c)_α ) ∈ [0, 1].
-            N_w = (
-                np.einsum('im,im->m', np.conj(cI), sI).real
-                + np.einsum('jm,jm->m', np.conj(cJ), sJ).real
+            # Mulliken weight matrix on the (I+J) manifold (Eq. 4), kept inside
+            # degenerate multiplets of the occupied states:
+            #   W_mn = ½ Σ_{α∈I+J} [ c*_αm (S c)_αn + (S c)*_αm c_αn ],
+            # whose diagonal is the band weight Σ_{α∈I+J} Re( c*_α (S c)_α ).
+            weight_matrix = 0.5 * (
+                np.conj(cI).T @ sI + np.conj(sI).T @ cI + np.conj(cJ).T @ sJ + np.conj(sJ).T @ cJ
             )
+            occupied_energies = eig[occ_ind]
+            multiplet = np.concatenate(
+                ([0], np.cumsum(np.diff(occupied_energies) > degeneracy_tol))
+            )
+            weight_matrix = weight_matrix * (multiplet[:, None] == multiplet[None, :])
 
             # (key, left c, left Sc, right c, right Sc, phase) — used to
             # accumulate both bare ``n_*`` (Eq. 2) and renormalised
@@ -2448,9 +2510,9 @@ class eACBN0(ACBN0):
                 prefac = 0.5 * w * phase
                 n_blocks[key] += prefac * (np.conj(ca) @ sb.T + np.conj(sa) @ cb.T)
                 # ``P_*`` matrices weight the right-hand-side coefficients
-                # (broadcast over the band index) by ``N_w[m]``.
-                sb_w = sb * N_w
-                cb_w = cb * N_w
+                # with the band weight matrix: P = sum_mn |m> W_mn <n|.
+                sb_w = sb @ weight_matrix
+                cb_w = cb @ weight_matrix
                 P_blocks[key] += prefac * (np.conj(ca) @ sb_w.T + np.conj(sa) @ cb_w.T)
 
         scale = 1.0 / total_w

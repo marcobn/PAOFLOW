@@ -2,6 +2,41 @@ import numpy as np
 from numpy import linalg as npl
 
 
+def merge_overlapping_groups(groups: list) -> list:
+    """Merge index groups that share a band into one group (sorted, disjoint, in order).
+
+    Parameters
+    ----------
+    groups : list of array_like
+        Band-index groups, possibly repeated or overlapping.
+
+    Returns
+    -------
+    list of np.ndarray
+        Disjoint groups (sorted indices), ordered by their first index.
+
+    Notes
+    -----
+    :func:`get_degeneracies` makes one group per distinct rounded value. Two values one rounding
+    step apart (two Kramers pairs 2 µeV apart, rounded to -0.90094 and -0.90093) each collect
+    all four bands, so the same group was listed twice, and a chain of close values gave
+    overlapping groups. A subspace listed twice was rotated twice by ``perturb_split`` (with
+    the rotation of the unrotated block), so its band velocities were wrong.
+    """
+    merged: list[set] = []
+    for group in groups:
+        current = {int(i) for i in np.atleast_1d(group)}
+        keep = []
+        for other in merged:
+            if other & current:
+                current |= other
+            else:
+                keep.append(other)
+        keep.append(current)
+        merged = keep
+    return [np.array(sorted(g), dtype=int) for g in sorted(merged, key=min)]
+
+
 def get_degeneracies(E_k, bnd):
     """Detect degenerate eigenvalue groups for all k-points and spin channels.
 
@@ -18,7 +53,9 @@ def get_degeneracies(E_k, bnd):
         ``all_degen[ispin][ik]`` is a list of 1-D integer arrays, each
         containing the band indices that belong to a degenerate group at
         k-point ``ik`` and spin channel ``ispin``.  Groups involving at
-        least two bands are reported; singletons are omitted.
+        least two bands are reported; singletons are omitted. The groups are
+        disjoint (:func:`merge_overlapping_groups`). A group with a band below ``bnd``
+        is reported whole, also its bands from ``bnd`` on.
 
     Notes
     -----
@@ -45,10 +82,13 @@ def get_degeneracies(E_k, bnd):
             for i in range(len(eV)):
                 inds = np.where(np.isclose(E_k_round[ik, :, ispin], eV[i], atol=1.0e-5))[0]
 
-                if len(inds) > 1 and np.all(inds < bnd):
+                # a group that reaches above bnd is kept whole: the states that the projectability
+                # filter pins at the shift are degenerate, and a group straddling bnd left without
+                # its rotation gave velocities chosen by LAPACK (Pt slab: 1.4 % of its spin Hall)
+                if len(inds) > 1 and inds.min() < bnd:
                     by_kp.append(inds)
 
-            by_spin.append(by_kp)
+            by_spin.append(merge_overlapping_groups(by_kp))
 
         all_degen.append(by_spin)
 
@@ -188,7 +228,7 @@ def band_loop_H(HRaux, kq, R):
     for ik in range(nkpi):
         for ispin in range(nspin):
             auxh[:, :, ik, ispin] = np.sum(
-                HRaux[:, :, :, ispin] * np.exp(2.0j * np.pi * kq[ik, :].dot(R[:, :].T)), axis=2
+                HRaux[:, :, :, ispin] * np.exp(-2.0j * np.pi * kq[ik, :].dot(R[:, :].T)), axis=2
             )
 
     return auxh
@@ -218,7 +258,7 @@ def band_loop_S(SRaux, kq, R):
 
     for ik in range(nkpi):
         auxs[:, :, ik] = np.sum(
-            SRaux[:, :, :] * np.exp(2.0j * np.pi * kq[ik, :].dot(R[:, :].T)), axis=2
+            SRaux[:, :, :] * np.exp(-2.0j * np.pi * kq[ik, :].dot(R[:, :].T)), axis=2
         )
 
     return auxs

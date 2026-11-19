@@ -91,6 +91,8 @@ def assemble_eph_tensor(
     shift_type=1,
     enforce_asr=True,
     symmetry_expand='auto',
+    fixed_basis=True,
+    project_good_subspace=None,
 ):
     """Build the primitive Cartesian electron-phonon real-space tensor.
 
@@ -110,6 +112,12 @@ def assemble_eph_tensor(
         If ``True`` (default), impose the translational acoustic sum rule on the
         assembled tensor via :func:`enforce_acoustic_sum_rule`.  The pre-
         enforcement residual is reported in the returned ``'asr_residual'``.
+    fixed_basis : bool, optional
+        Passed to :func:`~PAOFLOW.elphon.dvscf_fd.compute_dV` when the derivatives
+        are not on the controller yet: project the displaced cells on orbitals
+        centred at the reference positions (default ``True``).
+    project_good_subspace : bool, optional
+        Also passed through (``None``: ``not fixed_basis``; see ``compute_dV``).
 
     Returns
     -------
@@ -131,11 +139,23 @@ def assemble_eph_tensor(
             basispath=basispath,
             pthr=pthr,
             shift_type=shift_type,
+            fixed_basis=fixed_basis,
+            project_good_subspace=project_good_subspace,
         )
     directional = result['directional']
 
     phonon = init_phonopy(data_controller)
     s2p, translations = supercell_atom_translations(phonon)
+
+    if result.get('displacement_mode') == 'random':
+        # The random fit returns the derivatives of every supercell atom; the fold
+        # consumes the reference primitive-cell atoms (the others are their
+        # periodic translates and would be averaged as if they were the same
+        # tensor by the directional solve below).
+        from .displacements import reference_supercell_atoms
+
+        keep = set(int(k) for k in reference_supercell_atoms(phonon))
+        directional = [d for d in directional if int(d['sc_atom']) in keep]
 
     if configuration is None:
         configuration = attr.get('elphon_configuration', 'standard')
@@ -168,7 +188,9 @@ def assemble_eph_tensor(
         # reference), so the reference PAO Hamiltonian is not rebuilt again here.
         sym_inputs = result.get('ref_symmetry_inputs')
         if sym_inputs is not None:
-            ops = build_dv_symmetry_operators(**sym_inputs)
+            from .dvscf_fd import symmetry_operator_inputs
+
+            ops = build_dv_symmetry_operators(**symmetry_operator_inputs(sym_inputs))
         else:
             from .dvscf_fd import _save_dir_for, supercell_symmetry_operators
 

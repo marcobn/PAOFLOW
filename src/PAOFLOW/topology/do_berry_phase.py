@@ -1,7 +1,96 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import scipy.linalg as la
+from numpy.typing import NDArray
 
-from ..utils.constants import ANGSTROM_AU
+if TYPE_CHECKING:
+    from ..DataController import DataController
+
+
+def occupied_band_count(arry: dict, attr: dict) -> int:
+    """Number of occupied bands of the spin channel used by the Wilson loops.
+
+    Parameters
+    ----------
+    arry : dict
+        DataController arrays; ``HRs`` (shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``) is read
+        for collinear spin-polarized runs.
+    attr : dict
+        DataController attributes; ``nelec`` (electrons per cell) and ``dftSO`` (spinor bands:
+        fully relativistic runs, ``adhoc_spin_orbit``, spinful models).
+
+    Returns
+    -------
+    int
+        ``nelec`` for spinor bands, ``nelec / 2`` for spin-degenerate bands (``nspin = 1``
+        without spin-orbit coupling); for ``nspin = 2`` the number of bands of channel 0 below
+        the Fermi level, which must be the same at every k-point of the coarse grid.
+
+    Raises
+    ------
+    ValueError
+        If the count is not an integer (a metal or a fractional filling), or if it is not between
+        1 and the number of bands; pass the band indices with ``sub`` instead.
+
+    Notes
+    -----
+    ``nelec`` counts electrons, as in the DFT readers and the model loaders. Before 16 Nov 2026
+    the Wilson loops took the lowest ``nelec`` bands, twice the occupied subspace of a
+    spin-degenerate system.
+    """
+    nawf, nspin = arry['HRs'].shape[0], arry['HRs'].shape[-1]
+    if nspin == 2:
+        from ..response.nonlinear_optics import channel_electron_counts
+
+        count = channel_electron_counts(arry['HRs'])[0]
+    else:
+        spin_factor = 1.0 if attr.get('dftSO', False) else 2.0
+        count = float(attr['nelec']) / spin_factor
+    if abs(count - round(count)) > 1.0e-6:
+        raise ValueError(
+            f'nelec = {float(attr["nelec"]):g} gives {count:g} occupied bands, not an integer '
+            '(a metal?): pass the band indices with sub=[...]'
+        )
+    nocc = round(count)
+    if not 0 < nocc <= nawf:
+        raise ValueError(f'{nocc} occupied bands of {nawf}: check nelec')
+    return nocc
+
+
+def orbital_fractional_positions(arry: dict, attr: dict) -> NDArray[np.float64]:
+    """Centre of every orbital of ``HRs`` in crystal (fractional) coordinates.
+
+    Parameters
+    ----------
+    arry : dict
+        DataController arrays: ``HRs``, ``a_vectors`` (alat units), and ``basis`` (projections,
+        centres in bohr) or ``tau`` with ``naw``.
+    attr : dict
+        DataController attributes: ``alat`` (bohr) and ``tau_units`` (``'alat'`` for the model
+        loaders; absent, i.e. bohr, for DFT runs).
+
+    Returns
+    -------
+    ndarray, shape ``(nawf, 3)``
+        Fractional coordinates :math:`\\mathbf s_n` of the orbital centres,
+        :math:`\\boldsymbol\\tau_n = \\sum_i s_{n,i}\\,\\mathbf a_i`.
+
+    Raises
+    ------
+    ValueError
+        If no centre can be assigned to every orbital.
+
+    Notes
+    -----
+    The centres are those of :func:`PAOFLOW.hamiltonian.orbital_centres.orbital_centres_bohr`.
+    """
+    from ..hamiltonian.orbital_centres import orbital_centres_bohr
+
+    centres_alat = orbital_centres_bohr(arry, attr) / float(attr['alat'])
+    return centres_alat @ np.linalg.inv(np.asarray(arry['a_vectors'], dtype=float))
 
 
 def do_berry_phase(self):
@@ -61,7 +150,7 @@ def do_berry_phase(self):
     kylim = arry['berry_kylim']
 
     if occupied:
-        ovr_ndim = int(attr['nelec'])
+        ovr_ndim = occupied_band_count(arry, attr)
     elif sub != None:
         ovr_ndim = len(sub)
     else:
@@ -83,7 +172,8 @@ def do_berry_phase(self):
             with open(os.path.join(attr['opath'], fname + '.dat'), 'w') as f:
                 f.write(f'1D Berry phase (mod pi): phi = {phase / np.pi: 2.6f} \n')
         else:
-            self.data_controller.write_bands(fname, phase)
+            # one loop: its eigenphases, i.e. the hybrid Wannier centres along the loop
+            self.data_controller.write_berry_bands(fname, phase[None, :])
 
     elif attr['berry_kspace_method'] == 'track':
         nk1, nk2 = attr['berry_nk1'], attr['berry_nk2']
@@ -114,7 +204,7 @@ def do_berry_phase(self):
             if contin:
                 phase = berry_eigvals_cont(phase, phase[0, :])
 
-            self.data_controller.write_berry_bands(fname, phase)
+            self.data_controller.write_berry_bands(fname, phase, kpts)
 
         arry['berry_phase'] = phase
 
@@ -218,7 +308,7 @@ def do_berry_phase(self):
                     f.write(f'{kpts[ik, jk][0]: 2.12f}\t{kpts[ik, jk][1]: 2.12f}\n')
 
 
-def do_phase(data_controller):
+def do_phase(data_controller: DataController) -> float | NDArray[np.float64]:
     """Compute the Berry (or Zak) phase from pre-computed Bloch eigenvectors.
 
     Constructs the gauge-invariant phase as the argument of the determinant of
@@ -234,9 +324,16 @@ def do_phase(data_controller):
     multiplication, which makes the result independent of the individual gauge
     choices at each k-point.
 
-    For the Zak variant (``method='zak'``) the boundary link includes the
-    reciprocal-lattice phase factor ``exp(-i G·r)`` that accounts for the
-    non-periodicity of the Bloch factor across the full Brillouin zone.
+    ``method='berry'`` uses the eigenvectors of PAOFLOW's :math:`H(\\mathbf k)`, which is in the
+    lattice gauge (periodic in :math:`\\mathbf k`). ``method='zak'`` uses the cell-centred
+    coefficients :math:`\\tilde c_n(\\mathbf k) = e^{-2\\pi i\\mathbf k\\cdot\\mathbf s_n}c_n(\\mathbf k)`
+    (:math:`\\mathbf s_n` the crystal coordinates of orbital :math:`n`, :math:`\\mathbf k` crystal) at
+    every point, and closes the loop with
+    :math:`\\tilde c(\\mathbf k_0 + \\mathbf G) = e^{-2\\pi i(\\mathbf k_0 + \\mathbf G)\\cdot\\mathbf s}c(\\mathbf k_0)`,
+    :math:`\\mathbf G` the reciprocal vector spanned by the contour. On a loop across the zone
+    its phase is :math:`2\\pi` times the Wannier centre along the loop (in units of the lattice
+    vector), the lattice-gauge phase plus :math:`2\\pi\\sum_n\\overline{|c_n|^2}\\,\\mathbf G\\cdot
+    \\mathbf s_n`.
 
     When ``berry_eigvals`` is True, the eigenvalues of the product matrix are
     returned instead of its determinant, yielding per-band (Wannier-centre)
@@ -245,15 +342,23 @@ def do_phase(data_controller):
     Parameters
     ----------
     data_controller : DataController
-        Provides ``berry_v_k``, ``berry_contour``, ``berry_closed``,
-        ``berry_method``, ``berry_eigvals``, ``berry_occupied``, ``berry_sub``,
-        ``nelec``, ``alat``, ``b_vectors``, ``tau``, ``naw``, ``HRs``.
+        Provides ``berry_v_k``, ``berry_contour`` (crystal coordinates), ``berry_closed``,
+        ``berry_method``, ``berry_eigvals``, ``berry_occupied``, ``berry_sub``, ``nelec``,
+        ``dftSO``, ``HRs``; for ``method='zak'`` also ``alat``, ``a_vectors`` and the orbital
+        centres (``basis`` or ``tau``/``naw``, see :func:`orbital_fractional_positions`).
 
     Returns
     -------
     float or ndarray
         If ``berry_eigvals`` is False: single scalar phase in radians.
         If ``berry_eigvals`` is True: 1-D array of per-band phases, sorted.
+
+    Notes
+    -----
+    The occupied subspace is the lowest :func:`occupied_band_count` bands (``nelec`` divided by
+    the spin factor). Until 16 Nov 2026 it was the lowest ``nelec`` bands, and ``method='zak'``
+    replaced the closing link by the overlap of the first state with itself times
+    :math:`e^{-i\\mathbf G\\cdot\\boldsymbol\\tau}`, with mixed units.
     """
     arry, attr = data_controller.data_dicts()
 
@@ -264,112 +369,51 @@ def do_phase(data_controller):
     berry_eigvals = attr['berry_eigvals']
 
     closed = attr['berry_closed']
-    method = attr['berry_method']
+    method = attr['berry_method'].lower()
     sub = arry['berry_sub']
     occupied = attr['berry_occupied']
-
-    alat = attr['alat'] / ANGSTROM_AU
-    b_vectors = arry['b_vectors'] * (1 / alat)
-
-    tau = arry['tau']
-    naw = arry['naw']
 
     contour = arry['berry_contour']
 
     if np.allclose(contour[:, 0], contour[:, -1]):
         closed = False
 
-    method = method.lower()
-    if method == 'berry':
-        pass
-    elif method == 'zak':
+    if method == 'zak':
         closed = True
 
     # assumes that occupancy does not change throughout the choosen path
-
     if occupied:
-        sub = None
-        occ_idx = np.arange(0, attr['nelec'], 1, dtype=int)
-        num_occupied = len(occ_idx)
-        dim = num_occupied
+        occ_idx = np.arange(occupied_band_count(arry, attr))
     elif sub is not None:
-        occ_idx = np.copy(sub)
-        num_occupied = len(sub)
-        dim = len(sub)
+        occ_idx = np.asarray(sub, dtype=int)
     else:
-        occ_idx = np.arange(0, arry['HRs'].shape[0], 1, dtype=int)
-        num_occupied = len(occ_idx)
-        dim = num_occupied
+        occ_idx = np.arange(arry['HRs'].shape[0])
+    dim = len(occ_idx)
+
+    states = v_kp[:, :, :, 0][:, :, occ_idx]
+    closing = states[0]
+    if method == 'zak':
+        if contour.shape[1] != nkpts:
+            raise ValueError(f'the contour has {contour.shape[1]} points, the eigenvectors {nkpts}')
+        frac = orbital_fractional_positions(arry, attr)
+        kcrys = np.asarray(contour, dtype=float).T
+        states = np.exp(-2.0j * np.pi * kcrys @ frac.T)[:, :, None] * states
+        G = np.rint(kcrys[-1] - kcrys[0])
+        closing = (
+            np.exp(-2.0j * np.pi * (kcrys[0] + G) @ frac.T)[:, None] * v_kp[0, :, :, 0][:, occ_idx]
+        )
 
     prd = np.eye(dim, dtype=complex)
-    ovr = np.zeros([dim, dim], dtype=complex)
 
     for ik in range(nkpts - 1):
-        jk = ik + 1
-
-        left_states = v_kp[ik, :, :, 0]
-        right_states = v_kp[jk, :, :, 0]
-
-        if occupied or sub is not None:
-            left_states_idx = occ_idx
-            right_states_idx = occ_idx
-
-            left_occ = np.zeros((left_states.shape[0], len(left_states_idx)), dtype=complex)
-            right_occ = np.zeros((right_states.shape[0], len(right_states_idx)), dtype=complex)
-
-            for idx, occ in enumerate(left_states_idx):
-                left_occ[:, idx] = left_states[:, occ]
-            for idx, occ in enumerate(right_states_idx):
-                right_occ[:, idx] = right_states[:, occ]
-            left_states = left_occ
-            right_states = right_occ
-
-        else:
-            pass
-
-        ovr = np.dot(left_states.conj().T, right_states)
-        Z_ovr, sig_ovr, W_dag_ovr = la.svd(ovr)
+        ovr = np.dot(states[ik].conj().T, states[ik + 1])
+        Z_ovr, _, W_dag_ovr = la.svd(ovr)
         ovr = np.matmul(Z_ovr, W_dag_ovr)
 
         prd = np.dot(prd, ovr)
 
     if closed:
-        ik = nkpts - 1
-        jk = 0
-
-        left_states = v_kp[ik, :, :, 0]
-        right_states = v_kp[jk, :, :, 0]
-
-        if method == 'zak':
-            axis = contour[:, 1] - contour[:, 0]
-            axis /= np.dot(axis.T, axis) ** 0.5
-
-            G = np.dot(axis, b_vectors) * 2 * np.pi
-
-            orb_sites = np.repeat(tau, naw, axis=0)
-
-            phase = np.dot(orb_sites, G).reshape(-1, 1)
-
-            left_states = right_states * np.exp(-1j * phase)
-
-        if occupied or sub is not None:
-            left_states_idx = occ_idx
-            right_states_idx = occ_idx
-
-            left_occ = np.zeros((left_states.shape[0], len(left_states_idx)), dtype=complex)
-            right_occ = np.zeros((right_states.shape[0], len(right_states_idx)), dtype=complex)
-
-            for idx, occ in enumerate(left_states_idx):
-                left_occ[:, idx] = left_states[:, occ]
-            for idx, occ in enumerate(right_states_idx):
-                right_occ[:, idx] = right_states[:, occ]
-            left_states = left_occ
-            right_states = right_occ
-
-        else:
-            pass
-
-        ovr = np.dot(left_states.conj().T, right_states)
+        ovr = np.dot(states[nkpts - 1].conj().T, closing)
 
         Z_ovr, _, W_dag_ovr = la.svd(ovr)
         ovr = np.matmul(Z_ovr, W_dag_ovr)
@@ -453,7 +497,7 @@ def band_loop_H(data_controller, kq_aux):
     .. math::
 
         H(\\mathbf{k}) = \\sum_{\\mathbf{R}} H(\\mathbf{R})
-                         e^{2\\pi i \\mathbf{k} \\cdot \\mathbf{R}}
+                         e^{-2\\pi i \\mathbf{k} \\cdot \\mathbf{R}}
 
     using a single ``numpy.tensordot`` contraction over real-space lattice
     vectors ``R``.
@@ -477,7 +521,9 @@ def band_loop_H(data_controller, kq_aux):
     nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
 
     HRs = np.reshape(arry['HRs'], (nawf, nawf, nk1 * nk2 * nk3, nspin), order='C')
-    kdot = np.tensordot(arry['R'], 2.0j * np.pi * kq_aux, axes=([1], [0]))
+    kdot = np.tensordot(
+        arry['R'], -2.0j * np.pi * kq_aux, axes=([1], [0])
+    )  # H(k), PAOFLOW's convention
     np.exp(kdot, kdot)
     Haux = np.zeros((nawf, nawf, nksize, nspin), dtype=complex, order='C')
 
@@ -568,7 +614,7 @@ def berry_kpnts_interpolation_mesh(data_controller):
     arry, attr = data_controller.data_dicts()
 
     dk = 0.00001
-    nk, alat, ibrav = attr['berry_nk'], attr['alat'], attr['ibrav']
+    nk, alat, ibrav = attr['berry_nk'], attr['alat'], attr.get('ibrav', 0)
     a_vectors, b_vectors = arry['a_vectors'], arry['b_vectors']
     band_path, high_sym_points = attr['berry_path'], arry['berry_high_sym_points']
 

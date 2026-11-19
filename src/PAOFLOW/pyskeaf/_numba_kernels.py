@@ -96,14 +96,46 @@ def _lagrange4_eval_numba(energies, ix, iy, iz, wx, wy, wz):
 # ---------------------------------------------------------------------------
 
 
-def _lagrange4_eval_numpy(energies, ix, iy, iz, wx, wy, wz):
-    """Pure-NumPy reference implementation; same signature/semantics as the JIT version."""
+def _lagrange4_eval_numpy(
+    energies: np.ndarray,
+    ix: np.ndarray,
+    iy: np.ndarray,
+    iz: np.ndarray,
+    wx: np.ndarray,
+    wy: np.ndarray,
+    wz: np.ndarray,
+) -> np.ndarray:
+    """Pure-NumPy implementation; same signature, semantics and summation order as the JIT one.
+
+    Parameters
+    ----------
+    energies : ndarray, shape (nx, ny, nz)
+        Source field.
+    ix, iy, iz : ndarray, shape (M, 4), intp
+        4-point stencil indices along each axis (already periodic-wrapped).
+    wx, wy, wz : ndarray, shape (M, 4), float64
+        Lagrange weights along each axis (rows sum to 1).
+
+    Returns
+    -------
+    ndarray, shape (M,), float64
+
+    Notes
+    -----
+    The contraction runs axis by axis, c first, then b, then a, as in
+    :func:`_lagrange4_eval_numba`. A single contraction of the 64 products
+    ``wx·wy·wz·E`` rounds differently: on a flat band the result then scatters around
+    ``E₀`` and iso-contours appear where there are none (the network orbits of
+    magnetic breakdown came out different without Numba).
+    """
     sub = energies[
         ix[:, :, None, None],
         iy[:, None, :, None],
         iz[:, None, None, :],
     ]
-    return np.einsum('ma,mb,mc,mabc->m', wx, wy, wz, sub, optimize=True)
+    over_c = np.einsum('mc,mabc->mab', wz, sub)
+    over_b = np.einsum('mb,mab->ma', wy, over_c)
+    return np.einsum('ma,ma->m', wx, over_b)
 
 
 def lagrange4_eval(energies, ix, iy, iz, wx, wy, wz):

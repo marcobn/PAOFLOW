@@ -1,0 +1,10 @@
+    nat = 80
+    ntyp = 3
+    ecutrho = 328.00
+    nbnd = 1600
+    mixing_beta = 0.7
+/
+!    ibrav = 0, nat = 80, ntyp = 3
+CELL_PARAMETERS bohr
+K_POINTS automatic
+ 4 4 3 0 0 0

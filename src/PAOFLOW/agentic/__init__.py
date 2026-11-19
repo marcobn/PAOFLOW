@@ -26,11 +26,19 @@ Each subpackage serves the workflow of the same name in the repository folder
   responses (SHG, shift and injection currents) vs experiments and published
   calculations, with the point-group audit of the run (``NonlinearModel``,
   ``symmetry``).
+* :mod:`PAOFLOW.agentic.sscha` -- ``agentic/sscha/``: running, monitoring and
+  interpreting SSCHA campaigns (anharmonic phonons at temperature, stability
+  verdicts, the stability temperature; ``SSCHARun``, ``scan``, ``dispersion``,
+  ``plotting``).
+* :mod:`PAOFLOW.agentic.campaign` -- ``agentic/campaign/``: orchestrating and
+  watching computational campaigns on several machines (``Machine``,
+  ``Campaign``, pw.x output and log parsing, preflight checks, findings with
+  an authority, the background watcher).
 
 The last four reuse the data toolkit of :mod:`PAOFLOW.agentic.thermo_optics`
 (datasets with provenance, units, PDF/raster ingestion and digitising, metrics,
 publication plots) and open electron-phonon system folders
-(``examples/elphon/<System>`` layout) through ``from_system``.
+(``examples/cases/<system>_elphon`` layout) through ``from_system``.
 
 The modules are ordinary library code and can be used without an agent.
 """

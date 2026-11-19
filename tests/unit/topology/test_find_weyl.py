@@ -28,8 +28,10 @@ NK = 4
 
 
 def _ref_band_loop_H(HRaux, kq, R):
+    # PAOFLOW's convention, H(k) = sum_R HRs(R) e^{-2 pi i k.R} (the original loop had e^{+...}, i.e. H(-k),
+    # until 15 Nov 2026)
     nawf, _, _, nspin = HRaux.shape
-    kdot = np.tensordot(R, 2.0j * np.pi * kq[:, None], axes=([1], [0]))
+    kdot = np.tensordot(R, -2.0j * np.pi * kq[:, None], axes=([1], [0]))
     np.exp(kdot, kdot)
     auxh = np.zeros((nawf, nawf, 1, nspin), dtype=complex, order='C')
     for ispin in range(nspin):

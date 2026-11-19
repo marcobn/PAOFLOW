@@ -5,7 +5,7 @@ These tests pin down the behaviour of
 ``pseudize_shell`` API) and :mod:`PAOFLOW.basis_gen.driver` (the
 ``generate_basis_for_pseudo`` / ``generate_basis_for_directory``
 wrappers) against the two reference UPFs already shipped with
-``examples/qe_examples/example16``: Si (scalar-rel ONCV) and Pt
+``PSEUDOS/library``: Si (scalar-rel ONCV) and Pt
 (fully-relativistic ONCV).
 
 The single guardrail underpinning these tests is the PSWFC
@@ -38,8 +38,8 @@ from PAOFLOW.inputs.read_upf import UPF
 # ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SI_UPF = _REPO_ROOT / 'examples/qe_examples/example16/Si_ONCV/Si_ONCV_PBE_sr.UPF'
-_PT_UPF = _REPO_ROOT / 'examples/qe_examples/example16/Pt_ONCV/Pt_ONCV_PBE_fr.upf'
+_SI_UPF = _REPO_ROOT / 'PSEUDOS/library/Si_ONCV_PBE_sr.UPF'
+_PT_UPF = _REPO_ROOT / 'PSEUDOS/library/Pt_ONCV_PBE_fr.upf'
 
 
 @pytest.fixture(scope='module')

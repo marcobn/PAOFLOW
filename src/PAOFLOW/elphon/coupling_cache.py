@@ -90,6 +90,7 @@ def dense_vertex_cache_key(
                 or 'patterns' in f
                 or ('.dyn' in f and not f.endswith('.xml'))
                 or f.endswith('.ukk')
+                or f == 'displacements.json'  # finite-difference source
             ):
                 path = os.path.join(root, f)
                 names.append((os.path.relpath(path, coupling_dir), os.path.getsize(path)))
@@ -143,6 +144,8 @@ def load_dense_vertex(cache_dir: str, key: str, g_ReRp: NDArray[np.complex128]) 
         raise ValueError(
             'vertex cache %s has shape %s, expected %s' % (path, src.shape, g_ReRp.shape)
         )
+    if src.dtype != g_ReRp.dtype:
+        raise ValueError('vertex cache %s is %s, expected %s' % (path, src.dtype, g_ReRp.dtype))
     for row in range(g_ReRp.shape[0]):
         g_ReRp[row] = src[row]
     del src

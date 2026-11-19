@@ -55,6 +55,7 @@ def build_supercell_HRs(
     shift_type=1,
     return_shift=False,
     return_symmetry_inputs=False,
+    positions=None,
 ):
     """Rebuild the PAO real-space Hamiltonian ``HRs`` for one supercell ``.save``.
 
@@ -69,10 +70,26 @@ def build_supercell_HRs(
 
     Extra return values follow ``HRs`` in the order ``shift``,
     ``symmetry_inputs``.
+
+    ``positions`` (array ``(natoms, 3)`` in the convention of ``arry['tau']``)
+    overrides the atomic positions on which the PAO orbitals are centred.  Passing
+    the *reference* (undisplaced) positions for a displaced cell keeps the basis
+    fixed: the finite difference then equals the matrix of ``dV/du`` in the
+    reference orbitals (the DFPT vertex in the PAO gauge) instead of the derivative
+    of the hopping parameters of a basis that follows the atoms.
     """
     from ..PAOFLOW import PAOFLOW
 
     pf = PAOFLOW(workpath=workpath, savedir=savedir, outputdir='.', verbose=False)
+    if positions is not None:
+        arry0, _ = pf.data_controller.data_dicts()
+        tau = np.asarray(positions, dtype=float)
+        if tau.shape != np.asarray(arry0['tau']).shape:
+            raise ValueError(
+                'positions %s do not match the atoms %s of %s'
+                % (tau.shape, np.asarray(arry0['tau']).shape, savedir)
+            )
+        arry0['tau'] = tau
     if basispath is not None:
         pf.projections(basispath=basispath, configuration=configuration)
     else:
@@ -89,6 +106,9 @@ def build_supercell_HRs(
     if return_shift:
         extras.append(float(attr['shift']))
     if return_symmetry_inputs:
+        naw = arry.get('naw')
+        if naw is None:  # orbitals per atom from the shells (not every projection route sets naw)
+            naw = [sum(2 * int(l) + 1 for l in arry['shells'][lab]) for lab in arry['atoms']]
         extras.append(
             {
                 'a_vectors': np.asarray(arry['a_vectors']),
@@ -99,6 +119,7 @@ def build_supercell_HRs(
                 'shells_per_atom': arry['shells'],
                 'atom_labels': arry['atoms'],
                 'ngrid': tuple(int(n) for n in hrs.shape[2:5]),
+                'naw': np.asarray(naw, dtype=int),
             }
         )
     return (hrs, *extras)
@@ -135,7 +156,16 @@ def supercell_symmetry_operators(
         shift_type=shift_type,
         return_symmetry_inputs=True,
     )
-    return build_dv_symmetry_operators(**sym_inputs)
+    return build_dv_symmetry_operators(**symmetry_operator_inputs(sym_inputs))
+
+
+def symmetry_operator_inputs(sym_inputs):
+    """Keyword arguments of ``build_dv_symmetry_operators`` from the reference data.
+
+    ``build_supercell_HRs`` also records the orbitals per atom (``naw``) for the
+    random-displacement fit; that key is not an operator input.
+    """
+    return {k: v for k, v in sym_inputs.items() if k != 'naw'}
 
 
 def good_subspace_projectors(HRs_ref, eta, tol=0.05):
@@ -256,7 +286,12 @@ def _verify_save_displacements(edir, disps, reference_prefix, tol=1.0e-3):
     ref_pos = _read_save_positions(edir, reference_prefix) if reference_prefix else None
 
     def _check(got, want, prefix):
+        got = np.asarray(got, dtype=float)
+        want = np.asarray(want, dtype=float)
         if not np.allclose(got, want, atol=tol):
+            if got.ndim == 2:  # all-atom pattern: report the worst atom
+                k = int(np.argmax(np.linalg.norm(got - want, axis=1)))
+                got, want = got[k], want[k]
             raise ValueError(
                 'Stale/mismatched supercell save for %r: the atomic displacement '
                 'stored in %s is (%.4g, %.4g, %.4g) Bohr but the manifest expects '
@@ -265,13 +300,19 @@ def _verify_save_displacements(edir, disps, reference_prefix, tol=1.0e-3):
                 % (prefix, _save_dir_for(prefix), got[0], got[1], got[2], want[0], want[1], want[2])
             )
 
+    def _moved(pos_a, pos_b, d):
+        """Displacement of the manifest atom(s) between two position arrays."""
+        if d.get('sc_atom') is None:
+            return pos_a - pos_b
+        k = int(d['sc_atom'])
+        return pos_a[k] - pos_b[k]
+
     if ref_pos is not None:
         for d in disps:
             pos = _read_save_positions(edir, d['prefix'])
             if pos is None or pos.shape != ref_pos.shape:
                 continue
-            k = int(d['sc_atom'])
-            _check(pos[k] - ref_pos[k], np.asarray(d['displacement'], dtype=float), d['prefix'])
+            _check(_moved(pos, ref_pos, d), d['displacement'], d['prefix'])
         return
 
     # No reference structure: verify that explicit +/- pairs are true negatives.
@@ -283,8 +324,7 @@ def _verify_save_displacements(edir, disps, reference_prefix, tol=1.0e-3):
         pj = _read_save_positions(edir, disps[j]['prefix'])
         if pi is None or pj is None or pi.shape != pj.shape:
             continue
-        k = int(d['sc_atom'])
-        _check(pi[k] - pj[k], 2.0 * np.asarray(d['displacement'], dtype=float), d['prefix'])
+        _check(_moved(pi, pj, d), 2.0 * np.asarray(d['displacement'], dtype=float), d['prefix'])
 
 
 def compute_dV(
@@ -295,7 +335,10 @@ def compute_dV(
     pthr=0.95,
     shift_type=1,
     verify_saves=True,
-    project_good_subspace=True,
+    project_good_subspace=None,
+    fixed_basis=False,
+    locality_cutoff=None,
+    ridge=1.0e-4,
 ):
     """Rebuild ``HRs`` per displaced supercell and finite-difference to ``dV``.
 
@@ -310,14 +353,43 @@ def compute_dV(
     reconstructed from them by crystal symmetry in the next stage (analogous to
     phonopy's force-constant symmetrization).
 
+    With ``fixed_basis=True`` the displaced cells are projected on PAO orbitals
+    centred at the *reference* positions, so the difference quotient is the
+    matrix of ``dV/du`` in a fixed basis (the DFPT vertex in the PAO gauge, up to
+    projectability) and contains no derivative of the basis itself.  Without it
+    the orbitals follow the atoms and the derivative of the hopping parameters
+    carries the basis-rotation term ``[H, dU]``, whose off-diagonal elements
+    ``(eps_n - eps_m) <m|dU|n>`` are not part of the electron-phonon vertex.
+
+    ``project_good_subspace`` (``None``: ``not fixed_basis``) projects every directional
+    derivative on the good-projectability subspace of the reference supercell.  It is
+    needed with a moving basis (it removes the coupling through the ``eta`` completion)
+    but must stay off with the fixed basis: the projector is not a smooth function of k,
+    and a projected vertex interpolated to dense k-grids overestimates lambda (Pb,
+    24^3/2^3: 2.20 against 1.70 unprojected and 1.66 from DFPT).  With the fixed basis
+    the ``eta`` term of the raw derivative lives in the complement sector and does not
+    couple the dense eigenstates near the Fermi level.
+
+    A manifest written with ``displacement_mode='random'`` takes the least-squares
+    route of :mod:`PAOFLOW.elphon.random_displacements`: the ``+/-`` differences of
+    the all-atom patterns are fitted element by element, with the atoms within
+    ``locality_cutoff`` (Bohr; ``None`` = all) of the two orbital sites as unknowns
+    and a ``ridge`` regularisation.  The result carries one directional entry per
+    supercell atom and Cartesian direction (unit displacements), the fit diagnostics
+    under ``'fit'`` and, when the ``pw.x`` outputs are found next to the inputs, the
+    harmonic ``'force_constants'`` (eV/Angstrom^2) of the same runs.
+
     Returns
     -------
     dict
-        ``{'distance', 'reference_prefix', 'directional': [ {sc_atom,
+        ``{'distance', 'reference_prefix', 'fixed_basis', 'project_good_subspace',
+        'directional': [ {sc_atom,
         displacement, dV}, ... ]}`` where ``dV`` is the supercell-basis
         derivative (eV/Bohr).  Also stored as ``arry['elphon_dV']``.
     """
     arry, attr = data_controller.data_dicts()
+    if project_good_subspace is None:
+        project_good_subspace = not fixed_basis
     edir = os.path.abspath(resolve_phonon_dir(data_controller, elphon_dir))
 
     with open(os.path.join(edir, MANIFEST)) as fh:
@@ -327,11 +399,12 @@ def compute_dV(
     distance = float(manifest['displacement_distance'])
     disps = manifest['displacements']
     reference_prefix = manifest.get('reference_prefix')
+    random_mode = manifest.get('displacement_mode') == 'random'
 
     if verify_saves:
         _verify_save_displacements(edir, disps, reference_prefix)
 
-    def _hrs(prefix, return_shift=False, return_symmetry_inputs=False):
+    def _hrs(prefix, return_shift=False, return_symmetry_inputs=False, positions=None):
         return build_supercell_HRs(
             _save_dir_for(prefix),
             workpath=edir,
@@ -341,21 +414,25 @@ def compute_dV(
             shift_type=shift_type,
             return_shift=return_shift,
             return_symmetry_inputs=return_symmetry_inputs,
+            positions=positions,
         )
 
     # The reference (u = 0) supercell is needed for the good-subspace projector
     # and for forward differences.  Build it at most once and -- when built --
     # also capture its crystal-symmetry inputs so the downstream symmetry
     # expansion can reuse them instead of rebuilding the reference Hamiltonian.
-    needs_reference = any(_opposite_index(disps, i) is None for i in range(len(disps)))
+    if random_mode:
+        needs_reference = True  # positions, cell and orbital layout of the fit
+    else:
+        needs_reference = any(_opposite_index(disps, i) is None for i in range(len(disps)))
     ref_hrs = None
     ref_sym_inputs = None
     Pgood = None
-    if project_good_subspace or needs_reference:
+    if project_good_subspace or needs_reference or fixed_basis:
         if not reference_prefix:
             raise ValueError(
                 'The reference supercell prefix is required for the good-subspace '
-                'projection or forward differences.'
+                'projection, the fixed basis, forward differences or the random fit.'
             )
         want_shift = project_good_subspace
         ref = _hrs(reference_prefix, return_shift=want_shift, return_symmetry_inputs=True)
@@ -365,6 +442,36 @@ def compute_dV(
         else:
             ref_hrs, ref_sym_inputs = ref
     h_ref = ref_hrs  # reused reference for forward differences
+    # Fixed basis: orbitals of every displaced cell centred at the reference positions.
+    basis_positions = np.asarray(ref_sym_inputs['tau']) if fixed_basis else None
+
+    if random_mode:
+        from .random_displacements import fit_random_displacements
+
+        fit = fit_random_displacements(
+            edir,
+            disps,
+            _hrs,
+            ref_sym_inputs,
+            basis_positions=basis_positions,
+            projector=Pgood,
+            cutoff=locality_cutoff,
+            ridge=ridge,
+        )
+        result = {
+            'distance': distance,
+            'reference_prefix': reference_prefix,
+            'fixed_basis': bool(fixed_basis),
+            'project_good_subspace': bool(project_good_subspace),
+            'displacement_mode': 'random',
+            'directional': fit['directional'],
+            'fit': fit['fit'],
+            'force_constants': fit['force_constants'],
+            'force_residual': fit['force_residual'],
+            'ref_symmetry_inputs': ref_sym_inputs,
+        }
+        arry['elphon_dV'] = result
+        return result
 
     directional = []
     used = set()
@@ -376,12 +483,16 @@ def compute_dV(
         j = _opposite_index(disps, i)
         if j is not None:
             # Central difference along the displacement direction.
-            dV = finite_difference_dV(_hrs(d['prefix']), _hrs(disps[j]['prefix']), norm)
+            dV = finite_difference_dV(
+                _hrs(d['prefix'], positions=basis_positions),
+                _hrs(disps[j]['prefix'], positions=basis_positions),
+                norm,
+            )
             used.add(i)
             used.add(j)
         else:
             # Forward difference against the reference (u = 0) supercell.
-            dV = (_hrs(d['prefix']) - h_ref) / norm
+            dV = (_hrs(d['prefix'], positions=basis_positions) - h_ref) / norm
             used.add(i)
         if Pgood is not None:
             dV = project_dV_good(dV, Pgood)
@@ -390,6 +501,8 @@ def compute_dV(
     result = {
         'distance': distance,
         'reference_prefix': reference_prefix,
+        'fixed_basis': bool(fixed_basis),
+        'project_good_subspace': bool(project_good_subspace),
         'directional': directional,
         'ref_symmetry_inputs': ref_sym_inputs,
     }

@@ -1,0 +1,36 @@
+{
+ "title": "VASP Si: PAO bands, non-spin-polarized and spin-polarized",
+ "summary": "Bulk silicon from VASP (PAW): the PAO Hamiltonian on the POTCAR pseudo-orbitals and the all-electron tables (3S 3P 3D 4S 4P 4D), and its band structure, from a non-spin-polarized and a spin-polarized nscf run. Needs your own VASP runs and POTCAR.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Si bands from the non-spin-polarized run",
+   "command": [
+    "python",
+    "main_nspin1.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "needs the VASP runs of nscf_nspin1/ (vasprun.xml, WAVECAR, POTCAR); writes output_nspin1/ and Si_nspin1_VASP.png"
+  },
+  {
+   "label": "Si bands from the spin-polarized run",
+   "command": [
+    "python",
+    "main_nspin2.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "needs the VASP runs of nscf_nspin2/ (vasprun.xml, WAVECAR, POTCAR); writes output_nspin2/ and Si_nspin2_VASP.png"
+  }
+ ],
+ "tags": [
+  "VASP",
+  "bands",
+  "semiconductor",
+  "PAW"
+ ],
+ "source": "examples/recipes/vasp/example01"
+}

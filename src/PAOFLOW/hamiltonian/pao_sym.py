@@ -1155,7 +1155,9 @@ def open_grid(
 
     if symm_grid:
         # symmetrize_grid indexes the whole grid on every rank.
-        comm.Bcast(Hksp)
+        from ..utils.communication import bcast_array
+
+        bcast_array(Hksp)  # in slices: nk x nawf^2 can exceed the MPI count
 
         symop_inv = np.zeros_like(symop)
         for i in range(symop.shape[0]):
@@ -1263,7 +1265,9 @@ def open_grid(
                 else:
                     Hksp = np.zeros((nfft1 * nfft2 * nfft3, nawf, nawf), dtype=complex)
 
-                comm.Bcast(Hksp)
+                from ..utils.communication import bcast_array
+
+                bcast_array(Hksp)
 
                 # Hksp=None
                 # Hksp=np.zeros((HRs.shape[0],nfft1,nfft2,nfft3),dtype=complex)
@@ -1486,7 +1490,9 @@ def open_grid_nspin2(
 
     if symm_grid:
         # symmetrize_grid_nspin2 indexes the whole grid on every rank.
-        comm.Bcast(Hksp)
+        from ..utils.communication import bcast_array
+
+        bcast_array(Hksp)
 
         symop_inv = np.zeros_like(symop)
         for i in range(symop.shape[0]):
@@ -1588,7 +1594,9 @@ def open_grid_nspin2(
             else:
                 Hksp = np.zeros((nfft1 * nfft2 * nfft3, nawf, nawf, 2), dtype=complex)
 
-            comm.Bcast(Hksp)
+            from ..utils.communication import bcast_array
+
+            bcast_array(Hksp)
 
             # if it's the non interpolated grid
             if i % 2:

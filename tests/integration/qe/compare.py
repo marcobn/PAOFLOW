@@ -154,8 +154,10 @@ def compare_dat_dirs(
         if n_col < 2:
             raise CompareFailure(f'Not enough columns in {outp.name} for comparison')
 
-        out_cmp = np.abs(out[1:n_col, :])
-        ref_cmp = np.abs(ref[1:n_col, :])
+        # Signed values: a sign change (a Hall coefficient, a Berry curvature, a spin texture) is a
+        # mismatch. The comparison used |out| and |ref| until Nov 2026, which could not see one.
+        out_cmp = out[1:n_col, :]
+        ref_cmp = ref[1:n_col, :]
 
         absolute_error = np.sum(np.abs(out_cmp - ref_cmp), axis=1) / n_row
         data_range = np.amax(np.amax(out[1:n_col, :], axis=1), axis=0) - np.amin(

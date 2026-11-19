@@ -35,7 +35,12 @@ def do_transport(
     -------
     None
         On rank 0, writes (when ``write_to_file`` is ``True``) one file per
-        spin channel and transport quantity:
+        spin channel and transport quantity. The units below hold with
+        scattering channels (``tau`` in s). With the default constant
+        relaxation time (no channels, :math:`\\tau = 1`) the files hold
+        :math:`\\sigma/\\tau`, :math:`\\kappa/\\tau`, :math:`S^2\\sigma/\\tau` and
+        :math:`N/\\tau`, each unit times s⁻¹; :math:`S` and :math:`R_H` do not
+        depend on a constant :math:`\\tau`.
 
         - ``sigma[smearing]_{ispin}.dat``: electrical conductivity
           :math:`\\sigma` in S m⁻¹.
@@ -51,7 +56,8 @@ def do_transport(
           antisymmetrised components :math:`(R_{ijr} - R_{jir})/2` of the Hall
           coefficient tensor in m³ C⁻¹.
         - ``nernst[smearing]_{ispin}.dat`` (if ``do_hall``): all 27 components
-          :math:`N_{ijr}` of the Nernst tensor in V K⁻¹ T⁻¹.
+          :math:`N_{ijr}` of the Nernst tensor in V K⁻¹ T⁻¹ (V K⁻¹ T⁻¹ s⁻¹,
+          i.e. :math:`N/\\tau`, with a constant relaxation time).
 
         When ``save_tensors`` is ``True``, adds the following keys to
         ``data_controller.data_arrays``:
@@ -89,18 +95,29 @@ def do_transport(
 
     .. math::
 
-        R_H = -(\\sigma^{-1})\\, \\mathcal{L}^{(0,\\text{Hall})}\\, (\\sigma^{-1})
+        R_H = -(\\sigma^{-1})\\, \\sigma^{\\text{Hall}}\\, (\\sigma^{-1}),
+        \\qquad \\sigma^{\\text{Hall}} = e^3\\,\\mathcal{L}^{(0,\\text{Hall})}
 
-    and reported as the average of the three even-permutation components
-    :math:`(R_{012} + R_{201} + R_{120}) / 3`.
+    (Madsen and Singh, Comput. Phys. Commun. 175, 67 (2006), Eq. 13), with the electron charge
+    :math:`e = -|e|`: :math:`R_H = +|e|^3 (\\sigma^{-1}) \\mathcal{L}^{(0,\\text{Hall})} (\\sigma^{-1})`,
+    which gives :math:`R_H = 1/(ne) < 0` for electrons in a parabolic band (until 15 November
+    2026 the charge was left out and :math:`R_H` had the opposite sign). It is reported as the
+    average of the three even-permutation components :math:`(R_{012} + R_{201} + R_{120}) / 3`.
 
     The Nernst tensor is built from the Hall coefficient and the first-order
     Hall transport tensor :math:`\\mathcal{L}^{(1,\\text{Hall})}` as
 
     .. math::
 
-        N = R_H\\, \\mathcal{L}^{(1)} +
-            (\\sigma^{-1})\\, \\mathcal{L}^{(1,\\text{Hall})}
+        N = R_H\\, \\nu + (\\sigma^{-1})\\, \\nu^{\\text{Hall}},
+        \\qquad \\nu = \\sigma S = e\\,\\mathcal{L}^{(1)}/T,
+        \\qquad \\nu^{\\text{Hall}} = e^2\\,\\mathcal{L}^{(1,\\text{Hall})}/T,
+
+    the weak-field expansion of the open-circuit field :math:`E = \\sigma(B)^{-1}\\nu(B)\\nabla T`.
+    For degenerate carriers :math:`N = (\\pi^2/3)(k_B^2T/|e|)\\, d(R_H\\sigma)/dE`, the energy
+    derivative of the Hall mobility :math:`R_H\\sigma`. A parabolic band with an
+    energy-independent :math:`\\tau` has a constant Hall mobility, so the two terms cancel
+    (Sondheimer).
 
     Conversion factors: ``siemen_conv = 6.9884`` converts internal units to
     S m⁻¹ × 10⁻²¹; ``temp_conv = 11604.525`` converts Kelvin to eV⁻¹;
@@ -306,8 +323,10 @@ def do_transport(
                     for n in range(esize):
                         try:
                             for r in range(3):
+                                # R = -sigma^-1 (e^3 L0_hall) sigma^-1 with e^3 = -|e|^3: the
+                                # electron charge makes R_H = 1/(ne) negative for electrons
                                 R_hall[:, :, r, n] = (
-                                    -npl.inv(L0_unconverted[:, :, n])
+                                    npl.inv(L0_unconverted[:, :, n])
                                     @ L0_hall[:, :, r, n]
                                     @ npl.inv(L0_unconverted[:, :, n])
                                 )
@@ -348,7 +367,9 @@ def do_transport(
                     for n in range(esize):
                         try:
                             for r in range(3):
-                                nernst[:, :, r, n] = (R_hall[:, :, r, n] @ L1[:, :, n]) + (
+                                # nu = sigma S = -L1 (the charge of the electron, as in S);
+                                # nu_Hall carries e^2 > 0
+                                nernst[:, :, r, n] = (R_hall[:, :, r, n] @ (-L1[:, :, n])) + (
                                     npl.inv(L0_unconverted[:, :, n]) @ L1_hall[:, :, r, n]
                                 ) * siemen_conv * hall_SI
 

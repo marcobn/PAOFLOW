@@ -1,0 +1,26 @@
+{
+ "title": "Kane-Mele model: bands and spin Hall conductivity",
+ "summary": "The Kane-Mele model (PythTB version, t = 1, intrinsic spin-orbit 0.1): the band structure and the spin Hall conductivity sigma^z_xy of the quantum spin Hall phase, quantized in the gap. No DFT run; under a minute.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Bands and spin Hall conductivity of the Kane-Mele model",
+   "command": [
+    "python",
+    "kane_mele.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": true,
+   "note": "opens the band-structure plot (close it to continue); writes output/ and output/shc_z_xy.png"
+  }
+ ],
+ "tags": [
+  "tight-binding model",
+  "spin Hall",
+  "topology",
+  "spin-orbit",
+  "2D"
+ ],
+ "source": "examples/TBmodel_examples/Kane_mele"
+}

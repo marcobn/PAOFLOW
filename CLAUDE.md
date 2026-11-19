@@ -14,7 +14,7 @@ user-invocable: true
     - `.agents/skills/sparse-backend/SKILLS.md`: design notes and memory contract for `src/PAOFLOW/sparse/`. Read it before touching the sparse backend or `SparsePAOFLOW.py`
 
 3. **What PAOFLOW is**
-    PAOFLOW (version 3.0.0, GPL-3.0-or-later) is a Python package for post-processing DFT calculations. It projects Kohn–Sham states from Quantum ESPRESSO (or VASP) onto a Projected Atomic Orbital (PAO) basis to build *ab initio* tight-binding Hamiltonians. From these it computes bands, DOS/PDOS, Fermi surfaces, Boltzmann transport, Berry-phase/topology, spin/anomalous Hall, dielectric response, Green's-function (Landauer) transport, phonons, electron–phonon coupling and ACBN0 Hubbard U/V.
+    PAOFLOW (version 4.0.0, GPL-3.0-or-later) is a Python package for post-processing DFT calculations. It projects Kohn–Sham states from Quantum ESPRESSO (or VASP) onto a Projected Atomic Orbital (PAO) basis to build *ab initio* tight-binding Hamiltonians. From these it computes bands, DOS/PDOS, Fermi surfaces, Boltzmann transport, Berry-phase/topology, spin/anomalous Hall, dielectric response, Green's-function (Landauer) transport, phonons, electron–phonon coupling and ACBN0 Hubbard U/V.
     - Build: `flit_core` (`pyproject.toml`), Python >= 3.10, core dependencies are numpy, scipy, mpi4py and pandas
     - Optional extras: `graphics`, `fermisurface`, `transport`, `pyskeaf`, `qo_analysis`, `phonon`, `weyl_search`, `fast` (numba), `dev`, `docs`
     - Parallelism: MPI via `mpi4py`, with k-points split across ranks and pools. Scripts are run as `mpirun -np N python main.py`
@@ -65,12 +65,15 @@ user-invocable: true
                           Boltzmann channel bridge), superconductivity/ (EliashbergModel, GapModel,
                           AnisotropicGapModel, Allen-Dynes/BCS baselines), arpes/ (ArpesModel, MDC curve
                           analysis, band-map images), nlo/ (NonlinearModel, point-group symmetry audit of
-                          second-order tensors); the elphon adapters open a system folder via from_system
+                          second-order tensors), campaign/ (Machine, Campaign, pw.x output and log parsing,
+                          preflight checks, findings with an authority, background watcher); the elphon
+                          adapters open a system folder via from_system
       basis_gen/          Generates atomic-orbital basis from pseudopotentials, UPF or POTCAR (paoflow-genbasis-ps,
                           generate_basis_shells in memory)
       gen/                Generators: QE input from AFLOW/C2DB (paoflow-gen-qe), main.py driver (paoflow-gen),
                           elphon_system.py + elphon_templates/ (paoflow-gen elphon writes a system folder; the
-                          templates are the thin drivers copied into examples/elphon), fermi_plotter
+                          templates are the thin drivers copied into the cases examples/cases/<system>_elphon),
+                          fermi_plotter
       graphics/           Color and plotting utilities
       writers/            BXSF / XSF / BoltzTraP2 writers
       utils/              Constants, MPI communication, FFT grids, smearing, pyints (Gaussian integrals),
@@ -79,26 +82,36 @@ user-invocable: true
       defs/               Back-compat shim that aliases legacy PAOFLOW.defs.* imports and emits FutureWarning
     rust/paoflow_rs/      Optional Rust (PyO3 + rayon) kernels for ACBN0 ERIs, epsilon/JDOS and the e-ph absorption
                           kernel; one pool tied to the MPI core budget. Parity < 1e-12
-    tests/unit/           Fast unit tests, organized by subpackage
-    tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data
-    examples/             qe_examples, transport_examples, acbn0_examples, TBmodel_examples, elphon (one folder per
-                          system: system.py, qe/, phonons/ coupling/ superconductivity/ optics/ transport/ arpes/),
-                          pyskeaf_examples, qo_analysis_examples, unfold_examples, plot_examples, new_examples, vasp_examples,
-                          nlo_examples (Graphene TB, GaAs, GeS: shift current / SHG, REPORT.md, figures)
+    tests/unit/           Fast unit tests, organized by subpackage; they read only tests/data and PSEUDOS/library
+    tests/data/           Tracked unit-test fixtures (Si save + outputs, Pt BXSF, ...; README lists each)
+    tests/integration/    qe/, transport/, TBmodel/: example-driven runs compared against Reference data; the qe/ and
+                          transport/ job folders hold the QE inputs of the published asset saves
+    examples/             cases/: every example, one folder per calculation (inputs, README, case.json; Studio
+                          'Examples…', `paoflow-gen --example`). Generator cases: the workflow + answers of
+                          paoflow-gen (QE property runs, Landauer, ACBN0). Scripts cases ("workflow": "scripts",
+                          their drivers and steps in case.json): <system>_elphon system folders (system.py, qe/,
+                          phonons/ coupling/ superconductivity/ optics/ transport/ arpes/), NLO (gaas_nlo with
+                          REPORT.md, ges_nlo, *_nlo_model), TB models (*_tb_model, si_slater_koster_model),
+                          unfolding, bi_pyskeaf, nbsn2_qo_analysis, vasp_*, *_basis_presets, si_sparse_backend,
+                          al_transport_defect. README lists them; clean_runs.py cleans runs made in place
     BASIS/                Per-element radial orbital tables (e.g. BASIS/Si/3P.dat) for internal projections
-    PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard)
+    PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard); library/: one
+                          copy of every UPF the cases and the tests use
     agentic/              Agentic workflows run on top of the library (not installed). skeaf/: playbook,
                           prompts, templates, git-ignored projects/; has its own AGENTS.md / CLAUDE.md
                           thermo_optics/: same layout, optics-vs-experiment playbook (PAOFLOW.agentic.*)
                           transport/, superconductivity/, arpes/: same layout, one playbook each over the
                           elphon system folders (mobility/resistivity, alpha2F/Tc/gaps, band maps/kinks)
                           nlo/: same layout for the non-linear optics outputs (SHG, shift current)
+                          campaign/: same layout, orchestrating and watching campaigns on several machines
+                          (plan, preflight, pilot, watcher, interventions within report/act/ask)
     docs/                 Sphinx + MyST site (Read the Docs); docs/internals/ holds developer notes
     .github/              CI workflows and asset_generation scripts for integration-test tarballs
     ```
 
 5. **Architecture and design rules**
-    - Standard workflow in `main.py` (see `examples/qe_examples/example01/main.py`):
+    - Standard workflow in `main.py` (see `tests/integration/qe/example01/main.py`, or the driver
+      `paoflow-gen --example si_bands_transport` writes):
       `PAOFLOW(savedir=...)` → `read_atomic_proj_QE()` → `projectability()` → `pao_hamiltonian()` → `bands()` / `interpolated_hamiltonian()` → `pao_eigh()` → `gradient_and_momenta()` → `adaptive_smearing()` → `dos()` / `transport()` / ... → `finish_execution()`
     - Transport workflow: after building the PAO Hamiltonian, run `Transport(paoflow.data_controller)` → `define_partition` → `build_hamiltonian_blocks` → `configure_*` → `compute_leads_self_energy` → `compute_greens_functions` → `compute_transmission` / `compute_dos` / `compute_current`
     - Orchestrators (`PAOFLOW.py`, `Transport.py`, `SparsePAOFLOW.py`) expose physics-named methods and call procedural backend functions in the subpackages. `main.py` must read as a physics workflow and must not reach into internal arrays
@@ -113,6 +126,8 @@ user-invocable: true
     - Run all tests with `pytest`, or select with `pytest -m unit`, `pytest -m integration`, `pytest -q tests/unit/<pkg>`, `pytest tests/... -k exampleNN`. Integration tests that take minutes on a 4-core runner carry `@pytest.mark.slow`; CI runs `-m "integration and not slow"` and splits the electron-phonon suite into three parallel groups (core, workflows, arpes)
     - Integration tests only run PAOFLOW; they do not run QE. The `*.save/` and `Reference/` inputs are downloaded as release-asset tarballs (see `tests/integration/qe/README.md` and `tests/integration/transport/README.md`). The generators live in `.github/assets_generation/`
     - New features ship with tests. Keep them fast by using reduced grids and k-points
+    - Unit tests never read `examples/`: small data go to `tests/data/` (with a line in its README), UPFs to
+      `PSEUDOS/library/`. CI runs `tests/unit` in the `unit-tests` job (groups solvers, response, core)
 
 7. **Style, CI and branches**
     - Ruff lint and format run through pre-commit: line length 100, single quotes. Run `pre-commit run --all-files` before committing. `BASIS/` and `examples/` are excluded
@@ -120,3 +135,9 @@ user-invocable: true
     - `develop` is the integration branch, and PRs into `main` are only accepted from `develop`. Feature work happens on branches such as `develop-marco`
     - Never commit autonomously. Stage nothing and run no `git commit` unless the user asks for a commit in the current message; a request to commit in an earlier message does not carry over to later work
     - Docs: `./docs/serve_docs.sh` gives a live preview, and `--full` builds with source links. Developer notes are in `docs/internals/`
+
+8. **Task Estimation Rules**
+    - When estimating completion times for a task, you must assume an AI agentic execution speed, NOT human developer hours.
+    - Base your velocity on immediate code generation, automated file reading, and syntax checking.
+    - Unless a task requires heavy architectural rewrites, enforce a maximum estimate cap of 15–30 minutes per file modification.
+    - If a task is trivial (e.g., reading a file or mapping a configuration), estimate it in seconds or minutes, not hours.

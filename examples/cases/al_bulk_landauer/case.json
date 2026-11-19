@@ -1,0 +1,38 @@
+{
+ "title": "Al: Landauer transmission of the perfect crystal",
+ "summary": "The number of conducting channels of bulk aluminium along z, T(E), and the DOS of the principal layer.",
+ "workflow": "landauer",
+ "answers": {
+  "savedir": "al5.save",
+  "prefix": "al5",
+  "projector": "internal",
+  "calculation": "bulk",
+  "transport_direction": "z",
+  "emin": -7.0,
+  "emax": 2.0,
+  "ne": 901,
+  "delta": 0.0005,
+  "basis": "standard"
+ },
+ "pseudopotentials": [
+  "library/Al.pbe-rrkj.UPF"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full k grid"
+  }
+ ],
+ "tags": [
+  "Landauer",
+  "transmission",
+  "metal"
+ ],
+ "source": "examples/transport_examples/example01"
+}

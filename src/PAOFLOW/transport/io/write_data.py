@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -7,7 +7,6 @@ from numpy.typing import NDArray
 
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
 from PAOFLOW.transport.io.log_module import log_rank0
 from PAOFLOW.transport.utils.converters import crystal_to_cartesian
 
@@ -185,18 +184,18 @@ def populate_real_space_hamiltonian(
 
     vr_crystal = ivr.astype(np.float64).T
     rgrid_cart = crystal_to_cartesian(vr_crystal, avec).T  # (nrtot, 3)
-    Hr = np.empty((nrtot, dim, dim), dtype=np.complex128)
 
-    for ir in range(nrtot):
-        Hr[ir] = compute_rham(rgrid_cart[ir], Hk[0], vkpts_cartesian, wk)
+    # H(R) = sum_k w_k exp(-i k.R) H(k) (compute_rham) for all R at once: one matrix product
+    # instead of a Python loop over R, k and the orbital pairs (prohibitive on 3D meshes).
+    weighted_phases = np.exp(-1j * (rgrid_cart @ vkpts_cartesian)) * wk[None, :]  # (nrtot, nk)
+    nk_points = Hk.shape[1]
+    Hr = (weighted_phases @ Hk[0].reshape(nk_points, dim * dim)).reshape(nrtot, dim, dim)
 
     arry['HRs'] = Hr
 
     if have_overlap:
-        Sr = np.empty((nrtot, dim, dim), dtype=np.complex128)
-        for ir in range(nrtot):
-            Sr[ir] = compute_rham(rgrid_cart[ir], Sk, vkpts_cartesian, wk)
-        arry['SRs'] = Sr
+        Sk_by_k = np.asarray(Sk).reshape(nk_points, dim * dim)
+        arry['SRs'] = (weighted_phases @ Sk_by_k).reshape(nrtot, dim, dim)
 
 
 def write_operator_xml(
@@ -359,3 +358,71 @@ def write_current_results(
     outpath.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(outpath, np.column_stack([bias_grid, currents]))
     log.log_rank0(f'Saved current vs bias to {outpath}')
+
+
+def write_finite_bias_results(output_dir: str, postfix: str, scan: Any) -> None:
+    """Write a finite-bias scan (:func:`PAOFLOW.transport.negf.self_consistency.finite_bias_scan`).
+
+    Parameters
+    ----------
+    output_dir : str
+    postfix : str
+        Appended to the file names.
+    scan : FiniteBiasResults
+
+    Returns
+    -------
+    None
+        Writes:
+
+        - ``current_<profile><postfix>.dat``: V, I in eV (units of 2e/h per transverse cell), iterations,
+          converged, residual in eV;
+        - ``potential_<profile><postfix>.dat`` and ``charge_<profile><postfix>.dat``: the potential energy (eV) or
+          the change of the electron number per transverse cell, one column per bias, on every layer (layer
+          coordinate in bohr first) or, for the three-dimensional electrostatics, on every atom (index, element,
+          x, y, z in bohr first);
+        - ``potential_planar_average_<profile><postfix>.dat`` (three-dimensional electrostatics): z in bohr, then
+          the planar average of U (eV) at every bias;
+        - ``transmission_<profile><postfix>.dat``: V, E, T.
+    """
+    import os
+
+    tag = f'{scan.profile}{postfix}'
+    biases = ' '.join(f'{point.bias:+.4f}' for point in scan.points)
+    with open(os.path.join(output_dir, f'current_{tag}.dat'), 'w') as handle:
+        handle.write(
+            '# V (volt)   I (eV: units of 2e/h, per transverse cell)   iterations   converged   residual (eV)\n'
+        )
+        for point in scan.points:
+            handle.write(f'{point.bias:12.6f} {point.current:16.8e} {point.iterations:6d} {int(point.converged):3d} '
+                         f'{point.residual:12.4e}\n')  # fmt: skip
+    coordinates = np.asarray(scan.group_coordinates, dtype=float)
+    for name, attribute, unit in (
+        ('potential', 'group_potential', 'eV'),
+        ('charge', 'group_charge', 'electrons'),
+    ):
+        values = np.column_stack([getattr(point, attribute) for point in scan.points])
+        target = os.path.join(output_dir, f'{name}_{tag}.dat')
+        if coordinates.ndim == 1:
+            np.savetxt(target, np.column_stack([coordinates, values]), fmt='%16.8e',
+                       header=f'z (bohr), then {unit} at V = {biases}')  # fmt: skip
+            continue
+        labels = scan.group_labels or ['X'] * len(coordinates)
+        with open(target, 'w') as handle:
+            handle.write(f'# atom element x y z (bohr), then {unit} at V = {biases}\n')
+            for index, (label, position, row) in enumerate(zip(labels, coordinates, values)):
+                handle.write(f'{index:6d} {label:>3s} ' + ' '.join(f'{x:12.6f}' for x in position) + ' '
+                             + ' '.join(f'{x:16.8e}' for x in row) + '\n')  # fmt: skip
+    if scan.planar_average_coordinates is not None:
+        averages = np.column_stack(
+            [scan.planar_average_coordinates]
+            + [point.planar_average_potential for point in scan.points]
+        )
+        np.savetxt(os.path.join(output_dir, f'potential_planar_average_{tag}.dat'), averages, fmt='%16.8e',
+                   header=f'z (bohr), then the planar average of U (eV) at V = {biases}')  # fmt: skip
+    with open(os.path.join(output_dir, f'transmission_{tag}.dat'), 'w') as handle:
+        handle.write('# V (volt)   E (eV)   T(E; V)\n')
+        for point in scan.points:
+            for energy, value in zip(point.window_energies, point.transmission):
+                handle.write(f'{point.bias:12.6f} {energy:14.6f} {value:16.8e}\n')
+            handle.write('\n')

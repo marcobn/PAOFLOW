@@ -1,0 +1,27 @@
+{
+ "title": "VASP Mn3Ir: bands of a noncollinear antiferromagnet",
+ "summary": "Cubic Mn3Ir with the 120° noncollinear antiferromagnetic order and spin-orbit coupling, from VASP: the PAO Hamiltonian (Ir 5P 5D 6S 6P 7S, Mn 3P 3D 4S 4P 4D) and its band structure. Needs your own VASP runs and POTCAR.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Mn3Ir noncollinear bands",
+   "command": [
+    "python",
+    "main.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "needs the VASP runs of nscf/ (vasprun.xml, WAVECAR, POTCAR); writes output/ and Mn3Ir_VASP.png"
+  }
+ ],
+ "tags": [
+  "VASP",
+  "bands",
+  "noncollinear",
+  "antiferromagnet",
+  "spin-orbit",
+  "PAW"
+ ],
+ "source": "examples/recipes/vasp/example05"
+}

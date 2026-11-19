@@ -1,0 +1,55 @@
+{
+ "title": "Monolayer GeS: shift current and SHG of a 2D polar crystal",
+ "summary": "Monolayer GeS (Pmn2_1, PBE, PseudoDojo norm-conserving pseudopotentials) on a PAO basis generated from the pseudopotentials: the sheet shift current, injection currents and second-harmonic susceptibility from PAOFLOW.nonlinear_optics, with the mirror-forbidden components vanishing.",
+ "workflow": "scripts",
+ "pseudopotentials": [
+  "library/Ge_PseudoDojo05_PBE_sr.upf",
+  "library/S_PseudoDojo05_PBE_sr.upf"
+ ],
+ "qe": [
+  {
+   "program": "pw.x",
+   "input": "scf.in",
+   "label": "Self-consistent run"
+  },
+  {
+   "program": "pw.x",
+   "input": "nscf.in",
+   "label": "Non-self-consistent run on the full 18x18x1 grid (nosym)"
+  }
+ ],
+ "steps": [
+  {
+   "label": "PAO basis tables of Ge from the pseudopotential",
+   "command": ["paoflow-genbasis-ps", "--pseudo", "Ge_PseudoDojo05_PBE_sr.upf", "--out", "BASIS_PS", "--preset", "standard"],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "writes BASIS_PS/Ge/"
+  },
+  {
+   "label": "PAO basis tables of S from the pseudopotential",
+   "command": ["paoflow-genbasis-ps", "--pseudo", "S_PseudoDojo05_PBE_sr.upf", "--out", "BASIS_PS", "--preset", "standard"],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "writes BASIS_PS/S/"
+  },
+  {
+   "label": "Shift current, injection currents and SHG of the GeS sheet",
+   "command": ["python", "main.py"],
+   "cwd": ".",
+   "mpi": true,
+   "interactive": false,
+   "note": "120 x 120 k-points: a few minutes on 8 ranks; writes output/"
+  }
+ ],
+ "tags": [
+  "non-linear optics",
+  "shift current",
+  "SHG",
+  "2D",
+  "polar crystal"
+ ],
+ "source": "examples/nlo_examples/GeS"
+}

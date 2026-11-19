@@ -1,0 +1,27 @@
+{
+ "title": "Monolayer MoS2 (three-band model): shift current and SHG",
+ "summary": "The three-band d-orbital model of the MX2 monolayers (Liu et al. 2013, GGA parameters, with spin-orbit coupling) for MoS2: shift current, injection currents and second-harmonic susceptibility of the sheet (D3h: yyy = -yxx = -xxy, xxx = 0). No DFT run.",
+ "workflow": "scripts",
+ "steps": [
+  {
+   "label": "Shift current, injection currents and SHG of MoS2",
+   "command": [
+    "python",
+    "tmd_nonlinear.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "300 x 300 k-points; writes output/"
+  }
+ ],
+ "tags": [
+  "tight-binding model",
+  "non-linear optics",
+  "shift current",
+  "SHG",
+  "TMD",
+  "2D"
+ ],
+ "source": "examples/TBmodel_examples/TMD_nonlinear"
+}
