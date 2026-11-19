@@ -228,6 +228,36 @@ def test_every_dense_only_method_says_why():
     )
 
 
+def test_not_ported_list_only_shrinks():
+    """``_NOT_PORTED`` is the untriaged backlog of the Nov 2026 develop merge, not a reason for a
+    new method: a new dense-only method names its own obstacle."""
+    from PAOFLOW.sparse.dispatch import _NOT_PORTED, DENSE_ONLY_REASONS
+
+    untriaged = {n for n, reason in DENSE_ONLY_REASONS.items() if reason is _NOT_PORTED}
+    assert untriaged <= {
+        'coupled_optical_response',
+        'doped_transport',
+        'kubo_optical_response',
+        'kubo_response',
+        'magnetic_field',
+        'orbital_magnetization',
+        'orbital_moment',
+        'peierls_field',
+        'self_consistent_spin',
+        'special_displacement',
+        'spin_susceptibility',
+        'spinor_basis',
+        'sscha_force_constants',
+        'sscha_hessian',
+        'sscha_minimize',
+        'sscha_population',
+        'sscha_setup',
+        'sscha_status',
+        'stoner_parameters',
+        'z2_invariant',
+    }
+
+
 def test_decorators_keep_the_dense_signature():
     for name in _public_methods():
         method = vars(PAOFLOW)[name]

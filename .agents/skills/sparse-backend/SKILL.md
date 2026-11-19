@@ -1,9 +1,44 @@
-# Sparse backend — design handoff
+---
+name: sparse-backend
+description: "Sparse role of every public PAOFLOW method, and the design of src/PAOFLOW/sparse/. Use when: adding or changing a public method of PAOFLOW.py (new property, new argument), splitting a dense kernel into per-k functions, touching src/PAOFLOW/sparse/, doubling, or a sparse parity test."
+user-invocable: true
+---
 
-This document explains how the sparse backend is built, why it is built that
-way, and what to keep in mind when extending it to properties beyond the
-example01 pipeline (bands, DOS/PDOS, Boltzmann transport). Read it before
-adding anything.
+# Sparse backend
+
+How the sparse backend is built, why, and what every new or changed PAOFLOW property owes it.
+
+## Every public method takes a sparse role
+
+A public method of `PAOFLOW.py` ships with its sparse implementation in the same change. `sparse=True`
+routes every method through `sparse/dispatch.py`, so a method without a role is a method that
+refuses to run in a sparse job.
+
+1. **Pick the kind** in the table of [Extending to a new property](#extending-to-a-new-property)
+   and implement it by the checklist in the module docstring of `sparse/properties/__init__.py`
+   (per-k split of the dense kernel, a `MeshProperty`, `@sparse_override`, a parity test).
+2. **A new argument of a routed method** goes to its sparse side too: the `MeshProperty.__init__`
+   or `SparseEngine` method takes the same name and default. Where the sparse side cannot honour a
+   value, it raises `NotImplementedError` there, naming the value, the reason and the way out
+   (`bands(interpolation=...)` in `sparse/engine.py` is the pattern).
+3. **A method left dense-only** stays unmarked and gets an entry in `DENSE_ONLY_REASONS`
+   (`sparse/dispatch.py`), the one place the refusal text lives. The entry names the specific
+   obstacle (the dense array or the external code the method needs, e.g. "rotates the dense HRs
+   into mirror sectors for Z2Pack") and ends with the way out (`_TO_DENSE`, or the sparse
+   alternative). "Not implemented yet" is the obstacle of nothing: write what would have to
+   exist. `_NOT_PORTED` marks the 20 develop methods merged on 19 Nov 2026 that nobody has
+   triaged; the list is frozen by `test_not_ported_list_only_shrinks`, and each of them moves to
+   a real reason or a sparse implementation when someone works on it.
+4. **Say it in the method's docstring** as well: one line in `Notes` (sparse: supported /
+   dense-only and why), so the user reads it before the job fails.
+
+Done when `pytest tests/unit/sparse/test_sparse_dispatch.py` is green. It checks that every
+public method has a role, every dense-only method has a reason and no routed method has one,
+every routed method's sparse side accepts all the dense arguments, and every registered property
+is routed. A new sparse property is done when its dense-parity test is green as well.
+
+Related skills: `feature-design` (where the method and its backend go), `docstring` (the per-k
+functions split out of a dense kernel are new functions: full docstring and type hints).
 
 ## The problem being solved
 
@@ -144,7 +179,8 @@ sparse/mesh.py            run_mesh: the fused BZ pass. Stores E_k/velkp/deltakp
                           (+ d2Ed2k product) for the window; solves the full
                           spectrum when a consumer needs it.
 sparse/bands.py           bands; prepare_path + run_path: the band-path pass
-                          (sign=+1, cart=True) for path properties.
+                          (sign=-1, cart=True) for path properties.
+sparse/curvature.py       band_curvature_k: the six curvature components of one k-point.
 sparse/operators.py       Sj/Lj as lists of CSR matrices (base cell, doubled by
                           doubling_attr_arry), projection_operator.
 sparse/hamiltonian.py     SparseHamiltonian: bond list + fixed-pattern CSR plan;
@@ -159,14 +195,17 @@ sparse/bridge.py          sparsify / densify: the single dense<->sparse boundary
 
 Dense kernels are reused through **per-k functions split out of them**
 (the dense loop calls the same function, so its output is byte-identical):
-`momentum_k`, `adaptive_widths`, `band_curvature_k_ij`, `velocity_products_k`,
+`adaptive_widths`, `band_curvature_k_ij`, `velocity_products_k`,
 `texture_k`, the `do_Hall` Berry/AC block functions, `eps_accumulate`,
 `ree_intra_products_k`, the `linear_response_eqn*` per-k and block sums,
 `ipr_k`, `accumulate_density_k`, the `do_topology`/`do_berry_curvature` path
 functions, `site_weights_k`, the `do_berry_phase` Wilson-loop steps; and
 their reduce/write halves. Band-diagonal dense bodies (Boltzmann stack,
 `do_dos_adaptive`, `do_effective_mass`, `do_doping`, `do_fermisurf`) run
-unchanged on the stored mesh arrays.
+unchanged on the stored mesh arrays. Two per-k kernels are sparse-only on purpose:
+`momentum_k` (the dense loop uses `momentum_in_eigenbasis` since Nov 2026; the sparse pass
+resolves degenerate groups itself, `mesh._band_diagonal_velocities`) and
+`sparse/curvature.band_curvature_k` (it assumes that joint eigenbasis).
 
 ## Conventions that took real debugging to establish
 
@@ -185,11 +224,10 @@ are *plausibly wrong* — off by conventions, not by crashes.
   (provably — the phases coincide); (c) Fourier interpolation to *any*
   finer mesh is exact and free, so `interpolated_hamiltonian` is a pure
   attribute update. Do not "simplify" the split away.
-- **Phase signs**: mesh/property assembly uses `sign=-1` (the `fftn`
-  convention of `do_double_grid`/`do_gradient`); the bands path uses
-  `sign=+1` with `kq` rotated to Cartesian by `b_vectors` — which doubling
-  deliberately does **not** update, so the rotated product reproduces the
-  dense band-folding behaviour. Getting a sign wrong passes every
+- **Phase sign**: `sign=-1` everywhere, PAOFLOW's `H(k) = sum_R H(R) e^{-2 pi i k.R}` (the
+  `fftn` convention of `do_double_grid`/`do_gradient` and, since 15 Nov 2026, of the dense band
+  path; `sign=+1` gives `H(-k)`). The band path rotates `kq` to Cartesian with `b_vectors`,
+  which `doubling_attr_arry` updates to the doubled cell since Nov 2026. Getting a sign wrong passes every
   *integrated* test (k and −k contributions pair up) and only an
   **index-wise** per-k comparison catches it. That is why
   `test_sparse_mesh_parity.py` exists; keep it.
@@ -230,20 +268,21 @@ are *plausibly wrong* — off by conventions, not by crashes.
 Measured while porting the interband properties. They are properties of
 the dense kernels, reproduced faithfully, not sparse defects:
 
-- **Window-edge pairs.** `get_degeneracies(E, bnd)` drops a degenerate group
-  that straddles `bnd`, so its gauge is whatever the eigensolver returned
-  (zheevd dense, zheevr sparse). Through `get_degeneracies` on the rotated
-  velocities this decides whether bands far below, with velocity zero by
-  symmetry, form a "velocity-degenerate" block in `band_curvature_k_ij`:
-  O(10%) curvature changes there (64 of 4096 k on Si). The dielectric sums
-  agree to 3e-13 once those k are excluded.
+- **Window-edge groups.** Since Nov 2026 `get_degeneracies(E, bnd)` keeps a group that reaches
+  past `bnd` whole (it dropped it before, leaving its gauge to the eigensolver). Every kernel
+  that stores `bnd` bands must take such a group: rotate it whole, and give the second-order
+  subspace treatment only to groups entirely below `bnd` (`band_curvature_k_ij`,
+  `sparse/curvature.py`). The group usually holds placeholder states at `shift`, and the two
+  codes still pick different bases inside it: parity tests leave those k-points out
+  (`_nondegenerate` in `test_sparse_mesh_parity.py`; 2 of 4096 on Si 16^3, 113 of 1728 on Fe).
 - **The non-projectable block.** Bands above `bnd` sit at `shift`, exactly
   degenerate at every k and never rotated. Kernels summing over all `nawf`
   (Hall, AC conductivity, intra-band REE, linear response) pick up their
   gauge-random velocities (adaptive widths up to 1.6 eV on Fe) and in-block
   Berry pairs (denominator only delta^2). The sparse window kernels
   (conductivity, intra-band REE) sum over `bnd` and match dense truncated
-  to the window.
+  to the window and to the states below `shift - shift_margin`, which is all the sparse pass
+  keeps.
 - **Dense path kernels evaluate the raw base-grid HRs.** With one sign of R
   on the folded Nyquist plane that H(k) is non-Hermitian off the mesh (0.2
   eV on Fe 12^3, bands off by 47 meV). The bond list assembles the
@@ -274,10 +313,8 @@ looks provably correct, check `numpy.__version__` before doubting the code.
 
 ## Extending to a new property
 
-Follow the checklist in `sparse/properties/__init__.py`: split the dense
-kernel into a per-k function and a reduce/write function (byte-identical,
-diffed), write a `MeshProperty`, mark the PAOFLOW method
-`@sparse_override`, add a parity test. Which kind of property it is:
+The steps are the checklist in the module docstring of `sparse/properties/__init__.py`. Which
+kind of property it is decides the sparse side:
 
 | kind | example | sparse side |
 | --- | --- | --- |
@@ -342,11 +379,13 @@ an array of per-k `(nawf, nawf)` matrices is not.
 - **Don't hermitize per k, per assembly, or inside doubling.** Hermitize is
   once, after all doubling, on the bond list. Doubling must stay raw to
   remain dense-parity-testable.
-- **Don't "improve" numerical conventions** (phases, folding, `Dnm`
-  zeroing, `perturb_split` ordering, `eigh` triangle choices) even where
+- **Don't "improve" numerical conventions** (phases, folding, `Dnm`,
+  `perturb_split` ordering, `eigh` triangle choices) even where
   the dense choice looks arbitrary. Reproducibility against dense is the
   product; physical elegance is not. Document oddities in docstrings
-  instead.
+  instead. When `develop` changes a dense convention, the sparse side follows it in the same
+  change (the sign, `Dnm` and degenerate-group changes of Nov 2026 all surfaced as sparse test
+  failures only at the next rebase).
 - **Tolerances bound measured noise, nothing else.** End-to-end validation
   stays visual (the comparison notebook). Parity tests are index-wise and
   tight away from degeneracies; where a dense convention is gauge-sensitive
@@ -437,10 +476,9 @@ an array of per-k `(nawf, nawf)` matrices is not.
   nnz). `threshold=None` therefore resolves to `0.0` with a geometric cut
   and to `1e-3` without one. The cut is folded into the same `keep` mask,
   so the printed `eig_bound` covers it. Like `threshold` it must be
-  applied at the base cell: `double_axis` zeroes `dnm` on cross-replica
-  blocks (deliberately — it replicates `block_diag(Dnm, Dnm)`), after
-  which the true bond vector is unrecoverable. The container carries a
-  `_doubled` flag to make that ordering checkable.
+  applied at the base cell: only there are the bond geometry and the orbital map
+  well defined, and `double_axis` preserves bond lengths, so the cut carries over. The
+  container carries a `_doubled` flag to make that ordering checkable.
   **The mask is symmetrized** over `(i,j,R) → (j,i,−R)`: off the Nyquist
   plane that pairing is automatic, but on the folded Nyquist plane `−R`
   maps onto `R` itself and the two partners have *different* lengths

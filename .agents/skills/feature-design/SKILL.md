@@ -272,6 +272,10 @@ def bands(self, ibrav=None, band_path=None, nk=500, spin_orbit=False):
 
 Backend functions may access internal arrays through the orchestrator, but examples and user-facing scripts should not expose those internals unless explicitly debugging.
 
+### Sparse Role
+
+Every public method of `PAOFLOW.py`, and every new argument of one, ships with its sparse side in the same change: follow `.agents/skills/sparse-backend/SKILL.md` ("Every public method takes a sparse role"). A method that stays dense-only records the specific obstacle in `DENSE_ONLY_REASONS` (`src/PAOFLOW/sparse/dispatch.py`).
+
 ### DataController Storage Policy
 
 Store only if at least one is true:
@@ -331,3 +335,6 @@ Avoid new interfaces like:
 
 6. Is `main.py` exposing internal arrays or temporary objects?
    If yes, move that logic behind an orchestrator method or backend pipeline.
+
+7. Did a public `PAOFLOW.py` method or argument appear or change?
+   Give it its sparse role (`.agents/skills/sparse-backend/SKILL.md`); `pytest tests/unit/sparse/test_sparse_dispatch.py` must pass.

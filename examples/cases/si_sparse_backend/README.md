@@ -1,6 +1,6 @@
 # Si: the sparse backend on a doubled cell
 
-`main_sparse.py` runs `PAOFLOW.SparsePAOFLOW`, the bond-list Hamiltonian of `src/PAOFLOW/sparse/`, on
+`main_sparse.py` runs `PAOFLOW(sparse=True)`, the bond-list Hamiltonian of `src/PAOFLOW/sparse/`, on
 bulk Si (the QE inputs of the case `si_bands_transport`): the PAO Hamiltonian of the primitive cell
 (matrix elements below `threshold = 1e-4` eV dropped), the cell doubled once along each lattice vector
 (`doubling_Hamiltonian(nx=1, ny=1, nz=1)`: 8 cells, 16 atoms), an energy window, then the bands, the
@@ -19,7 +19,7 @@ cells, where the dense drivers of `paoflow-gen` run out of memory. Here it takes
 
 1. Self-consistent run: `pw.x -in scf.in`
 2. Non-self-consistent run on the full k grid: `pw.x -in nscf.in` (12×12×12, 18 bands)
-3. Atomic projections: `projwfc.x -in proj.in` (`lwrite_overlaps`). `SparsePAOFLOW` reads them
+3. Atomic projections: `projwfc.x -in proj.in` (`lwrite_overlaps`). the sparse run reads them
    (`read_atomic_proj_QE`); it has no internal projections.
 4. `mpirun -np 4 python main_sparse.py`: writes `output_sparse/`.
 
@@ -37,6 +37,6 @@ about 2 GB per rank; the QE runs are quick (2 atoms, 18 Ry).
   (`sigma*`, `Seebeck*`, `kappa*`) of the doubled cell. A serial run (`python main_sparse.py`) must
   reproduce the files of the MPI run.
 
-See `.agents/skills/sparse-backend/SKILLS.md` for the design and the memory contract of the backend.
+See `.agents/skills/sparse-backend/SKILL.md` for the design and the memory contract of the backend.
 
 Former location: `examples/recipes/sparse_backend`.

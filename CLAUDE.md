@@ -11,7 +11,7 @@ user-invocable: true
     Follow the instructions in the folder .agents/skills when working on docstrings and feature-design:
     - `.agents/skills/docstring/SKILL.md`: NumPy-style docstrings, type hints on every new or edited function, RST `.. math::` equations in `Notes`
     - `.agents/skills/feature-design/SKILL.md`: API and module design rules (summarized in section 5)
-    - `.agents/skills/sparse-backend/SKILLS.md`: design notes and memory contract for `src/PAOFLOW/sparse/`. Read it before touching the sparse backend or `SparsePAOFLOW.py`
+    - `.agents/skills/sparse-backend/SKILL.md`: the sparse role every public `PAOFLOW.py` method needs, design notes and memory contract for `src/PAOFLOW/sparse/`. Read it before adding or changing a public `PAOFLOW.py` method or touching the sparse backend
 
 3. **What PAOFLOW is**
     PAOFLOW (version 4.0.0, GPL-3.0-or-later) is a Python package for post-processing DFT calculations. It projects Kohn–Sham states from Quantum ESPRESSO (or VASP) onto a Projected Atomic Orbital (PAO) basis to build *ab initio* tight-binding Hamiltonians. From these it computes bands, DOS/PDOS, Fermi surfaces, Boltzmann transport, Berry-phase/topology, spin/anomalous Hall, dielectric response, Green's-function (Landauer) transport, phonons, electron–phonon coupling and ACBN0 Hubbard U/V.
@@ -23,8 +23,8 @@ user-invocable: true
 4. **Folder tree**
     ```
     src/PAOFLOW/
-      PAOFLOW.py          Main orchestrator class PAOFLOW (user-facing physics methods)
-      SparsePAOFLOW.py    Sparse-backend driver that mirrors the PAOFLOW API for large doubled cells
+      PAOFLOW.py          Main orchestrator class PAOFLOW (user-facing physics methods); sparse=True routes each
+                          method to the sparse backend (sparse/dispatch.py)
       Transport.py        Green's-function / Landauer transport orchestrator (class Transport)
       DataController.py   Central store: data_arrays / data_attributes dicts, MPI bcast/scatter, file I/O
       ACBN0.py            ACBN0 / eACBN0 self-consistent Hubbard U and intersite V
@@ -114,13 +114,14 @@ user-invocable: true
       `paoflow-gen --example si_bands_transport` writes):
       `PAOFLOW(savedir=...)` → `read_atomic_proj_QE()` → `projectability()` → `pao_hamiltonian()` → `bands()` / `interpolated_hamiltonian()` → `pao_eigh()` → `gradient_and_momenta()` → `adaptive_smearing()` → `dos()` / `transport()` / ... → `finish_execution()`
     - Transport workflow: after building the PAO Hamiltonian, run `Transport(paoflow.data_controller)` → `define_partition` → `build_hamiltonian_blocks` → `configure_*` → `compute_leads_self_energy` → `compute_greens_functions` → `compute_transmission` / `compute_dos` / `compute_current`
-    - Orchestrators (`PAOFLOW.py`, `Transport.py`, `SparsePAOFLOW.py`) expose physics-named methods and call procedural backend functions in the subpackages. `main.py` must read as a physics workflow and must not reach into internal arrays
+    - Orchestrators (`PAOFLOW.py`, `Transport.py`) expose physics-named methods and call procedural backend functions in the subpackages. `main.py` must read as a physics workflow and must not reach into internal arrays
     - Shared state goes through `DataController` (`arrays, attr = self.data_controller.data_dicts()`). Store data there only when a later step reuses it; keep scratch arrays local
     - Do not rename existing `do_*` modules. Do not use the `do_*` prefix for new modules; give them descriptive names
     - Pass inputs as Python arguments. Do not add YAML/JSON config files for runtime configuration
     - Refactors must not change numerical output
     - joblib/loky parallelism (`sk_fitting`, `band_unfold`, `sparse_bands`, `pyskeaf`) must stay within the MPI rank's core budget. Pass every `n_jobs`/`n_workers` through `resolve_n_jobs` (and cap thread pools with `core_budget()`) from `src/PAOFLOW/utils/parallel_resources.py`. Importing `PAOFLOW` exports `LOKY_MAX_CPU_COUNT` under `mpirun`
     - Sparse backend: never materialize dense `(nk, nawf, nawf)` or `(nawf, nawf, nR)` tensors. Unsupported methods must raise loudly, with no silent fallback to dense
+    - A new public `PAOFLOW.py` method or argument ships with its sparse side in the same change; if it stays dense-only, the specific obstacle goes in `DENSE_ONLY_REASONS` (`src/PAOFLOW/sparse/dispatch.py`)
 
 6. **Testing**
     - Run all tests with `pytest`, or select with `pytest -m unit`, `pytest -m integration`, `pytest -q tests/unit/<pkg>`, `pytest tests/... -k exampleNN`. Integration tests that take minutes on a 4-core runner carry `@pytest.mark.slow`; CI runs `-m "integration and not slow"` and splits the electron-phonon suite into three parallel groups (core, workflows, arpes)
