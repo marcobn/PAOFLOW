@@ -1084,7 +1084,12 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
         w = np.ones(Ek.shape[0])
         n_electrons = comm.allreduce(float(np.sum(w[:, None] * fn)), op=MPI.SUM)
         fn, fnF_t, mu = fermi_dirac_occupations(
-            Ek, K_BOLTZMANN_EV * float(temperature_k), n_electrons, weights, settings['spin_factor'], comm
+            Ek,
+            K_BOLTZMANN_EV * float(temperature_k),
+            n_electrons,
+            weights,
+            settings['spin_factor'],
+            comm,
         )
         if not attributes['insulator']:
             fnF = fnF_t
