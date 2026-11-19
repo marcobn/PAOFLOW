@@ -26,9 +26,12 @@ refuses to run in a sparse job.
    obstacle (the dense array or the external code the method needs, e.g. "rotates the dense HRs
    into mirror sectors for Z2Pack") and ends with the way out (`_TO_DENSE`, or the sparse
    alternative). "Not implemented yet" is the obstacle of nothing: write what would have to
-   exist. `_NOT_PORTED` marks the 20 develop methods merged on 19 Nov 2026 that nobody has
-   triaged; the list is frozen by `test_not_ported_list_only_shrinks`, and each of them moves to
-   a real reason or a sparse implementation when someone works on it.
+   exist.
+   `test_every_reason_names_an_obstacle` rejects a bare way out. Before settling for a reason,
+   try the cheap routes: `@sparse_shared` for a method that only calls routed methods, and
+   `@sparse_base_cell` for an `H(R)` transform, each checked against the dense result on
+   `tests/data/silicon` (both were tried and failed for `doped_transport` and `spinor_basis`;
+   their reasons record what broke).
 4. **Say it in the method's docstring** as well: one line in `Notes` (sparse: supported /
    dense-only and why), so the user reads it before the job fails.
 

@@ -228,34 +228,14 @@ def test_every_dense_only_method_says_why():
     )
 
 
-def test_not_ported_list_only_shrinks():
-    """``_NOT_PORTED`` is the untriaged backlog of the Nov 2026 develop merge, not a reason for a
-    new method: a new dense-only method names its own obstacle."""
-    from PAOFLOW.sparse.dispatch import _NOT_PORTED, DENSE_ONLY_REASONS
+def test_every_reason_names_an_obstacle():
+    """A reason says what the method needs that a sparse run lacks, before the way out."""
+    from PAOFLOW.sparse.dispatch import _TO_DENSE, DENSE_ONLY_REASONS
 
-    untriaged = {n for n, reason in DENSE_ONLY_REASONS.items() if reason is _NOT_PORTED}
-    assert untriaged <= {
-        'coupled_optical_response',
-        'doped_transport',
-        'kubo_optical_response',
-        'kubo_response',
-        'magnetic_field',
-        'orbital_magnetization',
-        'orbital_moment',
-        'peierls_field',
-        'self_consistent_spin',
-        'special_displacement',
-        'spin_susceptibility',
-        'spinor_basis',
-        'sscha_force_constants',
-        'sscha_hessian',
-        'sscha_minimize',
-        'sscha_population',
-        'sscha_setup',
-        'sscha_status',
-        'stoner_parameters',
-        'z2_invariant',
-    }
+    for name, reason in DENSE_ONLY_REASONS.items():
+        obstacle = reason.replace(_TO_DENSE, '')
+        assert len(obstacle) > 40, name
+        assert not obstacle.startswith('it has no sparse implementation'), name
 
 
 def test_decorators_keep_the_dense_signature():

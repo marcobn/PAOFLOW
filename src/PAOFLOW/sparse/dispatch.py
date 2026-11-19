@@ -72,32 +72,78 @@ _TO_DENSE = (
     'load_sparse_hamiltonian().'
 )
 
-_NOT_PORTED = (
-    'it was added to the dense pipeline after the sparse backend and has not been ported to the '
-    'bond list yet; ' + _TO_DENSE
-)
+_PHONON = 'it drives finite-displacement DFT runs and their force constants, not H(R); ' + _TO_DENSE
 
 DENSE_ONLY_REASONS = {
-    'coupled_optical_response': _NOT_PORTED,
-    'doped_transport': _NOT_PORTED,
-    'kubo_optical_response': _NOT_PORTED,
-    'kubo_response': _NOT_PORTED,
-    'magnetic_field': _NOT_PORTED,
-    'orbital_magnetization': _NOT_PORTED,
-    'orbital_moment': _NOT_PORTED,
-    'peierls_field': _NOT_PORTED,
-    'self_consistent_spin': _NOT_PORTED,
-    'special_displacement': _NOT_PORTED,
-    'spin_susceptibility': _NOT_PORTED,
-    'spinor_basis': _NOT_PORTED,
-    'sscha_force_constants': _NOT_PORTED,
-    'sscha_hessian': _NOT_PORTED,
-    'sscha_minimize': _NOT_PORTED,
-    'sscha_population': _NOT_PORTED,
-    'sscha_setup': _NOT_PORTED,
-    'sscha_status': _NOT_PORTED,
-    'stoner_parameters': _NOT_PORTED,
-    'z2_invariant': _NOT_PORTED,
+    'coupled_optical_response': (
+        'it builds the periodic parts of the Bloch functions from the PAO basis on the FFT grid '
+        'of the cell and Wigner-Seitz interpolates the dense HRs for a GMRES density response '
+        'over all bands; ' + _TO_DENSE
+    ),
+    'doped_transport': (
+        'it reads the chemical potentials that doping() returns and the sigma and S tensors that '
+        'transport() leaves in the run data, and the sparse doping and transport only write '
+        'their files; call doping() and transport() themselves in a sparse run.'
+    ),
+    'kubo_response': (
+        'the Kubo-Bastin kernels read the stored dHksp and v_k of the whole grid, (nk, nawf, '
+        'nawf) arrays the sparse pass never forms, and no per-k form of them is registered yet; '
+        'linear_response() has the tutorial03 limits in a sparse run, or ' + _TO_DENSE
+    ),
+    'kubo_optical_response': (
+        'the Kubo-Greenwood kernel reads the stored dHksp and v_k of the whole grid, (nk, nawf, '
+        'nawf) arrays the sparse pass never forms, and no per-k form of it is registered yet; '
+        'dielectric_tensor() and the do_ac option of the Hall methods run sparse, or ' + _TO_DENSE
+    ),
+    'magnetic_field': (
+        'it adds mu_B (L + g_s S).B to the dense HRs and, in a scalar basis, first calls '
+        'spinor_basis(), which a sparse run cannot follow (see there); ' + _TO_DENSE
+    ),
+    'orbital_magnetization': (
+        'it integrates the orbital_moment and berry_curvature_vector arrays of orbital_moment(), '
+        'which is dense-only; ' + _TO_DENSE
+    ),
+    'orbital_moment': (
+        'it sums interband terms of the stored pksp, a (nk, 3, nawf, nawf) array the sparse pass '
+        'never forms, and stores the moment of every band at every k; a full-spectrum '
+        'MeshProperty over moment_and_curvature is the missing piece; ' + _TO_DENSE
+    ),
+    'peierls_field': (
+        'it multiplies the dense HRs by Peierls phases, and a periodic cell needs a magnetic '
+        'supercell (doubling first), where a sparse run has no HRs: the phases would have to be '
+        'applied per bond of the doubled bond list, which is not written; ' + _TO_DENSE
+    ),
+    'self_consistent_spin': (
+        'its self-consistency loop diagonalizes H(k) of the whole grid from the dense HRs at '
+        'every iteration and updates the on-site exchange field in HRs; ' + _TO_DENSE
+    ),
+    'special_displacement': 'it builds ZG supercells for DFT runs from the phonon workflow; '
+    + _PHONON,
+    'spin_susceptibility': (
+        'it differentiates the magnetization of self_consistent_spin(), which is dense-only; '
+        + _TO_DENSE
+    ),
+    'spinor_basis': (
+        'it doubles nawf by rewriting HRs in block-ordered spinors, and the sparse run keeps the '
+        'band count of the scalar basis (through the base-cell round trip, Si gave 18 of its 36 '
+        'bands); build the spinor Hamiltonian in a dense run, save_sparse_hamiltonian(), and '
+        'load_sparse_hamiltonian() in the sparse one.'
+    ),
+    'sscha_setup': _PHONON,
+    'sscha_population': _PHONON,
+    'sscha_minimize': _PHONON,
+    'sscha_hessian': _PHONON,
+    'sscha_force_constants': _PHONON,
+    'sscha_status': _PHONON,
+    'stoner_parameters': (
+        'it groups the PAO shells from the orbital count of the dense HRs and integrates the '
+        'LSDA spin kernel over the charge density; it feeds self_consistent_spin(), which is '
+        'dense-only; ' + _TO_DENSE
+    ),
+    'z2_invariant': (
+        'it writes the dense HRs as an _hr.dat file for Z2Pack/tbmodels, which track the Wannier '
+        'charge centres themselves; ' + _TO_DENSE
+    ),
     'restart_dump': (
         'it pickles the DataController, which does not hold the bond list or the engine '
         'state; save the base cell with save_sparse_hamiltonian() and restart with '
