@@ -410,7 +410,19 @@ def test_run_information_run_note_and_package(make_client, gui_root, monkeypatch
     assert facts['DFT code'].startswith('Quantum ESPRESSO') and facts['script'] == 'main.py'
     assert 'MPI rank' in facts['machine'] and '{' not in ''.join(map(str, facts.values()))
     assert 'Steps, in order' in record['text'] and 'PAOFLOW.bands(' in record['text']
-    assert 'Energy (eV)' in record['text'] and not record['notes']
+    assert 'Energy (eV)' in record['text']
+    assert (
+        record['notes']
+        == [  # the script is in Si/, above the output folder
+            'The script (main.py) and the input files are not in this folder: open the folder the '
+            'script ran in (usually the one above) to read them under Inputs.'
+        ]
+    )
+    _, body, _ = client.post('/api/results/scan', {'path': 'Si'})
+    inputs = {d['files'][0]: d for d in body['datasets'] if d['category'] == 'Inputs'}
+    assert {'main.py', 'scf.in'} <= set(inputs)
+    _, shown, _ = client.post('/api/results/figure', {'path': 'Si', 'id': inputs['scf.in']['id']})
+    assert shown['family'] == 'text' and '&control' in shown['text'] and not shown['notes']
     _, bands, _ = client.post('/api/results/figure', {'path': 'Si/output', 'id': by_kind['bands']})
     (note,) = [note for note in bands['notes'] if note.startswith('From this run')]
     assert 'PAOFLOW 4' in note and 'step 5: PAOFLOW.bands(' in note and 'did not finish' not in note

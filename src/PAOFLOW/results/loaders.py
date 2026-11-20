@@ -762,9 +762,10 @@ def load_text(ref: DatasetRef, root: str, options: dict) -> Dataset:
     dataset = _new(ref)
     dataset.family = 'text'
     parts = []
+    limit = 5000 if ref.category == 'Inputs' else 400  # a script is shown whole
     for file in ref.files:
         header = '── %s' % file if len(ref.files) > 1 else ''
-        parts.append((header + '\n' if header else '') + _text(_path(root, file)))
+        parts.append((header + '\n' if header else '') + _text(_path(root, file), limit))
     dataset.text = '\n\n'.join(parts)
     return dataset
 
@@ -886,7 +887,14 @@ def load_manifest(ref: DatasetRef, root: str, options: dict) -> Dataset:
     for code, version in run.get('input_versions', {}).items():
         row('%s version' % code, version)
     if run.get('script'):
-        row('script', run['script']['file'])
+        script = run['script']['file']
+        row('script', script)
+        here = [os.path.join(root, script), os.path.join(root, ref.folder, script)]
+        if not any(os.path.isfile(path) for path in here):
+            dataset.notes.append(
+                'The script (%s) and the input files are not in this folder: open the folder the '
+                'script ran in (usually the one above) to read them under Inputs.' % script
+            )
     software = run.get('environment') or {}
     if software:
         row(

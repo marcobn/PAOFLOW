@@ -13,7 +13,7 @@ import os
 import re
 from dataclasses import dataclass
 
-from .catalogue import CATEGORY_ORDER, KINDS, SKIPPED_FILES, SKIPPED_FOLDERS
+from .catalogue import CATEGORY_ORDER, INPUTS, KINDS, SKIPPED_FILES, SKIPPED_FOLDERS
 from .model import DatasetRef, Kind
 
 MAX_FILES = 20000
@@ -26,6 +26,9 @@ _COMPILED = [
 ]
 _SKIP_DIR = re.compile(SKIPPED_FOLDERS)
 _SKIP_FILE = re.compile(SKIPPED_FILES)
+#: The inputs of a calculation (scripts, DFT inputs, README, case.json) are listed although the
+#: skip list keeps out the other files with these endings.
+_INPUTS = [entry for entry in _COMPILED if entry[0].category == INPUTS]
 
 
 class _Default(dict):
@@ -57,9 +60,8 @@ def match_file(name: str, folder: str) -> tuple[Kind, dict[str, str]] | None:
     -------
     tuple of (Kind, dict) or None
     """
-    if _SKIP_FILE.fullmatch(name):
-        return None
-    for kind, pattern, exclude in _COMPILED:
+    candidates = _INPUTS if _SKIP_FILE.fullmatch(name) else _COMPILED
+    for kind, pattern, exclude in candidates:
         match = pattern.fullmatch(name)
         if match is None or (exclude is not None and exclude.fullmatch(name)):
             continue

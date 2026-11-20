@@ -62,6 +62,18 @@ DFT_U = (physh('ffcb7c9c-2fd2-4caa-ac0e-9832b20fc351'),)
 #: term -> (definition, addresses of the shared terms it corresponds to).
 TERMS: dict[str, tuple[str, tuple[str, ...]]] = {
     'manifest': ('The run record: what the runs of this folder did and wrote.', ()),
+    'script': ('A Python script of the calculation: a PAOFLOW driver or a plotting script.', ()),
+    'dft_input': (
+        'An input file of the DFT code: a Quantum ESPRESSO namelist input (pw.x, projwfc.x, '
+        'ph.x, ...) or a VASP INCAR, KPOINTS or POSCAR.',
+        (),
+    ),
+    'readme': ('The description of the calculation for people, in Markdown.', ()),
+    'case': (
+        'The description of the calculation for PAOFLOW: title, summary, authors, licence and '
+        'the steps that reproduce it.',
+        (),
+    ),
     'berry_bands': (
         'Berry curvature (or its spin or orbital counterpart) of one tensor component along the '
         'band path, one column per k-point index.',

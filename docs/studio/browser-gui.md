@@ -299,6 +299,9 @@ or from the command line, without a server:
 paoflow-studio report Si/output -o Si_report.html
 ```
 
+Opened on the folder a script ran in (not its `output` folder), the Results tab also lists the
+**Inputs**: the Python scripts, the DFT input files, `README.md` and `case.json`, shown read-only.
+
 Every run writes `paoflow_outputs.json` in the output folder and updates it after each step. It records the PAOFLOW
 version, the DFT inputs, the calls of the script, the DFT Fermi energy (output energies are relative to it), and the
 files the run wrote, each with its kind. The Results tab shows it as *Run information*, names the run and the call

@@ -16,6 +16,7 @@ PHOTON = ('Photon energy', 'eV')
 TEMPERATURE = ('Temperature', 'K')
 
 RUN = 'Run information'
+INPUTS = 'Inputs'
 ELECTRONIC = 'Electronic structure'
 TRANSPORT = 'Boltzmann transport'
 HALL = 'Topology and Hall'
@@ -31,6 +32,7 @@ OTHER = 'Other files'
 
 CATEGORY_ORDER = (
     RUN,
+    INPUTS,
     ELECTRONIC,
     TRANSPORT,
     HALL,
@@ -148,6 +150,19 @@ KINDS: tuple[Kind, ...] = (
         'manifest',
         priority=1,
     ),
+    # ---------------------------------------------------------------- inputs (read-only text)
+    # Matched before SKIPPED_FILES, which keeps the other .py, .in and .md files out of the tree.
+    Kind('script', '{name}', INPUTS, r'(?P<name>.+\.py)', 'text', priority=1),
+    Kind(
+        'dft_input',
+        '{name}',
+        INPUTS,
+        r'(?P<name>.+\.in|INCAR|KPOINTS|POSCAR)',
+        'text',
+        priority=1,
+    ),
+    Kind('readme', '{name}', INPUTS, r'(?P<name>README(?:\.case)?\.md)', 'text', priority=1),
+    Kind('case', 'Case description ({name})', INPUTS, r'(?P<name>case\.json)', 'text', priority=1),
     # ---------------------------------------------------------------- electronic structure
     Kind(
         'berry_bands',

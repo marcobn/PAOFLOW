@@ -88,10 +88,18 @@ def test_file_kinds(name, folder, kind):
 
 
 @pytest.mark.parametrize(
-    'name', ['main.py', 'scf.in', 'kpath_points.txt', 'phonon_band.labels', 'x.png']
+    'name', ['scf.out', 'NOTES.md', 'kpath_points.txt', 'phonon_band.labels', 'x.png']
 )
 def test_skipped_files(name):
     assert match_file(name, '.') is None
+
+
+@pytest.mark.parametrize(
+    ('name', 'kind'),
+    [('main.py', 'script'), ('scf.in', 'dft_input'), ('INCAR', 'dft_input'), ('case.json', 'case')],
+)
+def test_inputs_pass_the_skip_list(name, kind):
+    assert match_file(name, '.')[0].name == kind
 
 
 def test_bands_loader_and_figure():
@@ -687,3 +695,31 @@ def test_finite_bias_and_nernst_loaders(tmp_path):
     nernst = load(kinds['nernst'][0], str(tmp_path))
     assert [series.name for series in nernst.series] == ['300 K']
     assert np.allclose(nernst.series[0].y, energies)  # N_xyz, the first component
+
+
+def test_inputs_of_a_calculation_are_listed(tmp_path):
+    """Scripts, DFT inputs, README and case.json show under Inputs, whole and read-only; the
+    other files with these endings stay out, and an output folder points to the folder above."""
+    from PAOFLOW.results.discovery import discover
+    from PAOFLOW.results.loaders import load
+    from PAOFLOW.writers.output_manifest import MANIFEST
+
+    (tmp_path / 'output').mkdir()
+    script = ''.join('x%d = %d\n' % (n, n) for n in range(600))  # longer than the text preview
+    (tmp_path / 'main.py').write_text(script)
+    (tmp_path / 'scf.in').write_text('&control\n/\n')
+    (tmp_path / 'README.md').write_text('# Si\n')
+    (tmp_path / 'case.json').write_text('{"title": "Si"}\n')
+    (tmp_path / 'NOTES.md').write_text('not an input')
+    (tmp_path / 'scf.out').write_text('a log')
+    run = {'run_id': 'a', 'paoflow': '4', 'status': 'finished', 'script': {'file': 'main.py'}}
+    (tmp_path / 'output' / MANIFEST).write_text(json.dumps({'manifest': 2, 'runs': [run]}))
+    inputs = {ref.files[0]: ref for ref in discover(str(tmp_path)) if ref.category == 'Inputs'}
+    assert set(inputs) == {'main.py', 'scf.in', 'README.md', 'case.json'}
+    assert load(inputs['main.py'], str(tmp_path), {}).text == script.rstrip('\n')
+    record = [ref for ref in discover(str(tmp_path / 'output')) if ref.kind == 'manifest'][0]
+    assert (
+        'open the folder the script ran in' in load(record, str(tmp_path / 'output'), {}).notes[0]
+    )
+    record = [ref for ref in discover(str(tmp_path)) if ref.kind == 'manifest'][0]
+    assert not load(record, str(tmp_path), {}).notes

@@ -91,8 +91,9 @@ To open a package someone gave you:
 paoflow-unpack si_bands-package.zip
 ```
 
-It checks every file against its checksum, lays the calculation out as a folder (open it in PAOFLOW
-Studio to look at the results) and prints the steps to reproduce it, in order. It runs nothing.
+It checks every file against its checksum, lays the calculation out as a folder (open it in the Results
+tab of PAOFLOW Studio: the results, and under *Inputs* the scripts, the DFT input files, the
+README and `case.json`) and prints the steps to reproduce it, in order. It runs nothing.
 
 The scripts in a package are someone else's code: read them before you run them. The checksums
 show that the files are the ones that were packed, not who packed them, so take packages from a
@@ -119,6 +120,10 @@ quantities, PhySH for subjects).
 | Term | Category | Definition | Shared terms |
 |---|---|---|---|
 | `manifest` | Run information | The run record: what the runs of this folder did and wrote. |  |
+| `script` | Inputs | A Python script of the calculation: a PAOFLOW driver or a plotting script. |  |
+| `dft_input` | Inputs | An input file of the DFT code: a Quantum ESPRESSO namelist input (pw.x, projwfc.x, ph.x, ...) or a VASP INCAR, KPOINTS or POSCAR. |  |
+| `readme` | Inputs | The description of the calculation for people, in Markdown. |  |
+| `case` | Inputs | The description of the calculation for PAOFLOW: title, summary, authors, licence and the steps that reproduce it. |  |
 | `berry_bands` | Topology and Hall | Berry curvature (or its spin or orbital counterpart) of one tensor component along the band path, one column per k-point index. | [PhySH](https://doi.org/10.29172/8abddf0b-ea8e-4c03-af96-883903427079) |
 | `bands` | Electronic structure | Band energies along a k-path: the k-point index, then one column per band, one file per spin channel. Energies are relative to the Fermi level. |  |
 | `site_projected_bands` | Electronic structure | Band energies along a k-path with the weight of each band on the atomic sites. Energies are relative to the Fermi level. |  |
