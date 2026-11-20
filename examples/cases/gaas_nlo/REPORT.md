@@ -27,7 +27,7 @@ below; the figures are produced by `make_report_figures.py` from the same files.
 | GaAs | \|χ_xyz(−2ω; ω, ω)\| spectrum, 2–5 eV two-photon energy, vs Bergfeld & Daum 2003 (Fig. 4) | with the position dipoles: geometric-mean ratio model / experiment 1.04 (norm-conserving) and 1.05 (PAW), rms 0.09 dex (≈ 23 %) over 211 bulk points; E1 two-photon peak 658 / 679 pm/V at 3.10 eV; tight-binding position operator: ratio 0.58 | 743 ± 42 pm/V at 2.90 eV (E1), plateau 420–480 pm/V (3.5–4.3 eV), minimum 340 at 4.6 eV; Hughes–Sipe 1996 ratio 0.77, Adolph–Bechstedt 1998 ratio 1.51 on the same data | on the measurement over the whole range with the dipoles, closer than both published calculations; the E1 resonance 0.2 eV too high (rigid scissor), −10 % at the peak (§3.2) |
 | GaAs | σ_xyz shift current | norm-conserving with dipoles −41 µA/V² at 3.9 eV, −3.5 at 2.0 eV (tight binding −28, −2.3); PAW with dipoles −38 and −4.5 (tight binding −32, −3.6) | tens of µA/V² (Nastos–Sipe 2006, Ibañez-Azpiroz 2018) | order of magnitude |
 | GaAs | symmetry audit (current code) | norm-conserving 40³: every T_d relation to 1e-10 of the peak (χ_yzx = χ_xyz, σ_yzx = σ_xyz, forbidden χ_xxx and σ_xxx, T-odd files), circular injection 1e-5 of its scale; wedge-reduced run identical to the full grid to 1e-10. Before October 28: SHG 1–10 % (degenerate gauge), first PAW runs 2–5 % (projections) | — | exact |
-| monolayer GeS | sheet shift current peaks σ^{xxx}, σ^{xyy}, σ^{yxy} | 46, 48, 26 nm µA/V² (2.84, 2.83, 2.05 eV) | 100–150 µA/V² quoted per layer thickness (Rangel 2017, later works) → ≈ 75 µA/V² here for 0.6 nm | order of magnitude |
+| monolayer GeS | sheet shift current peaks σ^{xxx}, σ^{xyy}, σ^{yxy} | 46, 48, 26 nm µA/V² (2.84, 2.83, 2.05 eV) | 100–150 µA/V² quoted per layer thickness (Rangel 2017, later works) → ≈ 77 and 80 µA/V² here (xxx, xyy) for 0.6 nm | order of magnitude |
 | monolayer GeS | mirror-forbidden σ^{yyy}, σ^{xxy}; T-odd files | < 3e-8 nm µA/V²; identically 0 | symmetry | pass (nosym nscf) |
 
 ## 2. Methods
@@ -334,7 +334,7 @@ The polar monolayer (mm2, polar axis x) has three independent in-plane shift-cur
 the mirror-forbidden ones vanish to 1e-9 of the allowed scale and the T-odd files are identically
 zero, because the Hamiltonian comes from a no-symmetry nscf (time reversal and the mirror are
 then exact). The shift current starts at the direct gap (1.9 eV) and peaks at 46–48 nm µA/V²
-near 2.85 eV; divided by a 0.6 nm layer thickness this is ≈ 75 µA/V², the order of magnitude of
+near 2.85 eV; divided by a 0.6 nm layer thickness this is ≈ 77–80 µA/V², the order of magnitude of
 the 100–150 µA/V² quoted for monolayer GeS (Rangel *et al.* 2017 and later works, with their own
 thickness conventions and a GW-level gap). The SHG sheet susceptibility peaks at 2.2e6 pm²/V
 (yxy, 1.87 eV); published χ^{(2)} of group-IV monochalcogenide monolayers are of 1e5–1e6 pm²/V
