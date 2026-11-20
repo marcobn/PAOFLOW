@@ -62,6 +62,8 @@ PROFILES = {
     ),
 }
 PYTHON = 'https://www.python.org/'
+SOFTWARE = 'https://github.com/marcobn/PAOFLOW#'  # + version: an absolute id (run-crate SHOULD)
+STATUS = 'http://schema.org/%sActionStatus'
 NO_RECORD = (
     'No run record (%s) in %s or below. Run paoflow-pack in the folder where you ran your '
     'PAOFLOW script.'
@@ -75,16 +77,28 @@ def parse_author(text: str) -> dict[str, str]:
     Parameters
     ----------
     text : str
-        A name, optionally followed by an ORCID (``'Ada Lovelace 0000-0002-1825-0097'``).
+        A name, optionally followed by an ORCID and, after a comma, the affiliation
+        (``'Ada Lovelace 0000-0002-1825-0097, University of London'``).
 
     Returns
     -------
     dict
-        ``name`` and, when the text holds one, ``orcid``.
+        ``name`` and, when the text holds them, ``orcid`` and ``affiliation``.
     """
+    text, _, affiliation = text.partition(',')
     found = ORCID.search(text)
-    name = ORCID.sub('', text).strip(' ,()<>')
-    return {'name': name, 'orcid': found.group(1)} if found else {'name': name}
+    author = {'name': ORCID.sub('', text).strip(' ,()<>')}
+    if found:
+        author['orcid'] = found.group(1)
+    if affiliation.strip():
+        author['affiliation'] = affiliation.strip()
+    return author
+
+
+def author_text(author: dict[str, str]) -> str:
+    """The line :func:`parse_author` reads back: name, ORCID and affiliation of one author."""
+    text = ('%s %s' % (author['name'], author.get('orcid', ''))).strip()
+    return text + (', ' + author['affiliation'] if author.get('affiliation') else '')
 
 
 def _walk(root: Path):
@@ -308,6 +322,7 @@ def readme_text(case: dict, content: dict) -> str:
     authors = ', '.join(
         a['name']
         + (' ([%s](https://orcid.org/%s))' % (a['orcid'], a['orcid']) if 'orcid' in a else '')
+        + (', %s' % a['affiliation'] if a.get('affiliation') else '')
         for a in case.get('authors', [])
     )
     lines += ['- Authors: %s' % (authors or 'not given')]
@@ -458,6 +473,9 @@ def crate(case: dict, content: dict, readme_sha256: str, readme_bytes: int) -> d
     def ref(identifier: str) -> dict[str, str]:
         return {'@id': identifier}
 
+    def utc(stamp: str) -> str:  # the run-crate profiles want an offset, not 'Z'
+        return stamp[:-1] + '+00:00' if stamp.endswith('Z') else stamp
+
     def file_id(name: str) -> str:
         return quote(CASE_README if name == README else name)
 
@@ -472,7 +490,16 @@ def crate(case: dict, content: dict, readme_sha256: str, readme_bytes: int) -> d
             else '#author-%d' % (index + 1)
         )
         people.append(ref(identifier))
-        graph.append({'@id': identifier, '@type': 'Person', 'name': author['name']})
+        person = {'@id': identifier, '@type': 'Person', 'name': author['name']}
+        if author.get('affiliation'):
+            names = [a['affiliation'] for a in case['authors'] if a.get('affiliation')]
+            organisation = '#organisation-%d' % (names.index(author['affiliation']) + 1)
+            person['affiliation'] = ref(organisation)
+            if not any(entity['@id'] == organisation for entity in graph):
+                graph.append(
+                    {'@id': organisation, '@type': 'Organization', 'name': author['affiliation']}
+                )
+        graph.append(person)
     profiles = ['process'] + (['workflow', 'workflow-ro-crate'] if workflows else [])
     licence = case.get('license') or ''
     root: dict[str, Any] = {
@@ -488,6 +515,16 @@ def crate(case: dict, content: dict, readme_sha256: str, readme_bytes: int) -> d
     if licence:
         spdx = re.fullmatch(r'[A-Za-z0-9.+-]+', licence)
         root['license'] = ref('https://spdx.org/licenses/' + licence) if spdx else licence
+        if spdx:
+            graph.append(
+                {
+                    '@id': 'https://spdx.org/licenses/' + licence,
+                    '@type': 'CreativeWork',
+                    'name': licence,
+                    'description': 'Licence of the files of this package (SPDX identifier %s).'
+                    % licence,
+                }
+            )
     if people:
         root['author'] = people
     if case.get('tags'):
@@ -520,7 +557,7 @@ def crate(case: dict, content: dict, readme_sha256: str, readme_bytes: int) -> d
     for run in runs:
         version = run['paoflow']
         software[version] = {
-            '@id': '#paoflow-' + version,
+            '@id': SOFTWARE + version,
             '@type': 'SoftwareApplication',
             'name': 'PAOFLOW',
             'url': 'https://github.com/marcobn/PAOFLOW',
@@ -546,35 +583,44 @@ def crate(case: dict, content: dict, readme_sha256: str, readme_bytes: int) -> d
             '@id': '#run-' + run['run_id'],
             '@type': 'CreateAction',
             'name': 'PAOFLOW run started %s' % run['started_utc'],
-            'startTime': run['started_utc'],
-            'instrument': ref(file_id(scripts[0]) if scripts else '#paoflow-' + run['paoflow']),
+            'description': 'PAOFLOW %s run with %d calls that wrote %d files.'
+            % (run['paoflow'], len(run.get('calls', [])), len(run['results'])),
+            'startTime': utc(run['started_utc']),
+            'instrument': ref(file_id(scripts[0]) if scripts else SOFTWARE + run['paoflow']),
             'result': [ref(file_id(name)) for name in run['results']],
         }
         if run.get('objects'):
             action['object'] = [ref(file_id(name)) for name in run['objects']]
         if run['status'] == 'finished':
-            action['endTime'] = run['finished_utc']
-            action['actionStatus'] = ref('http://schema.org/CompletedActionStatus')
-        else:
-            action['actionStatus'] = ref('http://schema.org/FailedActionStatus')
+            action['endTime'] = utc(run['finished_utc'])
+        status = STATUS % ('Completed' if run['status'] == 'finished' else 'Failed')
+        action['actionStatus'] = ref(status)
+        if not any(entity['@id'] == status for entity in graph):
+            name = status.rsplit('/', 1)[1]
+            graph.append({'@id': status, '@type': 'ActionStatusType', 'name': name})
+        if run['status'] != 'finished':
             action['error'] = 'The run did not reach finish_execution().'
         if people:
             action['agent'] = people[0]
         graph.append(action)
         for script in scripts:
-            files[script]['workflow'] = '#paoflow-' + run['paoflow']
+            files[script]['workflow'] = SOFTWARE + run['paoflow']
     graph.append(
         {
             '@id': README,
             '@type': 'File',
             'name': README,
             'about': ref('./'),
+            'description': 'Summary of the package for people: material, steps and files.',
             'encodingFormat': 'text/markdown',
             'contentSize': str(readme_bytes),
             'sha256': readme_sha256,
         }
     )
     formats = {'.md': 'text/markdown', '.json': 'application/json', '.py': 'text/x-python'}
+    formats.update({'.xml': 'application/xml', '.npz': 'application/octet-stream'})
+    formats.update(dict.fromkeys(('.dat', '.in', '.txt', '.upf', '.bxsf', '.xsf'), 'text/plain'))
+    roles = {'output': 'Output', 'input': 'Input', 'script': 'Driver script'}
     kinds = set()
     for name, entry in sorted(files.items()):
         entity: dict[str, Any] = {
@@ -584,9 +630,10 @@ def crate(case: dict, content: dict, readme_sha256: str, readme_bytes: int) -> d
             'contentSize': str(entry['bytes']),
             'sha256': entry['sha256'],
         }
-        suffix = PurePosixPath(name).suffix
-        if suffix in formats:
-            entity['encodingFormat'] = formats[suffix]
+        # shortcut: an unknown extension is declared binary, extend `formats` when one matters
+        suffix = PurePosixPath(name).suffix.lower()
+        entity['encodingFormat'] = formats.get(suffix, 'application/octet-stream')
+        entity['description'] = '%s file of the calculation.' % roles.get(entry['role'], 'A')
         if 'workflow' in entry:
             entity['@type'] = ['File', 'SoftwareSourceCode', 'ComputationalWorkflow']
             entity['programmingLanguage'] = ref(PYTHON)
@@ -594,6 +641,7 @@ def crate(case: dict, content: dict, readme_sha256: str, readme_bytes: int) -> d
         if entry.get('kind') in TERMS:
             kinds.add(entry['kind'])
             entity['about'] = ref('#term-' + entry['kind'])
+            entity['description'] = TERMS[entry['kind']][0]
         if entry.get('axes'):
             entity['description'] = axes_text(entry)
         graph.append(entity)
@@ -621,6 +669,10 @@ def crate(case: dict, content: dict, readme_sha256: str, readme_bytes: int) -> d
         if links:
             term['sameAs'] = list(links)
         graph.append(term)
+    for entity in graph:  # RO-Crate 1.3: a single value is written bare, not as a one-item list
+        for key, value in entity.items():
+            if key != '@type' and isinstance(value, list) and len(value) == 1:
+                entity[key] = value[0]
     return {
         '@context': [
             'https://w3id.org/ro/crate/1.3/context',
@@ -800,7 +852,10 @@ def main_pack(argv: list[str] | None = None) -> int:
     parser.add_argument('-o', '--output', help='zip file to write (default: <folder>-package.zip)')
     parser.add_argument('--title', help='title of the calculation')
     parser.add_argument(
-        '--author', action='append', metavar='"NAME [ORCID]"', help='an author; repeat for more'
+        '--author',
+        action='append',
+        metavar='"NAME [ORCID][, AFFILIATION]"',
+        help='an author; repeat for more',
     )
     parser.add_argument('--license', help='licence of the data (default %s)' % DEFAULT_LICENSE)
     parser.add_argument('--machine', help='name of the machine the runs were made on (optional)')
@@ -826,12 +881,10 @@ def main_pack(argv: list[str] | None = None) -> int:
         if title is None:
             title = ask('Title', stored.get('title') or root.name)
         if not authors:
-            known = '; '.join(
-                ('%s %s' % (a['name'], a.get('orcid', ''))).strip()
-                for a in stored.get('authors', [])
-            )
+            known = '; '.join(author_text(a) for a in stored.get('authors', []))
             answer = ask(
-                'Authors, separated by ";" (an ORCID after a name if you have one)', known or None
+                'Authors, separated by ";" (after a name: an ORCID, then "," and the affiliation)',
+                known or None,
             )
             authors = [parse_author(text) for text in answer.split(';') if text.strip()]
         if licence is None:

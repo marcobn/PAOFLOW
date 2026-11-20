@@ -1244,9 +1244,9 @@ export class ResultsView {
     };
     const [titleRow, title] = field('Title', info.title, '');
     const [authorsRow, authors] = field(
-      'Authors, separated by ";" (an ORCID after a name if you have one)',
+      'Authors, separated by ";" (after a name: an ORCID, then "," and the affiliation)',
       info.authors,
-      'Ada Lovelace 0000-0002-1825-0097; Second Author',
+      'Ada Lovelace 0000-0002-1825-0097, University of London; Second Author',
     );
     const [licenseRow, license] = field('Licence', info.license, '');
     const [machineRow, machine] = field(

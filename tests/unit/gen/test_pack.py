@@ -13,7 +13,15 @@ from pathlib import Path
 import pytest
 
 from PAOFLOW.gen.cases import load_case
-from PAOFLOW.gen.pack import CRATE, main_pack, main_unpack, pack, parse_author, unpack
+from PAOFLOW.gen.pack import (
+    CRATE,
+    author_text,
+    main_pack,
+    main_unpack,
+    pack,
+    parse_author,
+    unpack,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -53,6 +61,9 @@ def test_author_with_and_without_orcid():
         'orcid': '0000-0002-1825-0097',
     }
     assert parse_author(' Ada Lovelace ') == {'name': 'Ada Lovelace'}
+    full = 'Ada Lovelace 0000-0002-1825-0097, University of London'
+    assert parse_author(full)['affiliation'] == 'University of London'
+    assert author_text(parse_author(full)) == full
 
 
 def test_pack_then_unpack_preserves_every_file(calculation, tmp_path, capsys):
@@ -96,12 +107,14 @@ def test_pack_then_unpack_preserves_every_file(calculation, tmp_path, capsys):
 def test_crate_describes_the_run(calculation):
     """A Workflow Run Crate: the script is the workflow, the run its action, every file has a
     checksum and its PAOFLOW term, and every reference inside the crate resolves."""
-    result = pack(calculation, authors=[{'name': 'A. Person'}], license='CC-BY-4.0')
+    author = {'name': 'A. Person', 'affiliation': 'An Institute'}
+    result = pack(calculation, authors=[author], license='CC-BY-4.0')
     with zipfile.ZipFile(result['path']) as archive:
         graph = json.loads(archive.read(CRATE))['@graph']
         names = set(archive.namelist())
     by_id = {entity['@id']: entity for entity in graph}
     root = by_id['./']
+    assert by_id[by_id['#author-1']['affiliation']['@id']]['name'] == 'An Institute'
     assert {ref['@id'] for ref in root['conformsTo']} >= {
         'https://w3id.org/ro/wfrun/process/0.6',
         'https://w3id.org/ro/wfrun/workflow/0.6',
@@ -109,7 +122,7 @@ def test_crate_describes_the_run(calculation):
     assert root['mainEntity'] == {'@id': 'main.py'} and root['license']['@id'].endswith('CC-BY-4.0')
     assert 'ComputationalWorkflow' in by_id['main.py']['@type']
     (action,) = [entity for entity in graph if entity['@type'] == 'CreateAction']
-    assert action['instrument'] == {'@id': 'main.py'} and action['endTime'].endswith('Z')
+    assert action['instrument'] == {'@id': 'main.py'} and action['endTime'].endswith('+00:00')
     assert {'@id': 'output/bands_0.dat'} in action['result']
     assert {'@id': 'silicon.save/data-file-schema.xml'} in action['object']
     bands = by_id['output/bands_0.dat']

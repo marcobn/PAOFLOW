@@ -438,7 +438,7 @@ def register(app: 'GuiApp') -> None:
     @app.route('POST', '/api/results/package/info')
     def package_info(request: Request) -> Response:
         from ..gen.cases import CASE_FILE
-        from ..gen.pack import DEFAULT_LICENSE
+        from ..gen.pack import DEFAULT_LICENSE, author_text
 
         start = Path(_folder(app, request.json()))
         sandbox = app.sandbox  # the search stays inside the folder the session may read
@@ -455,10 +455,7 @@ def register(app: 'GuiApp') -> None:
                 'folder': app.sandbox.relative(folder),
                 'writable': not app.read_only and app.sandbox.writable(folder),
                 'title': stored.get('title') or folder.name,
-                'authors': '; '.join(
-                    ('%s %s' % (author['name'], author.get('orcid', ''))).strip()
-                    for author in stored.get('authors', [])
-                ),
+                'authors': '; '.join(author_text(a) for a in stored.get('authors', [])),
                 'license': stored.get('license') or DEFAULT_LICENSE,
                 'machine': stored.get('machine') or '',
             }

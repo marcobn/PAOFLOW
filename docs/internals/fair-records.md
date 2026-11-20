@@ -91,8 +91,18 @@ components split across files). A shared term identifies the physical concept. B
 | Role | Vocabulary | Address pattern |
 |---|---|---|
 | Quantity and unit on each axis | QUDT | `https://qudt.org/vocab/quantitykind/<Name>` |
-| What the dataset is about | PhySH | `https://doi.org/10.29172/<uuid>` |
+| What the dataset is about | APS physics subject headings | `https://doi.org/10.29172/<uuid>` |
 | Crystal structure | OPTIMADE property definitions | `https://schemas.optimade.org/defs/v1.2/properties/optimade/structures/<name>` |
+
+Licences (read on 2026-11-20): QUDT and OPTIMADE are CC BY 4.0. The physics subject headings of
+the American Physical Society are CC0 1.0 (concepts, relationships and identifiers free for any
+use), but the society reserves the short name of that vocabulary: no permission was asked, so
+the name is not written anywhere in the code, the docs or the packages; only the concept
+addresses are used. PAOFLOW links to the terms of all three and writes its own definitions:
+never copy a definition, a unit table or a UCUM code from them. All 92 definitions were compared
+with every text of the QUDT quantity-kind vocabulary on 2026-11-20: the longest shared run is
+four ordinary words ("in units of the"). The credits are on the user page
+(`docs/tutorials/howtos/run-records.md`).
 
 Terms with no shared counterpart stay local with their definition. NOMAD's dataset-level terms
 are added when their addresses resolve (they did not on 2026-11-19).
@@ -153,7 +163,7 @@ sharing" button that calls the code of `paoflow-pack`. The record never depends 
 | Units that are empty in the catalogue | Open, and not a catalogue matter: most are dimensionless (ε, n, k, reflectivity, emissivity, α²F, transmission) or a point index (k path); the frequency axis of the phonon and IR/Raman files takes the `units` argument of the call that wrote the file (`run_record`). Still open: `twoD` of the Hall methods changes the unit and the record does not follow it (the argument is in `calls`) |
 | Versions and hashes of the phonon and electron-phonon inputs (ph.x, phonopy, EPW) | Done (`stamp_inputs`); `phonon_dispersion` and the writers that carry the saves pass them |
 | Structure terms (QUDT, OPTIMADE) | Done (`STRUCTURE` in `results/vocabulary.py`) |
-| `paoflow-pack`, `paoflow-unpack` | Done; the crate passes `roc-validator` 0.14 at the required level (the test skips without the validator). The recommended-level findings (`encodingFormat`, publisher, descriptions of contextual entities) are not addressed |
+| `paoflow-pack`, `paoflow-unpack` | Done; the crate passes `roc-validator` 0.14 at the required level (the test skips without the validator). At the recommended level the remaining findings are deliberate: no `publisher` (the repository is not known when packing), the driver script has no address, version or Bioschemas profile (it is a file of the package, not a registered workflow), and `actionStatus` is written as a link, as in the profile's examples, where the validator expects text |
 | Studio: readable *Run information* (`load_manifest`), the *From this run* line under each plot (`run_note`, from the `call` index the record keeps per file), the *Package for sharing* button (`/api/results/package`, the code of `paoflow-pack`) | Done |
 | Opening an unpacked folder as a case in Studio | Done: a folder with a `case.json` gives the Runs tab its steps when it is opened (`/api/cases/here`), unless a plan is already stored for it; its results open in the Results tab |
 

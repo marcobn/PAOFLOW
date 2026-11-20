@@ -47,7 +47,8 @@ paoflow-pack
 ```
 
 It asks four things (title, authors, licence, and optionally the name of the machine; Enter
-accepts the value in brackets) and writes `<folder>-package.zip`. That one file is what you
+accepts the value in brackets; an author is a name, then an ORCID if you have one, then a comma
+and the affiliation: `Ada Lovelace 0000-0002-1825-0097, University of London`) and writes `<folder>-package.zip`. That one file is what you
 upload to a repository such as Zenodo to get a DOI for a data-availability statement.
 
 The package holds the output files, your scripts, the DFT input files and pseudopotentials, the
@@ -82,7 +83,7 @@ Good to know:
   does not allow it).
 - Only files PAOFLOW knows are packed: job logs and anything else in the folder stay out.
 - When a script ran several times, each file is described by the last run that wrote it.
-- For scripts and batch jobs: `paoflow-pack --no-questions --title "..." --author "Name ORCID"`.
+- For scripts and batch jobs: `paoflow-pack --no-questions --title "..." --author "Name ORCID, Affiliation"`.
 - Nothing is uploaded. Neither command uses the network.
 
 To open a package someone gave you:
@@ -114,8 +115,20 @@ The record is JSON. Its schema ships with the package
 
 Each output file is labelled with a term: the name of its file layout (columns, units, energy
 reference, how spin and tensor components split across files). A term keeps its meaning across
-versions. Where a shared vocabulary has the physical concept, the term links to it (QUDT for
-quantities, PhySH for subjects).
+versions. Where a shared vocabulary has the physical concept, the term links to it: a quantity
+kind of QUDT, a subject heading (the links named *subject*), or a structure property of OPTIMADE.
+The definitions in the tables are PAOFLOW's own; only the links point to the shared vocabularies.
+
+Credits and licences of the linked vocabularies:
+
+- Quantity kinds: [QUDT](https://qudt.org/), by QUDT.org, licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- Structure properties: the [OPTIMADE](https://www.optimade.org/) specification, by the Materials
+  Consortia, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- Subject headings: the physics subject headings published by the American Physical Society,
+  whose concepts and identifiers are released under
+  [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). PAOFLOW is not affiliated with
+  or endorsed by the American Physical Society.
 
 <!-- vocabulary: python -m PAOFLOW.results.vocabulary -->
 | Term | Category | Definition | Shared terms |
@@ -125,15 +138,15 @@ quantities, PhySH for subjects).
 | `dft_input` | Inputs | An input file of the DFT code: a Quantum ESPRESSO namelist input (pw.x, projwfc.x, ph.x, ...) or a VASP INCAR, KPOINTS or POSCAR. |  |
 | `readme` | Inputs | The description of the calculation for people, in Markdown. |  |
 | `case` | Inputs | The description of the calculation for PAOFLOW: title, summary, authors, licence and the steps that reproduce it. |  |
-| `berry_bands` | Topology and Hall | Berry curvature (or its spin or orbital counterpart) of one tensor component along the band path, one column per k-point index. | [PhySH](https://doi.org/10.29172/8abddf0b-ea8e-4c03-af96-883903427079) |
+| `berry_bands` | Topology and Hall | Berry curvature (or its spin or orbital counterpart) of one tensor component along the band path, one column per k-point index. | [subject](https://doi.org/10.29172/8abddf0b-ea8e-4c03-af96-883903427079) |
 | `bands` | Electronic structure | Band energies along a k-path: the k-point index, then one column per band, one file per spin channel. Energies are relative to the Fermi level. |  |
 | `site_projected_bands` | Electronic structure | Band energies along a k-path with the weight of each band on the atomic sites. Energies are relative to the Fermi level. |  |
 | `velocity` | Electronic structure | Band velocity along one Cartesian direction on the k-path, one column per band. |  |
-| `pdos` | Electronic structure | Density of states projected on one atomic orbital, per spin channel. Energies are relative to the Fermi level. | [EnergyDensityOfStates](https://qudt.org/vocab/quantitykind/EnergyDensityOfStates), [PhySH](https://doi.org/10.29172/aaff2519-9891-4d4e-a067-1ea36b6b08d4) |
-| `dos` | Electronic structure | Density of states of the PAO Hamiltonian, or the sum of its projections, per spin channel. Energies are relative to the Fermi level. | [EnergyDensityOfStates](https://qudt.org/vocab/quantitykind/EnergyDensityOfStates), [PhySH](https://doi.org/10.29172/aaff2519-9891-4d4e-a067-1ea36b6b08d4) |
+| `pdos` | Electronic structure | Density of states projected on one atomic orbital, per spin channel. Energies are relative to the Fermi level. | [EnergyDensityOfStates](https://qudt.org/vocab/quantitykind/EnergyDensityOfStates), [subject](https://doi.org/10.29172/aaff2519-9891-4d4e-a067-1ea36b6b08d4) |
+| `dos` | Electronic structure | Density of states of the PAO Hamiltonian, or the sum of its projections, per spin channel. Energies are relative to the Fermi level. | [EnergyDensityOfStates](https://qudt.org/vocab/quantitykind/EnergyDensityOfStates), [subject](https://doi.org/10.29172/aaff2519-9891-4d4e-a067-1ea36b6b08d4) |
 | `spin_texture` | Electronic structure | Expectation value of the spin (or orbital) operator on each band along a k-path. |  |
-| `fermi_surface` | Electronic structure | Band energies on the full k-grid in XCrySDen BXSF format, all bands that cross the chosen window in one file. | [PhySH](https://doi.org/10.29172/78d12677-c7dc-427e-acd7-cbff78a1713f) |
-| `fermi_sheet` | Quantum oscillations | Energies of a single band on the k-grid in BXSF format, the input of pyskeaf. | [PhySH](https://doi.org/10.29172/78d12677-c7dc-427e-acd7-cbff78a1713f) |
+| `fermi_surface` | Electronic structure | Band energies on the full k-grid in XCrySDen BXSF format, all bands that cross the chosen window in one file. | [subject](https://doi.org/10.29172/78d12677-c7dc-427e-acd7-cbff78a1713f) |
+| `fermi_sheet` | Quantum oscillations | Energies of a single band on the k-grid in BXSF format, the input of pyskeaf. | [subject](https://doi.org/10.29172/78d12677-c7dc-427e-acd7-cbff78a1713f) |
 | `effective_mass` | Electronic structure | Effective-mass tensors of the band extrema, in units of the electron mass. | [EffectiveMass](https://qudt.org/vocab/quantitykind/EffectiveMass) |
 | `projectability` | Electronic structure | Projectability of each Kohn-Sham state on the atomic-orbital basis against its energy. |  |
 | `boltzmann` | Boltzmann transport | A Boltzmann transport tensor in the constant relaxation-time form (conductivity, Seebeck coefficient, electronic thermal conductivity or power factor) against the chemical potential, for each temperature. | [ElectricConductivity](https://qudt.org/vocab/quantitykind/ElectricConductivity), [SeebeckCoefficient](https://qudt.org/vocab/quantitykind/SeebeckCoefficient), [ThermalConductivity](https://qudt.org/vocab/quantitykind/ThermalConductivity) |
@@ -142,9 +155,9 @@ quantities, PhySH for subjects).
 | `doping` | Boltzmann transport | Chemical potential against temperature at a fixed n- or p-type carrier concentration. |  |
 | `doped_transport` | Boltzmann transport | Resistivity, conductivity, Seebeck coefficient and chemical potential of a doped semiconductor against temperature. | [ElectricConductivity](https://qudt.org/vocab/quantitykind/ElectricConductivity), [SeebeckCoefficient](https://qudt.org/vocab/quantitykind/SeebeckCoefficient) |
 | `conductivity_component` | Boltzmann transport | One Cartesian component of the conductivity against energy, per spin channel. | [ElectricConductivity](https://qudt.org/vocab/quantitykind/ElectricConductivity) |
-| `hall_dc` | Topology and Hall | Static anomalous, spin or orbital Hall conductivity of one tensor component against the position of the Fermi level. | [PhySH](https://doi.org/10.29172/8adc9a72-2460-4d3d-ad53-a44092c6a198), [PhySH](https://doi.org/10.29172/bb4a3b78-a738-4e19-abd6-1feea6226ea1) |
+| `hall_dc` | Topology and Hall | Static anomalous, spin or orbital Hall conductivity of one tensor component against the position of the Fermi level. | [subject](https://doi.org/10.29172/8adc9a72-2460-4d3d-ad53-a44092c6a198), [subject](https://doi.org/10.29172/bb4a3b78-a738-4e19-abd6-1feea6226ea1) |
 | `hall_ac` | Topology and Hall | Frequency-dependent Hall response (magnetic, spin or orbital circular dichroism), real or imaginary part, against photon energy. |  |
-| `berry_curvature` | Topology and Hall | Berry curvature (or its spin or orbital counterpart) of one tensor component summed over the occupied bands along the k-path. | [PhySH](https://doi.org/10.29172/8abddf0b-ea8e-4c03-af96-883903427079) |
+| `berry_curvature` | Topology and Hall | Berry curvature (or its spin or orbital counterpart) of one tensor component summed over the occupied bands along the k-path. | [subject](https://doi.org/10.29172/8abddf0b-ea8e-4c03-af96-883903427079) |
 | `kubo_optical` | Topology and Hall | Kubo-Greenwood optical response of one observable and tensor component against photon energy. |  |
 | `kubo_response` | Topology and Hall | Kubo-Bastin static response of one observable and tensor component against the position of the Fermi level. |  |
 | `linear_response` | Topology and Hall | Linear-response coefficient (conductivity, anomalous or spin Hall, Rashba-Edelstein), time-reversal even or odd part, against energy. |  |
@@ -155,13 +168,13 @@ quantities, PhySH for subjects).
 | `spin_susceptibility` | Electronic structure | Static spin susceptibility of the self-consistent spin model. |  |
 | `z2` | Topology and Hall | The Z2 topological invariants of the occupied bands. |  |
 | `berry_phase` | Topology and Hall | Berry phase of the occupied bands along strings of k-points. |  |
-| `berry_bxsf` | Topology and Hall | Berry curvature (or its spin or orbital counterpart) on the full k-grid in BXSF format. | [PhySH](https://doi.org/10.29172/8abddf0b-ea8e-4c03-af96-883903427079) |
+| `berry_bxsf` | Topology and Hall | Berry curvature (or its spin or orbital counterpart) on the full k-grid in BXSF format. | [subject](https://doi.org/10.29172/8abddf0b-ea8e-4c03-af96-883903427079) |
 | `emissivity_spectral` | Optics | Hemispherical spectral emissivity of one tensor component against photon energy. |  |
 | `emissivity_directional` | Optics | Reflectivity or emissivity at one angle of incidence against photon energy. | [Reflectivity](https://qudt.org/vocab/quantitykind/Reflectivity) |
 | `emissivity_total` | Optics | Total hemispherical emissivity (Planck average) against temperature. |  |
-| `optics` | Optics | A linear optical function of one tensor component against photon energy: real or imaginary dielectric function, optical conductivity, energy-loss function, refractive index, extinction coefficient, absorption coefficient or reflectivity. | [PermittivityRatio](https://qudt.org/vocab/quantitykind/PermittivityRatio), [RefractiveIndex](https://qudt.org/vocab/quantitykind/RefractiveIndex), [LinearAbsorptionCoefficient](https://qudt.org/vocab/quantitykind/LinearAbsorptionCoefficient), [Reflectivity](https://qudt.org/vocab/quantitykind/Reflectivity), [PhySH](https://doi.org/10.29172/05ff9faf-4943-45b0-b627-49eb8a9404c6) |
+| `optics` | Optics | A linear optical function of one tensor component against photon energy: real or imaginary dielectric function, optical conductivity, energy-loss function, refractive index, extinction coefficient, absorption coefficient or reflectivity. | [PermittivityRatio](https://qudt.org/vocab/quantitykind/PermittivityRatio), [RefractiveIndex](https://qudt.org/vocab/quantitykind/RefractiveIndex), [LinearAbsorptionCoefficient](https://qudt.org/vocab/quantitykind/LinearAbsorptionCoefficient), [Reflectivity](https://qudt.org/vocab/quantitykind/Reflectivity), [subject](https://doi.org/10.29172/05ff9faf-4943-45b0-b627-49eb8a9404c6) |
 | `jdos` | Optics | Joint density of states against photon energy. |  |
-| `nlo` | Non-linear optics | A second-order optical response of one tensor component against photon energy: shift current, injection current, second-harmonic susceptibility or photocurrent. | [PhySH](https://doi.org/10.29172/9fffec69-8e96-42d0-b6bf-42d1234858eb) |
+| `nlo` | Non-linear optics | A second-order optical response of one tensor component against photon energy: shift current, injection current, second-harmonic susceptibility or photocurrent. | [subject](https://doi.org/10.29172/9fffec69-8e96-42d0-b6bf-42d1234858eb) |
 | `shg_terms` | Non-linear optics | One term of the second-harmonic susceptibility of one tensor component against photon energy. |  |
 | `photocurrent_channels` | Non-linear optics | One Fermi-sea or Fermi-surface channel of the photocurrent conductivity of one tensor component against photon energy. |  |
 | `coupled_dielectric` | Non-linear optics | Dielectric function at one level of the response kernel (independent particles, local fields, exchange-correlation kernels) against photon energy. | [PermittivityRatio](https://qudt.org/vocab/quantitykind/PermittivityRatio) |
@@ -175,35 +188,35 @@ quantities, PhySH for subjects).
 | `raman_spectrum` | Phonons | Raman spectrum of the zone-centre phonons. |  |
 | `phonon_modes` | Phonons | Zone-centre phonon modes with their infrared or Raman activity. |  |
 | `qha` | Phonons | A quasi-harmonic quantity (energy-volume curve, volume, thermal expansion, bulk modulus, Gibbs energy, heat capacity) against temperature or volume. |  |
-| `alpha2f` | Electron–phonon | Eliashberg spectral function (or its transport counterpart) against phonon energy. | [PhySH](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0), [PhySH](https://doi.org/10.29172/c6f039f8-0580-4488-a6e0-b8bf5455a86d) |
-| `gap_vs_t` | Electron–phonon | Superconducting gap and mass renormalisation from the Migdal-Eliashberg equations against temperature. | [SuperconductorEnergyGap](https://qudt.org/vocab/quantitykind/SuperconductorEnergyGap), [PhySH](https://doi.org/10.29172/c6f039f8-0580-4488-a6e0-b8bf5455a86d) |
-| `max_eigenvalue` | Electron–phonon | Largest eigenvalue of the linearised Migdal-Eliashberg kernel against temperature; it reaches one at the critical temperature. | [SuperconductionTransitionTemperature](https://qudt.org/vocab/quantitykind/SuperconductionTransitionTemperature), [PhySH](https://doi.org/10.29172/c6f039f8-0580-4488-a6e0-b8bf5455a86d) |
-| `mobility` | Electron–phonon | Phonon-limited carrier mobilities, carrier densities, conductivity and Seebeck coefficient against temperature. | [Mobility](https://qudt.org/vocab/quantitykind/Mobility), [ElectronDensity](https://qudt.org/vocab/quantitykind/ElectronDensity), [HoleDensity](https://qudt.org/vocab/quantitykind/HoleDensity), [PhySH](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
-| `resistivity` | Electron–phonon | Phonon-limited resistivity of a metal against temperature, total and per scattering channel. | [PhySH](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
-| `phonon_assisted_absorption` | Electron–phonon | Phonon-assisted optical absorption coefficient against photon energy at one temperature. | [LinearAbsorptionCoefficient](https://qudt.org/vocab/quantitykind/LinearAbsorptionCoefficient), [PhySH](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
+| `alpha2f` | Electron–phonon | Eliashberg spectral function (or its transport counterpart) against phonon energy. | [subject](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0), [subject](https://doi.org/10.29172/c6f039f8-0580-4488-a6e0-b8bf5455a86d) |
+| `gap_vs_t` | Electron–phonon | Superconducting gap and mass renormalisation from the Migdal-Eliashberg equations against temperature. | [SuperconductorEnergyGap](https://qudt.org/vocab/quantitykind/SuperconductorEnergyGap), [subject](https://doi.org/10.29172/c6f039f8-0580-4488-a6e0-b8bf5455a86d) |
+| `max_eigenvalue` | Electron–phonon | Largest eigenvalue of the linearised Migdal-Eliashberg kernel against temperature; it reaches one at the critical temperature. | [SuperconductionTransitionTemperature](https://qudt.org/vocab/quantitykind/SuperconductionTransitionTemperature), [subject](https://doi.org/10.29172/c6f039f8-0580-4488-a6e0-b8bf5455a86d) |
+| `mobility` | Electron–phonon | Phonon-limited carrier mobilities, carrier densities, conductivity and Seebeck coefficient against temperature. | [Mobility](https://qudt.org/vocab/quantitykind/Mobility), [ElectronDensity](https://qudt.org/vocab/quantitykind/ElectronDensity), [HoleDensity](https://qudt.org/vocab/quantitykind/HoleDensity), [subject](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
+| `resistivity` | Electron–phonon | Phonon-limited resistivity of a metal against temperature, total and per scattering channel. | [subject](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
+| `phonon_assisted_absorption` | Electron–phonon | Phonon-assisted optical absorption coefficient against photon energy at one temperature. | [LinearAbsorptionCoefficient](https://qudt.org/vocab/quantitykind/LinearAbsorptionCoefficient), [subject](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
 | `indirect_eps2` | Electron–phonon | Imaginary dielectric function from indirect (phonon-assisted) or direct transitions against photon energy at one temperature. | [PermittivityRatio](https://qudt.org/vocab/quantitykind/PermittivityRatio) |
 | `thermal_emissivity` | Electron–phonon | Spectral emissivity or dielectric function against photon energy at one temperature. |  |
 | `thermal_emissivity_total` | Electron–phonon | Total hemispherical emissivity of a slab and of an opaque half-space against temperature. |  |
-| `scattering_rates` | Electron–phonon | Electron-phonon scattering rates of the states against their energy at one temperature. | [PhySH](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
-| `eliashberg_self_energy` | Electron–phonon | Real and imaginary parts of the electron self-energy from the Eliashberg function against energy at one temperature. | [PhySH](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
-| `coupling_path` | Electron–phonon | Magnitude of the electron-phonon matrix element along a path of phonon wavevectors. | [PhySH](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
+| `scattering_rates` | Electron–phonon | Electron-phonon scattering rates of the states against their energy at one temperature. | [subject](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
+| `eliashberg_self_energy` | Electron–phonon | Real and imaginary parts of the electron self-energy from the Eliashberg function against energy at one temperature. | [subject](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
+| `coupling_path` | Electron–phonon | Magnitude of the electron-phonon matrix element along a path of phonon wavevectors. | [subject](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
 | `thermal_summary` | Electron–phonon | Summary table of the temperature renormalisation of the bands or of the coupling. |  |
-| `eliashberg_iso` | Electron–phonon | Isotropic Migdal-Eliashberg solution at one temperature in the file formats of EPW (imaginary axis, Pade, analytic continuation, quasiparticle density of states). | [PhySH](https://doi.org/10.29172/c6f039f8-0580-4488-a6e0-b8bf5455a86d) |
-| `arpes_map` | Electron–phonon | Simulated angle-resolved photoemission intensity on a momentum-energy map. | [PhySH](https://doi.org/10.29172/a4074854-ac2f-4771-9451-0ce9bbad43ce) |
+| `eliashberg_iso` | Electron–phonon | Isotropic Migdal-Eliashberg solution at one temperature in the file formats of EPW (imaginary axis, Pade, analytic continuation, quasiparticle density of states). | [subject](https://doi.org/10.29172/c6f039f8-0580-4488-a6e0-b8bf5455a86d) |
+| `arpes_map` | Electron–phonon | Simulated angle-resolved photoemission intensity on a momentum-energy map. | [subject](https://doi.org/10.29172/a4074854-ac2f-4771-9451-0ce9bbad43ce) |
 | `thermal_spectral` | Electron–phonon | Electron spectral function on a momentum-energy map at a finite temperature. |  |
-| `elphon_npz` | Electron–phonon | Arrays of an electron-phonon workflow in NumPy format. | [PhySH](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
-| `conductance` | Green's-function transport | Landauer transmission of the conductor against energy, in units of the conductance quantum. | [ElectricalConductance](https://qudt.org/vocab/quantitykind/ElectricalConductance), [PhySH](https://doi.org/10.29172/9c19d585-8eec-411b-af4c-0412fb91e670) |
-| `doscond` | Green's-function transport | Density of states of the conductor region against energy. | [EnergyDensityOfStates](https://qudt.org/vocab/quantitykind/EnergyDensityOfStates), [PhySH](https://doi.org/10.29172/aaff2519-9891-4d4e-a067-1ea36b6b08d4) |
-| `current` | Green's-function transport | Current against bias voltage from the zero-bias transmission. | [ElectricCurrent](https://qudt.org/vocab/quantitykind/ElectricCurrent), [Voltage](https://qudt.org/vocab/quantitykind/Voltage), [PhySH](https://doi.org/10.29172/9c19d585-8eec-411b-af4c-0412fb91e670) |
-| `finite_bias_current` | Green's-function transport | Current against bias voltage with the potential profile under bias (self-consistent or linear). | [ElectricCurrent](https://qudt.org/vocab/quantitykind/ElectricCurrent), [Voltage](https://qudt.org/vocab/quantitykind/Voltage), [PhySH](https://doi.org/10.29172/9c19d585-8eec-411b-af4c-0412fb91e670) |
+| `elphon_npz` | Electron–phonon | Arrays of an electron-phonon workflow in NumPy format. | [subject](https://doi.org/10.29172/2cb8570a-bc2f-41ab-a3f1-1467b288c3f0) |
+| `conductance` | Green's-function transport | Landauer transmission of the conductor against energy, in units of the conductance quantum. | [ElectricalConductance](https://qudt.org/vocab/quantitykind/ElectricalConductance), [subject](https://doi.org/10.29172/9c19d585-8eec-411b-af4c-0412fb91e670) |
+| `doscond` | Green's-function transport | Density of states of the conductor region against energy. | [EnergyDensityOfStates](https://qudt.org/vocab/quantitykind/EnergyDensityOfStates), [subject](https://doi.org/10.29172/aaff2519-9891-4d4e-a067-1ea36b6b08d4) |
+| `current` | Green's-function transport | Current against bias voltage from the zero-bias transmission. | [ElectricCurrent](https://qudt.org/vocab/quantitykind/ElectricCurrent), [Voltage](https://qudt.org/vocab/quantitykind/Voltage), [subject](https://doi.org/10.29172/9c19d585-8eec-411b-af4c-0412fb91e670) |
+| `finite_bias_current` | Green's-function transport | Current against bias voltage with the potential profile under bias (self-consistent or linear). | [ElectricCurrent](https://qudt.org/vocab/quantitykind/ElectricCurrent), [Voltage](https://qudt.org/vocab/quantitykind/Voltage), [subject](https://doi.org/10.29172/9c19d585-8eec-411b-af4c-0412fb91e670) |
 | `finite_bias_planar_average` | Green's-function transport | Planar average of the potential energy under bias along the transport axis. |  |
 | `finite_bias_potential` | Green's-function transport | Potential energy under bias along the transport axis. |  |
 | `finite_bias_charge` | Green's-function transport | Charge induced by the bias along the transport axis. |  |
-| `finite_bias_transmission` | Green's-function transport | Transmission against energy for each bias voltage. | [PhySH](https://doi.org/10.29172/9c19d585-8eec-411b-af4c-0412fb91e670) |
-| `acbn0_u` | ACBN0 | Hubbard U and J of one orbital from ACBN0. | [PhySH](https://doi.org/10.29172/ffcb7c9c-2fd2-4caa-ac0e-9832b20fc351) |
-| `acbn0_v` | ACBN0 | Intersite Hubbard V of one pair of orbitals from extended ACBN0. | [PhySH](https://doi.org/10.29172/ffcb7c9c-2fd2-4caa-ac0e-9832b20fc351) |
+| `finite_bias_transmission` | Green's-function transport | Transmission against energy for each bias voltage. | [subject](https://doi.org/10.29172/9c19d585-8eec-411b-af4c-0412fb91e670) |
+| `acbn0_u` | ACBN0 | Hubbard U and J of one orbital from ACBN0. | [subject](https://doi.org/10.29172/ffcb7c9c-2fd2-4caa-ac0e-9832b20fc351) |
+| `acbn0_v` | ACBN0 | Intersite Hubbard V of one pair of orbitals from extended ACBN0. | [subject](https://doi.org/10.29172/ffcb7c9c-2fd2-4caa-ac0e-9832b20fc351) |
 | `sscha` | Anharmonic phonons (SSCHA) | State of a stochastic self-consistent harmonic approximation run at one temperature. |  |
-| `dhva` | Quantum oscillations | de Haas-van Alphen frequencies of the extremal Fermi-surface orbits against the field angle. | [PhySH](https://doi.org/10.29172/2f031f28-5911-407e-8bce-149e70acf79b) |
+| `dhva` | Quantum oscillations | de Haas-van Alphen frequencies of the extremal Fermi-surface orbits against the field angle. | [subject](https://doi.org/10.29172/2f031f28-5911-407e-8bce-149e70acf79b) |
 | `table` | Other files | A column file that no other term describes. |  |
 | `grid_arrays` | Electronic structure | Band energies or spin or orbital texture of one band on the k-grid in NumPy format. |  |
 | `npz` | Other files | NumPy arrays that no other term describes. |  |

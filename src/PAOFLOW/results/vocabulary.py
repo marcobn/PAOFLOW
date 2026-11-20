@@ -2,7 +2,7 @@
 
 A term is the ``name`` of a :class:`~PAOFLOW.results.model.Kind`.  It identifies a file layout
 (columns, units, energy reference, how spin and tensor components split across files); the links
-identify the physical concept in a shared vocabulary (QUDT quantity kinds, PhySH concepts).  A
+identify the physical concept in a shared vocabulary (QUDT quantity kinds, the physics subject headings of the APS).  A
 published term keeps its meaning: a changed definition gets a new term.  The run record
 (``paoflow_outputs.json``) names the term of every file under ``kind``.
 
@@ -30,8 +30,8 @@ def qudt(name: str) -> str:
     return 'https://qudt.org/vocab/quantitykind/' + name
 
 
-def physh(uuid: str) -> str:
-    """Address of a PhySH concept.
+def subject(uuid: str) -> str:
+    """Address of a concept of the physics subject headings of the APS.
 
     Parameters
     ----------
@@ -45,19 +45,19 @@ def physh(uuid: str) -> str:
     return 'https://doi.org/10.29172/' + uuid
 
 
-DOS = (qudt('EnergyDensityOfStates'), physh('aaff2519-9891-4d4e-a067-1ea36b6b08d4'))
-FERMI_SURFACE = (physh('78d12677-c7dc-427e-acd7-cbff78a1713f'),)
-BERRY = (physh('8abddf0b-ea8e-4c03-af96-883903427079'),)
-ANOMALOUS_HALL = physh('8adc9a72-2460-4d3d-ad53-a44092c6a198')
-SPIN_HALL = physh('bb4a3b78-a738-4e19-abd6-1feea6226ea1')
-OPTICAL = physh('05ff9faf-4943-45b0-b627-49eb8a9404c6')
-SHIFT_CURRENT = physh('9fffec69-8e96-42d0-b6bf-42d1234858eb')
-ELPHON = (physh('2cb8570a-bc2f-41ab-a3f1-1467b288c3f0'),)
-ELIASHBERG = (physh('c6f039f8-0580-4488-a6e0-b8bf5455a86d'),)
-LANDAUER = physh('9c19d585-8eec-411b-af4c-0412fb91e670')
-DHVA = (physh('2f031f28-5911-407e-8bce-149e70acf79b'),)
-ARPES = (physh('a4074854-ac2f-4771-9451-0ce9bbad43ce'),)
-DFT_U = (physh('ffcb7c9c-2fd2-4caa-ac0e-9832b20fc351'),)
+DOS = (qudt('EnergyDensityOfStates'), subject('aaff2519-9891-4d4e-a067-1ea36b6b08d4'))
+FERMI_SURFACE = (subject('78d12677-c7dc-427e-acd7-cbff78a1713f'),)
+BERRY = (subject('8abddf0b-ea8e-4c03-af96-883903427079'),)
+ANOMALOUS_HALL = subject('8adc9a72-2460-4d3d-ad53-a44092c6a198')
+SPIN_HALL = subject('bb4a3b78-a738-4e19-abd6-1feea6226ea1')
+OPTICAL = subject('05ff9faf-4943-45b0-b627-49eb8a9404c6')
+SHIFT_CURRENT = subject('9fffec69-8e96-42d0-b6bf-42d1234858eb')
+ELPHON = (subject('2cb8570a-bc2f-41ab-a3f1-1467b288c3f0'),)
+ELIASHBERG = (subject('c6f039f8-0580-4488-a6e0-b8bf5455a86d'),)
+LANDAUER = subject('9c19d585-8eec-411b-af4c-0412fb91e670')
+DHVA = (subject('2f031f28-5911-407e-8bce-149e70acf79b'),)
+ARPES = (subject('a4074854-ac2f-4771-9451-0ce9bbad43ce'),)
+DFT_U = (subject('ffcb7c9c-2fd2-4caa-ac0e-9832b20fc351'),)
 
 #: term -> (definition, addresses of the shared terms it corresponds to).
 TERMS: dict[str, tuple[str, tuple[str, ...]]] = {
@@ -451,7 +451,7 @@ def vocabulary_markdown() -> str:
     for kind in KINDS:
         definition, links = TERMS[kind.name]
         shared = ', '.join(
-            '[%s](%s)' % ('PhySH' if 'doi.org' in link else link.rsplit('/', 1)[1], link)
+            '[%s](%s)' % ('subject' if 'doi.org' in link else link.rsplit('/', 1)[1], link)
             for link in links
         )
         rows.append('| `%s` | %s | %s | %s |' % (kind.name, kind.category, definition, shared))
