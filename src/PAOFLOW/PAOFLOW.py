@@ -1,8 +1,10 @@
 import numpy as np
 
 from .sparse.dispatch import sparse_aware, sparse_base_cell, sparse_override, sparse_shared
+from .writers.output_manifest import recorded
 
 
+@recorded
 @sparse_aware
 class PAOFLOW:
     """Post-processing engine for Pseudo-Atomic Orbital (PAO) electronic structure calculations.
@@ -576,15 +578,8 @@ class PAOFLOW:
         if self.rank == 0:
             tt = time() - self.start_time
             print('Total CPU time =%s%8.3f sec' % (25 * ' ', tt))
-            # Output manifest (paoflow_outputs.json): the files of this run with their kinds and
-            # the facts the file names do not carry (DFT Fermi energy, spin, basis size).  It is
-            # informational, so a failure never stops the run.
-            try:
-                from .writers.output_manifest import write_output_manifest
-
-                write_output_manifest(self.data_controller.data_attributes, self.start_time)
-            except Exception as exc:  # noqa: BLE001
-                print('(output manifest not written: %s)' % exc)
+            # The run record (paoflow_outputs.json) is marked finished by the @recorded wrapper
+            # of this method (writers/output_manifest.py).
 
         verbose = self.data_controller.data_attributes['verbose']
 

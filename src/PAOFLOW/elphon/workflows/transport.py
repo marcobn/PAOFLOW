@@ -20,6 +20,7 @@ from ..phonon_assisted_absorption import (
     varshni_shift,
     write_emissivity_outputs,
 )
+from ...writers.output_manifest import record_function_call
 from .system import Electrons, ElphonSystem, is_root
 
 
@@ -200,6 +201,14 @@ def write_mobility(out: dict, outdir: str, *, label: str = '', comm=None) -> lis
     paths = write_mobility_outputs(out, outdir)
     for path in paths:
         print('  wrote %s' % path)
+    record_function_call(
+        outdir,
+        'elphon.write_mobility',
+        {
+            'label': label,
+            **{key: out.get(key) for key in ('coupling_save', 'electrons_save', 'electrons_dft')},
+        },
+    )
     return paths
 
 
@@ -322,6 +331,11 @@ def metal_resistivity(
         print('  %7.1f  %20.5f  %16.4f' % (temp, total, cover))
     for path in write_emissivity_outputs(emissivity, outdir):
         print('  wrote %s' % path)
+    record_function_call(
+        outdir,
+        'elphon.metal_resistivity',
+        {'eliashberg_npz': eliashberg_npz, 'temps_k': list(temps_k), 'rho0_uohm_cm': rho0_uohm_cm},
+    )
     return {
         'channels': channels,
         'rows': np.array(rows),

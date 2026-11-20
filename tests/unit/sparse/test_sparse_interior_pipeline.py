@@ -32,6 +32,7 @@ def _driver(outdir, nev=None, interior_window=None):
         config['interior_window'] = interior_window
 
     p = PAOFLOW(
+        workpath=EXAMPLE,  # each test starts in its own folder (tests/unit/conftest.py)
         savedir='silicon.save',
         outputdir=outdir,
         smearing='gauss',

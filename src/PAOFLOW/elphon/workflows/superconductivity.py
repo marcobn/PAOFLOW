@@ -32,6 +32,7 @@ from ..migdal_eliashberg import (
     migdal_eliashberg_iso,
     write_me_outputs,
 )
+from ...writers.output_manifest import record_function_call
 from .system import Electrons, ElphonSystem, is_root
 
 KB_EV = 8.617333262e-5
@@ -249,6 +250,7 @@ def write_eliashberg(
         print('  Fermi-surface coupling: %d states -> %s' % (fs_coupling['band'].size, paths[-1]))
     for path in paths:
         print('  wrote %s' % path)
+    record_function_call(outdir, 'elphon.write_eliashberg', {'label': label, 'mu_star': mu_star})
     return paths
 
 
@@ -339,6 +341,9 @@ def migdal_eliashberg(
     if not result['converged'].all():
         print('WARNING: not converged at T =', result['temps'][~result['converged']])
     print('Wrote %s' % outdir)
+    record_function_call(
+        outdir, 'elphon.migdal_eliashberg', {'source': source, 'prefix': prefix, 'mu_star': mu_star}
+    )
     return {'result': result, 'linear': linear, 'lambda': lam}
 
 
@@ -424,4 +429,7 @@ def migdal_eliashberg_aniso(
     if not result['converged'].all():
         print('WARNING: not converged at T =', result['temps'][~result['converged']])
     print('Wrote %s' % outdir)
+    record_function_call(
+        outdir, 'elphon.migdal_eliashberg_aniso', {'prefix': prefix, 'mu_star': mu_star}
+    )
     return {'result': result, 'linear': linear, 'coupling': coupling, 'strength': strength}

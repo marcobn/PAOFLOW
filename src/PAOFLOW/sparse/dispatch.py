@@ -191,4 +191,5 @@ def call_dense(host, name, *args, **kwargs):
     For engine methods that extend the dense stage rather than replace it
     (the base-cell ``pao_hamiltonian``, the Boltzmann stack in ``transport``).
     """
-    return getattr(type(host), name).__wrapped__(host, *args, **kwargs)
+    # unwrap fully: the run recorder wraps the routed method once more
+    return inspect.unwrap(getattr(type(host), name))(host, *args, **kwargs)

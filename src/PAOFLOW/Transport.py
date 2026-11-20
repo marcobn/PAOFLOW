@@ -6,6 +6,8 @@ import numpy as np
 from mpi4py import MPI
 from numpy.typing import NDArray
 
+from PAOFLOW.writers.output_manifest import recorded
+
 if TYPE_CHECKING:
     from PAOFLOW.DataController import DataController
     from PAOFLOW.transport.data import ConductorData, SmearingType
@@ -13,6 +15,7 @@ if TYPE_CHECKING:
     from PAOFLOW.transport.results import TransportResults
 
 
+@recorded
 class Transport:
     """User-facing transport orchestrator with direct-argument APIs.
 

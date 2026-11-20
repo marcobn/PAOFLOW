@@ -74,6 +74,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.write:
         _eprint(f'pyskeaf: outputs written to {out_dir.resolve()}')
+        from dataclasses import asdict
+
+        from ..writers.output_manifest import record_function_call
+
+        record_function_call(str(out_dir), 'pyskeaf', {'bxsf': str(bxsf_path), **asdict(cfg)})
     return 0
 
 

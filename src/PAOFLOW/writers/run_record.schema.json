@@ -1,0 +1,149 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "PAOFLOW run record (paoflow_outputs.json), version 2",
+ "description": "What the runs of one output folder did and wrote. Later versions only add keys.",
+ "type": "object",
+ "required": ["manifest", "runs"],
+ "properties": {
+  "manifest": {"description": "Version of the record.", "const": 2},
+  "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}}
+ },
+ "$defs": {
+  "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+  "utc": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+  "relative_path": {
+   "description": "A path with '/' separators, never absolute.",
+   "type": "string",
+   "pattern": "^[^/]"
+  },
+  "file": {
+   "description": "One file: either hashed, or (above the size limit) stamped with its modification time until paoflow-pack hashes it.",
+   "type": "object",
+   "required": ["file", "bytes"],
+   "properties": {
+    "file": {"$ref": "#/$defs/relative_path"},
+    "bytes": {"type": "integer", "minimum": 0},
+    "sha256": {"$ref": "#/$defs/sha256"},
+    "modified_utc": {"$ref": "#/$defs/utc"}
+   }
+  },
+  "output_file": {
+   "description": "An output file, relative to the output folder. 'kind' is the PAOFLOW term of the results catalogue.",
+   "allOf": [{"$ref": "#/$defs/file"}],
+   "properties": {
+    "kind": {"type": "string"},
+    "category": {"type": "string"},
+    "labels": {"type": "object", "additionalProperties": {"type": "string"}},
+    "axes": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": ["quantity", "unit"],
+      "properties": {"quantity": {"type": "string"}, "unit": {"type": "string"}}
+     }
+    }
+   }
+  },
+  "call": {
+   "type": "object",
+   "required": ["method", "arguments", "status"],
+   "properties": {
+    "method": {"description": "'PAOFLOW' for the constructor, 'PAOFLOW.bands' for a method.", "type": "string"},
+    "arguments": {
+     "description": "Resolved arguments. An array is {array: shape, dtype, sha256}, a callable {callable: name}, another object {object: class, repr}, a path outside the folder {path_outside_folder: name}.",
+     "type": "object"
+    },
+    "seconds": {"type": "number", "minimum": 0},
+    "peak_memory_rank0_mb": {"type": "number", "minimum": 0},
+    "status": {"enum": ["ok", "failed"]}
+   }
+  },
+  "inputs": {
+   "description": "The DFT calculation the run started from. Absent for model Hamiltonians.",
+   "type": "object",
+   "required": ["engine", "cell_bohr"],
+   "properties": {
+    "engine": {"type": "string"},
+    "version": {"type": "string"},
+    "functional": {"type": "string"},
+    "cell_bohr": {
+     "type": "array", "minItems": 3, "maxItems": 3,
+     "items": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}}
+    },
+    "species": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": ["element", "pseudopotential"],
+      "properties": {"element": {"type": "string"}, "pseudopotential": {"type": "string"}}
+     }
+    },
+    "atoms": {"type": "array", "items": {"type": "string"}},
+    "positions_bohr": {
+     "type": "array",
+     "items": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}}
+    },
+    "files": {
+     "description": "XML files and pseudopotentials of the save folder, relative to the working folder.",
+     "type": "array", "items": {"$ref": "#/$defs/file"}
+    }
+   }
+  },
+  "run": {
+   "type": "object",
+   "required": ["paoflow", "run_id", "status", "started_utc", "environment", "infrastructure", "files"],
+   "properties": {
+    "paoflow": {"description": "PAOFLOW version.", "type": "string"},
+    "paoflow_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "paoflow_tree_modified": {"type": "boolean"},
+    "run_id": {"type": "string", "format": "uuid"},
+    "status": {
+     "description": "'unfinished' until finish_execution() returns: a killed or crashed script, or one that never calls it.",
+     "enum": ["unfinished", "finished"]
+    },
+    "started": {"description": "Local time.", "type": "string"},
+    "finished": {"description": "Local time.", "type": "string"},
+    "started_utc": {"$ref": "#/$defs/utc"},
+    "finished_utc": {"$ref": "#/$defs/utc"},
+    "energy_reference": {"type": "string"},
+    "fermi_energy_dft_ev": {"type": "number"},
+    "inputs": {"$ref": "#/$defs/inputs"},
+    "script": {"$ref": "#/$defs/file"},
+    "calls": {"type": "array", "items": {"$ref": "#/$defs/call"}},
+    "replayable": {
+     "description": "False when an argument is only described (array, callable, object, outside path).",
+     "type": "boolean"
+    },
+    "environment": {
+     "type": "object",
+     "required": ["python", "numpy", "scipy", "mpi4py", "rust_kernels"],
+     "properties": {
+      "python": {"type": "string"},
+      "numpy": {"type": ["string", "null"]},
+      "scipy": {"type": ["string", "null"]},
+      "mpi4py": {"type": ["string", "null"]},
+      "rust_kernels": {"type": "boolean"}
+     }
+    },
+    "infrastructure": {
+     "description": "Nothing here names the machine, the user or the job.",
+     "type": "object",
+     "required": ["mpi_ranks", "threads_per_rank"],
+     "properties": {
+      "mpi_ranks": {"type": "integer", "minimum": 1},
+      "threads_per_rank": {"type": "integer", "minimum": 1},
+      "nodes": {"type": ["integer", "null"]},
+      "cores": {"type": ["integer", "null"]},
+      "cpu_model": {"type": ["string", "null"]},
+      "memory_total_gb": {"type": ["number", "null"]},
+      "blas": {"type": ["string", "null"]}
+     },
+     "additionalProperties": false
+    },
+    "files": {"type": "array", "items": {"$ref": "#/$defs/output_file"}}
+   },
+   "if": {"properties": {"status": {"const": "finished"}}},
+   "then": {"required": ["finished_utc"]}
+  }
+ }
+}

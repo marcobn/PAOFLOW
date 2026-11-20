@@ -8,19 +8,294 @@ output folder written since the run started, each with the output kind of the re
 Several PAOFLOW instances of one script (a standard and an optical run sharing ``output/``) append
 their entries.  The manifest is an output for readers (the GUI, reports); nothing reads it back
 as configuration.
+
+Version 2 of the record (``"manifest": 2``) only adds keys.  :func:`recorded` wraps the public
+methods of the orchestrators: rank 0 rewrites the record after each top-level call, so a killed
+script leaves a record with ``"status": "unfinished"``; ``finish_execution`` marks it finished and
+hashes the output files.  The added keys are the run identifier and UTC times, the DFT inputs
+(engine, version, functional, structure, pseudopotentials, file hashes), the ordered method calls
+with their arguments, the software environment and the infrastructure.  No hostname, user name,
+scheduler job or absolute path is written.  Design: ``docs/internals/fair-records.md``.
 """
 
 from __future__ import annotations
 
 import functools
+import glob
+import hashlib
+import inspect
 import json
 import os
+import platform
+import re
 import subprocess
+import sys
 import time
-from typing import Any
+import uuid
+from typing import Any, Callable
 
 MANIFEST = 'paoflow_outputs.json'
-MAX_RUNS = 20
+VERSION = 2
+# Larger files are recorded by size and modification time; paoflow-pack hashes them.
+# shortcut: 50 MB is a guess, set it from real sizes of .save XMLs and volume outputs.
+HASH_LIMIT = 50 * 1024**2
+_STATE = '_run_record'
+_PROCESS_START = time.time()
+# Runs of the plain-function paths (record_function_call), one per output folder of this process.
+_FUNCTION_RUNS: dict[str, dict] = {}
+
+
+def _utc(seconds: float | None = None) -> str:
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(seconds))
+
+
+def sha256_file(path: str) -> str:
+    """Hex sha256 of a file, read in 1 MB blocks.
+
+    Parameters
+    ----------
+    path : str
+        The file.
+
+    Returns
+    -------
+    str
+    """
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        for block in iter(lambda: handle.read(1 << 20), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def file_stamp(path: str, root: str) -> dict[str, Any]:
+    """Identity of one file: path relative to ``root``, size, and its hash or modification time.
+
+    Parameters
+    ----------
+    path : str
+        The file.
+    root : str
+        Folder the recorded path is relative to.
+
+    Returns
+    -------
+    dict
+        ``file``, ``bytes`` and ``sha256``; a file above :data:`HASH_LIMIT` carries
+        ``modified_utc`` in place of the hash.
+    """
+    size = os.path.getsize(path)
+    stamp: dict[str, Any] = {
+        'file': os.path.relpath(path, root).replace(os.sep, '/'),
+        'bytes': size,
+    }
+    if size <= HASH_LIMIT:
+        stamp['sha256'] = sha256_file(path)
+    else:
+        stamp['modified_utc'] = _utc(os.path.getmtime(path))
+    return stamp
+
+
+def encode_argument(value: Any) -> tuple[Any, bool]:
+    """A JSON form of one method argument.
+
+    Parameters
+    ----------
+    value : Any
+        The argument.
+
+    Returns
+    -------
+    tuple of (Any, bool)
+        The encoded value, and whether the value can be rebuilt from it.  Scalars, and lists and
+        dicts of them, are kept; an array becomes its shape, dtype and sha256, a callable its
+        qualified name, any other object its class name and ``repr``: these three cannot be
+        rebuilt.  An absolute path is made relative to the current folder, or cut to its last
+        name (not rebuildable) when it lies outside.
+    """
+    import numpy as np
+
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, str) and os.path.isabs(value):
+        # no absolute path in the record: inside the current folder it becomes relative,
+        # outside only the last name is kept
+        relative = os.path.relpath(value, os.getcwd())
+        if relative.startswith('..'):
+            return {'path_outside_folder': os.path.basename(value.rstrip(os.sep))}, False
+        return relative.replace(os.sep, '/'), True
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value, True
+    if isinstance(value, complex):
+        return {'complex': [value.real, value.imag]}, True
+    if isinstance(value, np.ndarray):
+        data = np.ascontiguousarray(value)
+        return {
+            'array': list(value.shape),
+            'dtype': str(value.dtype),
+            'sha256': hashlib.sha256(data.tobytes()).hexdigest(),
+        }, False
+    if isinstance(value, (list, tuple)):
+        items = [encode_argument(item) for item in value]
+        return [item for item, _ in items], all(ok for _, ok in items)
+    if isinstance(value, dict):
+        items = {str(key): encode_argument(item) for key, item in value.items()}
+        return {key: item for key, (item, _) in items.items()}, all(ok for _, ok in items.values())
+    if callable(value):
+        name = getattr(value, '__qualname__', type(value).__name__)
+        return {'callable': '%s.%s' % (getattr(value, '__module__', '?'), name)}, False
+    return {'object': type(value).__name__, 'repr': repr(value)[:500]}, False
+
+
+@functools.lru_cache(maxsize=1)
+def environment() -> dict[str, Any]:
+    """Versions of Python and of the numerical libraries, and whether the Rust kernels load.
+
+    Returns
+    -------
+    dict
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    def installed(package: str) -> str | None:
+        try:
+            return version(package)
+        except PackageNotFoundError:
+            return None
+
+    try:
+        from ..acbn0_native import available
+
+        rust = bool(available())
+    except Exception:  # noqa: BLE001
+        rust = False
+    return {
+        'python': platform.python_version(),
+        **{package: installed(package) for package in ('numpy', 'scipy', 'mpi4py')},
+        'rust_kernels': rust,
+    }
+
+
+@functools.lru_cache(maxsize=1)
+def infrastructure() -> dict[str, Any]:
+    """The machine as far as it affects the run, without anything that names it.
+
+    Returns
+    -------
+    dict
+        MPI ranks, threads per rank, nodes and cores (scheduler variables, when set), CPU model,
+        total memory and the BLAS library of numpy.  No hostname, user, partition or job ID.
+    """
+    import numpy as np
+    from mpi4py import MPI
+
+    from ..utils.parallel_resources import core_budget
+
+    env = os.environ
+
+    def integer(*names: str) -> int | None:
+        for name in names:
+            if env.get(name, '').isdigit():
+                return int(env[name])
+        return None
+
+    cpu = platform.processor() or None
+    try:
+        with open('/proc/cpuinfo', 'r', encoding='utf-8') as handle:
+            cpu = re.search(r'model name\s*:\s*(.+)', handle.read()).group(1).strip()
+    except (OSError, AttributeError):
+        pass
+    try:
+        memory = round(os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') / 1024**3, 1)
+    except (ValueError, OSError, AttributeError):
+        memory = None
+    try:
+        blas = np.show_config(mode='dicts')['Build Dependencies']['blas']
+        blas = ('%s %s' % (blas.get('name', ''), blas.get('version', ''))).strip() or None
+    except Exception:  # noqa: BLE001
+        blas = None
+    cores = integer('SLURM_NTASKS', 'PBS_NP')
+    if cores is not None and 'SLURM_NTASKS' in env:
+        cores *= integer('SLURM_CPUS_PER_TASK') or 1
+    return {
+        'mpi_ranks': MPI.COMM_WORLD.Get_size(),
+        'threads_per_rank': core_budget(),
+        'nodes': integer('SLURM_JOB_NUM_NODES', 'SLURM_NNODES', 'PBS_NUM_NODES'),
+        'cores': cores,
+        'cpu_model': cpu,
+        'memory_total_gb': memory,
+        'blas': blas,
+    }
+
+
+def dft_inputs(attributes: dict, arrays: dict) -> dict[str, Any] | None:
+    """The DFT calculation a run started from: engine, version, functional, structure, files.
+
+    Parameters
+    ----------
+    attributes : dict
+        ``DataController.data_attributes``.
+    arrays : dict
+        ``DataController.data_arrays``.
+
+    Returns
+    -------
+    dict or None
+        None before a reader has run and for model Hamiltonians (no ``a_vectors``).  ``files``
+        lists the XML files and pseudopotentials of the save folder with :func:`file_stamp`,
+        relative to the working folder.
+
+    Notes
+    -----
+    The version and the functional are read from the text of the XML, since the readers keep the
+    version as a ``major.minor`` float and do not read the functional.
+    """
+    import numpy as np
+
+    if 'a_vectors' not in arrays or 'dft' not in attributes:
+        return None
+    record: dict[str, Any] = {
+        'engine': {'QE': 'Quantum ESPRESSO'}.get(attributes['dft'], attributes['dft']),
+        'cell_bohr': (np.asarray(arrays['a_vectors']) * attributes.get('alat', 1.0)).tolist(),
+    }
+    if 'species' in arrays:
+        record['species'] = [
+            {'element': element, 'pseudopotential': pseudo} for element, pseudo in arrays['species']
+        ]
+    if 'atoms' in arrays and 'tau' in arrays:
+        record['atoms'] = [str(atom) for atom in arrays['atoms']]
+        record['positions_bohr'] = np.asarray(arrays['tau']).tolist()
+    folder = attributes.get('fpath')
+    if not folder or not os.path.isdir(folder):
+        return record
+    root = attributes.get('workpath') or '.'
+    names = sorted(
+        name
+        for pattern in ('*.xml', '*.UPF', '*.upf', 'POTCAR')
+        for name in glob.glob(os.path.join(folder, pattern))
+    )
+    record['files'] = [file_stamp(name, root) for name in names]
+    searches = {
+        'data-file-schema.xml': (r'<creator[^>]*VERSION="([^"]+)"', r'<functional>([^<]+)<'),
+        'data-file.xml': (r'<CREATOR[^>]*VERSION="([^"]+)"', None),
+        # shortcut: only the GGA tag; METAGGA and hybrids are not read, extend when VASP
+        # cases with them are shared.
+        'vasprun.xml': (r'<i name="version"[^>]*>\s*([^<\s]+)', r'name="GGA"[^>]*>\s*([^<\s]+)'),
+    }
+    for name, (version, functional) in searches.items():
+        path = os.path.join(folder, name)
+        if not os.path.isfile(path) or os.path.getsize(path) > HASH_LIMIT:
+            continue
+        with open(path, 'r', encoding='utf-8', errors='replace') as handle:
+            text = handle.read()
+        for key, pattern in (('version', version), ('functional', functional)):
+            found = re.search(pattern, text) if pattern else None
+            if found is not None:
+                record[key] = ('GGA=' if name == 'vasprun.xml' and key == 'functional' else '') + (
+                    found.group(1).strip()
+                )
+        break
+    return record
 
 
 def _scalar(value: Any) -> Any:
@@ -69,7 +344,63 @@ def source_revision() -> dict[str, Any] | None:
     return {'commit': commit, 'modified': modified}
 
 
-def run_record(attributes: dict, start_time: float, output_path: str) -> dict:
+def _output_files(
+    output_path: str, start_time: float, final: bool, extra: tuple, shallow: bool = False
+) -> list:
+    """Files written since ``start_time`` under the output folder (recursive) and, top level
+    only, in the ``extra`` folders (the output folder of a ``Transport`` set elsewhere)."""
+    try:
+        from ..results.discovery import match_file
+    except ImportError:  # pragma: no cover - the results layer ships with PAOFLOW
+        match_file = None
+    found = []
+    if shallow:  # a folder PAOFLOW did not create (the current folder of pyskeaf): no walk
+        found += [os.path.join(output_path, name) for name in os.listdir(output_path)]
+    else:
+        for folder, _, names in os.walk(output_path):
+            found += [os.path.join(folder, name) for name in names]
+    for folder in extra:
+        if os.path.isdir(folder) and os.path.relpath(folder, output_path).startswith('..'):
+            found += [os.path.join(folder, name) for name in os.listdir(folder)]
+    files = []
+    for path in sorted(found):
+        name = os.path.basename(path)
+        if (
+            name in (MANIFEST, MANIFEST + '.tmp')
+            or not os.path.isfile(path)
+            or os.path.getmtime(path) < start_time - 1.0
+        ):
+            continue
+        relative = os.path.relpath(path, output_path).replace(os.sep, '/')
+        entry: dict[str, Any] = {'file': relative, 'bytes': os.path.getsize(path)}
+        folder = os.path.dirname(relative) or '.'
+        match = match_file(name, folder) if match_file is not None else None
+        if match is not None:
+            kind, groups = match
+            entry.update(kind=kind.name, category=kind.category, labels=groups)
+            x, y = kind.x, kind.y
+            if kind.describe is not None:
+                try:
+                    y = kind.describe(groups)[1:3]
+                except Exception:  # noqa: BLE001
+                    pass
+            axes = [{'quantity': label, 'unit': unit} for label, unit in (x, y) if label]
+            if axes:
+                entry['axes'] = axes
+        if final:
+            entry.update({k: v for k, v in file_stamp(path, output_path).items() if k != 'file'})
+        files.append(entry)
+    return files
+
+
+def run_record(
+    attributes: dict,
+    start_time: float,
+    output_path: str,
+    arrays: dict | None = None,
+    state: dict | None = None,
+    final: bool = True,
+) -> dict:
     """The manifest entry of one PAOFLOW instance.
 
     Parameters
@@ -80,6 +411,12 @@ def run_record(attributes: dict, start_time: float, output_path: str) -> dict:
         Start of the run (epoch seconds); files modified since then are listed.
     output_path : str
         The output folder.
+    arrays : dict, optional
+        ``DataController.data_arrays``, for the structure of :func:`dft_inputs`.
+    state : dict, optional
+        State of :func:`recorded` (run identifier, method calls, driver script).
+    final : bool, optional
+        True when the run finished: the output files are hashed and ``finished`` is set.
 
     Returns
     -------
@@ -87,25 +424,10 @@ def run_record(attributes: dict, start_time: float, output_path: str) -> dict:
     """
     from .. import __version__
 
-    try:
-        from ..results.discovery import match_file
-    except ImportError:  # pragma: no cover - the results layer ships with PAOFLOW
-        match_file = None
-    files = []
-    for name in sorted(os.listdir(output_path)):
-        path = os.path.join(output_path, name)
-        if (
-            name == MANIFEST
-            or not os.path.isfile(path)
-            or os.path.getmtime(path) < start_time - 1.0
-        ):
-            continue
-        entry: dict[str, Any] = {'file': name, 'bytes': os.path.getsize(path)}
-        found = match_file(name, '.') if match_file is not None else None
-        if found is not None:
-            kind, groups = found
-            entry.update(kind=kind.name, category=kind.category, labels=groups)
-        files.append(entry)
+    state = state if state is not None else {}
+    files = _output_files(
+        output_path, start_time, final, tuple(state.get('folders', ())), state.get('shallow', False)
+    )
     keys = (
         'savedir',
         'Efermi',
@@ -132,18 +454,46 @@ def run_record(attributes: dict, start_time: float, output_path: str) -> dict:
             'paoflow_tree_modified': revision['modified'],
             **facts,
         }
-    return {
+    record = {
         'paoflow': __version__,
+        'run_id': state.get('run_id') or str(uuid.uuid4()),
+        'status': 'finished' if final else 'unfinished',
         'started': time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(start_time)),
-        'finished': time.strftime('%Y-%m-%dT%H:%M:%S'),
-        'energy_reference': 'electronic energies are relative to the DFT Fermi energy (E_F = 0)',
-        **facts,
-        'files': files,
+        'started_utc': _utc(start_time),
     }
+    if final:
+        record.update(finished=time.strftime('%Y-%m-%dT%H:%M:%S'), finished_utc=_utc())
+    record.update(
+        energy_reference='electronic energies are relative to the DFT Fermi energy (E_F = 0)',
+        **facts,
+    )
+    if 'inputs' not in state:  # hashed once, when the reader has run
+        inputs = dft_inputs(attributes, arrays or {})
+        if inputs is None:
+            record_inputs = None
+        else:
+            record_inputs = state['inputs'] = inputs
+    else:
+        record_inputs = state['inputs']
+    if record_inputs is not None:
+        record['inputs'] = record_inputs
+    if state.get('script'):
+        record['script'] = state['script']
+    if 'calls' in state:
+        record['calls'] = state['calls']
+        record['replayable'] = state['replayable']
+    record.update(environment=environment(), infrastructure=infrastructure(), files=files)
+    return record
 
 
-def write_output_manifest(attributes: dict, start_time: float) -> str | None:
-    """Append the entry of this run to ``<output>/paoflow_outputs.json`` (rank 0 only).
+def write_output_manifest(
+    attributes: dict,
+    start_time: float,
+    arrays: dict | None = None,
+    state: dict | None = None,
+    final: bool = True,
+) -> str | None:
+    """Write the entry of this run to ``<output>/paoflow_outputs.json`` (rank 0 only).
 
     Parameters
     ----------
@@ -151,6 +501,13 @@ def write_output_manifest(attributes: dict, start_time: float) -> str | None:
         ``DataController.data_attributes`` (``opath`` is the output folder).
     start_time : float
         Start of the run (epoch seconds).
+    arrays : dict, optional
+        ``DataController.data_arrays``.
+    state : dict, optional
+        State of :func:`recorded`; its ``run_id`` selects the entry to replace.  Without it a new
+        entry is appended.
+    final : bool, optional
+        True when the run finished.
 
     Returns
     -------
@@ -167,9 +524,161 @@ def write_output_manifest(attributes: dict, start_time: float) -> str | None:
             runs = json.load(handle).get('runs', [])
     except (OSError, ValueError, AttributeError):
         runs = []
-    runs.append(run_record(attributes, start_time, output_path))
+    record = run_record(attributes, start_time, output_path, arrays, state, final)
+    runs = [run for run in runs if run.get('run_id') != record['run_id']] + [record]
     temporary = path + '.tmp'
     with open(temporary, 'w', encoding='utf-8') as handle:
-        json.dump({'manifest': 1, 'runs': runs[-MAX_RUNS:]}, handle, indent=1)
+        json.dump({'manifest': VERSION, 'runs': runs}, handle, indent=1)
     os.replace(temporary, path)
     return path
+
+
+def _script() -> dict[str, Any] | None:
+    """Path (relative to the current folder) and hash of the driver script, if there is one."""
+    path = sys.argv[0] if sys.argv else ''
+    if not path.endswith('.py') or not os.path.isfile(path):
+        return None
+    stamp = file_stamp(path, os.getcwd())
+    if stamp['file'].startswith('..'):  # no path outside the folder in the record
+        stamp['file'] = os.path.basename(path)
+    return stamp
+
+
+def _new_state(start: float) -> dict[str, Any]:
+    return {
+        'run_id': str(uuid.uuid4()),
+        'start': start,
+        'calls': [],
+        'replayable': True,
+        'script': _script(),
+        'folders': [],
+    }
+
+
+def record_function_call(output_path: str, name: str, arguments: dict | None = None) -> None:
+    """Record a step of a run path that is a plain function, not an orchestrator method.
+
+    For the electron-phonon writers and the ``pyskeaf`` command line.  Call it on the way out,
+    after the files are written.
+
+    Parameters
+    ----------
+    output_path : str
+        Folder the step wrote into; its record gets the entry.
+    name : str
+        Name of the step (``'elphon.write_mobility'``).
+    arguments : dict, optional
+        The arguments worth keeping, encoded with :func:`encode_argument`.
+
+    Notes
+    -----
+    Calls of one process into one folder share one run entry, which lists the files written
+    since the process started (top level of the folder only) and is marked finished after
+    every call.  Only MPI rank 0 writes.
+    A failure prints one line and never raises.
+    """
+    try:
+        from mpi4py import MPI
+
+        if MPI.COMM_WORLD.Get_rank() != 0 or not os.path.isdir(output_path):
+            return
+        state = _FUNCTION_RUNS.setdefault(os.path.abspath(output_path), _new_state(_PROCESS_START))
+        state['shallow'] = True
+        encoded = {}
+        for key, value in (arguments or {}).items():
+            encoded[key], rebuildable = encode_argument(value)
+            state['replayable'] = state['replayable'] and rebuildable
+        state['calls'].append({'method': name, 'arguments': encoded, 'status': 'ok'})
+        write_output_manifest({'opath': output_path}, state['start'], None, state, final=True)
+    except Exception as exc:  # noqa: BLE001
+        print('(run record not written: %s)' % exc)
+
+
+def _record_call(
+    host: Any, method: Callable, args: tuple, kwargs: dict, started: float, ok: bool
+) -> None:
+    """Append one finished call to the state on the data controller and rewrite the record."""
+    import resource
+
+    controller = host.data_controller
+    state = getattr(controller, _STATE, None)
+    if state is None:
+        state = _new_state(getattr(host, 'start_time', None) or started)
+        setattr(controller, _STATE, state)
+    bound = inspect.signature(method).bind(host, *args, **kwargs)
+    bound.apply_defaults()
+    arguments = {}
+    for name, value in list(bound.arguments.items())[1:]:
+        arguments[name], rebuildable = encode_argument(value)
+        state['replayable'] = state['replayable'] and rebuildable
+    owner = type(host).__name__
+    name = owner if method.__name__ == '__init__' else '%s.%s' % (owner, method.__name__)
+    to_mb = 1024.0**2 if sys.platform == 'darwin' else 1024.0
+    state['calls'].append(
+        {
+            'method': name,
+            'arguments': arguments,
+            'seconds': round(time.time() - started, 3),
+            'peak_memory_rank0_mb': round(
+                resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / to_mb, 1
+            ),
+            'status': 'ok' if ok else 'failed',
+        }
+    )
+    folder = getattr(host, '_output_config', {}).get('output_dir')
+    if folder and folder not in state['folders']:
+        state['folders'].append(folder)
+    attributes, arrays = controller.data_attributes, controller.data_arrays
+    final = ok and method.__name__ == 'finish_execution'
+    write_output_manifest(attributes, state['start'], arrays, state, final)
+
+
+def _recording(method: Callable) -> Callable:
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        # Nested public calls (a method calling another, the constructor's memory check, the
+        # sparse engine calling the host) belong to the call the script made.
+        if getattr(self, '_recording_call', False):
+            return method(self, *args, **kwargs)
+        started, ok = time.time(), False
+        self._recording_call = True
+        try:
+            result = method(self, *args, **kwargs)
+            ok = True
+            return result
+        finally:
+            self._recording_call = False
+            controller = getattr(self, 'data_controller', None)
+            if controller is not None and getattr(controller, 'rank', 0) == 0:
+                try:  # the record is informational: a failure never stops the run
+                    _record_call(self, method, args, kwargs, started, ok)
+                except Exception as exc:  # noqa: BLE001
+                    print('(run record not written: %s)' % exc)
+
+    return wrapper
+
+
+def recorded(cls: type) -> type:
+    """Class decorator: record every public method call (and the constructor) in the run record.
+
+    Parameters
+    ----------
+    cls : type
+        An orchestrator whose instances hold ``data_controller``.
+
+    Returns
+    -------
+    type
+        The same class.  Each wrapper keeps the name, docstring, signature and attributes of the
+        method (``functools.wraps``) and only observes: arguments and results pass unchanged.
+
+    Notes
+    -----
+    Apply it above ``@sparse_aware`` so that a call is recorded once, before it is routed to the
+    dense or the sparse engine.  Only rank 0 records, and only the calls the script makes.
+    """
+    for name, attribute in list(vars(cls).items()):
+        if (name.startswith('_') and name != '__init__') or not inspect.isfunction(attribute):
+            continue
+        setattr(cls, name, _recording(attribute))
+    return cls

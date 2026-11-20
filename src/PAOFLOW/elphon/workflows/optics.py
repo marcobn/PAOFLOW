@@ -25,6 +25,7 @@ from ..phonon_assisted_absorption import (
     write_absorption_outputs,
     write_emissivity_outputs,
 )
+from ...writers.output_manifest import record_function_call
 from .system import Electrons, ElphonSystem, is_root
 
 
@@ -307,6 +308,14 @@ def write_absorption(out: dict, outdir: str, *, label: str = '', comm=None) -> l
     paths = write_absorption_outputs(out, outdir)
     for path in paths:
         print('  wrote %s' % path)
+    record_function_call(
+        outdir,
+        'elphon.write_absorption',
+        {
+            'label': label,
+            **{key: out.get(key) for key in ('coupling_save', 'electrons_save', 'electrons_dft')},
+        },
+    )
     return paths
 
 

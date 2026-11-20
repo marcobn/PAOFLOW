@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import re
 import shutil
 from pathlib import Path
 
@@ -241,17 +243,178 @@ def test_output_manifest(tmp_path):
     manifest = json.loads((out / MANIFEST).read_text())
     run = manifest['runs'][-1]
     assert len(manifest['runs']) == 2 and run['fermi_energy_dft_ev'] == 5.26
-    assert run['files'] == [
-        {
+    (entry,) = run['files']
+    assert (
+        entry.items()
+        >= {
             'file': 'bands_0.dat',
             'bytes': os.path.getsize(out / 'bands_0.dat'),
             'kind': 'bands',
             'category': 'Electronic structure',
             'labels': {'spin': '0'},
-        }
-    ]
+        }.items()
+    )
+    assert len(entry['sha256']) == 64 and manifest['manifest'] == 2
     folder = ResultsFolder(str(out))
     assert folder.load(folder.find('manifest')).table[0]['name'] == 'paoflow'
+
+
+def test_every_term_is_defined_and_documented():
+    """Each catalogue entry has a definition, and the docs page shows the current table."""
+    from PAOFLOW.results.catalogue import KINDS
+    from PAOFLOW.results.vocabulary import TERMS, vocabulary_markdown
+
+    assert {kind.name for kind in KINDS} == set(TERMS)
+    assert all(definition.endswith('.') for definition, _ in TERMS.values())
+    page = Path(__file__).parents[3] / 'docs' / 'tutorials' / 'howtos' / 'run-records.md'
+    assert vocabulary_markdown() in page.read_text(encoding='utf-8')
+
+
+def _validate(path):
+    """Check a run record against the JSON Schema that ships with the package."""
+    jsonschema = pytest.importorskip('jsonschema')
+    from PAOFLOW.writers import output_manifest
+
+    schema = Path(output_manifest.__file__).with_name('run_record.schema.json')
+    jsonschema.validate(json.loads(Path(path).read_text()), json.loads(schema.read_text()))
+
+
+def _si_bands(work, outputdir):
+    from PAOFLOW.PAOFLOW import PAOFLOW
+
+    paoflow = PAOFLOW(workpath=str(work), savedir='silicon.save', outputdir=outputdir)
+    paoflow.read_atomic_proj_QE()
+    paoflow.projectability()
+    paoflow.pao_hamiltonian()
+    paoflow.bands(ibrav=2, nk=20)
+    paoflow.pao_eigh()
+    paoflow.dos(emin=-12.0, emax=2.0, ne=200)
+    paoflow.finish_execution()
+
+
+def test_the_recorder_does_not_change_the_outputs(tmp_path, monkeypatch):
+    """The same run with and without the recorder writes byte-identical files."""
+    from PAOFLOW.writers import output_manifest
+
+    shutil.copytree(SI.parent / 'silicon.save', tmp_path / 'silicon.save')
+    _si_bands(tmp_path, 'recorded')
+    monkeypatch.setattr(output_manifest, '_record_call', lambda *args: None)
+    _si_bands(tmp_path, 'plain')
+    recorded = {p.name: p.read_bytes() for p in (tmp_path / 'recorded').iterdir()}
+    plain = {p.name: p.read_bytes() for p in (tmp_path / 'plain').iterdir()}
+    assert recorded.pop(output_manifest.MANIFEST) and len(plain) > 5
+    assert recorded == plain
+
+
+def test_plain_function_steps_share_one_entry(tmp_path):
+    """The electron-phonon writers and pyskeaf record through one explicit call each."""
+    from PAOFLOW.writers.output_manifest import MANIFEST, record_function_call
+
+    shutil.copy(SI / 'dosdk_0.dat', tmp_path / 'dosdk_0.dat')
+    os.utime(tmp_path / 'dosdk_0.dat')
+    record_function_call(str(tmp_path), 'elphon.write_mobility', {'label': 'n-type'})
+    record_function_call(str(tmp_path), 'elphon.write_eliashberg', {'mu_star': 0.1})
+    record_function_call(str(tmp_path / 'missing'), 'never raises')
+    _validate(tmp_path / MANIFEST)
+    (run,) = json.loads((tmp_path / MANIFEST).read_text())['runs']
+    assert [call['method'] for call in run['calls']] == [
+        'elphon.write_mobility',
+        'elphon.write_eliashberg',
+    ]
+    assert run['status'] == 'finished' and run['files'][0]['kind'] == 'dos'
+    assert len(run['files'][0]['sha256']) == 64
+
+
+def test_run_record_follows_the_run(tmp_path, monkeypatch):
+    """The record is rewritten after each call of the script: unfinished until
+    ``finish_execution``, one entry per run, with the inputs, the calls and no absolute path."""
+    from PAOFLOW.PAOFLOW import PAOFLOW
+    from PAOFLOW.writers.output_manifest import MANIFEST
+
+    work = tmp_path / 'case'
+    shutil.copytree(SI.parent / 'silicon.save', work / 'silicon.save')
+    monkeypatch.chdir(work)
+    paoflow = PAOFLOW(savedir='silicon.save', outputdir=str(work / 'output'), verbose=False)
+    paoflow.read_atomic_proj_QE()
+    paoflow.projectability()
+    paoflow.pao_hamiltonian()
+    paoflow.bands(ibrav=2, nk=20)
+    path = work / 'output' / MANIFEST
+    _validate(path)
+    (run,) = json.loads(path.read_text())['runs']
+    assert run['status'] == 'unfinished' and 'finished' not in run
+    assert [call['method'] for call in run['calls']] == [
+        'PAOFLOW',
+        'PAOFLOW.read_atomic_proj_QE',
+        'PAOFLOW.projectability',
+        'PAOFLOW.pao_hamiltonian',
+        'PAOFLOW.bands',
+    ]
+    assert run['calls'][-1]['arguments']['nk'] == 20 and run['replayable']
+    assert run['calls'][0]['arguments']['outputdir'] == 'output'
+    assert 'sha256' not in run['files'][0]
+    inputs = run['inputs']
+    assert inputs['engine'] == 'Quantum ESPRESSO' and inputs['functional'] == 'PBE'
+    assert re.fullmatch(r'\d+\.\d+(\.\d+)?', inputs['version'])
+    assert np.shape(inputs['cell_bohr']) == (3, 3) and len(inputs['positions_bohr']) == 2
+    assert {'silicon.save/data-file-schema.xml', 'silicon.save/atomic_proj.xml'} <= {
+        entry['file'] for entry in inputs['files']
+    }
+    paoflow.finish_execution()
+    _validate(path)
+    text = path.read_text()
+    (done,) = json.loads(text)['runs']
+    assert done['run_id'] == run['run_id'] and done['status'] == 'finished'
+    assert done['started_utc'].endswith('Z') and done['finished_utc'].endswith('Z')
+    assert all(len(entry['sha256']) == 64 for entry in done['files'])
+    assert any(axis['unit'] for entry in done['files'] for axis in entry.get('axes', []))
+    assert done['infrastructure']['mpi_ranks'] == 1 and done['environment']['numpy']
+    assert str(tmp_path) not in text and platform.node() not in text
+
+
+def test_run_record_arguments_and_failures(tmp_path):
+    """Arrays, callables and objects are described, not stored; a call that raises is recorded as
+    failed and the exception still reaches the script."""
+    from PAOFLOW.writers.output_manifest import MANIFEST, encode_argument, recorded
+
+    assert encode_argument([1, 'a', {'b': 2.0}]) == ([1, 'a', {'b': 2.0}], True)
+    encoded, rebuildable = encode_argument(np.zeros((2, 3)))
+    assert encoded['array'] == [2, 3] and len(encoded['sha256']) == 64 and not rebuildable
+    assert encode_argument(len) == ({'callable': 'builtins.len'}, False)
+    assert encode_argument(Path('x'))[0]['object'].endswith('Path')
+    assert encode_argument('/nowhere/secret/si.save') == ({'path_outside_folder': 'si.save'}, False)
+
+    class Controller:
+        rank = 0
+        data_attributes = {'opath': str(tmp_path)}
+        data_arrays = {}
+
+    @recorded
+    class Driver:
+        def __init__(self):
+            self.data_controller = Controller()
+
+        def step(self, weights, scale=2.0):
+            """Docstring kept."""
+            return self.inner(scale)
+
+        def inner(self, scale):
+            return scale
+
+        def broken(self):
+            raise ValueError('stop')
+
+    driver = Driver()
+    assert driver.step(np.ones(3)) == 2.0 and Driver.step.__doc__ == 'Docstring kept.'
+    with pytest.raises(ValueError):
+        driver.broken()
+    (run,) = json.loads((tmp_path / MANIFEST).read_text())['runs']
+    assert [(call['method'], call['status']) for call in run['calls']] == [
+        ('Driver', 'ok'),
+        ('Driver.step', 'ok'),
+        ('Driver.broken', 'failed'),
+    ]
+    assert run['status'] == 'unfinished' and not run['replayable']
 
 
 def test_output_manifest_records_the_source_commit(monkeypatch, tmp_path):

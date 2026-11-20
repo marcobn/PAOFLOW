@@ -299,9 +299,10 @@ or from the command line, without a server:
 paoflow-studio report Si/output -o Si_report.html
 ```
 
-At the end of every run, PAOFLOW writes `paoflow_outputs.json` in the output folder. It records the PAOFLOW
-version, the DFT Fermi energy (output energies are relative to it), the spin and basis facts, and the files the run
-wrote, each with its kind. The Results tab shows it as *Run information*.
+Every run writes `paoflow_outputs.json` in the output folder and updates it after each step. It records the PAOFLOW
+version, the DFT inputs, the calls of the script, the DFT Fermi energy (output energies are relative to it), and the
+files the run wrote, each with its kind. The Results tab shows it as *Run information*; see
+[The run record](run-records.md).
 
 ## Plots
 

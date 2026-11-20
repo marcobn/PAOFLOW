@@ -27,6 +27,7 @@ from typing import Mapping, Sequence
 import numpy as np
 from numpy.typing import NDArray
 
+from ...writers.output_manifest import record_function_call
 from .system import is_root
 
 _trapezoid = getattr(np, 'trapezoid', None) or np.trapz
@@ -258,6 +259,7 @@ def save_thermal_spectral(result: dict, path: str) -> str:
             arrays[key] = np.asarray(result[key], dtype=float)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     np.savez(path, **arrays)
+    record_function_call(os.path.dirname(os.path.abspath(path)), 'elphon.save_thermal_spectral')
     return path
 
 
@@ -715,6 +717,7 @@ def write_thermal_summary(rows: Sequence[dict], path: str) -> str:
                 )
                 + '\n'
             )
+    record_function_call(os.path.dirname(os.path.abspath(path)), 'elphon.write_thermal_summary')
     return path
 
 

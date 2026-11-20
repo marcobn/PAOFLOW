@@ -842,13 +842,18 @@ def load_manifest(ref: DatasetRef, root: str, options: dict) -> Dataset:
     if not runs:
         dataset.text = '(no run recorded)'
         return dataset
-    choices = ['%d: %s' % (index + 1, run.get('finished', '?')) for index, run in enumerate(runs)]
+    choices = [
+        '%d: %s' % (index + 1, run.get('finished') or run.get('status', '?'))
+        for index, run in enumerate(runs)
+    ]
     chosen = _choice(options, 'run', 'Run', choices, choices[-1])
     _option(dataset, 'run', 'Run', choices, chosen)
     run = runs[choices.index(chosen)]
     for key, value in run.items():
         if key != 'files':
             unit = 'eV' if key.endswith('_ev') else ''
+            if isinstance(value, (dict, list)):  # nested facts of record version 2
+                value = json.dumps(value)
             dataset.table.append({'name': key, 'value': value, 'unit': unit})
     lines = ['%-42s %-26s %s' % ('file', 'kind', 'bytes')]
     for entry in run.get('files', []):
