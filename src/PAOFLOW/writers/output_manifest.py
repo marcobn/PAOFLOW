@@ -498,6 +498,12 @@ def run_record(
             if entry['file'] not in written or modified > written[entry['file']][0]:
                 written[entry['file']] = (modified, len(state['calls']) - 1)
             entry['call'] = written[entry['file']][1]
+            # The unit of a frequency axis is the ``units`` argument of the call (phonon, IR
+            # and Raman writers), not a property of the file name: the catalogue leaves it empty.
+            units = state['calls'][entry['call']]['arguments'].get('units')
+            for axis in entry.get('axes', []):
+                if axis['quantity'] == 'Frequency' and not axis['unit'] and isinstance(units, str):
+                    axis['unit'] = units
     record.update(environment=environment(), infrastructure=infrastructure(), files=files)
     return record
 

@@ -420,3 +420,18 @@ def test_example_cases_listed_and_copied(client, make_client, gui_root):
     assert (
         read_only.post('/api/cases/copy', {'name': 'si_bands_transport', 'folder': 'y'})[0] == 403
     )
+
+
+def test_folder_with_a_case_gives_its_plan(client, gui_root):
+    """A folder made by paoflow-unpack: its case.json gives the Runs tab the steps."""
+    import json
+
+    assert client.get('/api/cases/here?path=.')[1] == {'plan': None}
+    folder = gui_root / 'opened'
+    folder.mkdir()
+    step = {'label': 'Run main.py', 'command': ['python', 'main.py'], 'cwd': '.', 'mpi': True}
+    case = {'title': 'si', 'summary': 'Si2: bands.', 'workflow': 'scripts', 'steps': [step]}
+    (folder / 'case.json').write_text(json.dumps(case))
+    status, body, _ = client.get('/api/cases/here?path=opened')
+    assert status == 200 and body['workflow'] == 'scripts'
+    assert body['plan'][0]['argv'][-1] == 'main.py'

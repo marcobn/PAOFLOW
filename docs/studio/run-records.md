@@ -93,7 +93,8 @@ paoflow-unpack si_bands-package.zip
 
 It checks every file against its checksum, lays the calculation out as a folder (open it in the Results
 tab of PAOFLOW Studio: the results, and under *Inputs* the scripts, the DFT input files, the
-README and `case.json`) and prints the steps to reproduce it, in order. It runs nothing.
+README and `case.json`; the Runs tab lists its steps) and prints the steps to reproduce it, in
+order. It runs nothing.
 
 The scripts in a package are someone else's code: read them before you run them. The checksums
 show that the files are the ones that were packed, not who packed them, so take packages from a

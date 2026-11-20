@@ -5,6 +5,9 @@ that a user gets FAIR data (findable, accessible, interoperable, reusable) for a
 without doing anything for it, and can share a calculation with one command. The drivers are the
 data-availability statements of journals and funders, and the user's own reproducibility.
 
+What a code change owes this mechanism (a new output file, a new workflow function, a new input
+file type) is the checklist of `.agents/skills/fair-records/SKILL.md`; this page is the design.
+
 There is no flag: the record is always written. Nothing is uploaded anywhere; the mechanism ends at
 a zip file a user uploads by hand.
 
@@ -147,12 +150,12 @@ sharing" button that calls the code of `paoflow-pack`. The record never depends 
 | Records for the electron-phonon writers and the `pyskeaf` command line (`record_function_call`, one explicit call each) | Done |
 | Library tight-binding runs (`models/_paoflow_runner.py`) | Covered by the recorder; they stay `unfinished` because they return the object without `finish_execution()` |
 | JSON Schema (`writers/run_record.schema.json`), definitions and shared-term links (`results/vocabulary.py`), user page (`docs/studio/run-records.md`) | Done |
-| Units that are empty in the catalogue | Open, and not a catalogue matter: most are dimensionless (ε, n, k, reflectivity, emissivity, α²F, transmission) or a point index (k path); the rest depend on an argument of the run (`units` of the phonon and IR/Raman writers, `twoD` of the Hall ones), so the unit has to come from the call, not from the file name |
+| Units that are empty in the catalogue | Open, and not a catalogue matter: most are dimensionless (ε, n, k, reflectivity, emissivity, α²F, transmission) or a point index (k path); the frequency axis of the phonon and IR/Raman files takes the `units` argument of the call that wrote the file (`run_record`). Still open: `twoD` of the Hall methods changes the unit and the record does not follow it (the argument is in `calls`) |
 | Versions and hashes of the phonon and electron-phonon inputs (ph.x, phonopy, EPW) | Done (`stamp_inputs`); `phonon_dispersion` and the writers that carry the saves pass them |
 | Structure terms (QUDT, OPTIMADE) | Done (`STRUCTURE` in `results/vocabulary.py`) |
-| `paoflow-pack`, `paoflow-unpack` | Done; the crate is not yet checked with `roc-validator` (the test skips without it) |
+| `paoflow-pack`, `paoflow-unpack` | Done; the crate passes `roc-validator` 0.14 at the required level (the test skips without the validator). The recommended-level findings (`encodingFormat`, publisher, descriptions of contextual entities) are not addressed |
 | Studio: readable *Run information* (`load_manifest`), the *From this run* line under each plot (`run_note`, from the `call` index the record keeps per file), the *Package for sharing* button (`/api/results/package`, the code of `paoflow-pack`) | Done |
-| Opening an unpacked folder as a case in Studio | Open: Studio opens cases of the examples library by name only; the folder has a valid `case.json` and its results open in the Results tab |
+| Opening an unpacked folder as a case in Studio | Done: a folder with a `case.json` gives the Runs tab its steps when it is opened (`/api/cases/here`), unless a plan is already stored for it; its results open in the Results tab |
 
 Out of scope: upload to any repository, `CITATION.cff` and a DOI for the code, a flag to switch
 the record off, headers in `.dat` files or new output formats, a command that re-runs a case and

@@ -276,6 +276,10 @@ Backend functions may access internal arrays through the orchestrator, but examp
 
 Every public method of `PAOFLOW.py`, and every new argument of one, ships with its sparse side in the same change: follow `.agents/skills/sparse-backend/SKILL.md` ("Every public method takes a sparse role"). A method that stays dense-only records the specific obstacle in `DENSE_ONLY_REASONS` (`src/PAOFLOW/sparse/dispatch.py`).
 
+### Run Record
+
+A feature that writes a new output file, reads a new kind of input file, or adds a workflow function outside the orchestrators follows `.agents/skills/fair-records/SKILL.md` ("Your change → what it owes") in the same change.
+
 ### DataController Storage Policy
 
 Store only if at least one is true:

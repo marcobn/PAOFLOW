@@ -508,7 +508,14 @@ def crate(case: dict, content: dict, readme_sha256: str, readme_bytes: int) -> d
     ]
     for key in profiles:
         identifier, name, version = PROFILES[key]
-        graph.append({'@id': identifier, '@type': 'CreativeWork', 'name': name, 'version': version})
+        graph.append(
+            {
+                '@id': identifier,
+                '@type': ['CreativeWork', 'Profile'],  # RO-Crate 1.3: conformsTo names Profiles
+                'name': name,
+                'version': version,
+            }
+        )
     software = {}
     for run in runs:
         version = run['paoflow']
@@ -523,7 +530,16 @@ def crate(case: dict, content: dict, readme_sha256: str, readme_bytes: int) -> d
             software[version]['identifier'] = run['paoflow_commit']
     graph += software.values()
     if workflows:
-        graph.append({'@id': PYTHON, '@type': 'ComputerLanguage', 'name': 'Python', 'url': PYTHON})
+        graph.append(
+            {
+                '@id': PYTHON,
+                '@type': 'ComputerLanguage',
+                'name': 'Python',
+                'url': PYTHON,
+                # RO-Crate 1.3 requires a version; a version-1 record states none
+                'version': runs[-1].get('environment', {}).get('python') or '3',
+            }
+        )
     for run in runs:
         scripts = run.get('scripts', [])
         action: dict[str, Any] = {

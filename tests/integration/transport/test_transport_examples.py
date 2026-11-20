@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from .. import uncatalogued_files
 from .compare import CompareFailure, compare_dat_dirs
 from .jobs import JobSpec, discover_jobs
 from .runner import run_example_in_sandbox
@@ -42,3 +43,5 @@ def test_transport_example(
         raise AssertionError(
             f'{result.job_id} failed.\nSandbox: {result.workdir}\nPlots: {plots_dir}\n{e}'
         ) from e
+    missing = uncatalogued_files(result.outdir)
+    assert not missing, f'{result.job_id}: output files without a catalogue term: {missing}'

@@ -277,7 +277,7 @@ def test_every_term_is_defined_and_documented():
 
     assert {kind.name for kind in KINDS} == set(TERMS)
     assert all(definition.endswith('.') for definition, _ in TERMS.values())
-    page = Path(__file__).parents[3] / 'docs' / 'tutorials' / 'howtos' / 'run-records.md'
+    page = Path(__file__).parents[3] / 'docs' / 'studio' / 'run-records.md'
     assert vocabulary_markdown() in page.read_text(encoding='utf-8')
 
 
@@ -723,3 +723,28 @@ def test_inputs_of_a_calculation_are_listed(tmp_path):
     )
     record = [ref for ref in discover(str(tmp_path)) if ref.kind == 'manifest'][0]
     assert not load(record, str(tmp_path), {}).notes
+
+
+def test_frequency_unit_comes_from_the_call(tmp_path):
+    """The catalogue cannot know the unit of a phonon frequency axis: the ``units`` argument of
+    the call that wrote the file gives it."""
+    from PAOFLOW.writers.output_manifest import MANIFEST, recorded
+
+    class Controller:
+        rank = 0
+        data_attributes = {'opath': str(tmp_path)}
+        data_arrays = {}
+
+    @recorded
+    class Driver:
+        def __init__(self):
+            self.data_controller = Controller()
+
+        def phonon_dos(self, units='THz'):
+            (tmp_path / 'phonon_dos.dat').write_text('0.0 1.0\n')
+
+    Driver().phonon_dos(units='cm-1')
+    (run,) = json.loads((tmp_path / MANIFEST).read_text())['runs']
+    (entry,) = [e for e in run['files'] if e['file'] == 'phonon_dos.dat']
+    assert entry['kind'] == 'phonon_dos'
+    assert entry['axes'][0] == {'quantity': 'Frequency', 'unit': 'cm-1'}

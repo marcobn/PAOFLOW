@@ -1,4 +1,5 @@
 import xml.etree.cElementTree as ET
+from itertools import takewhile
 
 import numpy as np
 import spglib
@@ -40,7 +41,8 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
     version = root.find("./generator/i[@name='version']").text
     if verbose:
         print('VASP version: {0:s}'.format(version))
-    qe_version = list(map(int, version.strip().split('.')))
+    # '5.4.4.18Apr17-6-g9f103f2a35' -> [5, 4, 4]: the numeric parts before a build suffix
+    qe_version = [int(part) for part in takewhile(str.isdigit, version.strip().split('.'))]
 
     """read parameters"""
     parameters = root.find('parameters')

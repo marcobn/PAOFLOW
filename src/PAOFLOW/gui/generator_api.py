@@ -669,6 +669,37 @@ def case_copy(app: 'GuiApp', payload: dict) -> dict:
     }
 
 
+def case_here(app: 'GuiApp', path: str | None) -> dict:
+    """The run plan of a folder that holds a ``case.json`` (a folder ``paoflow-unpack`` made).
+
+    Parameters
+    ----------
+    app : GuiApp
+        The application.
+    path : str or None
+        The folder, relative to the root.
+
+    Returns
+    -------
+    dict
+        ``plan`` (None without a readable ``case.json``), ``workflow`` and ``title``.
+    """
+    from ..gen.cases import CASE_FILE, case_plan, load_case
+
+    folder = app.resolve(path)
+    if not (folder / CASE_FILE).is_file():
+        return {'plan': None}
+    try:
+        case = load_case(folder)
+    except (ValueError, KeyError, TypeError):
+        return {'plan': None}
+    return {
+        'plan': [step.to_json() for step in case_plan(case)],
+        'workflow': case.workflow,
+        'title': case.title,
+    }
+
+
 def register(app: 'GuiApp') -> None:
     """Register the generator endpoints.
 
@@ -722,6 +753,10 @@ def register(app: 'GuiApp') -> None:
     @app.route('GET', '/api/cases')
     def cases(request: Request) -> Response:
         return json_response(cases_list(app))
+
+    @app.route('GET', '/api/cases/here')
+    def here(request: Request) -> Response:
+        return json_response(case_here(app, request.query.get('path')))
 
     @app.route('POST', '/api/cases/copy')
     def copy(request: Request) -> Response:

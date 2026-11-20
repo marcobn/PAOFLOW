@@ -84,6 +84,11 @@ export class SetupView {
     this.workdir = this.detection.path;
     storage(`workdir:${this.session.root}`, this.workdir);
     this.app.setWorkdir(this.workdir);
+    // A folder with a case.json (made by paoflow-unpack) brings its steps, unless Runs has a plan.
+    if (this.app.runs && !storage(`plan:${this.session.root}:${this.workdir}`)) {
+      const here = await api.get('/api/cases/here', { path: this.workdir }).catch(() => null);
+      if (here?.plan?.length) this.app.runs.setPlan(this.workdir, here.plan, here.workflow);
+    }
     this.renderFolder();
     this.renderWorkflows();
     const remembered = storage(`workflow:${this.session.root}:${this.workdir}`);

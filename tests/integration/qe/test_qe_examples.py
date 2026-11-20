@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from .. import uncatalogued_files
 from .compare import CompareFailure, compare_dat_dirs
 from .jobs import JobSpec, discover_jobs
 from .runner import _overlay_internal_basis_assets, run_example_in_sandbox
@@ -42,6 +43,8 @@ def test_qe_example(
         raise AssertionError(
             f'{result.job_id} failed.\nSandbox: {result.workdir}\nPlots: {plots_dir}\n{e}'
         ) from e
+    missing = uncatalogued_files(result.outdir)
+    assert not missing, f'{result.job_id}: output files without a catalogue term: {missing}'
 
 
 def test_internal_basis_assets_overlay(tmp_path: Path) -> None:
