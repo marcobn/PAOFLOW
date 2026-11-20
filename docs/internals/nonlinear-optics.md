@@ -319,7 +319,7 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   (`examples/cases/gaas_nlo/REPORT.md` §3.2).
 - **GeS numbers** (monolayer, nosym 18×18×1 nscf, 200² dense grid, η = 0.05 eV, PBE gap 1.68 eV,
   sheet units with the 18 Å cell): shift-current peaks $\sigma^{xxx} = 46$, $\sigma^{xyy} = 48$,
-  $\sigma^{yxy} = 26$ nm µA/V² (about 75 µA/V² for a 0.6 nm layer, the order of magnitude of Rangel
+  $\sigma^{yxy} = 26$ nm µA/V² (xxx and xyy about 77 and 80 µA/V² for a 0.6 nm layer, the order of magnitude of Rangel
   *et al.* 2017), the mirror-forbidden $yyy$ and $xxy$ below $10^{-8}$, T-odd files identically zero.
   The repository BASIS tables projected the Ge 3d bands at 0.90 and gave a gapless PAO Hamiltonian;
   the tables generated from the pseudopotentials (`paoflow-genbasis-ps`, preset `standard`) give 26
