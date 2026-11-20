@@ -301,8 +301,9 @@ paoflow-studio report Si/output -o Si_report.html
 
 Every run writes `paoflow_outputs.json` in the output folder and updates it after each step. It records the PAOFLOW
 version, the DFT inputs, the calls of the script, the DFT Fermi energy (output energies are relative to it), and the
-files the run wrote, each with its kind. The Results tab shows it as *Run information*; see
-[The run record](run-records.md).
+files the run wrote, each with its kind. The Results tab shows it as *Run information*, names the run and the call
+under each plot (*From this run*), and its **Package for sharing** button writes one zip to upload to a repository;
+see [The run record](run-records.md).
 
 ## Plots
 

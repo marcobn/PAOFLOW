@@ -28,7 +28,76 @@ It never holds the name of the machine, your user name, a job number or an absol
 The output files themselves do not change: units and meaning travel in the record, not in file
 headers.
 
-In PAOFLOW Studio the record is the *Run information* entry of the Results tab.
+For the electron-phonon steps the record also lists the phonon inputs (dynamical matrices,
+force constants, `dvscf` files, `phonopy.yaml`) with their checksums, and the phonopy version
+when `phonopy.yaml` states it.
+
+In PAOFLOW Studio the record is the *Run information* entry of the Results tab: the facts of the
+run in a table, then the steps in order with the time and memory of each, the structure, the
+input files, and every file written with its quantities, units and the step that wrote it.
+Under each plot a line starting with *From this run* names the run that wrote the file: when it
+started, its identifier, the PAOFLOW version and commit, and the call of your script.
+
+## Sharing a calculation
+
+In the folder where you ran your script:
+
+```bash
+paoflow-pack
+```
+
+It asks four things (title, authors, licence, and optionally the name of the machine; Enter
+accepts the value in brackets) and writes `<folder>-package.zip`. That one file is what you
+upload to a repository such as Zenodo to get a DOI for a data-availability statement.
+
+The package holds the output files, your scripts, the DFT input files and pseudopotentials, the
+run records, and two files written for it:
+
+- `README.md`: the calculation for a person to read: material and structure, DFT settings,
+  PAOFLOW version, the steps in order, and a table of every file with its quantities and units;
+- `ro-crate-metadata.json`: the same for programs (a
+  [Workflow Run Crate](https://www.researchobject.org/workflow-run-crate/)), with the checksum
+  of every file.
+
+It ends with a checklist of what a reader will look for:
+
+```text
+  [x] Run record found: 1 run(s), 22 output file(s)
+  [x] DFT inputs found (3 files)
+  [ ] No Quantum ESPRESSO input files (*.in) here: add them so others can redo the DFT steps
+  [x] Authors: Ada Lovelace
+```
+
+In PAOFLOW Studio the **Package for sharing** button of the Results tab does the same: it asks
+the same four things in a dialog, writes the same zip and shows the same checklist.
+
+A line marked `[ ]` is advice: the package is written in every case, and you can run
+`paoflow-pack` again after fixing it. Your answers are kept in `case.json`, so the second time
+Enter is enough.
+
+Good to know:
+
+- Wavefunctions and charge densities are not packed (they are large and can be recomputed);
+  the README lists them with their checksums. A VASP `POTCAR` is never packed (its licence
+  does not allow it).
+- Only files PAOFLOW knows are packed: job logs and anything else in the folder stay out.
+- When a script ran several times, each file is described by the last run that wrote it.
+- For scripts and batch jobs: `paoflow-pack --no-questions --title "..." --author "Name ORCID"`.
+- Nothing is uploaded. Neither command uses the network.
+
+To open a package someone gave you:
+
+```bash
+paoflow-unpack si_bands-package.zip
+```
+
+It checks every file against its checksum, lays the calculation out as a folder (open it in PAOFLOW
+Studio to look at the results) and prints the steps to reproduce it, in order. It runs nothing.
+
+The scripts in a package are someone else's code: read them before you run them. The checksums
+show that the files are the ones that were packed, not who packed them, so take packages from a
+source you trust (the repository record cited in the paper). A package that would unpack to more
+than 20 GB is refused; if you expect one that large, pass `--max-size <GB>` (`0` for no limit).
 
 ## Format
 
@@ -134,3 +203,12 @@ quantities, PhySH for subjects).
 | `npz` | Other files | NumPy arrays that no other term describes. |  |
 | `json` | Other files | A JSON file that no other term describes. |  |
 <!-- end vocabulary -->
+
+The structure in the record (`inputs`) uses these names:
+
+| Key | Definition | Shared terms |
+|---|---|---|
+| `cell_bohr` | The three lattice vectors of the cell, one per row, in bohr. | [LatticeVector](https://qudt.org/vocab/quantitykind/LatticeVector), [OPTIMADE lattice_vectors](https://schemas.optimade.org/defs/v1.2/properties/optimade/structures/lattice_vectors) |
+| `positions_bohr` | Cartesian position of each atom, in bohr, in the order of `atoms`. | [ParticlePositionVector](https://qudt.org/vocab/quantitykind/ParticlePositionVector), [OPTIMADE cartesian_site_positions](https://schemas.optimade.org/defs/v1.2/properties/optimade/structures/cartesian_site_positions) |
+| `atoms` | Chemical symbol of each atom of the cell. | [OPTIMADE species_at_sites](https://schemas.optimade.org/defs/v1.2/properties/optimade/structures/species_at_sites) |
+| `species` | The distinct elements of the cell, each with the name of its pseudopotential file. | [OPTIMADE species](https://schemas.optimade.org/defs/v1.2/properties/optimade/structures/species) |

@@ -7,7 +7,9 @@ server loads the files with :mod:`PAOFLOW.results` and answers with the Plotly s
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -141,8 +143,81 @@ def figure_payload(app: 'GuiApp', payload: dict) -> dict:
     return _describe(app, folder, ref, dataset, figure_spec(dataset), metrics)
 
 
+def run_note(folder: str, file: str) -> str | None:
+    """The line under a plot that says which run wrote its file.
+
+    Parameters
+    ----------
+    folder : str
+        The folder of the Results tab.
+    file : str
+        The first file of the dataset, relative to it.
+
+    Returns
+    -------
+    str or None
+        Start of the run, its identifier, the PAOFLOW version and commit, and the call that
+        wrote the file; None when no run record lists the file.
+    """
+    from ..writers.output_manifest import call_text, run_of_file
+
+    found = run_of_file(folder, file)
+    if found is None:
+        return None
+    run, entry = found
+    commit = run.get('paoflow_commit')
+    parts = [
+        'From this run: started %s' % run.get('started_utc', run.get('started', '?')),
+        'run %s' % run['run_id'][:8],
+        'PAOFLOW %s%s' % (run['paoflow'], ' (commit %s)' % commit[:12] if commit else ''),
+    ]
+    calls = run.get('calls', [])
+    if 'call' in entry and entry['call'] < len(calls):
+        parts.append('step %d: %s' % (entry['call'] + 1, call_text(calls[entry['call']], 160)))
+    if run.get('status') != 'finished':
+        parts.append('the run did not finish')
+    return ', '.join(parts)
+
+
+def package_folder(start: Path, top: Path) -> Path:
+    """The folder to package for the folder shown in the Results tab.
+
+    Parameters
+    ----------
+    start : Path
+        The folder of the Results tab (often the output folder).
+    top : Path
+        The search does not go above it.
+
+    Returns
+    -------
+    Path
+        The nearest folder, from ``start`` upwards, that holds ``case.json`` or the script of
+        the last run of the record; ``start`` when there is none.
+    """
+    from ..gen.cases import CASE_FILE
+    from ..writers.output_manifest import MANIFEST
+
+    script = None
+    try:
+        runs = json.loads((start / MANIFEST).read_text(encoding='utf-8')).get('runs', [])
+        script = (runs[-1].get('script') or {}).get('file')
+    except (OSError, ValueError, AttributeError, IndexError):
+        pass
+    folder = start
+    while True:
+        if (folder / CASE_FILE).is_file() or (script and (folder / script).is_file()):
+            return folder
+        if folder == top or folder.parent == folder:
+            return start
+        folder = folder.parent
+
+
 def _describe(app: 'GuiApp', folder: str, ref, dataset, spec: dict | None, metrics=None) -> dict:
     """The reply of a figure: the figure with the options, results and notes of the dataset."""
+    note = run_note(folder, ref.files[0]) if ref.files and ref.kind != 'manifest' else None
+    if note and note not in dataset.notes:
+        dataset.notes.append(note)
     return {
         'ref': ref.to_json(),
         'title': dataset.title,
@@ -359,6 +434,63 @@ def register(app: 'GuiApp') -> None:
                 },
             )
         raise HttpError(400, 'unknown export format %r' % fmt)
+
+    @app.route('POST', '/api/results/package/info')
+    def package_info(request: Request) -> Response:
+        from ..gen.cases import CASE_FILE
+        from ..gen.pack import DEFAULT_LICENSE
+
+        start = Path(_folder(app, request.json()))
+        sandbox = app.sandbox  # the search stays inside the folder the session may read
+        roots = [sandbox.root, *sandbox.write_roots, *sandbox.read_roots]
+        top = next((root for root in roots if start.is_relative_to(root)), start)
+        folder = package_folder(start, top)
+        stored: dict[str, Any] = {}
+        try:
+            stored = json.loads((folder / CASE_FILE).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            pass
+        return json_response(
+            {
+                'folder': app.sandbox.relative(folder),
+                'writable': not app.read_only and app.sandbox.writable(folder),
+                'title': stored.get('title') or folder.name,
+                'authors': '; '.join(
+                    ('%s %s' % (author['name'], author.get('orcid', ''))).strip()
+                    for author in stored.get('authors', [])
+                ),
+                'license': stored.get('license') or DEFAULT_LICENSE,
+                'machine': stored.get('machine') or '',
+            }
+        )
+
+    @app.route('POST', '/api/results/package')
+    def package(request: Request) -> Response:
+        from ..gen.pack import pack, parse_author
+
+        app.require_writable()
+        payload = request.json()
+        folder = app.resolve(payload.get('folder'))
+        authors = [parse_author(text) for text in str(payload.get('authors') or '').split(';')]
+        try:
+            result = pack(
+                folder,
+                title=str(payload.get('title') or '').strip() or None,
+                authors=[author for author in authors if author['name']] or None,
+                license=str(payload.get('license') or '').strip() or None,
+                machine=str(payload.get('machine') or '').strip() or None,
+            )
+        except FileNotFoundError as exc:
+            raise HttpError(404, str(exc)) from None
+        return json_response(
+            {
+                'path': app.sandbox.relative(result['path']),
+                'absolute': str(result['path']),
+                'bytes': result['path'].stat().st_size,
+                'files': result['files'],
+                'checklist': [{'ok': fine, 'text': text} for fine, text in result['checklist']],
+            }
+        )
 
     @app.route('POST', '/api/results/report')
     def report(request: Request) -> Response:

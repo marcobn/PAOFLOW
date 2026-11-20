@@ -281,6 +281,16 @@ export class ResultsView {
           },
           'Report',
         ),
+        h(
+          'button',
+          {
+            class: 'btn small',
+            title:
+              'One zip with the results, scripts, inputs and a description, to share or upload',
+            onclick: () => this.packageForSharing(),
+          },
+          'Package for sharing',
+        ),
       ),
       h(
         'div',
@@ -1213,6 +1223,105 @@ export class ResultsView {
 
   launchReport() {
     return this.report();
+  }
+
+  // The same code as the paoflow-pack command: questions, then the zip and its checklist.
+  async packageForSharing() {
+    let info;
+    try {
+      info = await api.post('/api/results/package/info', { path: this.folder });
+    } catch (error) {
+      toast(error.message, 'bad');
+      return;
+    }
+    if (!info.writable) {
+      toast('This folder is read-only here: run paoflow-pack in it from a terminal.', 'bad', 7000);
+      return;
+    }
+    const field = (label, value, placeholder) => {
+      const input = h('input', { type: 'text', value, placeholder, style: { width: '100%' } });
+      return [h('label', { class: 'small muted' }, label, input), input];
+    };
+    const [titleRow, title] = field('Title', info.title, '');
+    const [authorsRow, authors] = field(
+      'Authors, separated by ";" (an ORCID after a name if you have one)',
+      info.authors,
+      'Ada Lovelace 0000-0002-1825-0097; Second Author',
+    );
+    const [licenseRow, license] = field('Licence', info.license, '');
+    const [machineRow, machine] = field(
+      'Name of the machine (leave empty to omit)',
+      info.machine,
+      '',
+    );
+    const answers = await dialog({
+      title: 'Package for sharing',
+      body: h(
+        'div',
+        { style: { display: 'grid', gap: '10px', minWidth: 'min(520px, 80vw)' } },
+        h(
+          'div',
+          { class: 'small' },
+          `Folder: ${info.folder}. One zip with the results, your scripts, the DFT inputs and a `,
+          'description. Wavefunctions and job logs stay out. Nothing is uploaded.',
+        ),
+        titleRow,
+        authorsRow,
+        licenseRow,
+        machineRow,
+      ),
+      actions: [
+        { label: 'Cancel', value: null },
+        {
+          label: 'Write the package',
+          kind: 'primary',
+          value: () => ({
+            folder: info.folder,
+            title: title.value,
+            authors: authors.value,
+            license: license.value,
+            machine: machine.value,
+          }),
+        },
+      ],
+    });
+    if (!answers) return;
+    toast('Computing checksums and writing the package…', 'info', 2500);
+    let result;
+    try {
+      result = await api.post('/api/results/package', answers);
+    } catch (error) {
+      toast(error.message, 'bad');
+      return;
+    }
+    const open = result.checklist.filter((item) => !item.ok).length;
+    await dialog({
+      title: 'Package written',
+      body: h(
+        'div',
+        { style: { display: 'grid', gap: '8px' } },
+        h('div', {}, `${result.absolute} (${formatBytes(result.bytes)}, ${result.files} files)`),
+        h(
+          'div',
+          {},
+          ...result.checklist.map((item) =>
+            h(
+              'div',
+              { class: 'small', style: item.ok ? null : { fontWeight: '600' } },
+              `${item.ok ? '✓' : '○'} ${item.text}`,
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { class: 'small muted' },
+          open
+            ? `${open} item(s) marked ○ are worth a look; the package is complete without them. `
+            : '',
+          'Upload this file to a repository such as Zenodo to get a DOI.',
+        ),
+      ),
+    });
   }
 
   async report() {

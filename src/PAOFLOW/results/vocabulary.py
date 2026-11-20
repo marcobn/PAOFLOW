@@ -7,7 +7,7 @@ published term keeps its meaning: a changed definition gets a new term.  The run
 (``paoflow_outputs.json``) names the term of every file under ``kind``.
 
 ``python -m PAOFLOW.results.vocabulary`` prints the table of the documentation page
-``docs/tutorials/howtos/run-records.md``.
+``docs/studio/run-records.md``.
 """
 
 from __future__ import annotations
@@ -237,8 +237,7 @@ TERMS: dict[str, tuple[str, tuple[str, ...]]] = {
         (qudt('PermittivityRatio'),),
     ),
     'coupled_shg': (
-        'Second-harmonic susceptibility at one level of the response kernel against photon '
-        'energy.',
+        'Second-harmonic susceptibility at one level of the response kernel against photon energy.',
         (),
     ),
     'molecular_beta': (
@@ -291,8 +290,7 @@ TERMS: dict[str, tuple[str, tuple[str, ...]]] = {
         ELPHON,
     ),
     'phonon_assisted_absorption': (
-        'Phonon-assisted optical absorption coefficient against photon energy at one '
-        'temperature.',
+        'Phonon-assisted optical absorption coefficient against photon energy at one temperature.',
         (qudt('LinearAbsorptionCoefficient'),) + ELPHON,
     ),
     'indirect_eps2': (
@@ -305,13 +303,11 @@ TERMS: dict[str, tuple[str, tuple[str, ...]]] = {
         (),
     ),
     'thermal_emissivity_total': (
-        'Total hemispherical emissivity of a slab and of an opaque half-space against '
-        'temperature.',
+        'Total hemispherical emissivity of a slab and of an opaque half-space against temperature.',
         (),
     ),
     'scattering_rates': (
-        'Electron-phonon scattering rates of the states against their energy at one '
-        'temperature.',
+        'Electron-phonon scattering rates of the states against their energy at one temperature.',
         ELPHON,
     ),
     'eliashberg_self_energy': (
@@ -393,6 +389,39 @@ TERMS: dict[str, tuple[str, tuple[str, ...]]] = {
     ),
     'npz': ('NumPy arrays that no other term describes.', ()),
     'json': ('A JSON file that no other term describes.', ()),
+}
+
+
+def optimade(name: str) -> str:
+    """Address of an OPTIMADE property definition of a structure.
+
+    Parameters
+    ----------
+    name : str
+        Its name (``'lattice_vectors'``).
+
+    Returns
+    -------
+    str
+    """
+    return 'https://schemas.optimade.org/defs/v1.2/properties/optimade/structures/' + name
+
+
+#: key of ``inputs`` in the run record -> (definition, addresses of the shared terms).
+STRUCTURE: dict[str, tuple[str, tuple[str, ...]]] = {
+    'cell_bohr': (
+        'The three lattice vectors of the cell, one per row, in bohr.',
+        (qudt('LatticeVector'), optimade('lattice_vectors')),
+    ),
+    'positions_bohr': (
+        'Cartesian position of each atom, in bohr, in the order of atoms.',
+        (qudt('ParticlePositionVector'), optimade('cartesian_site_positions')),
+    ),
+    'atoms': ('Chemical symbol of each atom of the cell.', (optimade('species_at_sites'),)),
+    'species': (
+        'The distinct elements of the cell, each with the name of its pseudopotential file.',
+        (optimade('species'),),
+    ),
 }
 
 

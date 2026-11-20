@@ -255,6 +255,9 @@ def test_output_manifest(tmp_path):
         }.items()
     )
     assert len(entry['sha256']) == 64 and manifest['manifest'] == 2
+    # an absolute save path names the user: only its last name is recorded
+    write_output_manifest({**attributes, 'savedir': '/home/someone/si.save'}, start_time=0.0)
+    assert json.loads((out / MANIFEST).read_text())['runs'][-1]['savedir'] == 'si.save'
     folder = ResultsFolder(str(out))
     assert folder.load(folder.find('manifest')).table[0]['name'] == 'paoflow'
 
@@ -313,7 +316,14 @@ def test_plain_function_steps_share_one_entry(tmp_path):
     shutil.copy(SI / 'dosdk_0.dat', tmp_path / 'dosdk_0.dat')
     os.utime(tmp_path / 'dosdk_0.dat')
     record_function_call(str(tmp_path), 'elphon.write_mobility', {'label': 'n-type'})
-    record_function_call(str(tmp_path), 'elphon.write_eliashberg', {'mu_star': 0.1})
+    phonons = tmp_path / 'phonon'
+    phonons.mkdir()
+    (phonons / 'si.dyn1').write_text('dynamical matrix')
+    (phonons / 'phonopy.yaml').write_text('phonopy:\n  version: "2.38.1"\n')
+    (phonons / 'ph.out').write_text('a log, not hashed')
+    record_function_call(
+        str(tmp_path), 'elphon.write_eliashberg', {'mu_star': 0.1}, inputs=[str(phonons), None]
+    )
     record_function_call(str(tmp_path / 'missing'), 'never raises')
     _validate(tmp_path / MANIFEST)
     (run,) = json.loads((tmp_path / MANIFEST).read_text())['runs']
@@ -322,6 +332,11 @@ def test_plain_function_steps_share_one_entry(tmp_path):
         'elphon.write_eliashberg',
     ]
     assert run['status'] == 'finished' and run['files'][0]['kind'] == 'dos'
+    assert run['input_versions'] == {'phonopy': '2.38.1'}
+    assert sorted(os.path.basename(stamp['file']) for stamp in run['input_files']) == [
+        'phonopy.yaml',
+        'si.dyn1',
+    ]
     assert len(run['files'][0]['sha256']) == 64
 
 

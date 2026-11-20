@@ -208,6 +208,7 @@ def write_mobility(out: dict, outdir: str, *, label: str = '', comm=None) -> lis
             'label': label,
             **{key: out.get(key) for key in ('coupling_save', 'electrons_save', 'electrons_dft')},
         },
+        inputs=[out.get('coupling_save'), out.get('electrons_save')],
     )
     return paths
 
@@ -335,6 +336,7 @@ def metal_resistivity(
         outdir,
         'elphon.metal_resistivity',
         {'eliashberg_npz': eliashberg_npz, 'temps_k': list(temps_k), 'rho0_uohm_cm': rho0_uohm_cm},
+        inputs=[eliashberg_npz],
     )
     return {
         'channels': channels,

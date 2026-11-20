@@ -67,7 +67,12 @@ Rules:
 - Privacy: paths are relative (inputs to the working folder, outputs to the output folder). The
   record holds no hostname, user name, cluster or partition name, or scheduler job ID. An
   absolute path given as an argument is made relative to the current folder, or cut to its last
-  name when it lies outside.
+  name when it lies outside. The same holds for `savedir`.
+- Other inputs: the plain-function paths pass their input files or folders to
+  `record_function_call(..., inputs=[...])`; `stamp_inputs` hashes the phonon files (`*.dyn*`,
+  `*.fc`, `dvscf`, `phonopy*.yaml`, `*.epb*`) and the XML of a save, under `input_files`, and
+  reads a version only where a file states it (`input_versions`: phonopy from `phonopy.yaml`,
+  QE from `data-file-schema.xml`). The `ph.x` and EPW files PAOFLOW reads state no version.
 - The record is an output. Nothing reads it back as the configuration of a run.
 - There is no cap on the number of runs in one record.
 
@@ -105,6 +110,28 @@ are added when their addresses resolve (they did not on 2026-11-19).
   written.
 - `paoflow-unpack <zip>` checks every hash, lays out the case folder and prints the steps to
   reproduce. It does not re-run anything.
+
+As built (`src/PAOFLOW/gen/pack.py`; `pack()` and `unpack()` are the functions Studio will
+call):
+
+- The folder to pack is the one the script ran in. Records are searched below it; a path a
+  record names (inputs, script) is looked up from the record's folder upwards, since a record
+  does not know where the packed folder starts.
+- Files are taken by an allow-list: what the records name, plus `EXTRA_FILES` (`*.py`, `*.in`,
+  `INCAR`/`KPOINTS`/`POSCAR`, UPFs, `case.json`, `README.md`, `figures.json`, `g_ReRp_*.json`,
+  `JOURNAL.md`, `STATUS.md`). Job logs and shell scripts stay out (they name machines).
+- Re-runs: the last run that lists a file describes it; earlier entries keep their history in
+  the record but lose the file in the crate. A file whose content differs from the checksum of
+  that run is reported as changed.
+- Not packed, listed by sha256 in the README: the other files of a DFT save (wavefunctions,
+  charge density) and `POTCAR` (VASP licence).
+- Every hash, deferred or not, is computed at pack time and written to the crate (`sha256` on
+  each `File`); the run records are not rewritten. `paoflow-unpack` verifies against the crate.
+- Profiles: Process Run Crate 0.6 and Workflow Run Crate 0.6 on RO-Crate 1.3 (the versions
+  current on 2026-11-20). One `CreateAction` per run with results; an unfinished run is a
+  `FailedActionStatus`. Formal parameters are optional in the profile and not written.
+- The README of the folder itself is packed as `README.case.md`; the generated one is
+  `README.md`.
 - Neither command contains network code.
 
 ## Studio
@@ -120,10 +147,12 @@ sharing" button that calls the code of `paoflow-pack`. The record never depends 
 | Records for the electron-phonon writers and the `pyskeaf` command line (`record_function_call`, one explicit call each) | Done |
 | Library tight-binding runs (`models/_paoflow_runner.py`) | Covered by the recorder; they stay `unfinished` because they return the object without `finish_execution()` |
 | JSON Schema (`writers/run_record.schema.json`), definitions and shared-term links (`results/vocabulary.py`), user page (`docs/studio/run-records.md`) | Done |
-| Units that are empty in the catalogue | Open: each needs a check against its writer (the k-path axis is a point index and has no unit) |
-| Versions and hashes of the phonon and electron-phonon inputs (ph.x, phonopy, EPW) | Planned |
-| `paoflow-pack`, `paoflow-unpack` | Planned |
-| Studio | Planned |
+| Units that are empty in the catalogue | Open, and not a catalogue matter: most are dimensionless (ε, n, k, reflectivity, emissivity, α²F, transmission) or a point index (k path); the rest depend on an argument of the run (`units` of the phonon and IR/Raman writers, `twoD` of the Hall ones), so the unit has to come from the call, not from the file name |
+| Versions and hashes of the phonon and electron-phonon inputs (ph.x, phonopy, EPW) | Done (`stamp_inputs`); `phonon_dispersion` and the writers that carry the saves pass them |
+| Structure terms (QUDT, OPTIMADE) | Done (`STRUCTURE` in `results/vocabulary.py`) |
+| `paoflow-pack`, `paoflow-unpack` | Done; the crate is not yet checked with `roc-validator` (the test skips without it) |
+| Studio: readable *Run information* (`load_manifest`), the *From this run* line under each plot (`run_note`, from the `call` index the record keeps per file), the *Package for sharing* button (`/api/results/package`, the code of `paoflow-pack`) | Done |
+| Opening an unpacked folder as a case in Studio | Open: Studio opens cases of the examples library by name only; the folder has a valid `case.json` and its results open in the Results tab |
 
 Out of scope: upload to any repository, `CITATION.cff` and a DOI for the code, a flag to switch
 the record off, headers in `.dat` files or new output formats, a command that re-runs a case and

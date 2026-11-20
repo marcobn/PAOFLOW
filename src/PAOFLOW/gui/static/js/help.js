@@ -196,6 +196,8 @@ const SECTIONS = [
         '**Experiment overlay**: *File…* picks a measured curve (columns or CSV), choose its x and y columns and a scale, *Overlay*. The GUI reports the RMS, the bias and the relative RMS against the computed curve.',
         '**Export**: CSV of the plotted data, *Python* (a script that rebuilds the figure, with the `GPAO` call where one exists), PDF / PNG / SVG through matplotlib. The camera icon of the figure saves the current view.',
         '**Report** writes one HTML file with every figure of the folder; it opens offline.',
+        '**Package for sharing** writes one zip with the results, your scripts, the DFT inputs and a description (the `paoflow-pack` command): the file to upload to a repository such as Zenodo for a data-availability statement. It asks the title, the authors and the licence, and ends with a checklist of what a reader will look for. Wavefunctions and job logs stay out; nothing is uploaded.',
+        'Under each plot, *From this run* names the run that wrote the file: when it started, its identifier, the PAOFLOW version and the call of your script. *Run information* shows the whole record of a run: the DFT calculation, the steps in order with time and memory, the machine, and every file with its quantities and units.',
         '**live** rescans the folder every few seconds while a run writes files; new datasets are marked *new*.',
       ],
     ],

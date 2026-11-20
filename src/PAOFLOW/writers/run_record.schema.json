@@ -33,6 +33,7 @@
    "properties": {
     "kind": {"type": "string"},
     "category": {"type": "string"},
+    "call": {"description": "Position in 'calls' (from 0) of the call after which the file was last written.", "type": "integer", "minimum": 0},
     "labels": {"type": "object", "additionalProperties": {"type": "string"}},
     "axes": {
      "type": "array",
@@ -108,6 +109,14 @@
     "energy_reference": {"type": "string"},
     "fermi_energy_dft_ev": {"type": "number"},
     "inputs": {"$ref": "#/$defs/inputs"},
+    "input_files": {
+     "description": "Further input files of the run (phonons from ph.x or phonopy, DFT saves of the electron-phonon steps), relative to the folder the script ran in.",
+     "type": "array", "items": {"$ref": "#/$defs/file"}
+    },
+    "input_versions": {
+     "description": "Version of each code, where one of the input files states it.",
+     "type": "object", "additionalProperties": {"type": "string"}
+    },
     "script": {"$ref": "#/$defs/file"},
     "calls": {"type": "array", "items": {"$ref": "#/$defs/call"}},
     "replayable": {

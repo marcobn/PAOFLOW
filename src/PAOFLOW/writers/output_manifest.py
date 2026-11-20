@@ -447,6 +447,10 @@ def run_record(
     facts = {key: _scalar(attributes.get(key)) for key in keys if key in attributes}
     if 'Efermi' in facts:
         facts['fermi_energy_dft_ev'] = facts.pop('Efermi')
+    if isinstance(facts.get('savedir'), str) and os.path.isabs(facts['savedir']):
+        # no absolute path in the record, as for the arguments of the calls
+        cleaned, _ = encode_argument(facts['savedir'])
+        facts['savedir'] = cleaned if isinstance(cleaned, str) else cleaned['path_outside_folder']
     revision = source_revision()
     if revision is not None:
         facts = {
@@ -477,13 +481,119 @@ def run_record(
         record_inputs = state['inputs']
     if record_inputs is not None:
         record['inputs'] = record_inputs
+    for key in ('input_files', 'input_versions'):
+        if state.get(key):
+            record[key] = state[key]
     if state.get('script'):
         record['script'] = state['script']
     if 'calls' in state:
         record['calls'] = state['calls']
         record['replayable'] = state['replayable']
+    if state.get('calls'):
+        # the call after which each file was last written: the record is rewritten after every
+        # call, so a file that is new or newer than at the previous write belongs to this one
+        written = state.setdefault('written', {})
+        for entry in files:
+            modified = os.path.getmtime(os.path.join(output_path, entry['file']))
+            if entry['file'] not in written or modified > written[entry['file']][0]:
+                written[entry['file']] = (modified, len(state['calls']) - 1)
+            entry['call'] = written[entry['file']][1]
     record.update(environment=environment(), infrastructure=infrastructure(), files=files)
     return record
+
+
+def call_text(call: dict, limit: int = 200) -> str:
+    """One recorded call as a line of text.
+
+    Parameters
+    ----------
+    call : dict
+        An entry of ``calls`` of a run.
+    limit : int, optional
+        Longest argument list kept; the rest is cut.
+
+    Returns
+    -------
+    str
+        ``PAOFLOW.bands(ibrav=2, nk=20)``: the arguments that are not None, as JSON values.
+    """
+    arguments = ', '.join(
+        '%s=%s' % (key, json.dumps(value, ensure_ascii=False))
+        for key, value in call.get('arguments', {}).items()
+        if value is not None
+    )
+    if len(arguments) > limit:
+        arguments = arguments[:limit] + ' ...'
+    return '%s(%s)' % (call['method'], arguments)
+
+
+def axes_text(entry: dict) -> str:
+    """Quantities and units of an output file of the record: ``Energy (eV); DOS (states/eV)``.
+
+    Parameters
+    ----------
+    entry : dict
+        An entry of ``files`` of a run.
+
+    Returns
+    -------
+    str
+        Empty for a file without recorded axes.
+    """
+    return '; '.join(
+        '%s (%s)' % (axis['quantity'], axis['unit']) if axis.get('unit') else axis['quantity']
+        for axis in entry.get('axes', [])
+    )
+
+
+def formula(atoms: list) -> str:
+    """Formula of a cell from its list of chemical symbols: ``['Si', 'Si']`` gives ``Si2``.
+
+    Parameters
+    ----------
+    atoms : list of str
+
+    Returns
+    -------
+    str
+    """
+    counts = {atom: atoms.count(atom) for atom in sorted(set(atoms))}
+    return ''.join('%s%s' % (atom, n if n > 1 else '') for atom, n in counts.items())
+
+
+def run_of_file(root: str, file: str) -> tuple[dict, dict] | None:
+    """The run that wrote an output file, from the run record next to it or above it.
+
+    Parameters
+    ----------
+    root : str
+        Folder the search stops at.
+    file : str
+        The file, relative to ``root``.
+
+    Returns
+    -------
+    tuple of (dict, dict) or None
+        The run entry and the entry of the file in it: the last run that lists the file.  None
+        without a record or when no run lists it.
+    """
+    root = os.path.abspath(root)
+    path = os.path.join(root, file)
+    folder = os.path.dirname(path)
+    while True:
+        try:
+            with open(os.path.join(folder, MANIFEST), 'r', encoding='utf-8') as handle:
+                runs = json.load(handle).get('runs', [])
+        except (OSError, ValueError, AttributeError):
+            runs = []
+        relative = os.path.relpath(path, folder).replace(os.sep, '/')
+        for run in reversed(runs):
+            for entry in run.get('files', []):
+                if entry.get('file') == relative:
+                    return run, entry
+        if folder == root or os.path.dirname(folder) == folder:
+            return None
+        folder = os.path.dirname(folder)
 
 
 def write_output_manifest(
@@ -555,7 +665,75 @@ def _new_state(start: float) -> dict[str, Any]:
     }
 
 
-def record_function_call(output_path: str, name: str, arguments: dict | None = None) -> None:
+# Files of an input folder worth a checksum: the DFT save, the ph.x and phonopy phonons, EPW.
+_INPUT_PATTERNS = (
+    '*.xml',
+    '*.UPF',
+    '*.upf',
+    'POTCAR',
+    '*.dyn*',
+    '*.fc',
+    'phonopy*.yaml',
+    '*dvscf*',
+    '_ph0/*dvscf*',
+    '_ph0/*/*dvscf*',
+    '*.epb*',
+)
+_VERSIONS = {
+    'Quantum ESPRESSO': r'<creator[^>]*NAME="PWSCF"[^>]*VERSION="([^"]+)"',
+    'phonopy': r'^phonopy:\s*\n\s+version:\s*"?([^"\s]+)',
+}
+
+
+def stamp_inputs(paths: list, root: str) -> tuple[list, dict]:
+    """Checksums of the input files of a step, and the code versions those files state.
+
+    Parameters
+    ----------
+    paths : list of str
+        Files, or folders (a DFT save, a ``ph.x`` or phonopy run folder): of a folder the files
+        of :data:`_INPUT_PATTERNS` are taken.  Missing and empty entries are skipped.
+    root : str
+        Folder the recorded paths are relative to.
+
+    Returns
+    -------
+    tuple of (list, dict)
+        The :func:`file_stamp` of each file, and ``{code: version}`` for the codes whose version
+        is written in one of the files (``data-file-schema.xml``, ``phonopy.yaml``).  No log file
+        is parsed.
+    """
+    files: list[str] = []
+    for path in paths:
+        if path and os.path.isdir(path):
+            for pattern in _INPUT_PATTERNS:
+                files += glob.glob(os.path.join(path, pattern))
+        elif path and os.path.isfile(path):
+            files.append(path)
+    files = sorted({os.path.abspath(name) for name in files if os.path.isfile(name)})
+    versions: dict[str, str] = {}
+    for name in files:
+        if name.endswith(('.xml', '.yaml')) and os.path.getsize(name) <= HASH_LIMIT:
+            with open(name, 'r', encoding='utf-8', errors='replace') as handle:
+                head = handle.read(4096)
+            for code, pattern in _VERSIONS.items():
+                found = re.search(pattern, head, re.MULTILINE)
+                if found is not None:
+                    versions.setdefault(code, found.group(1))
+    stamps = []
+    for name in files:
+        stamp = file_stamp(name, root)
+        # a driver of a system folder runs one level down (transport/ reads ../qe/phonon);
+        # a path that climbs further would spell out folders above the calculation
+        if stamp['file'].startswith('../../../'):
+            stamp['file'] = os.path.basename(name)
+        stamps.append(stamp)
+    return stamps, versions
+
+
+def record_function_call(
+    output_path: str, name: str, arguments: dict | None = None, inputs: list | None = None
+) -> None:
     """Record a step of a run path that is a plain function, not an orchestrator method.
 
     For the electron-phonon writers and the ``pyskeaf`` command line.  Call it on the way out,
@@ -569,6 +747,9 @@ def record_function_call(output_path: str, name: str, arguments: dict | None = N
         Name of the step (``'elphon.write_mobility'``).
     arguments : dict, optional
         The arguments worth keeping, encoded with :func:`encode_argument`.
+    inputs : list of str, optional
+        Input files or folders of the step (:func:`stamp_inputs`): the record gets their
+        checksums under ``input_files`` and the versions they state under ``input_versions``.
 
     Notes
     -----
@@ -589,6 +770,13 @@ def record_function_call(output_path: str, name: str, arguments: dict | None = N
             encoded[key], rebuildable = encode_argument(value)
             state['replayable'] = state['replayable'] and rebuildable
         state['calls'].append({'method': name, 'arguments': encoded, 'status': 'ok'})
+        new = [path for path in inputs or () if path and path not in state.setdefault('seen', [])]
+        if new:  # each input is hashed once per process
+            state['seen'] += new
+            stamps, versions = stamp_inputs(new, os.getcwd())
+            known = {stamp['file'] for stamp in state.setdefault('input_files', [])}
+            state['input_files'] += [stamp for stamp in stamps if stamp['file'] not in known]
+            state.setdefault('input_versions', {}).update(versions)
         write_output_manifest({'opath': output_path}, state['start'], None, state, final=True)
     except Exception as exc:  # noqa: BLE001
         print('(run record not written: %s)' % exc)

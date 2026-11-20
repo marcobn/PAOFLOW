@@ -21,7 +21,7 @@ user-invocable: true
     - Build: `flit_core` (`pyproject.toml`), Python >= 3.10, core dependencies are numpy, scipy, mpi4py and pandas
     - Optional extras: `graphics`, `fermisurface`, `transport`, `pyskeaf`, `qo_analysis`, `phonon`, `weyl_search`, `pythtb`, `fast` (numba), `dev`, `docs`
     - Parallelism: MPI via `mpi4py`, with k-points split across ranks and pools. Scripts are run as `mpirun -np N python main.py`
-    - Console scripts: `pyskeaf`, `paoflow-genbasis-ps`, `paoflow-gen-qe`, `paoflow-gen`, `fermi-plotter`
+    - Console scripts: `pyskeaf`, `paoflow-genbasis-ps`, `paoflow-gen-qe`, `paoflow-gen`, `paoflow-pack`, `paoflow-unpack`, `fermi-plotter`
 
 4. **Folder tree**
     ```

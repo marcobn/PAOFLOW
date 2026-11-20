@@ -315,6 +315,7 @@ def write_absorption(out: dict, outdir: str, *, label: str = '', comm=None) -> l
             'label': label,
             **{key: out.get(key) for key in ('coupling_save', 'electrons_save', 'electrons_dft')},
         },
+        inputs=[out.get('coupling_save'), out.get('electrons_save')],
     )
     return paths
 

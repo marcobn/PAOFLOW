@@ -7,6 +7,7 @@ import warnings
 from typing import Sequence
 
 from ...phonon.qe_force_constants import THZ_TO_CM1, q2r_matdyn
+from ...writers.output_manifest import record_function_call
 from .system import ElphonSystem
 
 
@@ -74,6 +75,12 @@ def phonon_dispersion(
                 long_range=False,
                 **common,
             )
+    record_function_call(
+        outdir,
+        'elphon.phonon_dispersion',
+        {'units': units, 'mesh': list(mesh), 'sigma': sigma, 'npoints': npoints, 'fname': fname},
+        inputs=[system.phonon_path],
+    )
     return {
         'result': result,
         'plain': plain,

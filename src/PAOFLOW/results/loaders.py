@@ -835,6 +835,26 @@ def load_dhva(ref: DatasetRef, root: str, options: dict) -> Dataset:
 
 
 def load_manifest(ref: DatasetRef, root: str, options: dict) -> Dataset:
+    """The run record of a folder, one run at a time, for a person to read.
+
+    Parameters
+    ----------
+    ref : DatasetRef
+        The record (``paoflow_outputs.json``).
+    root : str
+        The folder.
+    options : dict
+        ``run``: the run to show (default: the last).
+
+    Returns
+    -------
+    Dataset
+        ``table``: the facts of the run (version, DFT calculation, script, software, machine);
+        ``text``: the steps in order with time and memory, the structure, the input files and
+        the files written with their quantities, units and the step that wrote them.
+    """
+    from ..writers.output_manifest import axes_text, call_text, formula
+
     dataset = _new(ref)
     dataset.family = 'text'
     with open(_path(root, ref.files[0]), 'r', encoding='utf-8') as handle:
@@ -849,16 +869,89 @@ def load_manifest(ref: DatasetRef, root: str, options: dict) -> Dataset:
     chosen = _choice(options, 'run', 'Run', choices, choices[-1])
     _option(dataset, 'run', 'Run', choices, chosen)
     run = runs[choices.index(chosen)]
+
+    def row(name: str, value: Any, unit: str = '') -> None:
+        dataset.table.append({'name': name, 'value': value, 'unit': unit})
+
     for key, value in run.items():
-        if key != 'files':
-            unit = 'eV' if key.endswith('_ev') else ''
-            if isinstance(value, (dict, list)):  # nested facts of record version 2
-                value = json.dumps(value)
-            dataset.table.append({'name': key, 'value': value, 'unit': unit})
-    lines = ['%-42s %-26s %s' % ('file', 'kind', 'bytes')]
+        if not isinstance(value, (dict, list)):
+            row(key, value, 'eV' if key.endswith('_ev') else '')
+    inputs = run.get('inputs') or {}
+    if inputs:
+        row('DFT code', ('%s %s' % (inputs['engine'], inputs.get('version', ''))).strip())
+        row('functional', inputs.get('functional', 'not recorded'))
+        if inputs.get('atoms'):
+            row('cell', '%s (%d atoms)' % (formula(inputs['atoms']), len(inputs['atoms'])))
+        row('pseudopotentials', ', '.join(s['pseudopotential'] for s in inputs.get('species', [])))
+    for code, version in run.get('input_versions', {}).items():
+        row('%s version' % code, version)
+    if run.get('script'):
+        row('script', run['script']['file'])
+    software = run.get('environment') or {}
+    if software:
+        row(
+            'software',
+            'Python %s, numpy %s, scipy %s, mpi4py %s, Rust kernels: %s'
+            % (
+                *(software.get(key) for key in ('python', 'numpy', 'scipy', 'mpi4py')),
+                'yes' if software.get('rust_kernels') else 'no',
+            ),
+        )
+    machine = run.get('infrastructure') or {}
+    if machine:
+        parts = [
+            '%s MPI rank(s) x %s thread(s)' % (machine['mpi_ranks'], machine['threads_per_rank'])
+        ]
+        if machine.get('nodes'):
+            parts.append('%s node(s)' % machine['nodes'])
+        parts += [machine[key] for key in ('cpu_model',) if machine.get(key)]
+        if machine.get('memory_total_gb'):
+            parts.append('%s GB memory' % machine['memory_total_gb'])
+        if machine.get('blas'):
+            parts.append('BLAS: %s' % machine['blas'])
+        row('machine', '; '.join(parts))
+    lines = []
+    calls = run.get('calls', [])
+    if calls:
+        lines += ['Steps, in order', '']
+        for number, call in enumerate(calls, 1):
+            cost = ''
+            if 'seconds' in call:
+                cost = '   [%.1f s, peak %.0f MB]' % (call['seconds'], call['peak_memory_rank0_mb'])
+            failed = '' if call.get('status') == 'ok' else '   FAILED'
+            lines.append('%3d. %s%s%s' % (number, call_text(call, 400), cost, failed))
+        if not run.get('replayable', True):
+            lines += [
+                '',
+                '     Some arguments (arrays, functions, objects) are described, not stored:',
+            ]
+            lines += ['     the steps cannot be repeated from this record alone.']
+        lines.append('')
+    if inputs.get('cell_bohr'):
+        lines += ['Structure (bohr)', '']
+        lines += [
+            '  a%d  % .6f  % .6f  % .6f' % (n, *v) for n, v in enumerate(inputs['cell_bohr'], 1)
+        ]
+        positions = zip(inputs.get('atoms', []), inputs.get('positions_bohr', []))
+        lines += ['  %-3s % .6f  % .6f  % .6f' % (atom, *position) for atom, position in positions]
+        lines.append('')
+    named = list(inputs.get('files', [])) + list(run.get('input_files', []))
+    if named:
+        lines += ['Input files', '']
+        for entry in named:
+            stamp = 'sha256 ' + entry['sha256'] if 'sha256' in entry else 'not hashed (large)'
+            lines.append('  %-44s %12d bytes  %s' % (entry['file'], entry['bytes'], stamp))
+        lines.append('')
+    lines += [
+        'Files written',
+        '',
+        '  %-40s %-22s %-34s %10s  %s' % ('file', 'what', 'quantities and units', 'bytes', 'step'),
+    ]
     for entry in run.get('files', []):
+        step = entry['call'] + 1 if 'call' in entry else ''
         lines.append(
-            '%-42s %-26s %d' % (entry['file'], entry.get('kind', '?'), entry.get('bytes', 0))
+            '  %-40s %-22s %-34s %10d  %s'
+            % (entry['file'], entry.get('kind', ''), axes_text(entry), entry.get('bytes', 0), step)
         )
     dataset.text = '\n'.join(lines)
     return dataset

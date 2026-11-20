@@ -379,3 +379,54 @@ def test_structure_of_the_working_folder(client, gui_root):
     (gui_root / 'empty').mkdir()
     assert 'error' in client.get('/api/workspace/structure?path=empty')[1]
     assert client.get('/api/workspace/structure?path=../')[0] == 403
+
+
+def test_run_information_run_note_and_package(make_client, gui_root, monkeypatch):
+    """The run record in the Results tab: the readable entry, the line under a plot that names
+    the run and the call, and the package written by the code of ``paoflow-pack``."""
+    import sys
+    import zipfile
+
+    from PAOFLOW.PAOFLOW import PAOFLOW
+
+    work = gui_root / 'Si'
+    (work / 'main.py').write_text('# the driver\n')
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(sys, 'argv', ['main.py'])
+    paoflow = PAOFLOW(savedir='silicon.save', outputdir='output', verbose=False)
+    paoflow.read_atomic_proj_QE()
+    paoflow.projectability()
+    paoflow.pao_hamiltonian()
+    paoflow.bands(ibrav=2, nk=20)
+    paoflow.finish_execution()
+
+    client = make_client()
+    _, body, _ = client.post('/api/results/scan', {'path': 'Si/output'})
+    by_kind = {d['kind']: d['id'] for d in body['datasets']}
+    _, record, _ = client.post(
+        '/api/results/figure', {'path': 'Si/output', 'id': by_kind['manifest']}
+    )
+    facts = {row['name']: row['value'] for row in record['table']}
+    assert facts['DFT code'].startswith('Quantum ESPRESSO') and facts['script'] == 'main.py'
+    assert 'MPI rank' in facts['machine'] and '{' not in ''.join(map(str, facts.values()))
+    assert 'Steps, in order' in record['text'] and 'PAOFLOW.bands(' in record['text']
+    assert 'Energy (eV)' in record['text'] and not record['notes']
+    _, bands, _ = client.post('/api/results/figure', {'path': 'Si/output', 'id': by_kind['bands']})
+    (note,) = [note for note in bands['notes'] if note.startswith('From this run')]
+    assert 'PAOFLOW 4' in note and 'step 5: PAOFLOW.bands(' in note and 'did not finish' not in note
+
+    _, info, _ = client.post('/api/results/package/info', {'path': 'Si/output'})
+    assert info['folder'] == 'Si' and info['writable'] and info['license'] == 'CC-BY-4.0'
+    answers = {'folder': 'Si', 'title': 'Si bands', 'authors': 'A. Person 0000-0002-1825-0097; B'}
+    status, written, _ = client.post('/api/results/package', answers)
+    assert status == 200 and written['path'] == 'Si/Si-package.zip'
+    assert {'ok': True, 'text': 'Authors: A. Person, B'} in written['checklist']
+    assert 'output/bands_0.dat' in zipfile.ZipFile(written['absolute']).namelist()
+    _, info, _ = client.post('/api/results/package/info', {'path': 'Si/output'})
+    assert info['title'] == 'Si bands' and info['authors'] == 'A. Person 0000-0002-1825-0097; B'
+
+    assert client.post('/api/results/package', {'folder': 'Si/silicon.save'})[0] == 404
+    assert client.post('/api/results/package', {'folder': '../'})[0] == 403
+    read_only = make_client(read_only=True)
+    assert read_only.post('/api/results/package', answers)[0] == 403
+    assert not read_only.post('/api/results/package/info', {'path': 'Si/output'})[1]['writable']
