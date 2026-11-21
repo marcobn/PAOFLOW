@@ -144,7 +144,8 @@ $1/\omega_{mn}$ factors, while $r$, $r_{;a}$ and $\Delta$ keep the DFT eigenvect
 (`test_scissor_shifts_the_delta_spectra_rigidly`).
 
 **Occupations.** 0 K: a step by band index (`nelec`/$g_s$ bands) or by energy if `fermi_energy` is
-given; finite `temperature`: Fermi–Dirac at `fermi_energy` (default the mid-gap).
+given; finite `temperature`: Fermi–Dirac at `fermi_energy` (default the mid-gap; `'neutral'`: the charge-neutral
+level, see *The Fermi level of a metal*).
 
 **Degeneracies (U(N)-covariant since October 28 2026).** Bands are grouped in clusters by the
 transitive closure of consecutive gaps below `degeneracy_tol` (`degenerate_clusters`); $r$, $G$
@@ -731,6 +732,27 @@ reversal and allowed. In the trace these terms appear divided by τ.
 
 Use a long τ, or the δ-function path, for the rate. The time-odd Drude residual grows as τ², so at long τ it dominates
 the total circular current until k is converged (`validation/nlo_metals/CoSi/REPORT.md`, 15 Nov 2026).
+
+**The Fermi level of a metal.** PAOFLOW energies are relative to the Fermi level of the DFT run, which carries that
+run's smearing and coarse k-grid. In a metal with a large density of states at $E_F$ the charge-neutral level at the
+temperature of the response is a few meV away; in a semimetal it is tens of meV away. With Marzari–Vanderbilt
+0.27 eV in QE and the PAO bands on 80³:
+
+| | 300 K | 100 K | 10 K |
+|---|---|---|---|
+| TaAs (spin-orbit) | +73.7 meV | +84.3 meV | +85.4 meV |
+| CoSi (scalar) | −3.0 meV | −18.0 meV | −19.0 meV |
+
+The level of a semimetal converges slowly with the grid (TaAs at 10 K: +94 / +94 / +85 meV on 40³ / 60³ / 80³).
+`fermi_energy` still defaults to 0.0, the DFT level, so earlier outputs do not change. A metallic run of
+`nonlinear_optics` or `coupled_optical_response` with that default counts the electrons of its own bands on `nk` at
+`temperature` (`PAOFLOW.charge_neutral_fermi_level`, `spectrum/fermi_level.py`; eigenvalues only, about 1 % of the
+cost of the response) and prints a warning when the charge-neutral level differs by more than max(5 meV, kT/2).
+`fermi_energy='neutral'` uses that level. Both cases record `fermi_energy_source` and
+`charge_neutral_fermi_level_ev` in `attr`, and the counted levels go to `paoflow_outputs.json`. The count is a balance
+of the conduction electrons and the valence holes solved in logarithms, exact in a gap at any temperature, so an
+insulator gets its intrinsic level. It refuses an electron count that the bands at the DFT level do not hold
+(semicore shells of the DFT valence outside the basis: pass `nelec`).
 
 The physical models of these tables (gapped and strained graphene, the Haldane model, the Rice–Mele chain, the
 two-band Weyl semimetal, the single bands) are library models, `PAOFLOW.models.models` (`honeycomb_model`,
