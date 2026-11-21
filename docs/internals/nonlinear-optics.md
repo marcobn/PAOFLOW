@@ -734,20 +734,26 @@ Use a long τ, or the δ-function path, for the rate. The time-odd Drude residua
 the total circular current until k is converged (`validation/nlo_metals/CoSi/REPORT.md`, 15 Nov 2026).
 
 **The Fermi level of a metal.** PAOFLOW energies are relative to the Fermi level of the DFT run, which carries that
-run's smearing and coarse k-grid. In a metal with a large density of states at $E_F$ the charge-neutral level at the
-temperature of the response is a few meV away; in a semimetal it is tens of meV away. With Marzari–Vanderbilt
-0.27 eV in QE and the PAO bands on 80³:
+run's smearing and k-grid; an nscf run recomputes it on its own grid. With Marzari–Vanderbilt 0.27 eV in QE, the
+charge-neutral level of the PAO bands is:
 
 | | 300 K | 100 K | 10 K |
 |---|---|---|---|
-| TaAs (spin-orbit) | +73.7 meV | +84.3 meV | +85.4 meV |
-| CoSi (scalar) | −3.0 meV | −18.0 meV | −19.0 meV |
+| TaAs (spin-orbit; scf and nscf 10³), 80³ | +73.7 meV | +84.3 meV | +85.4 meV |
+| CoSi (scalar), 80³ | −3.0 meV | −18.0 meV | −19.0 meV |
+| Al (scf 16³ shifted, nscf 12³), 48³ / 64³ | +115.9 / +115.8 meV | | |
+
+In Al the nscf level is 104 meV below the scf one (7.7552 against 7.8592 eV): the coarse unshifted nscf grid, not
+the smearing, is the cause, and the charge-neutral level is 12 meV above the scf level. On the coarse grids of a
+response the count itself is not converged (Al at 300 K: +194 / −12 / +143 / +107 meV on 8³ / 12³ / 16³ / 24³),
+but it is the neutral level of the grid the response uses.
 
 The level of a semimetal converges slowly with the grid (TaAs at 10 K: +94 / +94 / +85 meV on 40³ / 60³ / 80³).
 `fermi_energy` still defaults to 0.0, the DFT level, so earlier outputs do not change. A metallic run of
 `nonlinear_optics` or `coupled_optical_response` with that default counts the electrons of its own bands on `nk` at
-`temperature` (`PAOFLOW.charge_neutral_fermi_level`, `spectrum/fermi_level.py`; eigenvalues only, about 1 % of the
-cost of the response) and prints a warning when the charge-neutral level differs by more than max(5 meV, kT/2).
+`temperature` (`PAOFLOW.charge_neutral_fermi_level`, `spectrum/fermi_level.py`; eigenvalues only, on the irreducible
+wedge of the unitary point-group operations when they leave the bands invariant) and prints a warning when the
+charge-neutral level differs by more than max(5 meV, kT/2).
 `fermi_energy='neutral'` uses that level. Both cases record `fermi_energy_source` and
 `charge_neutral_fermi_level_ev` in `attr`, and the counted levels go to `paoflow_outputs.json`. The count is a balance
 of the conduction electrons and the valence holes solved in logarithms, exact in a gap at any temperature, so an

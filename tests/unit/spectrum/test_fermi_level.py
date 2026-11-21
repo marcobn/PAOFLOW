@@ -15,9 +15,11 @@ from PAOFLOW.spectrum.fermi_level import (
     BOLTZMANN_EV_PER_K,
     BandCount,
     charge_neutral_levels,
+    coarse_grid_energies,
     neutral_level_differs,
     occupied_states,
     solve_charge_neutral_level,
+    usable_symmetry_operations,
 )
 
 SILICON = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'silicon'))
@@ -74,12 +76,25 @@ def test_doping_and_the_direct_count():
         assert occupied == pytest.approx(target, abs=1e-9)
 
 
-def _cubic_s_band(onsite, hopping, second, grid=6):
+def _cubic_point_group():
+    """The 48 signed permutation matrices (O_h on fractional k of a simple cubic lattice)."""
+    from itertools import permutations, product
+
+    return np.array([
+        np.eye(3)[list(order)] * np.array(signs)[:, None]
+        for order in permutations(range(3)) for signs in product((1, -1), repeat=3)
+    ])  # fmt: skip
+
+
+def _cubic_s_band(onsite, hopping, second, grid=6, anisotropy=0.0):
     """One orbital on a simple cubic lattice: HRs of E(k) by inverse FFT on ``grid``^3."""
     k = np.arange(grid) / grid
     c1, c2, c3 = np.meshgrid(*(np.cos(2 * np.pi * k),) * 3, indexing='ij')
     energies = (
-        onsite - 2.0 * hopping * (c1 + c2 + c3) - 4.0 * second * (c1 * c2 + c2 * c3 + c3 * c1)
+        onsite
+        - 2.0 * hopping * (c1 + c2 + c3)
+        - 4.0 * second * (c1 * c2 + c2 * c3 + c3 * c1)
+        - 2.0 * anisotropy * c1
     )
     HRs = np.fft.ifftn(energies).reshape(1, 1, grid, grid, grid, 1)
     return HRs, (lambda kk: onsite - 2.0 * hopping * np.cos(2 * np.pi * kk).sum(-1)
@@ -111,6 +126,31 @@ def test_cubic_band_with_second_neighbours_matches_the_direct_count():
         )  # fmt: skip
         occupied = 2.0 * np.mean(1.0 / (1.0 + np.exp((energies - record['fermi_level_ev']) / kT)))
         assert occupied == pytest.approx(nelec + doping, abs=1e-10)
+
+
+def test_irreducible_wedge_gives_the_full_grid_level():
+    HRs, _ = _cubic_s_band(onsite=0.0, hopping=0.5, second=0.12)
+    options = dict(nelec=0.8, spin_factor=2.0, check_nelec=False)
+    (full,) = charge_neutral_levels(HRs, np.eye(3), 1.0, None, (12, 12, 12), [300.0], **options)
+    (wedge,) = charge_neutral_levels(
+        HRs, np.eye(3), 1.0, None, (12, 12, 12), [300.0],
+        symmetry_operations_cryst=_cubic_point_group(), **options,
+    )  # fmt: skip
+    assert full['symmetry_operations'] == 0 and full['k_points'] == 12**3
+    assert wedge['symmetry_operations'] == 48 and wedge['k_points'] < 12**3 // 20
+    assert wedge['fermi_level_ev'] == pytest.approx(full['fermi_level_ev'], abs=1e-12)
+
+
+def test_operations_the_bands_or_the_grid_do_not_have_are_dropped():
+    operations = _cubic_point_group()
+    HRs, _ = _cubic_s_band(onsite=0.0, hopping=0.5, second=0.12, anisotropy=0.1)
+    coarse = coarse_grid_energies(HRs, np.eye(3), 1.0)
+    assert usable_symmetry_operations(operations, (12, 12, 12), (6, 6, 6), coarse) is None
+    keeps_x = operations[np.abs(operations[:, 0, 0]) == 1]  # x stays on x: a symmetry left
+    assert len(usable_symmetry_operations(keeps_x, (12, 12, 12), (6, 6, 6), coarse)) == 16
+    isotropic = coarse_grid_energies(_cubic_s_band(0.0, 0.5, 0.12)[0], np.eye(3), 1.0)
+    assert usable_symmetry_operations(operations, (12, 12, 10), (6, 6, 6), isotropic) is None
+    assert usable_symmetry_operations(None, (12, 12, 12), (6, 6, 6), isotropic) is None
 
 
 def test_a_valence_count_the_basis_does_not_hold_raises():
@@ -152,6 +192,10 @@ def test_silicon_intrinsic_level_dense_and_sparse(tmp_path):
     attr = dense.data_controller.data_dicts()[1]
     records = attr['charge_neutral_fermi_level']
     assert len(records) == 2 and all(r['gapped'] for r in records)
+    assert records[0]['symmetry_operations'] > 1 and records[0]['k_points'] < 12**3
+    full = dense.charge_neutral_fermi_level(temperature=300.0, nk=(12, 12, 12), symmetry=False)
+    assert full == pytest.approx(levels[0], abs=1e-9)
+    del records[2:]
     assert all(r['valence_top_ev'] < level < r['conduction_bottom_ev']
                for r, level in zip(records, levels))  # fmt: skip
     assert records[0]['electrons'] == pytest.approx(float(attr['nelec']))

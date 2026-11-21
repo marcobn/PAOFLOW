@@ -11,8 +11,9 @@ the crystal at a given temperature.
 The count is split by band index into valence states :math:`v` (holes :math:`1 - f`) and
 conduction states :math:`c` (electrons :math:`f`), and the neutrality condition is solved in
 logarithmic form, so that it stays exact in a gap at any temperature (insulators give the
-intrinsic level) as well as in a metal.  Eigenvalues only; the k-points are distributed over the
-MPI ranks in blocks.
+intrinsic level) as well as in a metal.  Eigenvalues only, on the irreducible wedge of the grid
+when point-group operations are given (orbit sizes as weights); the k-points are distributed over
+the MPI ranks in blocks.
 """
 
 from __future__ import annotations
@@ -51,6 +52,9 @@ class BandCount:
         Valence-indexed states on this rank's k-points.
     valence_top, conduction_bottom : float
         Highest valence-indexed and lowest conduction-indexed energy (eV) on this rank.
+    valence_log_weights, conduction_log_weights : ndarray, 1D, or None
+        Logarithms of the k-point weights of the window states (``None``: weight 1, full grid).
+        The counts above are weighted as well.
     """
 
     valence_window: NDArray[np.float64]
@@ -60,6 +64,8 @@ class BandCount:
     valence_states: float
     valence_top: float
     conduction_bottom: float
+    valence_log_weights: NDArray[np.float64] | None = None
+    conduction_log_weights: NDArray[np.float64] | None = None
 
 
 def full_k_grid(nk: Sequence[int]) -> NDArray[np.float64]:
@@ -78,7 +84,7 @@ def full_k_grid(nk: Sequence[int]) -> NDArray[np.float64]:
     return np.stack(np.meshgrid(*axes, indexing='ij'), axis=-1).reshape(-1, 3)
 
 
-def valence_band_counts(
+def coarse_grid_energies(
     HRs: NDArray[np.complex128],
     a_vectors: NDArray[np.float64],
     alat: float,
@@ -86,12 +92,8 @@ def valence_band_counts(
     hopping_cutoff: float | None = None,
     comm=None,
     kblock: int = 256,
-) -> list[int]:
-    r"""Bands at or below the DFT Fermi level of each spin channel, on the grid of ``HRs``.
-
-    The grid of ``HRs`` is where the interpolated bands are the DFT (projected) ones.  The count
-    only fixes the band-index split of :func:`charge_neutral_levels`: any split gives the same
-    :math:`\mu`, and the one at the DFT level keeps the hole and electron sums exact in a gap.
+) -> NDArray[np.float64]:
+    """Band energies on the grid of ``HRs`` (where the interpolated bands are the DFT ones).
 
     Parameters
     ----------
@@ -106,33 +108,109 @@ def valence_band_counts(
     hopping_cutoff : float, optional
         As :func:`PAOFLOW.hamiltonian.bloch_derivatives.bloch_terms_from_HRs`.
     comm : MPI communicator, optional
-        k-point blocks are dealt round-robin over its ranks (collective).
+        k-point blocks are dealt round-robin over its ranks and gathered on all (collective).
     kblock : int, optional
         k-points per diagonalisation block.
 
     Returns
     -------
-    list of int
-        One count per spin channel, the same on every rank: the mean over the grid of the bands
-        at or below ``1e-6`` eV, rounded.
+    ndarray ``(nspin, n1 * n2 * n3, nawf)``
+        Sorted energies (eV) at the grid points in the order of :func:`full_k_grid`, on every rank.
     """
     from ..hamiltonian.bloch_derivatives import bloch_terms_from_HRs, hamiltonian_block
 
     rank, size = (0, 1) if comm is None else (comm.Get_rank(), comm.Get_size())
     HRs = np.asarray(HRs)
     grid = full_k_grid(HRs.shape[2:5])
-    counts = []
+    energies = np.zeros((HRs.shape[-1], grid.shape[0], HRs.shape[0]))
     for ispin in range(HRs.shape[-1]):
         terms = bloch_terms_from_HRs(
             HRs, a_vectors, alat, orbital_positions_cryst, ispin=ispin,
             hopping_cutoff=hopping_cutoff,
         )  # fmt: skip
-        below = 0.0
-        for start in range(rank * int(kblock), grid.shape[0], size * int(kblock)):
-            energies = np.linalg.eigvalsh(hamiltonian_block(terms, grid[start : start + kblock]))
-            below += float(np.count_nonzero(energies <= _VALENCE_TOLERANCE_EV))
-        counts.append(int(np.rint(_allreduce(below, comm) / grid.shape[0])))
-    return counts
+        blocks = [
+            (start, np.linalg.eigvalsh(hamiltonian_block(terms, grid[start : start + kblock])))
+            for start in range(rank * int(kblock), grid.shape[0], size * int(kblock))
+        ]
+        gathered = [blocks] if comm is None else comm.allgather(blocks)
+        for rank_blocks in gathered:
+            for start, block in rank_blocks:
+                energies[ispin, start : start + block.shape[0]] = block
+    return energies
+
+
+def valence_band_counts(coarse_energies: NDArray[np.float64]) -> list[int]:
+    r"""Bands at or below the DFT Fermi level of each spin channel.
+
+    The count only fixes the band-index split of :func:`charge_neutral_levels`: any split gives the
+    same :math:`\mu`, and the one at the DFT level keeps the hole and electron sums exact in a gap.
+
+    Parameters
+    ----------
+    coarse_energies : ndarray ``(nspin, nk, nawf)``
+        Energies on the grid of ``HRs`` (:func:`coarse_grid_energies`).
+
+    Returns
+    -------
+    list of int
+        One count per spin channel: the mean over the grid of the bands at or below ``1e-6`` eV,
+        rounded.
+    """
+    return [
+        int(np.rint(np.mean(np.sum(channel <= _VALENCE_TOLERANCE_EV, axis=1))))
+        for channel in coarse_energies
+    ]
+
+
+def usable_symmetry_operations(
+    operations_cryst: NDArray[np.float64] | None,
+    nk: Sequence[int],
+    coarse_nk: Sequence[int],
+    coarse_energies: NDArray[np.float64],
+    tolerance_ev: float = 1.0e-5,
+) -> NDArray[np.int_] | None:
+    """The k-space operations if they can reduce the count to an irreducible wedge, else ``None``.
+
+    Parameters
+    ----------
+    operations_cryst : ndarray ``(nops, 3, 3)`` or None
+        Operations on fractional k (``k' = W k``), e.g. the unitary ones of ``arrays['sym_rot']``.
+    nk : sequence of int
+        Dense grid of the count.
+    coarse_nk : sequence of int
+        Grid of ``HRs``.
+    coarse_energies : ndarray ``(nspin, prod(coarse_nk), nawf)``
+        Energies on the grid of ``HRs`` (:func:`coarse_grid_energies`).
+    tolerance_ev : float, optional
+        Largest change of an energy under an operation on the grid of ``HRs``.
+
+    Returns
+    -------
+    ndarray ``(nops, 3, 3)`` of int, or None
+        ``None`` if there are no operations, one is not an integer matrix, one does not map either
+        grid onto itself, or one changes the energies on the grid of ``HRs`` (a symmetry the PAO
+        Hamiltonian does not have).
+    """
+    from ..utils.point_groups import grid_indices
+
+    if operations_cryst is None or len(operations_cryst) == 0:
+        return None
+    operations = np.asarray(operations_cryst, dtype=float).reshape(-1, 3, 3)
+    if not np.allclose(operations, np.rint(operations), atol=1.0e-8):
+        return None
+    operations = np.rint(operations).astype(int)
+    for grid in (np.asarray(nk, dtype=int), np.asarray(coarse_nk, dtype=int)):
+        # k'_a = sum_b W_ab i_b / n_b is on the grid for every i iff W_ab n_a / n_b is an integer
+        if np.any((operations * grid[None, :, None]) % grid[None, None, :] != 0):
+            return None
+    coarse = np.asarray(coarse_nk, dtype=int)
+    indices = grid_indices(coarse)
+    strides = np.array([coarse[1] * coarse[2], coarse[2], 1])
+    for operation in operations:
+        image = ((indices @ operation.T) % coarse) @ strides
+        if np.abs(coarse_energies[:, image] - coarse_energies).max() > tolerance_ev:
+            return None
+    return operations
 
 
 def collect_band_count(
@@ -140,25 +218,28 @@ def collect_band_count(
     a_vectors: NDArray[np.float64],
     alat: float,
     orbital_positions_cryst: NDArray[np.float64] | None,
-    nk: Sequence[int],
+    k_points: NDArray[np.float64],
     valence_bands: Sequence[int],
     window_ev: float,
+    k_weights: NDArray[np.float64] | None = None,
     comm=None,
     kblock: int = 256,
     hopping_cutoff: float | None = None,
 ) -> BandCount:
-    """Eigenvalues of this rank's k-points of the grid ``nk``, reduced to what the count needs.
+    """Eigenvalues of this rank's share of ``k_points``, reduced to what the count needs.
 
     Parameters
     ----------
     HRs, a_vectors, alat, orbital_positions_cryst, hopping_cutoff
-        As :func:`valence_band_counts`.
-    nk : sequence of int
-        Dense grid ``(n1, n2, n3)``.
+        As :func:`coarse_grid_energies`.
+    k_points : ndarray ``(nk, 3)``
+        Crystal coordinates: a full grid (:func:`full_k_grid`) or its irreducible wedge.
     valence_bands : sequence of int
         Valence-indexed bands of each spin channel (:func:`valence_band_counts`).
     window_ev : float
         States with ``|E| <= window_ev`` are kept; the others are counted as full or empty.
+    k_weights : ndarray ``(nk,)``, optional
+        Weights of the k-points (orbit sizes of an irreducible wedge); 1 by default.
     comm : MPI communicator, optional
         k-point blocks are dealt round-robin over its ranks; ``None`` keeps every block.
     kblock : int, optional
@@ -173,8 +254,10 @@ def collect_band_count(
 
     rank, size = (0, 1) if comm is None else (comm.Get_rank(), comm.Get_size())
     HRs = np.asarray(HRs)
-    grid = full_k_grid(nk)
-    valence_window, conduction_window = [], []
+    k_points = np.atleast_2d(np.asarray(k_points, dtype=float))
+    weighted = k_weights is not None
+    weights = np.asarray(k_weights, dtype=float) if weighted else np.ones(k_points.shape[0])
+    windows = {'valence': [], 'conduction': [], 'valence_log': [], 'conduction_log': []}
     holes_outside = electrons_outside = valence_states = 0.0
     valence_top, conduction_bottom = -np.inf, np.inf
     for ispin in range(HRs.shape[-1]):
@@ -183,27 +266,44 @@ def collect_band_count(
             hopping_cutoff=hopping_cutoff,
         )  # fmt: skip
         n_valence = min(max(int(valence_bands[ispin]), 0), terms.nawf)
-        for start in range(rank * int(kblock), grid.shape[0], size * int(kblock)):
-            energies = np.linalg.eigvalsh(hamiltonian_block(terms, grid[start : start + kblock]))
+        for start in range(rank * int(kblock), k_points.shape[0], size * int(kblock)):
+            block = slice(start, start + int(kblock))
+            energies = np.linalg.eigvalsh(hamiltonian_block(terms, k_points[block]))
+            weight = weights[block][:, None]
+            for name, states in (
+                ('valence', energies[:, :n_valence]),
+                ('conduction', energies[:, n_valence:]),
+            ):
+                inside = np.abs(states) <= window_ev
+                windows[name].append(states[inside])
+                if weighted:
+                    windows[name + '_log'].append(
+                        np.broadcast_to(np.log(weight), states.shape)[inside]
+                    )
             valence, conduction = energies[:, :n_valence], energies[:, n_valence:]
-            valence_states += valence.size
-            valence_window.append(valence[np.abs(valence) <= window_ev])
-            conduction_window.append(conduction[np.abs(conduction) <= window_ev])
-            holes_outside += float(np.count_nonzero(valence > window_ev))
-            electrons_outside += float(np.count_nonzero(conduction < -window_ev))
+            valence_states += float(np.sum(weight)) * n_valence
+            holes_outside += float(np.sum((valence > window_ev) * weight))
+            electrons_outside += float(np.sum((conduction < -window_ev) * weight))
             if valence.size:
                 valence_top = max(valence_top, float(valence[:, -1].max()))
             if conduction.size:
                 conduction_bottom = min(conduction_bottom, float(conduction[:, 0].min()))
-    empty = np.zeros(0)
+
+    def joined(name: str) -> NDArray[np.float64] | None:
+        if name.endswith('_log') and not weighted:
+            return None
+        return np.concatenate(windows[name]) if windows[name] else np.zeros(0)
+
     return BandCount(
-        valence_window=np.concatenate(valence_window) if valence_window else empty,
-        conduction_window=np.concatenate(conduction_window) if conduction_window else empty,
+        valence_window=joined('valence'),
+        conduction_window=joined('conduction'),
         holes_outside=holes_outside,
         electrons_outside=electrons_outside,
         valence_states=valence_states,
         valence_top=valence_top,
         conduction_bottom=conduction_bottom,
+        valence_log_weights=joined('valence_log'),
+        conduction_log_weights=joined('conduction_log'),
     )
 
 
@@ -228,9 +328,13 @@ def _log_sum_exp(log_terms: NDArray[np.float64], comm) -> float:
 
 def _log_occupation_sums(count: BandCount, mu: float, kT: float, comm) -> tuple[float, float]:
     """``log`` of the conduction electrons and of the valence holes inside the window at ``mu``."""
-    log_electrons = _log_sum_exp(-np.logaddexp(0.0, (count.conduction_window - mu) / kT), comm)
-    log_holes = _log_sum_exp(-np.logaddexp(0.0, (mu - count.valence_window) / kT), comm)
-    return log_electrons, log_holes
+    log_electrons = -np.logaddexp(0.0, (count.conduction_window - mu) / kT)
+    log_holes = -np.logaddexp(0.0, (mu - count.valence_window) / kT)
+    if count.conduction_log_weights is not None:
+        log_electrons = log_electrons + count.conduction_log_weights
+    if count.valence_log_weights is not None:
+        log_holes = log_holes + count.valence_log_weights
+    return _log_sum_exp(log_electrons, comm), _log_sum_exp(log_holes, comm)
 
 
 def _log(value: float) -> float:
@@ -359,6 +463,7 @@ def charge_neutral_levels(
     hopping_cutoff: float | None = None,
     window_ev: float = DEFAULT_WINDOW_EV,
     check_nelec: bool = True,
+    symmetry_operations_cryst: NDArray[np.float64] | None = None,
 ) -> list[dict]:
     r"""Charge-neutral (or doped) Fermi level of the bands of ``HRs`` at each temperature.
 
@@ -393,6 +498,9 @@ def charge_neutral_levels(
     check_nelec : bool, optional
         Check that the bands hold about ``nelec`` electrons at the DFT Fermi level (for the DFT
         valence count; off for an explicit electron count, e.g. a doped model).
+    symmetry_operations_cryst : ndarray ``(nops, 3, 3)``, optional
+        Unitary point-group operations on fractional k: the count runs on the irreducible wedge
+        of ``nk`` if they pass :func:`usable_symmetry_operations`, on the full grid otherwise.
 
     Returns
     -------
@@ -401,7 +509,8 @@ def charge_neutral_levels(
         Fermi level), ``electrons`` (the target per cell), ``electrons_at_dft_level`` (the count at
         :math:`\mu = 0`, per cell), ``doping``, ``nk``, ``gapped`` (the electrons fill the bands up
         to a gap on the grid), ``valence_top_ev`` and ``conduction_bottom_ev`` (of the bands at
-        the DFT Fermi level; ``None`` without valence or conduction bands).
+        the DFT Fermi level; ``None`` without valence or conduction bands), ``k_points`` (counted)
+        and ``symmetry_operations`` (used, 0 for the full grid).
 
     Raises
     ------
@@ -421,7 +530,7 @@ def charge_neutral_levels(
         = N_\mathrm{el} + \delta N,
 
     with :math:`s` the spin factor, :math:`f` the Fermi-Dirac function and :math:`\delta N` the
-    doping, on the full grid ``nk`` (no symmetry reduction), by
+    doping, on the grid ``nk`` (or its irreducible wedge with the orbit sizes as weights), by
     :func:`solve_charge_neutral_level`.
     """
     nk = tuple(int(n) for n in nk)
@@ -429,13 +538,23 @@ def charge_neutral_levels(
     temperatures = [float(t) for t in np.atleast_1d(temperatures_k)]
     kT_max = BOLTZMANN_EV_PER_K * max(max(temperatures), ZERO_TEMPERATURE_FLOOR_K)
     window = float(window_ev) + 50.0 * kT_max
-    valence_bands = valence_band_counts(
+    coarse = coarse_grid_energies(
         HRs, a_vectors, alat, orbital_positions_cryst, hopping_cutoff=hopping_cutoff, comm=comm,
         kblock=kblock,
     )  # fmt: skip
+    valence_bands = valence_band_counts(coarse)
+    operations = usable_symmetry_operations(
+        symmetry_operations_cryst, nk, np.shape(HRs)[2:5], coarse
+    )
+    if operations is None:
+        k_points, k_weights = full_k_grid(nk), None
+    else:
+        from ..utils.point_groups import reduce_k_grid
+
+        k_points, k_weights, _ = reduce_k_grid(nk, operations)
     count = collect_band_count(
-        HRs, a_vectors, alat, orbital_positions_cryst, nk, valence_bands, window, comm=comm,
-        kblock=kblock, hopping_cutoff=hopping_cutoff,
+        HRs, a_vectors, alat, orbital_positions_cryst, k_points, valence_bands, window,
+        k_weights=k_weights, comm=comm, kblock=kblock, hopping_cutoff=hopping_cutoff,
     )  # fmt: skip
     valence_top = _allreduce(count.valence_top, comm, 'max')
     conduction_bottom = _allreduce(count.conduction_bottom, comm, 'min')
@@ -471,6 +590,8 @@ def charge_neutral_levels(
                 'conduction_bottom_ev': (
                     conduction_bottom if np.isfinite(conduction_bottom) else None
                 ),
+                'k_points': int(k_points.shape[0]),
+                'symmetry_operations': 0 if operations is None else int(len(operations)),
             }
         )
     return records
