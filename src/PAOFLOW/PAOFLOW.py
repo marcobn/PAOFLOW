@@ -185,6 +185,9 @@ class PAOFLOW:
         Inverse participation ratio (IPR) of PAO eigenstates.
     doping(tmin, tmax, nt, delta, emin, emax, ne, doping_conc, core_electrons, fname)
         Chemical potential as a function of carrier doping and temperature.
+    charge_neutral_fermi_level(temperature, nk, nelec, doping, kblock)
+        Charge-neutral (or doped) Fermi level of the PAO bands relative to the DFT one, by
+        electron counting on a dense grid interpolated from HRs.
 
     Methods — Topology and Berry physics
     ----------------------------------------
@@ -4159,6 +4162,184 @@ class PAOFLOW:
 
         self.report_module_time('Effective mass')
 
+    def _charge_neutral_records(
+        self,
+        nk: tuple | list,
+        temperatures: float | tuple | list | np.ndarray,
+        nelec: float | tuple | list | None = None,
+        doping: float = 0.0,
+        HRs: np.ndarray | None = None,
+        hopping_cutoff: float | None = None,
+        kblock: int = 256,
+        caller: str = 'charge_neutral_fermi_level',
+    ) -> list[dict]:
+        """Charge-neutral levels of the PAO bands on the grid ``nk``.
+
+        The work of :meth:`charge_neutral_fermi_level`, shared with the response methods that use
+        or check the level.
+
+        Parameters
+        ----------
+        nk : sequence of int
+            Dense grid of the count.
+        temperatures : float or sequence of float
+            Electronic temperatures (K).
+        nelec : float or pair of float, optional
+            Electrons per cell held by the PAO bands (summed over a pair); default
+            ``attr['nelec']``, checked against the count at the DFT Fermi level.
+        doping : float, optional
+            Extra electrons per cell (negative for holes).
+        HRs : ndarray, optional
+            The real-space Hamiltonian to count (default ``arrays['HRs']``).
+        hopping_cutoff : float, optional
+            As :func:`PAOFLOW.hamiltonian.bloch_derivatives.bloch_terms_from_HRs`.
+        kblock : int, optional
+            k-points per diagonalisation block.
+        caller : str, optional
+            Method name stored with the records.
+
+        Returns
+        -------
+        list of dict
+            The records of :func:`PAOFLOW.spectrum.fermi_level.charge_neutral_levels`, also
+            appended to ``attr['charge_neutral_fermi_level']`` (written to the output manifest) and
+            printed on rank 0.
+        """
+        from .hamiltonian.bloch_derivatives import orbital_positions_from_data
+        from .spectrum.fermi_level import charge_neutral_levels
+
+        arrays, attr = self.data_controller.data_dicts()
+        if HRs is None:
+            if 'HRs' not in arrays:
+                raise KeyError(
+                    "the charge-neutral Fermi level needs 'HRs': call it after pao_hamiltonian()"
+                )
+            HRs = arrays['HRs']
+        nspin = np.shape(HRs)[-1]
+        spin_factor = 2.0 if (nspin == 1 and not attr.get('dftSO', False)) else 1.0
+        electrons = float(attr['nelec']) if nelec is None else float(np.sum(nelec))
+        records = charge_neutral_levels(
+            HRs, np.asarray(arrays['a_vectors'], dtype=float), float(attr['alat']),
+            orbital_positions_from_data(self.data_controller), tuple(int(n) for n in nk),
+            np.atleast_1d(np.asarray(temperatures, dtype=float)), electrons, spin_factor,
+            doping=float(doping), comm=self.comm, kblock=int(kblock),
+            hopping_cutoff=hopping_cutoff, check_nelec=nelec is None,
+        )  # fmt: skip
+        stored = attr.setdefault('charge_neutral_fermi_level', [])
+        for record in records:
+            record['method'] = caller
+            stored.append(record)
+            if self.rank == 0:
+                state = 'gap on the grid, intrinsic level' if record['gapped'] else 'metallic'
+                print(
+                    'Charge-neutral Fermi level at %g K on the %s grid: %+.2f meV relative to the '
+                    'DFT Fermi level (%s; %.4f electrons at the DFT level, %.4f in the cell%s)'
+                    % (
+                        record['temperature_k'], 'x'.join(str(n) for n in record['nk']),
+                        1000.0 * record['fermi_level_ev'], state,
+                        record['electrons_at_dft_level'], record['electrons'],
+                        ', doping %+g' % record['doping'] if record['doping'] else '',
+                    ),
+                    flush=True,
+                )  # fmt: skip
+        return records
+
+    @sparse_base_cell(modifies=False)
+    def charge_neutral_fermi_level(
+        self,
+        temperature: float | tuple | list = 300.0,
+        nk: tuple | list | None = None,
+        nelec: float | None = None,
+        doping: float = 0.0,
+        kblock: int = 256,
+    ) -> float | np.ndarray | None:
+        r"""Chemical potential at which the PAO bands hold the electrons of the crystal.
+
+        PAOFLOW energies are relative to the Fermi level of the DFT run, which carries that run's
+        smearing and k-grid.  This method counts the electrons of the bands interpolated from
+        ``HRs`` on a dense grid at the electronic temperature of a calculation and returns the
+        charge-neutral level (or the level of a doped crystal) relative to the DFT one.  In metals
+        with a large density of states at :math:`E_F` the two differ by a few meV; in semimetals
+        and small-pocket metals by tens of meV (TaAs +74 meV at 300 K, CoSi -19 meV at 10 K, both
+        with Marzari-Vanderbilt 0.27 eV in the DFT run).  Pass the result as ``fermi_energy``, or
+        use ``fermi_energy='neutral'`` in :meth:`nonlinear_optics` and
+        :meth:`coupled_optical_response`.
+
+        Parameters
+        ----------
+        temperature : float or sequence of float, optional
+            Electronic temperature (K); 0 is evaluated at 1 K.
+        nk : sequence of int, optional
+            Dense grid of the count (full grid, no symmetry reduction).  Default: four times the
+            grid of ``HRs`` per axis.  The level of a semimetal converges slowly with the grid
+            (TaAs at 10 K: +94 / +94 / +85 meV on 40³ / 60³ / 80³).
+        nelec : float, optional
+            Electrons per cell held by the PAO bands (default ``attr['nelec']``, the DFT valence).
+            Pass it when the basis leaves out shells of the DFT valence (semicore states).
+        doping : float, optional
+            Extra electrons per cell (negative for holes); :meth:`doping` takes a carrier density
+            on the stored grid instead.
+        kblock : int, optional
+            k-points per diagonalisation block (memory ``kblock * nawf^2`` complex numbers).
+
+        Returns
+        -------
+        float, ndarray or None
+            :math:`\mu` (eV, relative to the DFT Fermi level) on every rank: a float for one
+            temperature, an array for a sequence (``None`` on failure when ``abort_on_exception``
+            is off).  The records (temperature, level, electrons at the
+            DFT level, grid, whether the bands have a gap on the grid) are appended to
+            ``attr['charge_neutral_fermi_level']`` and written to ``paoflow_outputs.json``.
+
+        Raises
+        ------
+        KeyError
+            Without ``HRs`` (call after :meth:`pao_hamiltonian`).
+        ValueError
+            If the bands hold, at the DFT Fermi level, more than 0.5 electrons per cell more or
+            fewer than ``nelec`` (pass the electrons the basis holds).
+
+        Notes
+        -----
+        :math:`\mu(T)` solves
+
+        .. math::
+
+            \frac{s}{N_k}\sum_{n\mathbf k} f\!\left(\frac{\varepsilon_{n\mathbf k}-\mu}{k_BT}\right)
+            = N_\mathrm{el} + \delta N,
+
+        with :math:`s` the spin factor and :math:`\delta N` the doping, written as a balance of the
+        electrons in the conduction-indexed bands and the holes in the valence-indexed ones
+        (:func:`PAOFLOW.spectrum.fermi_level.solve_charge_neutral_level`), exact in a gap at any
+        temperature: an insulator gives its intrinsic level.  Eigenvalues only, distributed over
+        the MPI ranks; about one percent of the cost of a :meth:`nonlinear_optics` run on the same
+        grid.  The bands are those of ``HRs`` (Wigner-Seitz interpolation): call it before
+        :meth:`interpolated_hamiltonian` or with ``free_HRs=False``.
+
+        Sparse: supported at the base cell (the bond list is scattered into a dense ``HRs`` for
+        the count), before doubling and interpolation.
+        """
+        arrays, attr = self.data_controller.data_dicts()
+        try:
+            if 'HRs' not in arrays:
+                raise KeyError(
+                    "charge_neutral_fermi_level needs 'HRs': call it after pao_hamiltonian() and "
+                    'before interpolated_hamiltonian() / pao_eigh() (or keep free_HRs=False).'
+                )
+            if nk is None:
+                nk = tuple(4 * int(n) for n in np.shape(arrays['HRs'])[2:5])
+            records = self._charge_neutral_records(
+                nk, temperature, nelec=nelec, doping=doping, kblock=kblock
+            )
+        except Exception as e:
+            self.report_exception('charge_neutral_fermi_level')
+            if attr['abort_on_exception']:
+                raise e
+            return None
+        self.report_module_time('Charge-neutral Fermi level')
+        levels = np.array([record['fermi_level_ev'] for record in records])
+        return float(levels[0]) if np.ndim(temperature) == 0 else levels
+
     @sparse_override
     def doping(
         self,
@@ -4697,7 +4878,10 @@ class PAOFLOW:
         Berry-curvature dipole, :math:`\propto\tau`; ``fermi_surface_drude``: :math:`\propto\tau^2`),
         and the SHG channels in ``shgtr_<channel>_<abc>.dat`` / ``shgti_...``. A metal needs an
         electronic ``temperature`` (the Fermi-surface terms vanish with step occupations);
-        ``fermi_energy`` defaults to 0, the DFT Fermi level.
+        ``fermi_energy`` defaults to 0, the DFT Fermi level, and the run counts the electrons of the
+        bands on ``nk`` at ``temperature`` (:meth:`charge_neutral_fermi_level`) and warns when the
+        charge-neutral level differs from it by more than max(5 meV, kT/2);
+        ``fermi_energy='neutral'`` uses that level.
 
         Parameters
         ----------
@@ -4717,11 +4901,15 @@ class PAOFLOW:
             explicit :math:`1/\omega_{mn}` factors; the matrix elements keep the DFT eigenvectors.
         temperature : float
             Electronic temperature (K); 0 gives step occupations (``nelec`` / spin factor bands).
-        fermi_energy : float, optional
+        fermi_energy : float or 'neutral', optional
             Chemical potential (eV) for finite temperatures or metals. PAOFLOW Hamiltonians are
-            referred to the Fermi level, so 0.0 is the DFT Fermi level. Default: band-index
-            occupations at 0 K, the mid-gap at finite T, for insulators only; a metallic channel
-            raises without it (and a scissor raises for a metal).
+            referred to the Fermi level, so 0.0 is the DFT Fermi level. ``'neutral'``: the
+            charge-neutral level of the bands on ``nk`` at ``temperature``
+            (:meth:`charge_neutral_fermi_level`; band-index occupations for an insulator at 0 K).
+            Default: band-index occupations at 0 K, the mid-gap at finite T, for insulators; 0.0
+            for a metallic channel with the Fermi-surface terms (with a warning if the
+            charge-neutral level is elsewhere), which raises without it otherwise (and a scissor
+            raises for a metal).
         smearing : {'gauss', 'lorentz'}
             Shape of the :math:`\delta` functions.
         adaptive_smearing : float, optional
@@ -4976,7 +5164,44 @@ class PAOFLOW:
             if fermi_surface not in ('auto', True, False):
                 raise ValueError("fermi_surface must be 'auto', True or False")
             use_eom = metallic if fermi_surface == 'auto' else bool(fermi_surface)
-            mu = fermi_energy
+            if isinstance(fermi_energy, str) and fermi_energy != 'neutral':
+                raise ValueError("fermi_energy must be a number, None or 'neutral'")
+            neutral_requested = isinstance(fermi_energy, str)
+            dft_level_default = fermi_energy is None and use_eom and metallic
+            mu = None if neutral_requested else fermi_energy
+            neutral_level = None
+            if (neutral_requested or dft_level_default) and not (
+                use_eom and float(temperature) <= 0.0
+            ):
+                from .spectrum.fermi_level import neutral_level_differs
+
+                try:
+                    neutral_level = self._charge_neutral_records(
+                        nk, float(temperature), nelec=nelec, HRs=HRs,
+                        hopping_cutoff=hopping_cutoff, kblock=int(kblock),
+                        caller='nonlinear_optics',
+                    )[0]['fermi_level_ev']  # fmt: skip
+                except (KeyError, ValueError) as error:
+                    if neutral_requested:
+                        raise
+                    if self.rank == 0:
+                        print('Note: charge-neutral Fermi level not checked (%s)' % error)
+                if neutral_level is None:
+                    pass
+                elif neutral_requested and (metallic or float(temperature) > 0.0):
+                    mu = neutral_level
+                elif dft_level_default and neutral_level_differs(neutral_level, temperature):
+                    if self.rank == 0:
+                        print(
+                            'WARNING: fermi_energy is the DFT Fermi level (0.0), but the bands are '
+                            'charge neutral at %+.1f meV (%g K, %s grid): the DFT smearing '
+                            'misplaces the Fermi level of semimetals and low-DOS metals. Pass '
+                            "fermi_energy='neutral' to use the charge-neutral level, or an "
+                            'explicit value.'
+                            % (1000.0 * neutral_level, float(temperature),
+                               'x'.join(str(int(n)) for n in nk)),
+                            flush=True,
+                        )  # fmt: skip
             if use_eom:
                 if molecule:
                     raise ValueError('molecule=True is for insulators: set fermi_surface=False')
@@ -5188,6 +5413,12 @@ class PAOFLOW:
                 'shg_terms': bool(shg_terms and 'shg' in want),
                 'fermi_surface': bool(use_eom), 'metallic': bool(metallic),
                 'fermi_energy_ev': mu, 'temperature_k': float(temperature),
+                'fermi_energy_source': (
+                    'neutral' if neutral_requested
+                    else ('dft' if dft_level_default
+                          else ('given' if fermi_energy is not None else 'band_index'))
+                ),
+                'charge_neutral_fermi_level_ev': neutral_level,
                 'relaxation_time_fs': (
                     'callable' if callable(relaxation_time)
                     else (None if relaxation_time is None else float(relaxation_time))
@@ -5331,12 +5562,17 @@ class PAOFLOW:
             order of a metal.
 
         Metals (bands at the band-index cut overlap): the occupations are Fermi-Dirac at
-        ``fermi_energy`` (default 0, the DFT Fermi level) and ``temperature`` (K, required), and the
+        ``fermi_energy`` and ``temperature`` (K, required), and the
         intraband (Drude) density :math:`i f'\,\mathbf v\cdot\mathbf E/(\omega + i\gamma)` adds to
         the response (its current to the macroscopic polarization, its density to the local
         fields); :math:`\gamma = \hbar/` ``relaxation_time`` (fs; constant or a function of the
         band energy), or ``eta``. ``kernels='all'`` means ``none``, ``hartree``, ``hartree+alda``
         for a metal (the long-range kernels are for insulators); no static point.
+        ``fermi_energy`` defaults to 0, the DFT Fermi level; the run then counts the electrons of
+        the bands on ``nk`` at ``temperature`` (:meth:`charge_neutral_fermi_level`) and warns when
+        the charge-neutral level differs by more than max(5 meV, kT/2).
+        ``fermi_energy='neutral'`` uses that level (an insulating channel keeps its band-index
+        occupations).
 
         Notes
         -----
@@ -5396,7 +5632,40 @@ class PAOFLOW:
                 arrays['HRs'], np.asarray(arrays['a_vectors'], dtype=float), float(attr['alat']),
                 orbital_positions_from_data(self.data_controller), float(attr['nelec']), spin_factor,
             )['metallic']  # fmt: skip
-            mu = fermi_energy
+            if isinstance(fermi_energy, str) and fermi_energy != 'neutral':
+                raise ValueError("fermi_energy must be a number, None or 'neutral'")
+            neutral_requested = isinstance(fermi_energy, str)
+            dft_level_default = fermi_energy is None and metallic
+            mu = None if neutral_requested else fermi_energy
+            neutral_level = None
+            if neutral_requested or (dft_level_default and float(temperature) > 0.0):
+                from .spectrum.fermi_level import neutral_level_differs
+
+                try:
+                    neutral_level = self._charge_neutral_records(
+                        nk, float(temperature), caller='coupled_optical_response'
+                    )[0]['fermi_level_ev']
+                except (KeyError, ValueError) as error:
+                    if neutral_requested:
+                        raise
+                    if self.rank == 0:
+                        print('Note: charge-neutral Fermi level not checked (%s)' % error)
+                if neutral_level is None:
+                    pass
+                elif neutral_requested and metallic:
+                    mu = neutral_level
+                elif dft_level_default and neutral_level_differs(neutral_level, temperature):
+                    if self.rank == 0:
+                        print(
+                            'WARNING: fermi_energy is the DFT Fermi level (0.0), but the bands are '
+                            'charge neutral at %+.1f meV (%g K, %s grid): the DFT smearing '
+                            'misplaces the Fermi level of semimetals and low-DOS metals. Pass '
+                            "fermi_energy='neutral' to use the charge-neutral level, or an "
+                            'explicit value.'
+                            % (1000.0 * neutral_level, float(temperature),
+                               'x'.join(str(int(n)) for n in nk)),
+                            flush=True,
+                        )  # fmt: skip
             if metallic:
                 mu = 0.0 if mu is None else mu
                 if kernels == 'all':
@@ -5429,6 +5698,12 @@ class PAOFLOW:
                 'alpha_boot': results['alpha_boot'], 'position_dipoles': position_dipoles,
                 'static_epsilon': dict(results['static_epsilon']),
                 'metallic': bool(metallic), 'fermi_energy_ev': mu,
+                'fermi_energy_source': (
+                    'neutral' if neutral_requested
+                    else ('dft' if dft_level_default
+                          else ('given' if fermi_energy is not None else 'band_index'))
+                ),
+                'charge_neutral_fermi_level_ev': neutral_level,
                 'temperature_k': float(temperature),
                 'relaxation_time_fs': (
                     'callable' if callable(relaxation_time)
