@@ -88,6 +88,30 @@ def test_arpes_runs_on_the_base_cell_and_keeps_the_bond_list(si):
     assert sparse.sparse.H is H and 'HRs' not in sparse.data_controller.data_arrays
 
 
+def test_orbit_spin_splitting_runs_on_the_base_cell_and_keeps_the_bond_list(si, tmp_path):
+    from PAOFLOW.pyskeaf.results import Orbit, SKEAFResult, write_orbit_outlines
+
+    dense, sparse = si
+    angle = np.linspace(0.0, 2.0 * np.pi, 24, endpoint=False)
+    contour = 0.08 * np.column_stack([np.cos(angle), np.sin(angle), np.zeros_like(angle)])
+    orbit = Orbit(theta=0.0, phi=0.0, frequency_kT=0.1, freq_uncertainty_kT=0.0,
+                  effective_mass=0.3, rep_frequency_kT=0.1, rep_slice_index=1,
+                  outline_ang=contour, outline_au=contour * 0.529177209)  # fmt: skip
+    path = tmp_path / 'outline.out'
+    write_orbit_outlines(
+        SKEAFResult(config_filename='', bxsf_filename='', fermi_energy=0.0, orbits=[orbit]),
+        path, tmp_path / 'outline_au.out',
+    )  # fmt: skip
+    H = sparse.sparse.H
+    options = dict(band=4, fermi_energy=0.0, max_points=None, newton_steps=0)
+    reference = dense.orbit_spin_splitting(str(path), **options)[0]
+    result = sparse.orbit_spin_splitting(str(path), **options)[0]
+    for key, value in reference.items():
+        assert result[key] == pytest.approx(value, rel=1e-10, abs=1e-12), key
+    assert reference['g_total'] == pytest.approx(2.00231930436256, rel=1e-9)
+    assert sparse.sparse.H is H and 'HRs' not in sparse.data_controller.data_arrays
+
+
 def test_magnetic_field_refuses_a_spin_degenerate_basis(si):
     with pytest.raises(NotImplementedError, match='(?s)spinor_basis.*dense-only'):
         si[1].magnetic_field([0.0, 0.0, 1.0])

@@ -718,6 +718,107 @@ class QuantumOscillationAnalysis:
         return result
 
     # ------------------------------------------------------------------ stage 10
+    # ------------------------------------------------------------------ spin splitting
+    def spin_splitting(
+        self,
+        tables: str | Path,
+        skeaf_dir: str | Path | None = None,
+        min_copies: int = 50,
+        tolerance: float = 0.05,
+        lk_tolerance: float = 0.12,
+        colors: dict | None = None,
+        labels: dict | None = None,
+        title: str = '',
+        axis_label: str | None = None,
+        trials: int = 5000,
+    ) -> dict:
+        """Spin factors of the calculated orbits against the measured peaks and LK branches.
+
+        Parameters
+        ----------
+        tables : str or Path
+            Folder (or file) of ``orbit_spin_splitting_<band>.dat`` written by
+            :meth:`PAOFLOW.PAOFLOW.orbit_spin_splitting`.
+        skeaf_dir : str or Path or None, optional
+            pyskeaf run at the angles of the tables (frequency files, and the BXSF files for the
+            band-to-sheet map); default the main run.
+        min_copies : int, optional
+            Orbits found in fewer supercell copies are dropped.
+        tolerance : float, optional
+            Relative frequency window of the peak matches.
+        lk_tolerance : float, optional
+            Relative frequency window of the LK branches (searched in their assigned group when
+            :meth:`sweep_comparison` loaded branch assignments).
+        colors, labels, title, axis_label
+            Figure options (as in :meth:`sweep_comparison`).
+        trials : int, optional
+            Shuffles of the permutation test.
+
+        Returns
+        -------
+        dict
+            ``table`` (orbits with g* and R_s), ``matched`` (measured peaks with the nearest
+            orbit), ``correlation`` (Spearman rho and p-value of the measured strength against
+            |R_s|, adiabatic and with the Berry transport), ``lk`` (one table per configured
+            direction) and ``text``. Writes ``spin_splitting/``.
+
+        Notes
+        -----
+        The measured strength also carries the temperature, Dingle and curvature factors, so the
+        rank test asks only whether the spin factor orders the matched peaks better than chance.
+        """
+        from . import spin_splitting as splitting
+
+        sweep = self.sweep_angle()
+        folder = self._step_dir('spin_splitting')
+        run_dir = Path(skeaf_dir) if skeaf_dir else self.skeaf_dir
+        bxsf_dir = run_dir if find_bxsf_files(run_dir) else self.bxsf_dir
+        orbits = read_orbits(run_dir, None, self.fermi_token, self.band_groups())
+        spin = splitting.attach_orbits(
+            splitting.read_spin_splitting(tables),
+            orbits,
+            splitting.sheet_of_pao_band(bxsf_dir),
+            sweep,
+        )
+        spin = spin.loc[spin.num_orbit_copies >= min_copies].reset_index(drop=True)
+        spin.to_csv(folder / 'spin_splitting_table.csv', index=False, float_format='%.6g')
+        splitting.plot_spin_factors(spin, folder / 'fig_spin_factors.png', sweep, colors, labels,
+                                    title or f'{self.system_name}: spin splitting of the orbits',
+                                    axis_label)  # fmt: skip
+        report = [f'# Spin splitting of the orbits ({self.system_name})', '',
+                  f'{len(spin)} orbits with >= {min_copies} copies; median g* per group:', '']  # fmt: skip
+        medians = spin.groupby('group')[['g_spin', 'g_spin_atomic', 'g_total']].median()
+        report += [markdown_table(medians.reset_index()), '']
+        matched, correlation = None, {}
+        if self.sweep_peaks is not None:
+            matched = splitting.match_peaks(spin, self.sweep_peaks, sweep, tolerance)
+            matched.to_csv(folder / 'matched_peaks.csv', index=False, float_format='%.6g')
+            if len(matched):
+                for name, column in (('adiabatic', 'Rs_total'), ('propagator', 'absRs_total_prop')):
+                    correlation[name] = splitting.rank_correlation_test(
+                        matched.rel_mag, np.abs(matched[column]), trials
+                    )
+                report += [f'Measured peaks matched within {100 * tolerance:.0f} %: {len(matched)}.',
+                           'Rank correlation of the measured strength with |R_s|:', '',
+                           markdown_table(pd.DataFrame([dict(form=k, **v) for k, v in correlation.items()])),
+                           '']  # fmt: skip
+        lk = {}
+        if self.lk_table is not None and self.directions:
+            for direction in self.directions:
+                rows = experiment_data.lk_rows_for_direction(self.lk_table, direction)
+                if rows.empty:
+                    continue
+                angle = float(direction['polar' if sweep == 'polar' else 'azimuthal'])
+                lk[direction['label']] = splitting.lk_branch_table(
+                    spin, rows, angle, sweep, lk_tolerance, assignments=self.assignments
+                )
+                report += [f'## LK branches along {direction["label"]}', '',
+                           markdown_table(lk[direction['label']]), '']  # fmt: skip
+        text = '\n'.join(report)
+        (folder / 'summary.md').write_text(text)
+        self.spin_table = spin
+        return dict(table=spin, matched=matched, correlation=correlation, lk=lk, text=text)
+
     def collaborator_package(self, destination: str | Path, min_copies: int = 50, figure_min_copies: int = 100,
                              axis_label: str = 'angle (deg)', title: str | None = None, colors: dict | None = None,
                              labels: dict | None = None, network: pd.DataFrame | None = None,
@@ -744,4 +845,4 @@ class QuantumOscillationAnalysis:
                              network, getattr(self, 'image_calibration', {}).get('image'),
                              title or self.system_name, axis_label,
                              qo_plots.group_colors(orbits.group, colors), labels or {}, touching, contact_field,
-                             min_copies, figure_min_copies)  # fmt: skip
+                             min_copies, figure_min_copies, getattr(self, 'spin_table', None))  # fmt: skip

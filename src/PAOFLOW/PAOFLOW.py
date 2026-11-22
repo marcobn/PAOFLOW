@@ -1366,6 +1366,182 @@ class PAOFLOW:
                 raise e
         self.report_module_time('Orbital moment')
 
+    @sparse_base_cell(modifies=False)
+    def orbit_spin_splitting(
+        self,
+        outline_file: str,
+        band: int,
+        fermi_energy: float = 0.0,
+        g_s: float | None = None,
+        max_points: int | None = 400,
+        newton_steps: int = 2,
+        degeneracy_tol: float = 1.0e-4,
+        fname: str | None = None,
+    ) -> list[dict]:
+        r"""Spin splitting (g*, R_s) of quantum-oscillation orbits from the zero-field Hamiltonian.
+
+        For every orbit of a pyskeaf orbit-outline file the Kramers pair of ``band`` is followed
+        around the orbit: the Zeeman matrix of the pair (spin, atomic orbital moment and the
+        itinerant orbital moment of the Bloch states) and the parallel transport of the pair give
+        the phase that separates the two spin-split Landau-level sequences, hence
+        :math:`g^*m^*/m_e`, :math:`g^*` and the spin reduction factor :math:`R_s` of the first
+        harmonic, without a field in the Hamiltonian. Every level of the Zeeman matrix is reported
+        (``spin``, ``spin_atomic``, ``total``), as the adiabatic phase (local splitting accumulated
+        along the orbit, what the areas of field-split Fermi surfaces give) and with the
+        non-Abelian Berry transport (``*_prop``).
+
+        Parameters
+        ----------
+        outline_file : str
+            A pyskeaf orbit-outline file in 1/Angstrom (``qo_EF_<E>_orbitoutlines_invAng_<n>.out``,
+            written by :meth:`pyskeaf` with ``verbose=True``); each block carries its field
+            direction.
+        band : int
+            Band of the orbits, 1-based as in the ``BAND:`` line of the BXSF file (either member of
+            the Kramers pair).
+        fermi_energy : float, optional
+            Energy of the orbits (eV, relative to the Fermi level of ``HRs``).
+        g_s : float, optional
+            Spin g-factor (default the free-electron value).
+        max_points : int or None, optional
+            Resample every contour to this many points equally spaced in arc length (``None``
+            keeps the pyskeaf points).
+        newton_steps : int, optional
+            In-plane Newton steps that put the points on the energy contour of the PAO bands.
+        degeneracy_tol : float, optional
+            Bands closer than this (eV) to the pair are left out of the itinerant moment.
+        fname : str, optional
+            Table written in the output directory (default ``orbit_spin_splitting_<band>.dat``).
+
+        Returns
+        -------
+        list of dict
+            One record per orbit (on every rank): field angles, frequency (kT), ``m_star``, and per
+            level ``gm_*``, ``g_*``, ``Rs_*``, ``gm_*_prop``, ``g_*_prop``, ``absRs_*_prop``; the
+            Berry phase of the pair (``berry_phase_mean``, ``berry_rotation``) and the checks
+            ``max_pair_splitting_meV``, ``max_energy_error_meV``.
+
+        Raises
+        ------
+        KeyError
+            Without ``HRs`` (call after :meth:`pao_hamiltonian` and before
+            :meth:`interpolated_hamiltonian`, or with ``free_HRs=False``).
+        ValueError
+            After :meth:`magnetic_field` (the pair must be degenerate).
+        NotImplementedError
+            For a collinear run (``nspin = 2``): call :meth:`spinor_basis` first.
+
+        Notes
+        -----
+        The theory and the conventions are in :mod:`PAOFLOW.topology.orbit_spin_splitting`. The
+        itinerant moment uses the velocity of the atomic gauge on the orbital centres (no
+        intra-atomic dipoles), so it is the inter-site circulation and the intra-atomic part is
+        the :math:`\mathbf L` of :meth:`magnetic_field`. A scalar (spin-degenerate) band has
+        :math:`g^* = g_s` by construction. The orbits are distributed over the MPI ranks. Sparse:
+        supported at the base cell (reads ``HRs`` only).
+        """
+        import os
+
+        from .hamiltonian.bloch_derivatives import (
+            bloch_terms_from_HRs,
+            orbital_positions_from_data,
+        )
+        from .hamiltonian.magnetic_field import ELECTRON_SPIN_G_FACTOR, zeeman_matrix
+        from .topology.orbit_spin_splitting import (
+            BOHR_IN_ANGSTROM,
+            LEVELS,
+            contour_points,
+            field_direction,
+            orbit_spin_splitting,
+            read_orbit_outlines,
+            resample_closed_contour,
+            splitting_summary,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+        records: list[dict] = []
+        try:
+            if 'HRs' not in arry:
+                raise KeyError(
+                    "orbit_spin_splitting needs 'HRs': call it after pao_hamiltonian() and before "
+                    'interpolated_hamiltonian() (or with free_HRs=False)'
+                )
+            if np.any(np.asarray(arry.get('magnetic_field', np.zeros(3)), dtype=float) != 0.0):
+                raise ValueError('orbit_spin_splitting needs the zero-field Hamiltonian')
+            if arry['HRs'].shape[-1] != 1:
+                raise NotImplementedError(
+                    'orbit_spin_splitting of a collinear run: call spinor_basis() first'
+                )
+            spinor = bool(attr.get('dftSO', False))
+            g_value = ELECTRON_SPIN_G_FACTOR if g_s is None else float(g_s)
+            if spinor:
+                if 'Lj' not in arry:
+                    try:
+                        self._orbital_operator_for_fields()
+                    except ValueError:
+                        if self.rank == 0:
+                            print('orbit_spin_splitting: no orbital operator, atomic L left out')
+                if 'Sj' not in arry:
+                    self.spin_operator(adhoc_SO=attr.get('adhoc_SO', False))
+            positions = orbital_positions_from_data(self.data_controller)
+            if positions is None:
+                if self.rank == 0:
+                    print('orbit_spin_splitting: no orbital centres, all orbitals at the origin')
+                positions = np.zeros((attr['nawf'], 3))
+            a_vectors = np.asarray(arry['a_vectors'], dtype=float)
+            lattice_bohr = float(attr['alat']) * a_vectors
+            positions_bohr = positions @ lattice_bohr
+            terms = bloch_terms_from_HRs(arry['HRs'], a_vectors, attr['alat'], positions, 0)
+            outlines = read_orbit_outlines(outline_file)
+
+            local = []
+            for index in range(self.rank, len(outlines), self.size):
+                outline = outlines[index]
+                n_hat = field_direction(outline.azimuthal_deg, outline.polar_deg)
+                points = contour_points(outline) * BOHR_IN_ANGSTROM
+                if max_points:
+                    points = resample_closed_contour(points, int(max_points))
+                zeeman_spin = zeeman_atomic = None
+                if spinor:
+                    zeeman_spin = zeeman_matrix(arry, n_hat, g_value, True, False)[:, :, 0]
+                    if 'Lj' in arry:
+                        zeeman_atomic = zeeman_matrix(arry, n_hat, g_value, False, True)[:, :, 0]
+                splitting = orbit_spin_splitting(
+                    terms, zeeman_spin, zeeman_atomic, positions_bohr, lattice_bohr, points,
+                    n_hat, int(band) - 1, spinor=spinor, fermi_energy=fermi_energy,
+                    g_s=g_value, newton_steps=newton_steps, degeneracy_tol=degeneracy_tol,
+                )  # fmt: skip
+                record = dict(
+                    azimuthal=outline.azimuthal_deg,
+                    polar=outline.polar_deg,
+                    frequency_kT=outline.frequency_kT,
+                    outline_frequency_kT=outline.outline_frequency_kT,
+                    slice=outline.slice_index,
+                )
+                record.update(splitting_summary(splitting))
+                local.append((index, record))
+            gathered = self.comm.gather(local, root=0)
+            if self.rank == 0:
+                records = [r for _, r in sorted(item for part in gathered for item in part)]
+                columns = ['azimuthal', 'polar', 'frequency_kT', 'm_star'] + [
+                    f'{kind}_{level}{suffix}'
+                    for level in LEVELS
+                    for kind, suffix in (('g', ''), ('Rs', ''), ('g', '_prop'), ('absRs', '_prop'))
+                ] + ['berry_phase_mean', 'berry_rotation', 'max_pair_splitting_meV',
+                     'max_energy_error_meV', 'npoints']  # fmt: skip
+                name = fname or f'orbit_spin_splitting_{int(band)}.dat'
+                with open(os.path.join(attr['opath'], name), 'w') as table:
+                    table.write('# ' + ' '.join(columns) + '\n')
+                    for record in records:
+                        table.write(' '.join(f'{float(record[c]):.6g}' for c in columns) + '\n')
+            records = self.comm.bcast(records, root=0)
+        except Exception as e:
+            self.report_exception('orbit_spin_splitting')
+            if attr['abort_on_exception']:
+                raise e
+        self.report_module_time('Orbit spin splitting')
+        return records
+
     @sparse_override
     def orbital_magnetization(
         self,

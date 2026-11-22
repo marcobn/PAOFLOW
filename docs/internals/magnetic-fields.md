@@ -73,10 +73,33 @@ All the Hamiltonian terms act on `HRs`. Call them before `interpolated_hamiltoni
 - **Aliased boundary block.** On an even grid, the `HRs` block at N/2 aliases ±N/2. It takes the Peierls phase of
   R = −N/2. Model hopping lists leave that block empty.
 
+## Spin splitting of quantum-oscillation orbits
+
+Added on 21 November 2026 (`orbit_spin_splitting`, `topology/orbit_spin_splitting.py`), for the NbSn2
+quantum-oscillation study. A finite field in `magnetic_field` followed by `fermi_surface` and `pyskeaf` gives the
+frequencies of the two spin-split sheets. That route carries only the on-site terms (spin and atomic **L**), and it
+needs one Hamiltonian per field direction. `orbit_spin_splitting` works from the zero-field `HRs` and a pyskeaf
+orbit-outline file (`pyskeaf(..., verbose=True)`). For every orbit it follows the Kramers pair around the contour,
+with the Zeeman matrix of the pair:
+- spin, g_s **S**·n̂;
+- atomic orbital moment, **L**·n̂;
+- itinerant (Bloch) orbital moment of the pair, the non-Abelian form of `orbital_moment`, with the velocity of the
+  atomic gauge on the orbital centres. It has no intra-atomic dipoles, so nothing is counted twice with **L**.
+
+It returns the cyclotron mass and g\*m\*/m_e at each level (`spin`, `spin_atomic`, `total`), in two forms:
+- adiabatic: the local splitting accumulated in cyclotron time, which is what the finite-field areas measure;
+- propagator: from the eigenphases of the path-ordered propagator, which adds the non-Abelian Berry transport of the
+  pair (Mikitik–Sharlai; Alexandradinata–Glazman).
+
+The spin factor is R_s = cos(π g\*m\*/2m_e). The propagator phase is known only modulo 2π and sign. It is unfolded to
+the branch nearest the adiabatic one; |R_s| needs no unfolding.
+
 ## Validation
 
 | check | result |
 |---|---|
+| `orbit_spin_splitting`, spinor s band (cubic) | g\* = g_s to 10⁻⁹ at every level, m\* = ħ²/2ta² to 0.5 %, the Newton steps put the contour on the energy surface to 10⁻⁸ eV |
+| `orbit_spin_splitting`, Pt (fully relativistic, standard basis, 8³) | spin + **L** adiabatic g\* equals the finite-field g\* (30 T, pyskeaf on the split sheets): 2.48 vs 2.48 (2097 T hole orbit), 2.75 vs 2.73 (29.2 kT); the Bloch moment adds +4 % and +34 % to g\*m\* |
 | Landé g_J of p and d spin-orbit multiplets, along z and an oblique axis | exact: 5×10⁻¹² eV at 0.1 T (the test asserts 10⁻¹⁰) |
 | `Sj` of fully relativistic runs (Pt) | spin algebra to 10⁻¹⁶; H(**R**) time-reversal invariant to 2×10⁻¹¹ eV with Θ = e^{−iπJ_y}(−1)^l K |
 | bcc Fe (fully relativistic), 12³ grid | spin moment 2.194 μ_B, orbital 0.0564 μ_B, parallel |
@@ -126,5 +149,6 @@ All the Hamiltonian terms act on `HRs`. Call them before `interpolated_hamiltoni
 | `hamiltonian/orbital_centres.py` | `orbital_centres_bohr` |
 | `hamiltonian/add_ext_field.py` | electric field, exchange-like Zeeman, Hubbard corrections |
 | `response/orbital_moment.py` | `moment_and_curvature`, `magnetization_density` |
+| `topology/orbit_spin_splitting.py` | `orbit_spin_splitting`, `pair_orbital_moment`, `read_orbit_outlines` |
 | `hamiltonian/do_spin_orbit.py` | the ad hoc L·S kernels (`_placed_shell_block`) |
 | `hamiltonian/do_doubling.py`, `sparse/doubling.py` | supercells (`Dnm`, `tau`, `orbital_centres`) |

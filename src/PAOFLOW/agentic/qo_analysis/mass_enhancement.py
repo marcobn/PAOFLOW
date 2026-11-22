@@ -40,17 +40,6 @@ from numpy.typing import NDArray
 from .skeaf_output import find_frequency_files, read_frequency_table
 
 BOHR_TO_ANG = 0.529177209
-_HEADER_RE = re.compile(
-    r'Azimuthal\(deg\)\s*=\s*([-\d.Ee+]+)\s*,\s*Polar\(deg\)\s*=\s*([-\d.Ee+]+)\s*,\s*'
-    r'Number of orbits\s*=\s*(\d+)'
-)
-_SLICE_RE = re.compile(
-    r'Slice\s*=\s*(\d+)\s*,\s*Freq\(kT, average of all copies\)\s*=\s*([-\d.Ee+]+)'
-)
-_ORBIT_RE = re.compile(
-    r'Orbit #\s*=\s*(\d+)\s*,\s*Freq\(kT, this largest copy used for outline\)\s*=\s*([-\d.Ee+]+)'
-)
-_POINTS_RE = re.compile(r'Points\s*=\s*(\d+)')
 
 
 def read_orbit_outlines(path: str | Path) -> list[dict[str, Any]]:
@@ -69,38 +58,24 @@ def read_orbit_outlines(path: str | Path) -> list[dict[str, Any]]:
         ``frequency_kT`` (average of the copies), ``rep_frequency_kT`` (the copy
         drawn) and ``points`` ``(npts, 3)``, the orbit in Cartesian Å⁻¹ of the
         BXSF frame (2π included).
+
+    Notes
+    -----
+    A dictionary view of :func:`PAOFLOW.pyskeaf.results.read_orbit_outlines`.
     """
-    orbits: list[dict[str, Any]] = []
-    lines = Path(path).read_text().splitlines()
-    i = 0
-    theta = phi = None
-    while i < len(lines):
-        line = lines[i]
-        header = _HEADER_RE.search(line)
-        if header:
-            theta, phi = float(header.group(1)), float(header.group(2))
-            i += 1
-            continue
-        block = _SLICE_RE.search(line)
-        if block:
-            orbit = _ORBIT_RE.search(lines[i + 1])
-            npts = int(_POINTS_RE.search(lines[i + 2]).group(1))
-            rows = lines[i + 4 : i + 4 + npts]  # skip the 'kx ky kz' line
-            points = np.array([[float(x) for x in row.split()] for row in rows], dtype=float)
-            orbits.append(
-                {
-                    'azimuthal_deg': theta,
-                    'polar_deg': phi,
-                    'slice': int(block.group(1)),
-                    'frequency_kT': float(block.group(2)),
-                    'rep_frequency_kT': float(orbit.group(2)) if orbit else float('nan'),
-                    'points': points,
-                }
-            )
-            i += 4 + npts
-            continue
-        i += 1
-    return orbits
+    from PAOFLOW.pyskeaf.results import read_orbit_outlines as read_outlines
+
+    return [
+        {
+            'azimuthal_deg': outline.azimuthal_deg,
+            'polar_deg': outline.polar_deg,
+            'slice': outline.slice_index,
+            'frequency_kT': outline.frequency_kT,
+            'rep_frequency_kT': outline.outline_frequency_kT,
+            'points': outline.points_inv_angstrom,
+        }
+        for outline in read_outlines(path)
+    ]
 
 
 def lattice_point_group(at: NDArray[np.float64], tol: float = 1e-6) -> NDArray[np.int_]:
