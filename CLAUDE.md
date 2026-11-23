@@ -16,7 +16,7 @@ user-invocable: true
 3. **What PAOFLOW is**
     PAOFLOW (version 4.0.0, GPL-3.0-or-later) is a Python package for post-processing DFT calculations. It projects Kohn–Sham states from Quantum ESPRESSO (or VASP) onto a Projected Atomic Orbital (PAO) basis to build *ab initio* tight-binding Hamiltonians. From these it computes bands, DOS/PDOS, Fermi surfaces, Boltzmann transport, Berry-phase/topology, spin/anomalous Hall, dielectric response, Green's-function (Landauer) transport, phonons, electron–phonon coupling and ACBN0 Hubbard U/V.
     - Build: `flit_core` (`pyproject.toml`), Python >= 3.10, core dependencies are numpy, scipy, mpi4py and pandas
-    - Optional extras: `graphics`, `fermisurface`, `transport`, `pyskeaf`, `qo_analysis`, `phonon`, `weyl_search`, `fast` (numba), `dev`, `docs`
+    - Optional extras: `graphics`, `fermisurface`, `transport`, `pyskeaf`, `qo_analysis`, `phonon`, `weyl_search`, `pythtb`, `fast` (numba), `dev`, `docs`
     - Parallelism: MPI via `mpi4py`, with k-points split across ranks and pools. Scripts are run as `mpirun -np N python main.py`
     - Console scripts: `pyskeaf`, `paoflow-genbasis-ps`, `paoflow-gen-qe`, `paoflow-gen`, `fermi-plotter`
 
