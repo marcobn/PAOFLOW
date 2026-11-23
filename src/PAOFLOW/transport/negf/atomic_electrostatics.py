@@ -26,7 +26,7 @@ from numpy.typing import NDArray
 
 from PAOFLOW.transport.negf.electrostatics import planar_layers
 from PAOFLOW.transport.negf.poisson_3d import DirichletSlab, GaussianChargesInSlab
-from PAOFLOW.transport.partition.types import AtomOrbitals
+from PAOFLOW.transport.partition.types import AtomOrbitals, block_atom_index
 
 
 class AtomicElectrostatics:
@@ -251,9 +251,7 @@ def atomic_electrostatics(
     AtomicElectrostatics
     """
     layers = planar_layers(central_atoms, transport_axis, cell_vectors_bohr)
-    group_of_orbital = np.concatenate(
-        [np.full(atom.dimension, index, dtype=int) for index, atom in enumerate(central_atoms)]
-    )
+    group_of_orbital = block_atom_index(central_atoms)  # rows of an atom may be split by spin
     return AtomicElectrostatics(
         group_of_orbital=group_of_orbital,
         positions=np.array([atom.position for atom in central_atoms], dtype=float),

@@ -10,38 +10,126 @@ from PAOFLOW.transport.partition.types import AtomOrbitals
 
 
 def build_atom_orbital_inventory(data_controller: DataController) -> list[AtomOrbitals]:
+    """The Hamiltonian rows of every atom, in the order of ``arrays['atoms']``.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Holds ``atoms``, ``tau``, ``nawf`` and, when available, the orbital records ``basis``.
+
+    Returns
+    -------
+    list of AtomOrbitals
+        One entry per atom; their ranges cover rows ``1..nawf`` exactly once.
+
+    Raises
+    ------
+    ValueError
+        If the orbital counts cannot be resolved or do not add up to ``nawf``.
+
+    Notes
+    -----
+    The rows are laid out as ``[cell copy][spin block][atoms of the cell]``: one spin block unless
+    the spin was added to a spin-less basis (``adhoc_spin_orbit``, or ``j_to_lm_hamiltonian``),
+    which stacks the copy of the basis for spin down after that for spin up, and one cell copy
+    unless ``doubling_Hamiltonian`` repeated the Hamiltonian (after any spin doubling).
+    """
     arrays, attributes = data_controller.data_dicts()
     atoms = list(arrays['atoms'])
     positions = positions_bohr(arrays, attributes)
     total_orbitals = int(attributes['nawf'])
+    spin_blocks, cell_atoms = _spin_blocks_and_cell_atoms(arrays, atoms, total_orbitals)
+    copies = len(atoms) // cell_atoms
+    block_size = total_orbitals // (spin_blocks * copies)
     orbital_counts = _orbital_counts_by_atom(
-        arrays, attributes, atoms, total_orbitals, data_controller
+        arrays, attributes, atoms, total_orbitals // spin_blocks, data_controller
     )
 
     inventory: list[AtomOrbitals] = []
-    first_orbital = 1
+    offset = 0  # rows of the cell block before the atom
     for atom_index, (element, position, orbital_count) in enumerate(
         zip(atoms, positions, orbital_counts), start=1
     ):
-        last_orbital = first_orbital + orbital_count - 1
+        copy, site = divmod(atom_index - 1, cell_atoms)
+        if site == 0:
+            offset = 0
+        first = copy * spin_blocks * block_size + offset + 1
         inventory.append(
             AtomOrbitals(
                 atom_index=atom_index,
                 element=str(element),
                 position=np.array(position, dtype=float),
-                first_orbital=first_orbital,
-                last_orbital=last_orbital,
+                orbital_ranges=tuple(
+                    (first + spin * block_size, first + spin * block_size + orbital_count - 1)
+                    for spin in range(spin_blocks)
+                ),
             )
         )
-        first_orbital = last_orbital + 1
+        offset += orbital_count
 
-    if inventory[-1].last_orbital != total_orbitals:
+    covered = sum(atom.dimension for atom in inventory)
+    last = max(atom.orbital_ranges[-1][1] for atom in inventory)
+    if covered != total_orbitals or last != total_orbitals:
         raise ValueError(
             'Resolved atom orbital count does not match PAOFLOW atomic wavefunction count: '
-            f'{inventory[-1].last_orbital} != {total_orbitals}.'
+            f'{covered} != {total_orbitals}.'
         )
 
     return inventory
+
+
+def _spin_blocks_and_cell_atoms(
+    arrays: dict, atoms: list[str], total_orbitals: int
+) -> tuple[int, int]:
+    """Spin blocks of the Hamiltonian rows and atoms of the cell the basis describes.
+
+    Parameters
+    ----------
+    arrays : dict
+        Data-controller arrays, with the orbital records ``basis`` (or ``atomic_basis``) when
+        available.
+    atoms : list of str
+        Species of every atom (repeated cell by cell after ``doubling_Hamiltonian``).
+    total_orbitals : int
+        ``nawf``.
+
+    Returns
+    -------
+    tuple of int
+        ``(spin_blocks, cell_atoms)``: 2 when the rows hold a spin-less basis twice,
+        ``[up][down]``, else 1; and the number of atoms the basis records sit on (all atoms when
+        the cell was not doubled).
+
+    Notes
+    -----
+    With ``N`` records on ``n`` atoms and ``len(atoms) = c n`` (``c`` cell copies), the rows hold
+    ``nawf / (c N)`` spin blocks. Without records, one block and one cell.
+    """
+    basis = _basis_records(arrays)
+    if not basis:
+        return 1, len(atoms)
+    cell_atoms = len(set(_sites_of_basis_records(basis, None)))
+    if cell_atoms == 0 or len(atoms) % cell_atoms != 0:
+        return 1, len(atoms)
+    copies = len(atoms) // cell_atoms
+    spin_blocks, remainder = divmod(total_orbitals, copies * len(basis))
+    if remainder != 0 or spin_blocks not in (1, 2):
+        return 1, len(atoms)
+    return spin_blocks, cell_atoms
+
+
+def _basis_records(arrays: dict) -> list | None:
+    """Orbital records of the Hamiltonian basis (``basis``, else ``atomic_basis``).
+
+    ``basis`` is set on every route (internal projections, ``read_atomic_proj_QE``,
+    ``j_to_lm_hamiltonian``, which replaces the ``j`` records by ``lm`` ones); ``atomic_basis``
+    only by ``projections``, and it is not updated by ``j_to_lm_hamiltonian``.
+    """
+    for key in ('basis', 'atomic_basis'):
+        records = arrays.get(key)
+        if records is not None and len(records) > 0 and 'tau' in records[0]:
+            return records
+    return None
 
 
 def positions_bohr(arrays: dict, attributes: dict) -> np.ndarray:
@@ -78,8 +166,8 @@ def _orbital_counts_by_atom(
     Parameters
     ----------
     arrays : dict
-        Data-controller arrays: ``atoms``, ``tau`` and, when available, ``atomic_basis``
-        (the records of the internal projections) or ``species``.
+        Data-controller arrays: ``atoms``, ``tau`` and, when available, the orbital records
+        ``basis`` (or ``atomic_basis``) or ``species``.
     attributes : dict
         Data-controller attributes (``workpath``, ``savedir`` locate the UPF files; ``tau_units``
         and ``alat`` give the units of ``tau``).
@@ -102,7 +190,7 @@ def _orbital_counts_by_atom(
 
     Notes
     -----
-    The basis of the internal projections (``atomic_basis``) is used first: each record carries
+    The orbital records (``basis``, else ``atomic_basis``) are used first: each record carries
     the position of its atom, so any preset (``minimal``, ``standard``, ``extended``, explicit
     shells) is counted correctly, for QE and VASP alike. Without it (the ``projwfc.x`` route) the
     count comes from the pseudo-orbitals of each species (the UPF files, or the POTCAR of a VASP
@@ -149,7 +237,8 @@ def _orbital_counts_from_basis(
     Parameters
     ----------
     arrays : dict
-        Data-controller arrays with ``tau`` and, optionally, ``atomic_basis`` (centres in bohr).
+        Data-controller arrays with ``tau`` and, optionally, ``basis`` / ``atomic_basis``
+        (centres in bohr).
     attributes : dict
         Data-controller attributes (``tau_units``, ``alat``: see `positions_bohr`).
     atoms : list of str
@@ -173,8 +262,8 @@ def _orbital_counts_from_basis(
         If a record sits on no atom (or on an atom of another species), or if the records are not
         grouped atom by atom in the order of ``atoms``, which the Hamiltonian blocks assume.
     """
-    basis = arrays.get('atomic_basis')
-    if basis is None or len(basis) == 0 or total_orbitals % len(basis) != 0:
+    basis = _basis_records(arrays)
+    if basis is None or total_orbitals % len(basis) != 0:
         return None
     if 'tau' not in arrays:
         # Records alone: those of one atom are consecutive (same species and centre).
@@ -209,8 +298,11 @@ def _orbital_counts_from_basis(
     return cell_counts * copies
 
 
-def _sites_of_basis_records(atomic_basis: list, atoms: list[str]) -> list[int]:
-    """Atom site of every basis record (records are stored atom by atom, in site order)."""
+def _sites_of_basis_records(atomic_basis: list, atoms: list[str] | None) -> list[int]:
+    """Atom site of every basis record (records are stored atom by atom, in site order).
+
+    With ``atoms`` the records must span exactly those atoms; ``None`` skips the check.
+    """
     sites: list[int] = []
     site = -1
     for index, record in enumerate(atomic_basis):
@@ -221,7 +313,7 @@ def _sites_of_basis_records(atomic_basis: list, atoms: list[str]) -> list[int]:
         if new_atom:
             site += 1
         sites.append(site)
-    if site + 1 != len(atoms):
+    if atoms is not None and site + 1 != len(atoms):
         raise ValueError(
             'atomic_basis records span %d atoms but the run has %d' % (site + 1, len(atoms))
         )

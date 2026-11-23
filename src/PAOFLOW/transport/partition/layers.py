@@ -131,20 +131,23 @@ def _dimension(atoms: list[AtomOrbitals]) -> int:
 
 
 def _range_string(atoms: list[AtomOrbitals]) -> str:
-    sorted_atoms = sorted(atoms, key=lambda item: item.first_orbital)
-    if not sorted_atoms:
+    """Selector string (``'1-9,19-27'``) of the Hamiltonian rows of ``atoms``, in increasing order.
+
+    The rows of an atom need not be consecutive (one range per spin block for a Hamiltonian laid
+    out as ``[all spin up][all spin down]``); the block keeps the global row order.
+    """
+    ranges = sorted(item for atom in atoms for item in atom.orbital_ranges)
+    if not ranges:
         raise ValueError('Cannot build an orbital range from an empty atom selection.')
 
     merged_ranges: list[tuple[int, int]] = []
-    start = sorted_atoms[0].first_orbital
-    end = sorted_atoms[0].last_orbital
-    for atom in sorted_atoms[1:]:
-        if atom.first_orbital == end + 1:
-            end = atom.last_orbital
+    start, end = ranges[0]
+    for first, last in ranges[1:]:
+        if first == end + 1:
+            end = last
         else:
             merged_ranges.append((start, end))
-            start = atom.first_orbital
-            end = atom.last_orbital
+            start, end = first, last
     merged_ranges.append((start, end))
 
     return ','.join(

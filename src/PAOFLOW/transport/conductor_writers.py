@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from PAOFLOW.transport.data import ConductorData
+from PAOFLOW.transport.io.log_module import log_rank0
 from PAOFLOW.transport.io.write_data import (
     write_data,
     write_operator_xml,
@@ -90,6 +91,87 @@ def write_conductor_operators(
             eunits='eV',
             analyticity='retarded',
         )
+
+
+@headered_function('Writing surface bands')
+def write_surface_bands(
+    *,
+    rank: int,
+    data: ConductorData,
+    dos_k: NDArray[np.float64],
+    egrid: NDArray[np.float64],
+) -> None:
+    r"""Write the surface-projected spectral map and its plotting axes.
+
+    Parameters
+    ----------
+    rank : int
+        MPI rank. Only rank 0 writes.
+    data : ConductorData
+        Validated transport input and runtime flags.
+    dos_k : NDArray[np.float64]
+        Surface spectral function :math:`A(k, E)`, shape ``(ne, nkpts)``.
+    egrid : NDArray[np.float64]
+        Energy grid in eV, shape ``(ne,)``.
+
+    Returns
+    -------
+    None
+        Writes three files under ``data.file_names.output_dir``:
+
+        - ``surfband{postfix}.dat`` : the raw ``(ne, nkpts)`` matrix, one row per
+          energy, directly loadable as a 2D heatmap.
+        - ``surfband_egrid{postfix}.dat`` : the energy axis, one value per row.
+        - ``surfband_kpath{postfix}.dat`` : the k axis as
+          ``index  kdist  label``, with ``label`` set at high-symmetry points.
+
+    Notes
+    -----
+    In surface mode the conductor Green's function excludes the right-lead
+    self-energy, so
+
+    .. math::
+
+        A(k, E) = -\frac{1}{\pi}\,\mathrm{Im}\,\mathrm{Tr}\,
+        \left[\left(E + i\delta\right)S - H_C - \Sigma_L\right]^{-1}
+
+    is the surface-projected bulk band structure. Weights along the k-path are
+    unity, so the values are reported raw rather than BZ-averaged.
+    """
+    if rank != 0:
+        return
+
+    output_dir = Path(data.file_names.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    postfix = data.file_names.postfix
+    runtime = data.get_runtime_data()
+
+    spectral_path = output_dir / f'surfband{postfix}.dat'
+    np.savetxt(spectral_path, dos_k, fmt='%15.9f')
+
+    egrid_path = output_dir / f'surfband_egrid{postfix}.dat'
+    np.savetxt(egrid_path, egrid, fmt='%15.9f')
+
+    nkpts = dos_k.shape[1]
+    kdist = runtime.kpath_dist
+    if kdist is None:
+        kdist = np.arange(nkpts, dtype=np.float64)
+
+    tick_labels: dict[int, str] = {}
+    if runtime.kpath_ticks is not None and runtime.kpath_labels is not None:
+        for index, label in zip(runtime.kpath_ticks, runtime.kpath_labels):
+            if 0 <= int(index) < nkpts:
+                tick_labels[int(index)] = label
+
+    kpath_path = output_dir / f'surfband_kpath{postfix}.dat'
+    with kpath_path.open('w') as f:
+        f.write('# index   kdist            label\n')
+        for ik in range(nkpts):
+            f.write(f'{ik:6d} {kdist[ik]:15.9f}  {tick_labels.get(ik, "")}\n')
+
+    log_rank0(f'Writing surface bands to {spectral_path}')
+    log_rank0(f'  energy axis -> {egrid_path}')
+    log_rank0(f'  k-path axis -> {kpath_path}')
 
 
 @headered_function('Writing data')

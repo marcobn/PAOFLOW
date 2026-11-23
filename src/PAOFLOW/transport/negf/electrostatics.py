@@ -29,7 +29,7 @@ from typing import Protocol, Sequence, runtime_checkable
 import numpy as np
 from numpy.typing import NDArray
 
-from PAOFLOW.transport.partition.types import AtomOrbitals
+from PAOFLOW.transport.partition.types import AtomOrbitals, block_atom_index
 
 HARTREE_EV = 27.211386245988
 
@@ -165,12 +165,8 @@ def planar_layers(
         layer_of_atom[index] = len(layer_coordinates) - 1
     if len(layer_coordinates) < 2:
         raise ValueError('the planar electrostatics needs at least two layers in the conductor')
-    layer_of_orbital = np.concatenate(
-        [
-            np.full(atom.dimension, layer_of_atom[i], dtype=int)
-            for i, atom in enumerate(central_atoms)
-        ]
-    )
+    # the rows of an atom need not be consecutive (spin blocks)
+    layer_of_orbital = layer_of_atom[block_atom_index(central_atoms)]
     coordinates = np.asarray(layer_coordinates)
     cell = np.asarray(cell_vectors_bohr, dtype=float)
     along_axis = int(np.argmax(np.abs(cell[:, transport_axis])))
