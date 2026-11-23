@@ -263,6 +263,42 @@ def _principal_n_from_label(label: Any) -> str | None:
     return match.group(1) if match else None
 
 
+def _basis_from_orbital_table(arrays: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Basis records rebuilt from the orbital table of a sparse Hamiltonian archive.
+
+    Parameters
+    ----------
+    arrays : dict[str, Any]
+        Data-controller array dictionary after ``load_sparse_hamiltonian``, which
+        restores ``orbital_atom``, ``orbital_species``, ``orbital_l``,
+        ``orbital_m`` and ``orbital_shell`` but no ``basis``.
+
+    Returns
+    -------
+    list of dict or None
+        One record per orbital with ``atom``, ``tau``, ``l``, ``m`` and
+        ``label``, or ``None`` when the arrays hold no orbital table.
+    """
+    if 'orbital_l' not in arrays:
+        return None
+    return [
+        {
+            'atom': str(species),
+            'tau': arrays['tau'][atom],
+            'l': int(l),
+            'm': int(m),
+            'label': str(shell),
+        }
+        for atom, species, l, m, shell in zip(
+            arrays['orbital_atom'],
+            arrays['orbital_species'],
+            arrays['orbital_l'],
+            arrays['orbital_m'],
+            arrays['orbital_shell'],
+        )
+    ]
+
+
 def _build_orbital_prefixes(arrays: dict[str, Any], nawf: int) -> list[str]:
     """Build deterministic per-orbital filename prefixes.
 
@@ -270,8 +306,9 @@ def _build_orbital_prefixes(arrays: dict[str, Any], nawf: int) -> list[str]:
     ----------
     arrays : dict[str, Any]
         Data-controller array dictionary. Uses ``'basis'`` when available,
-        otherwise ``'atomic_basis'``. Each basis record is expected to expose
-        ``atom``, ``tau``, ``l``, ``m`` and ``label``.
+        otherwise ``'atomic_basis'``, otherwise the orbital table of a run
+        restarted from a sparse Hamiltonian archive (``'orbital_*'``). Each basis
+        record is expected to expose ``atom``, ``tau``, ``l``, ``m`` and ``label``.
     nawf : int
         Number of atomic wavefunctions/orbitals.
 
@@ -288,7 +325,7 @@ def _build_orbital_prefixes(arrays: dict[str, Any], nawf: int) -> list[str]:
     labels in multi-atom cells. If basis metadata is unavailable, a safe
     fallback ``orb_<index>`` is returned.
     """
-    basis = arrays.get('basis') or arrays.get('atomic_basis')
+    basis = arrays.get('basis') or arrays.get('atomic_basis') or _basis_from_orbital_table(arrays)
     if basis is None or len(basis) < nawf:
         return ['orb_%d' % m for m in range(nawf)]
 

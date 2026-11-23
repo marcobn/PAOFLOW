@@ -145,6 +145,25 @@ def test_restore_leaves_the_post_pao_hamiltonian_state(dc, tmp_path):
         assert key not in arrays
 
 
+def test_restart_keeps_the_pdos_file_names(dc):
+    """A restarted run names its PDOS files as the run that wrote the archive did."""
+    from PAOFLOW.spectrum.do_pdos import _build_orbital_prefixes
+
+    tau = dc.data_arrays['tau']
+    dc.data_arrays['basis'] = [
+        {'atom': 'A', 'tau': tau[0], 'l': 0, 'm': 1, 'label': '2S'},
+        {'atom': 'B', 'tau': tau[1], 'l': 0, 'm': 1, 'label': '3S'},
+        *({'atom': 'B', 'tau': tau[1], 'l': 1, 'm': m, 'label': '3P'} for m in (1, 2, 3)),
+    ]
+    _, path = _saved(dc, bond_order=2)
+    fresh = _DC({}, {})
+    restore_data_controller(fresh, read_sparse_hamiltonian(path)[1])
+
+    expected = _build_orbital_prefixes(dc.data_arrays, 5)
+    assert not any(p.startswith('orb_') for p in expected)
+    assert _build_orbital_prefixes(fresh.data_arrays, 5) == expected
+
+
 # ---------------------------------------------------------------------------
 # Dense <-> sparse bridge
 # ---------------------------------------------------------------------------
