@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -379,6 +379,72 @@ class GPAO:
                 fig.savefig(fname, dpi=200)
                 plt.close(fig)
         return ax
+
+    def plot_surface_bands(
+        self,
+        path: str = '.',
+        postfix: str = '',
+        filename: str | None = None,
+        scale: str = 'log',
+        clip_percentile: float = 99.0,
+        cmap: str = 'inferno',
+        labels: dict[str, str] | None = None,
+        y_lim: tuple[float, float] | None = None,
+        title: str | None = None,
+        ax: Any = None,
+    ) -> Any:
+        """Plot the surface spectral function :math:`A(k, E)` of ``Transport.compute_surface_bands``.
+
+        Parameters
+        ----------
+        path : str, optional
+            Output directory of the transport run (``configure_outputs(output_dir=...)``).
+        postfix : str, optional
+            ``configure_outputs(postfix=...)`` of the run: the files read are
+            ``surfband{postfix}.dat``, ``surfband_egrid{postfix}.dat`` and
+            ``surfband_kpath{postfix}.dat``.
+        filename : str, optional
+            Save the figure there (for example ``path + '/surfband_surf.png'``) and close it;
+            ``None`` shows it.
+        scale : {'log', 'linear'}, optional
+            Colour scale: ``'log'`` shows the bulk continuum and the surface states together,
+            ``'linear'`` saturates at the ``clip_percentile`` percentile.
+        clip_percentile : float, optional
+        cmap : str, optional
+            Matplotlib colour map.
+        labels : dict, optional
+            Display forms of the path labels, keyed by the generator's label (``{'gG': 'Γ'}``);
+            by default every label gets an overbar (surface Brillouin zone).
+        y_lim : tuple of float, optional
+            Energy window (eV, relative to the Fermi level).
+        title : str, optional
+        ax : matplotlib Axes, optional
+            Draw into this axis instead of a new figure (no save or show).
+
+        Returns
+        -------
+        matplotlib Axes
+            The axis of the map
+            (:func:`PAOFLOW.graphics.surface_plots.plot_surface_spectrum`).
+
+        Raises
+        ------
+        FileNotFoundError
+            When a file of the run is missing in ``path``.
+        """
+        from .graphics.surface_plots import plot_surface_spectrum, read_surface_bands
+
+        return plot_surface_spectrum(
+            read_surface_bands(path, postfix),
+            scale=scale,
+            clip_percentile=clip_percentile,
+            cmap=cmap,
+            labels=labels,
+            y_lim=y_lim,
+            title=title,
+            filename=filename,
+            ax=ax,
+        )
 
     def plot_berry(
         self,
