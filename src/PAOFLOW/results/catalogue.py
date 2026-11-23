@@ -831,6 +831,22 @@ KINDS: tuple[Kind, ...] = (
         y=('DOS', 'states/eV'),
         zero='x',
     ),
+    # surface spectral function A(k, E) of compute_surface_bands: an (ne, nk) matrix in
+    # surfband{post}.dat with its axes in two companion files (no map loader for text yet)
+    Kind(
+        'surface_bands_axis',
+        'Surface spectral function: {axis} axis ({post})',
+        GREEN,
+        r'surfband_(?P<axis>egrid|kpath)(?P<post>.*)\.dat',
+        'text',
+    ),
+    Kind(
+        'surface_bands',
+        'Surface spectral function A(k, E), rows E − E_F (eV), columns k ({post})',
+        GREEN,
+        r'surfband(?P<post>.*)\.dat',
+        'text',
+    ),
     Kind(
         'current',
         'Current–voltage (zero-bias transmission)',
