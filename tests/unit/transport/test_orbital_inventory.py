@@ -40,11 +40,7 @@ def test_internal_basis_counts_any_preset():
     }
     inventory = build_atom_orbital_inventory(DummyDataController(arrays, {'nawf': sum(counts)}))
     assert [atom.dimension for atom in inventory] == counts
-    assert [(atom.first_orbital, atom.last_orbital) for atom in inventory] == [
-        (1, 13),
-        (14, 39),
-        (40, 52),
-    ]
+    assert [atom.orbital_ranges for atom in inventory] == [((1, 13),), ((14, 39),), ((40, 52),)]
 
 
 def test_basis_of_another_size_falls_back():
