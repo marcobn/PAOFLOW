@@ -39,6 +39,7 @@ contributing
 :caption: Documentation Standards
 
 docstrings
+tutorials-howtos
 
 ```
 
@@ -66,6 +67,7 @@ release
 :caption: Major Subsystems
 
 internal-basis
+sparse-eigensolver
 wigner-seitz-interpolation
 acbn0
 nonlocal-velocity
@@ -100,6 +102,7 @@ agentic-nlo
 agentic-sscha
 agentic-campaign
 sk-edtb
+band-unfolding
 cli-generators
 web-gui-plan
 
@@ -110,6 +113,5 @@ web-gui-plan
 :maxdepth: 2
 :caption: API Reference
 
-api-reference
 
 ```

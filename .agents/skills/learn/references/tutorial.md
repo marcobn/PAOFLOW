@@ -1,14 +1,14 @@
 # Tutorial template
 
-A tutorial is a Jupyter notebook `docs/learn/tutorials/tutorialNN.ipynb` that takes one material through one complete workflow, from the DFT output to an interpreted physical result. The reader is learning: they leave knowing both the call sequence and what each step computes. Tutorial 01 (electronic structure of Si) is the base that every other page may assume. A tutorial has at most 3000 words of prose (see the table at the top of SKILL.md); a workflow that needs more is split into two tutorials, or its variants move to how-tos.
+A tutorial is a Jupyter notebook `docs/learn/tutorials/tutorialNN.ipynb` that takes one material through one complete workflow, from the DFT output to an interpreted physical result. Its material and workflow are those of its base case `examples/cases/<case>/`: the notebook walks through the case's driver, the `main.py` that Studio and `paoflow-gen --example <case>` write from the answers of a generator case, or the `main.py` of a scripts case, with the same PAOFLOW calls and arguments in the same order. The reader is learning: they leave knowing both the call sequence and what each step computes. The bands and DOS tutorial (electronic structure of Si) is the base that every other page may assume. A tutorial has at most 3000 words of prose (see the table at the top of SKILL.md); a workflow that needs more is split into two tutorials, or its variants move to how-tos.
 
 ## Structure
 
 Cells in this order. Headings are numbered so that other pages can link to a step. Items 1 to 5 are always there; the others, and the optional parts of a step (the `**Output:**` list, the expert checks after a figure), are written only when they add information the reader does not already have from the cells above. A section that repeats values or checks already stated next to their output is left out.
 
-1. **Title and opening** (markdown). `# Tutorial NN: <Physical topic>`. One paragraph: what the reader computes, for which material and which physical question, and the PAOFLOW methods involved. The first sentence says what the reader does ("In this tutorial you compute ..."); the relation to Tutorial 01 follows it (see "Openings" in SKILL.md). Then a `**What you will compute**` label followed by a short list of the quantities and concepts the reader will meet. Each item is a physics statement ("How the PAO Hamiltonian $H(\mathbf{R})$ is built by Fourier transform"), not a method name.
-2. **Download tip** (markdown). A `:::{tip}` admonition that opens with what the reader gains by running the notebook, with the link in the same sentence: "To run the calculation yourself, change its parameters, or start your own material from this workflow, {download}`download this notebook <tutorialNN.ipynb>`." A bare "Download this notebook" tells the reader neither why nor when to do it (see "Connectors" in SKILL.md: an instruction carries its reason). Then a sentence linking the script of the page for a reader who wants to run the workflow as a script: "To run the workflow as a script instead, for example on a cluster, download {download}`main.py <tutorialNN/main.py>`: it makes the PAOFLOW calls of this page in order, without the text, the plots and the checks." Then the release tag and the file the setup cell downloads, and the directory it extracts next to the notebook, so that a reader without internet access on the compute node can fetch it by hand. One sentence on the prerequisites, for example "This tutorial assumes [Tutorial 01](tutorial01.ipynb)."
-3. **Required input** (markdown). The QE runs that made the `.save` directory, named by their input files, which the release asset holds next to it (`scf.in`, `nscf.in`, `proj.in`), and the files PAOFLOW reads, one line each on what it contains. Then a sentence and a code block for a reader who would rather make the `.save` directory than download it: "If you would like to create the `.save` directory yourself instead of downloading it, ...", followed by the `pw.x` and `projwfc.x` commands in order. Do not list DFT settings here: a partial list does not reproduce the run, and the input files do. The reason for each setting PAOFLOW depends on (k-grid, `nbnd`, occupations, SOC, `nosym`) goes in the step where it takes effect (see "Point of use" in SKILL.md), and this section does not announce that it will (see "Signposts" under "Banned habits" in SKILL.md).
+1. **Title and opening** (markdown). `# <Physical topic>`, without a number (see "Titles and headings" in SKILL.md). One paragraph: what the reader computes, for which material and which physical question, and the PAOFLOW methods involved. The first sentence says what the reader does ("In this tutorial you compute ..."); the relation to the bands and DOS tutorial follows it (see "Openings" in SKILL.md). Then a `**What you will compute**` label followed by a short list of the quantities and concepts the reader will meet. Each item is a physics statement ("How the PAO Hamiltonian $H(\mathbf{R})$ is built by Fourier transform"), not a method name.
+2. **Case tip** (markdown). The `:::{tip}` that every tutorial and how-to opens with, whose first sentence names the base case (the checks and the page test read it): "This page is built on the case [`<case>`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/<case>): open it in PAOFLOW Studio with *Examples…* → `<case>`, or copy it with `paoflow-gen --example <case>`." Studio and `paoflow-gen` write the driver this notebook walks through, so the reader can run the same workflow as a script, for example on a cluster. Then what the reader gains by running the notebook, with the link in the same sentence: "To change its parameters, or start your own material from this workflow, {download}`download this notebook <tutorialNN.ipynb>`." A bare "Download this notebook" tells the reader neither why nor when to do it (see "Connectors" in SKILL.md: an instruction carries its reason). Then the release tag and the file the setup cell downloads, and the directory it extracts next to the notebook, so that a reader without internet access on the compute node can fetch it by hand. One sentence on the prerequisites, for example "This tutorial assumes the [bands and DOS tutorial](tutorial01.ipynb)."
+3. **Required input** (markdown). The QE runs that made the `.save` directory, named by the input files of the base case (`scf.in`, `nscf.in`), and the files PAOFLOW reads, one line each on what it contains. Then a sentence and a code block for a reader who would rather make the `.save` directory than download it: "If you would like to create the `.save` directory yourself instead of downloading it, ...", followed by the `pw.x` and `projwfc.x` commands in order. Do not list DFT settings here: a partial list does not reproduce the run, and the input files do. The reason for each setting PAOFLOW depends on (k-grid, `nbnd`, occupations, SOC, `nosym`) goes in the step where it takes effect (see "Point of use" in SKILL.md), and this section does not announce that it will (see "Signposts" under "Banned habits" in SKILL.md).
 4. **Setup cell** (code). `savedir` and `outputdir`, relative to the notebook, then the download and extraction of the release asset, run only when `savedir` does not exist. Extract only the files of this tutorial, with `filter='data'` so that no member of the archive is written outside the notebook's directory. A reader who runs the notebook on their own calculation replaces `savedir` and the download does not run. Pattern:
 
    ```python
@@ -25,7 +25,7 @@ Cells in this order. Headings are numbered so that other pages can link to a ste
        if not archive.is_file():
            urlretrieve(
                'https://github.com/marcobn/PAOFLOW/releases/download/'
-               'tutorial-assets-v1/tutorial_assets.tar.gz',
+               'tutorial-assets-v2/tutorial_assets.tar.gz',
                archive,
            )
        with open_tar(archive, 'r:gz') as tar:
@@ -44,7 +44,7 @@ A tutorial is long enough to cover its workflow and no longer. When a step is on
 
 ## Cell rules
 
-- No magics (`%`, `!`) and no `display()`: the code must also run as the page's `main.py` (see "Running the code" in SKILL.md). Code that only draws or checks goes in a `hide-input` or `remove-cell` cell.
+- No magics (`%`, `!`) and no `display()`: the visible code cells are the driver of the base case, cell by cell (see "Running the code" in SKILL.md). Code that only draws or checks goes in a `hide-input` or `remove-cell` cell.
 - Every code cell has its output stored. The setup cell and the cell of asserts are the only cells allowed without output.
 - Plotting cells carry the `hide-input` tag and work on their own (they import what they need and read the output files).
 - A step that the reader may want to change gets a `:::{tip}` with the alternative call inside a fenced code block, not a commented-out code cell.
@@ -54,11 +54,11 @@ A tutorial is long enough to cover its workflow and no longer. When a step is on
 
 ## Before and after
 
-From Tutorial 01, section 3.
+From the bands and DOS tutorial, the projectability step.
 
 Before:
 
-> ## 3. Check projectability
+> ## Check projectability
 >
 > The projectability of band $n$ at k-point $\mathbf{k}$ measures how completely the PAO basis captures that band: [equation]. Values near 1 indicate a good representation; values well below 1 correspond to high-energy, plane-wave-like states not captured by localised orbitals.
 >
@@ -66,7 +66,7 @@ Before:
 
 After:
 
-> ## 3. Projectability: which bands the PAO basis can represent
+> ## Projectability: which bands the PAO basis can represent
 >
 > You keep a Kohn–Sham state in the PAO Hamiltonian only if the basis reproduces it. The projectability, the norm of the state's projection onto the PAOs, measures how much of the state the basis reproduces:
 >

@@ -15,22 +15,23 @@ The Learn section of the site has three page types, defined by what the reader c
 |              | Tutorial                                                                                                         | How-to                                                                                                       | Theory                                                                                                  |
 | ------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | Reader       | Is learning. Follows one fixed system from the inputs to the interpreted result, and runs the page as it is       | Already has their own calculation and needs one change to it: a flag, a route, a plot, a check               | Wants to understand the physics behind a result: the equations, their derivation, and where they fail   |
-| File         | `docs/learn/tutorials/tutorialNN.ipynb`                                                                                | `docs/learn/howtos/<task>.md`, with its scripts `docs/learn/howtos/<task>/main.py` and `figures.py`    | `docs/learn/theory/<topic>.md`                                                                          |
+| File         | `docs/learn/tutorials/tutorialNN.ipynb`                                                                          | `docs/learn/howtos/<task>.md`; its workflow `main.py` lives in its base case, its `<task>/figures.py` beside it | `docs/learn/theory/<topic>.md`                                                                          |
 | Template     | `references/tutorial.md`                                                                                         | `references/howto.md`                                                                                        | `references/theory.md`                                                                                  |
-| Builds on    | Tutorial 01 (except Tutorial 01 itself)                                                                          | Tutorial 01, and an example under `examples/` when one exists. Shows only what differs from them             | `docs/learn/theory/pao-hamiltonian.md` (except that page itself)                                        |
+| Base case    | One case `examples/cases/<case>/`, whose driver the notebook walks through                                       | One case `examples/cases/<case>/`, which holds the scripts the page shows                                    | None: a theory page runs nothing                                                                        |
+| Builds on    | The bands and DOS tutorial (except that page itself)                                                                          | The bands and DOS tutorial and its base case. Shows only what differs from them                                             | `docs/learn/theory/pao-hamiltonian.md` (except that page itself)                                        |
 | Length       | Up to 3000 words of prose                                                                                        | Up to 1500 words of prose                                                                                    | Up to 3000 words of prose                                                                               |
 
-The reader's intent decides the type, and the length is the signal that a page has drifted from it. A how-to also drifts when it needs more than one system or teaches physics that no tutorial covers. When the checks report a page above its length, split it into pages that each answer one question, or promote a how-to that teaches a workflow to a tutorial. A page that answers one question and is still longer, such as a gallery of plots, is kept whole with an override (see "When a request conflicts with these rules").
+The reader's intent decides the type, and the length is the signal that a page has drifted from it. A tutorial or how-to has one system, its base case's; other systems are linked, never shown. A how-to also drifts when it needs more than one system or teaches physics that no tutorial covers. When the checks report a page above its length, split it into pages that each answer one question, or promote a how-to that teaches a workflow to a tutorial. A page that answers one question and is still longer, such as a gallery of plots, is kept whole with an override (see "When a request conflicts with these rules").
 
 Tutorials and how-tos keep the physics to what the reader needs to run the workflow and read its output, and link to a theory page for the rest (see "Physics depth"). A derivation belongs on a theory page, a design note in `docs/internals/`; when a request fits none of the three types, say so.
 
 ## Workflow
 
-1. **Read before writing.** Read the base example, if the page has one (`examples/.../main.py`, inputs, README), the PAOFLOW methods the page calls and their docstrings, and the existing pages that already cover nearby concepts. You need the code to know what is computed, and the neighbouring pages to know what is already explained (see "Say it once").
+1. **Read before writing.** Read the base case (`examples/cases/<case>/`: `case.json`, its run card `README.md`, its inputs and scripts, and for a generator case the `main.py` that `paoflow-gen --example <case>` writes), the PAOFLOW methods the page calls and their docstrings, and the existing pages that already cover nearby concepts. You need the code to know what is computed, and the neighbouring pages to know what is already explained (see "Say it once").
 2. **Find the equation the code evaluates** for each step that gets an equation. Write it down from the source, signs, factors, unit conversions and normalisations included. If it differs from the textbook form, the page shows what the code does and you report the discrepancy to the user. Never write the textbook version silently, and never change the code to match the page.
-3. **Write the script and run it** (see "Running the code" and "Assets and budgets"): the notebook of a tutorial, the `main.py` and `figures.py` of a how-to. Every number, table and figure on the page comes from that run, and the asserts check the numbers the conclusions rest on. A theory page has no run; it skips this step and the page test of step 5.
+3. **Write the script and run it** (see "Running the code" and "Assets and budgets"): the notebook of a tutorial, the `main.py` of a how-to in its base case and its `docs/learn/howtos/<task>/figures.py`. Every number, table and figure on the page comes from that run, and the asserts check the numbers the conclusions rest on. A theory page has no run; it skips this step and the page test of step 5.
 4. **Plan the figures, then write the page** from the template, in the style below. Decide first what the reader must see at each step and draw it (see "Where a picture carries the explanation"); the text then says what the figure cannot. When the draft is done, review it in two passes. First, for each paragraph, state its point in one sentence; if you cannot, rewrite the paragraph. Then read the first sentences of each section alone and check that they outline its argument (see "Connecting the facts"). Finally, read the page paragraph by paragraph and ask whether a figure would carry that paragraph better.
-5. **Register it**: every page gets a list entry in the `index.md` of its folder, a link whose text is the page title, as `- [Tutorial NN: <title>](tutorialNN.ipynb)`. A how-to or a theory page also gets a toctree entry (see the templates); the tutorial toctree picks up `tutorial*` by itself. When a tutorial or how-to links to a theory page, add it to the "Used in" list of that theory page. The page test collects the new page by itself; add its name (`tutorialNN`, or the how-to's `<task>`) to the `page` matrix of the `docs-page-tests` job in `.github/workflows/ci.yaml`, which runs one page per job.
+5. **Register it**: every page gets a list entry in the `index.md` of its folder, a link whose text is the page title, as `- [<title>](tutorialNN.ipynb)`. A how-to or a theory page also gets a toctree entry (see the templates); the tutorial toctree picks up `tutorial*` by itself. When a tutorial or how-to links to a theory page, add it to the "Used in" list of that theory page. Add the page, relative to `docs/` (`learn/howtos/<task>.md`), to the `docs` list of its base case's `case.json`, and write the "Explained in" line of the case's run card (`references/case.md`); a unit test checks `docs` against the tips of the pages in both directions. The page test collects the new page by itself; add its name (`tutorialNN`, or the how-to's `<task>`) to the `page` matrix of the `docs-page-tests` job in `.github/workflows/ci.yaml`, which runs one page per job.
 6. **Run the checks** at the end of this file and fix what they report. They are a floor, not the whole review.
 7. **Report** briefly: what you wrote, every place where code and textbook physics disagree, every number or reference you could not confirm, every cell left for the user to run, the run time of the page, every concept whose home page or internals page is missing (see "Say it once" and "Building the explanation"), and every place where a figure would help but you did not make one, with the reason (no data from the run, a heavy run still pending).
 
@@ -38,10 +39,12 @@ Tutorials and how-tos keep the physics to what the reader needs to run the workf
 
 The docs build does not execute notebooks (`nb_execution_mode = 'off'`), so whatever the committed notebook and the committed figures show is what the website shows. A cell without stored output shows no figure on the website. To keep the pages from drifting as the code changes, the page test `tests/integration/docs/test_pages.py` re-runs every tutorial notebook and every how-to `main.py` on each pull request into `develop`, in a scratch directory with the release asset of the page. It fails when a call raises, which catches renamed methods and arguments, and when an assert of the page fails, which catches a number on the page that the code no longer gives. It does not compare figures or stored outputs: re-execute and commit them when the text or a result changes.
 
-- **The scripts are the page's code.** A tutorial's code is its notebook: the website hides its plotting cells (`hide-input`) and its asserts (`remove-cell`), and the downloaded notebook holds both. Its workflow is also `docs/learn/tutorials/tutorialNN/main.py`, which the tip links for a reader who wants to run it as a script: the PAOFLOW calls of the notebook in order, with the same arguments, and the code they need (a custom `TauModel`, a loop over temperatures), in the form of the examples (`def main():`, `if __name__ == '__main__': main()`), without the setup cell's download, the plots, the printed checks and the asserts. It reads the extracted asset from the directory it runs in. Write it by hand when you write the notebook and update it with every change to a PAOFLOW call; the page test fails when its PAOFLOW calls differ from those of the notebook's visible cells. Run it once from a scratch directory with the extracted asset before you finish. A how-to has two scripts in `docs/learn/howtos/<task>/`, because a reader who downloads the workflow should get the workflow and nothing else. `main.py` is the workflow the page teaches, every line of it shown on the page, split into blocks with `literalinclude` at plain step comments (see `references/howto.md`), so the page cannot show code that the test does not run and the reader downloads exactly the code the page explains. `figures.py` holds everything else: it reads the files `main.py` writes and its printed output, saved as `main.log`, draws every figure of the page and asserts the numbers. A step the page explains as something the reader does (a fit, a grouping of orbitals, a comparison) belongs in `main.py`; code that only draws a figure or checks a number the page quotes belongs in `figures.py`.
-- **Asserted numbers.** Each script asserts the few numbers, about five at most, that the conclusions of the page rest on, with a tolerance at the precision the prose quotes: a gap quoted as 0.754 eV is asserted to 1 meV. Each assert names its quantity in its message (`assert abs(gap - 0.754) < 1e-3, f'indirect gap {gap:.4f} eV'`), so that a failure tells the developer which sentence to revise. In a how-to the asserts are at the end of `figures.py`, which takes the values from the output files of `main.py`, or from `main.log` for a value that `main.py` only prints; in a tutorial they are in a last code cell with the tag `remove-cell`, which the website hides.
-- **Data** comes from a GitHub release (`tutorial-assets-vN` or `integration-assets-vN`), never from a path inside the repository: the reader downloads the notebook or the script alone. Confirm that the asset exists with `gh release view <tag>`, then name the tag and the file in the download tip. Code sets `savedir` to the extracted directory next to the script (`savedir = 'tutorial01/silicon.save'`), never `../../examples/...` and never an absolute path. In a tutorial, the setup cell (see `references/tutorial.md`) also downloads and extracts the asset when `savedir` does not exist, so that the downloaded notebook runs as it is; a how-to names the asset in its tip and leaves the download to the reader.
-- **Cheap runs** (within the runtime budget of "Assets and budgets"): run them yourself with the Python of the project environment. Execute a notebook in place with `jupyter execute --inplace <notebook>` from a scratch copy whose working directory holds the extracted dataset, then copy the executed notebook back. Run a how-to from a scratch directory as the page test does, `python main.py > main.log` and then `python figures.py`, and copy the figures to `docs/_static/images/howtos/<task>/`. Then run the page test for the page: `pytest tests/integration/docs -k <page>`.
+- **The base case holds the code.** Every tutorial and how-to is built on one case of `examples/cases/` (see `CONTEXT.md` at the repository root for the terms), and opens with the tip that names it (see the templates): Studio's *Examples…* and `paoflow-gen --example <case>` then run what the page explains, and there is one copy of each workflow. The page holds the explanation, the case the inputs and the code.
+  - A **tutorial** walks through its case's driver. On a generator case that is the `main.py` that Studio and `paoflow-gen --example <case>` write from the case's answers: the notebook makes the same PAOFLOW calls with the same arguments, in order. When the page needs another setting, change the case's answers, not the notebook alone. A tutorial that needs code the generator cannot write (a custom `TauModel`, a loop over temperatures) has a scripts case as its base, whose `main.py` the notebook follows in the same way, written in the form of the examples (`def main():`, `if __name__ == '__main__': main()`) without the download, the plots and the asserts. The page test compares the PAOFLOW calls of the notebook's visible cells with those of the driver (arguments the driver builds at run time, such as `savedir`, are not compared). The website hides the notebook's plotting cells (`hide-input`) and its asserts (`remove-cell`).
+  - A **how-to** has two scripts, the workflow in its base case and the figures beside the page, because a reader who copies the case should get the workflow and nothing else. `main.py` is the workflow the page teaches, every line of it shown on the page, split into blocks with `literalinclude` at plain step comments (see `references/howto.md`), so the page cannot show code that the test does not run. `docs/learn/howtos/<task>/figures.py` holds everything else, and never goes into the case: it reads the files `main.py` writes and its printed output, saved as `main.log`, draws every figure of the page and asserts the numbers. When several how-tos share a case, each takes its own workflow name, `<name>.py` (log `<name>.log`). A step the page explains as something the reader does (a fit, a grouping of orbitals, a comparison) belongs in the workflow script; code that only draws a figure or checks a number the page quotes belongs in the figures script. Add the workflow to the `steps` of `case.json`, so that Studio runs it, with `"stdout": "main.log"`, which saves its printed output; the figures script is not a step.
+- **Asserted numbers.** Each script asserts the few numbers, about five at most, that the conclusions of the page rest on, with a tolerance at the precision the prose quotes: a gap quoted as 0.754 eV is asserted to 1 meV. Each assert names its quantity in its message (`assert abs(gap - 0.754) < 1e-3, f'indirect gap {gap:.4f} eV'`), so that a failure tells the developer which sentence to revise. In a how-to the asserts are at the end of `docs/learn/howtos/<task>/figures.py`, which takes the values from the output files of `main.py`, or from `main.log` for a value that `main.py` only prints; in a tutorial they are in a last code cell with the tag `remove-cell`, which the website hides.
+- **Data** comes from a GitHub release, never from a path inside the repository, because a reader downloads a notebook alone. Until the `case-data` release exists (one archive per case, pinned in `case.json`), the pages read `tutorial-assets-v2`: confirm the asset with `gh release view <tag>` and name the tag and the file in the tip. A how-to's scripts read the files at the paths the case's own runs write them (`silicon.save`, `output/`), never `../../examples/...` and never an absolute path; the `DATA` table of the page test extracts the folder of the release archive that holds them into the copy of the case. In a tutorial, the setup cell (see `references/tutorial.md`) downloads and extracts the asset when `savedir` does not exist, so that the downloaded notebook runs as it is.
+- **Cheap runs** (within the runtime budget of "Assets and budgets"): run them yourself with the Python of the project environment. Execute a notebook in place with `jupyter execute --inplace <notebook>` from a scratch copy whose working directory holds the extracted dataset, then copy the executed notebook back. Run a how-to from a copy of its case as the page test does (`paoflow-gen --example <case> --workdir <scratch>`, the data extracted into it, then `python main.py > main.log` and `python <PAOFLOW>/docs/learn/howtos/<task>/figures.py` in that folder), and copy the figures to `docs/_static/images/howtos/<task>/`. Then run the page test for the page: `pytest tests/integration/docs -k <page>`.
 - **Heavy runs** (larger grids, SOC supercells, anything that needs the cluster): time the first steps on a reduced grid to estimate the cost. Then hand the user the exact command to run, for example `jupyter execute --inplace tutorialNN.ipynb` or `python main.py > main.log` in their cluster environment, together with the output files and the log you need back. Mark every number that is still missing as `{TODO: <quantity> from run}` in the text, and fill the numbers in only from the user's outputs. A page whose run stays above the budget follows the rule for heavy pages in "Assets and budgets".
 - A snippet you have not run does not go on a page. If a run fails, report the failure; do not reword the page around it.
 
@@ -51,15 +54,15 @@ Both page types are made of the same three parts:
 
 |         | Tutorial                                                                                                                           | How-to                                                                                                             |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Inputs  | A minimal `.save` directory (`atomic_proj.xml`, `data-file-schema.xml`, the pseudopotential files) and the QE input files that made it (`scf.in`, `nscf.in`, `proj.in`) under `tutorialNN/` in `tutorial_assets.tar.gz` | The same form under `<task>/` in `howto_assets.tar.gz`. None for a page that builds its model in code              |
-| Scripts | The notebook, and `tutorialNN/main.py`, the PAOFLOW workflow of the notebook as a script                                         | `docs/learn/howtos/<task>/main.py` (the workflow) and `figures.py` (figures and asserts)                       |
+| Inputs  | The QE inputs of the base case (`scf.in`, `nscf.in`), and the DFT output its driver reads, published as release data (a trimmed `.save`: `data-file-schema.xml`, the projections or the wavefunctions, the pseudopotentials) | The same, from the base case. None for a case that builds its model in code                                        |
+| Scripts | The notebook, which follows the driver of the base case                                                                            | `examples/cases/<case>/main.py` (the workflow) and `docs/learn/howtos/<task>/figures.py` (figures and asserts)     |
 | Outputs | Stored in the notebook                                                                                                             | PNGs in `docs/_static/images/howtos/<task>/`, written by `figures.py`, and log excerpts pasted on the page         |
 
-The inputs are DFT data, so a change in PAOFLOW's code does not invalidate them, and the release tag is bumped only when an input changes. Their generators are `.github/assets_generation/tutorials/build_assets.py` and `.github/assets_generation/howtos/build_assets.py`. A release asset holds PAOFLOW output files only for a heavy page (below), and then `build_assets.py` records the run that made them, because output files go stale as the code changes and a later developer must be able to remake them.
+The inputs are DFT data, so a change in PAOFLOW's code does not invalidate them, and the release tag is bumped only when an input changes. Until the `case-data` release, their generators are `.github/assets_generation/tutorials/build_assets.py` and `.github/assets_generation/howtos/build_assets.py`. A release asset holds PAOFLOW output files only for a heavy page (below), and then `build_assets.py` records the run that made them, because output files go stale as the code changes and a later developer must be able to remake them.
 
 The budgets keep the page test fast enough to run on every pull request and the repository small:
 
-- **Run time**: at most 5 minutes per page on a 4-core runner. For a heavier how-to, the asset folder `<task>/` holds what `main.py` writes, its output files and `main.log`, at the paths `main.py` writes them, and the page's name goes into the `PRECOMPUTED` set of the page test. On pull requests the test then runs only `figures.py` inside that folder, which takes seconds; running `main.py` is a separate case, `<task>-workflow`, marked `@pytest.mark.slow`. The tip of the page tells the reader that `figures.py` run inside the extracted folder redraws the figures without the calculation.
+- **Run time**: at most 5 minutes per page on a 4-core runner. For a heavier how-to, the release data hold what `main.py` writes, its output files and `main.log`, at the paths `main.py` writes them, and the page's name goes into the `PRECOMPUTED` set of the page test. On pull requests the test then runs only the figures script inside that folder, which takes seconds; running `main.py` is a separate case, `<task>-workflow`, marked `@pytest.mark.slow`. The tip of the page tells the reader that `figures.py` run on the extracted data redraws the figures without the calculation.
 - **Inputs**: at most 5 MB compressed per page.
 - **Figures**: PNG at 150 dpi, at most 200 KB each.
 - **Notebooks**: outputs stay stored. Re-execute and commit a notebook only when its text or one of its results changes, because every re-execution adds the full outputs to the history of the repository.
@@ -68,11 +71,11 @@ The budgets keep the page test fast enough to run on every pull request and the 
 
 The website is read as a whole, and repeated paragraphs make it long and hard to scan. Each concept has one home, and every other page links to it in one clause.
 
-- Tutorial 01 is the home of the core workflow: projections, projectability, $H(\mathbf{R})$, interpolation, diagonalisation, DOS. Later pages link back to it for the calls instead of repeating them.
+- The bands and DOS tutorial is the home of the core workflow: projections, projectability, $H(\mathbf{R})$, interpolation, diagonalisation, DOS. Later pages link back to it for the calls instead of repeating them.
 - A theory page is the home of the physics of its topic: derivations, the intuition behind an equation, what each approximation neglects and where it fails. Tutorials and how-tos link to its sections instead of re-deriving; `docs/learn/theory/pao-hamiltonian.md` is the home of the physics of the core chain.
 - The home of a method's parameters is its docstring (rendered under `docs/api/`). A page explains how to choose a parameter for this material and links to the API entry for the full list: ``{py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.bands` ``.
-- Links: `[Tutorial 01](../tutorials/tutorial01.ipynb)` from a how-to or a theory page, `[internal basis](../../internals/internal-basis.md)` and `[relaxation-time approximation](../theory/boltzmann-transport.md#heading-anchor)` from any page of the Learn section, headings with `[text](page.md#heading-anchor)` (MyST anchors are on down to level 4). Write the anchor as MyST derives it from the heading: lower case, spaces as hyphens, punctuation and dashes dropped, letters such as ö kept (`#löwdin-orthogonalisation`). The docs build reports a wrong anchor as a `myst.xref_missing` warning, and the link then leads nowhere.
-- A how-to does not repeat the workflow of its base example. It shows only what changes and links to the example.
+- Links: `the [bands and DOS tutorial](../tutorials/tutorial01.ipynb)` from a how-to or a theory page, `[internal basis](../../internals/internal-basis.md)` and `[relaxation-time approximation](../theory/boltzmann-transport.md#heading-anchor)` from any page of the Learn section, headings with `[text](page.md#heading-anchor)` (MyST anchors are on down to level 4). Write the anchor as MyST derives it from the heading: lower case, spaces as hyphens, punctuation and dashes dropped, letters such as ö kept (`#löwdin-orthogonalisation`). The docs build reports a wrong anchor as a `myst.xref_missing` warning, and the link then leads nowhere.
+- A how-to does not repeat the workflow of the bands and DOS tutorial or of the tutorial on its base case. It shows only what changes and links to them.
 - A fact that holds for a method in general (a default, the files it writes, the energy range it is clipped to) has its home in the method's docstring or in the tutorial that introduces the method. Another page mentions it only when its situation changes what the reader should do, and then as a recommendation: what to do, followed by the reason in this situation, with a link to the home. A bare fact ("`do_pdos=False` turns them off") leaves the reader to work out why it is on this page. Write instead: "For a cell with many atoms, pass `do_pdos=False` to `dos()` unless you need the projected DOS, because by default it writes one file per orbital, thousands of files for a large supercell."
 - A link that says "see X" must land on text that explains the concept. Open the target and check. If the home page does not explain it, the explanation goes on the home page: tell the developer, and do not define the concept on the linking page instead.
 
@@ -86,7 +89,7 @@ The page is read top to bottom by someone who has not seen the code. Three thing
 
 **Constraints on the order of calls** are shown as code, with the call in its place in the script and a short comment, instead of a sentence listing what must come before and after.
 
-**New concepts.** A concept the page's workflow depends on gets a short paragraph the first time it appears: what happens, in which order, and how it differs from what the reader already knows (usually the dense pipeline of Tutorial 01). A concrete example or a schematic figure (see "Where a picture carries the explanation") does more than an abstract sentence. A method that behaves differently from its usual role, such as a call that computes nothing or a step that runs later than where it is written, is explained by why it behaves so and what that changes in the script. Every method, option and mechanism named anywhere on the page, the troubleshooting table included, is introduced in the body first.
+**New concepts.** A concept the page's workflow depends on gets a short paragraph the first time it appears: what happens, in which order, and how it differs from what the reader already knows (usually the dense pipeline of the bands and DOS tutorial). A concrete example or a schematic figure (see "Where a picture carries the explanation") does more than an abstract sentence. A method that behaves differently from its usual role, such as a call that computes nothing or a step that runs later than where it is written, is explained by why it behaves so and what that changes in the script. Every method, option and mechanism named anywhere on the page, the troubleshooting table included, is introduced in the body first.
 
 **Reasons and consequences in the reader's terms.** Give the reason for a setting and the consequence of a condition in terms of the calculation: run time, memory, the system size at which it fails, which results change and by how much, whether output files stay comparable between runs. Steps of the implementation ("the probe is skipped", "the margin is not added") are not reasons. "A pass that contains a Hall property solves the full spectrum" tells the reader nothing until it continues: "so each k-point needs a full $n_\mathrm{awf} \times n_\mathrm{awf}$ diagonalisation, and above `dense_n_max` orbitals the run stops with an error".
 
@@ -107,7 +110,7 @@ The reader has never seen earlier versions and was not part of the conversation 
 - No deprecation hints or migration notes. When the code changes, rewrite the affected text so it stands on its own.
 - When a behaviour is easy to get wrong, state it as a fact: "`fused()` must be called before the first property that triggers the mesh pass."
 
-This section is about the history of the code. Comparing with an earlier page or an earlier step of the same page ("in contrast to Tutorial 01, where ...") is a different matter and is often what the reader needs; "Openings" says where on the page such a comparison goes.
+This section is about the history of the code. Comparing with an earlier page or an earlier step of the same page ("in contrast to the bands and DOS tutorial, where ...") is a different matter and is often what the reader needs; "Openings" says where on the page such a comparison goes.
 
 ## Writing style
 
@@ -126,11 +129,11 @@ Quote experiment or literature values only when the citation is certain (authors
 
 **Numbers.** Give quantities with units and the precision the run supports ("indirect gap 0.61 eV", not "about 0.6"). Every number comes from the run or from a cited source.
 
-**Jargon.** Use a technical term only when the physics needs it and no plain phrase is as precise. Terms that every DFT user knows need no explanation: Kohn–Sham state, k-point, PBE, pseudopotential, Fermi level. Terms that are specific to PAOFLOW or to another field do. Examples are projectability, PAO shift, cell doubling, the energy window of the sparse backend, and Berry curvature in a transport page. Define such a term in the sentence where it first appears on the page, or link to its definition in Tutorial 01, the API page or a cited reference. Spell out each acronym at its first use on each page (PAO, PDOS, SHC, AHC, NEGF). Do not use in-house shorthand as nouns: code variable names standing for a concept ("the `nawf` grows"), developer labels ("the dense branch", "nev padding", "the probe", "the engine") or names of internal functions the reader never calls. Say what they mean ("the number of orbitals grows"). When the page needs a name for a mechanism it uses repeatedly, define it once in plain terms ("one loop over all k-points of the mesh, called a pass") before using it.
+**Jargon.** Use a technical term only when the physics needs it and no plain phrase is as precise. Terms that every DFT user knows need no explanation: Kohn–Sham state, k-point, PBE, pseudopotential, Fermi level. Terms that are specific to PAOFLOW or to another field do. Examples are projectability, PAO shift, cell doubling, the energy window of the sparse backend, and Berry curvature in a transport page. Define such a term in the sentence where it first appears on the page, or link to its definition in the bands and DOS tutorial, the API page or a cited reference. Spell out each acronym at its first use on each page (PAO, PDOS, SHC, AHC, NEGF). Do not use in-house shorthand as nouns: code variable names standing for a concept ("the `nawf` grows"), developer labels ("the dense branch", "nev padding", "the probe", "the engine") or names of internal functions the reader never calls. Say what they mean ("the number of orbitals grows"). When the page needs a name for a mechanism it uses repeatedly, define it once in plain terms ("one loop over all k-points of the mesh, called a pass") before using it.
 
 Avoiding jargon is not the same as simplifying the physics. Do not explain what the reader already knows (what a band structure or reciprocal space is). Do not use analogies that lose precision, and do not reassure ("don't worry", "it's simple", "just run"). Keep the equations the page needs, the units and the approximations. What changes is that every term on the page is one the reader knows or has just been given.
 
-**Titles and headings.** A title says what the page computes, for which system or with which method: "Tutorial 02: Boltzmann transport in silicon", "How to add spin–orbit coupling to a scalar-relativistic calculation". A section heading says what the step does: "3. Projectability: which bands the PAO basis can represent". Avoid catchy or clever titles: no puns, no questions, no alliteration, no exclamations, no teaser subtitles ("Silicon: the workhorse of the semiconductor world"), no superlatives. The same goes for catchphrases in the text ("the secret sauce", "where the magic happens", "the heavy lifting", "say goodbye to"). Each says nothing a plain sentence would not say better.
+**Titles and headings.** A title says what the page computes, for which system or with which method: "Boltzmann transport in silicon", "How to add spin–orbit coupling to a scalar-relativistic calculation". A section heading says what the step does: "Projectability: which bands the PAO basis can represent". Titles and headings carry no numbers ("Tutorial 02:", "3."): a page and the list of tutorials are read in order, and a number goes stale when a page or a section is inserted. Refer to another page by its title, or by a short name inside the sentence ("the [bands and DOS tutorial](tutorial01.ipynb)"), and to a section by its heading, linked with its anchor, or by what it does ("the previous step", "the DOS check"). Avoid catchy or clever titles: no puns, no questions, no alliteration, no exclamations, no teaser subtitles ("Silicon: the workhorse of the semiconductor world"), no superlatives. The same goes for catchphrases in the text ("the secret sauce", "where the magic happens", "the heavy lifting", "say goodbye to"). Each says nothing a plain sentence would not say better.
 
 **Math.** Use `$...$` inline and `$$...$$` for display equations, with standard LaTeX, never Unicode Greek or symbols in prose (write `$\Gamma$`, not Γ; `$\varepsilon_{n\mathbf{k}}$`, not ε). Use `\mathbf{k}`, `\mathbf{R}` for vectors, matching the notation below.
 
@@ -155,7 +158,7 @@ Avoiding jargon is not the same as simplifying the physics. Do not explain what 
 
 A page written as one true sentence after another still leaves the reader to rebuild the argument: which fact is the reason, which is the consequence, which is the exception. Each of the rules below makes one kind of link explicit. They apply to both page types.
 
-**Openings.** The first sentence of a page, a section or a paragraph says what the reader does or gets there. Earlier material, such as Tutorial 01 or the previous section, follows as a subordinate clause or a second sentence: "In this section you compute $\mu(T)$ at fixed carrier density, in contrast to Section 2, where $\mu$ was a free parameter." Lead with the positive statement, not with what something is not. Opening with the earlier material ("In Tutorial 01 you did X. Here you do Y") makes the reader hold the old idea in mind before they know why it matters. The exception is a section that fixes a problem the reader would hit: then the problem comes first, because it is the reason for the section ("A 500-atom cell exhausts the memory of a node. To avoid this, ...").
+**Openings.** The first sentence of a page, a section or a paragraph says what the reader does or gets there. Earlier material, such as the bands and DOS tutorial or the previous section, follows as a subordinate clause or a second sentence: "In this section you compute $\mu(T)$ at fixed carrier density, in contrast to the previous section, where $\mu$ was a free parameter." Lead with the positive statement, not with what something is not. Opening with the earlier material ("In the bands and DOS tutorial you did X. Here you do Y") makes the reader hold the old idea in mind before they know why it matters. The exception is a section that fixes a problem the reader would hit: then the problem comes first, because it is the reason for the section ("A 500-atom cell exhausts the memory of a node. To avoid this, ...").
 
 **Paragraphs.** Each paragraph answers one question the reader has at that point. It opens with the answer, and each following sentence supports or extends the sentence before it: the reason, the evidence, the consequence, the limit. A paragraph whose sentences could be shuffled without loss is a list of facts; find the question it answers and rewrite it from there.
 
@@ -177,15 +180,15 @@ Pair A, an opening. From the tight-binding how-to, its first paragraph.
 
 Before:
 
-> Every PAOFLOW property is computed from a real-space Hamiltonian $H_{\alpha\beta}(\mathbf{R})$. In the DFT workflow of Tutorial 01 it comes from projecting the Kohn–Sham states on pseudo-atomic orbitals (PAOs). With the `model` argument of `PAOFLOW` you give it instead as a tight-binding model: one of the built-in models, a Slater–Koster model with your own parameters, or a model built with the PythTB package.
+> Every PAOFLOW property is computed from a real-space Hamiltonian $H_{\alpha\beta}(\mathbf{R})$. In the DFT workflow of the bands and DOS tutorial it comes from projecting the Kohn–Sham states on pseudo-atomic orbitals (PAOs). With the `model` argument of `PAOFLOW` you give it instead as a tight-binding model: one of the built-in models, a Slater–Koster model with your own parameters, or a model built with the PythTB package.
 
 After:
 
-> On this page you run PAOFLOW on a tight-binding model instead of a DFT calculation. The `model` argument of `PAOFLOW` supplies the real-space Hamiltonian $H_{\alpha\beta}(\mathbf{R})$ directly, as one of the built-in models, a Slater–Koster model with your own parameters, or a model built with the PythTB package, in contrast to Tutorial 01, where it comes from projecting the Kohn–Sham states on pseudo-atomic orbitals (PAOs). Every property is computed from $H_{\alpha\beta}(\mathbf{R})$ alone, so the calls that follow the constructor remain the same as the ones you would use for a DFT-based workflow.
+> On this page you run PAOFLOW on a tight-binding model instead of a DFT calculation. The `model` argument of `PAOFLOW` supplies the real-space Hamiltonian $H_{\alpha\beta}(\mathbf{R})$ directly, as one of the built-in models, a Slater–Koster model with your own parameters, or a model built with the PythTB package, in contrast to the bands and DOS tutorial, where it comes from projecting the Kohn–Sham states on pseudo-atomic orbitals (PAOs). Every property is computed from $H_{\alpha\beta}(\mathbf{R})$ alone, so the calls that follow the constructor remain the same as the ones you would use for a DFT-based workflow.
 
-What changed. The first sentence says what the reader does on the page. Tutorial 01 follows as the contrast. The last sentence says what the reader keeps doing.
+What changed. The first sentence says what the reader does on the page. The bands and DOS tutorial follows as the contrast. The last sentence says what the reader keeps doing.
 
-Pair B, inside a paragraph. From Tutorial 02, Section 1.
+Pair B, inside a paragraph. From the Boltzmann transport tutorial, its first step.
 
 Before:
 
@@ -197,7 +200,7 @@ After:
 
 What changed. The reason for the instruction is in the same sentence as the instruction. The numbers for $\mu$ are introduced as the consequence of the sampling. The last sentence says what the choice trades.
 
-Pair C, between paragraphs. From Tutorial 02, Section 2, the paragraph after the equations for $\sigma$, $S$ and $\kappa$.
+Pair C, between paragraphs. From the Boltzmann transport tutorial, its constant relaxation-time step, the paragraph after the equations for $\sigma$, $S$ and $\kappa$.
 
 Before:
 
@@ -221,7 +224,7 @@ A well-defined picture is worth a thousand words. A reader takes in a supercell,
 - A paragraph of numbers read off a result (splittings, shifts, weights, gaps). Show a zoom of the region with the numbers annotated, and keep in the text only the one or two that carry the conclusion.
 - A comparison of two methods, two parameter values, or a run before and after a change: overlay them in one panel, in the colours used for the same series elsewhere.
 - The dependence of a result on a parameter (convergence, cost, error): a curve, not a table, unless the reader needs to look up exact values.
-- An order of steps or a flow of data that differs from Tutorial 01: a small diagram.
+- An order of steps or a flow of data that differs from the bands and DOS tutorial: a small diagram.
 
 A well-defined figure makes one point. It shows the quantity the text discusses, in the range where the point is visible (zoom in instead of making the reader search), with labelled axes and units, and with every colour, line style and marker explained in the legend or in the sentences after it. Draw it from the page's run, the actual cells, bands and windows of the system, rather than from an idealised sketch, wherever the concept has data behind it. A figure that needs a long paragraph to decode is not yet well defined: split it into panels, zoom it or annotate it. Figures that repeat what a neighbouring figure shows stay out.
 
@@ -231,13 +234,13 @@ A well-defined figure makes one point. It shows the quantity the text discusses,
 - Colors: Deep Blue `#004488`, Vermillion `#D55E00` and Yellow-Amber `#FFC20A` first, then Okabe–Ito `#009E73`, `#56B4E9`, `#CC79A7`, `#000000`. Use `#8A6800` for amber text and spines. One color per physical series, kept the same across all panels and pages (for example, the PAO bands are always `#004488`, and DFT reference points are always `#D55E00`).
 - Axis labels carry the quantity and the unit: `$E - E_F$ (eV)`, `$\sigma_{xx}$ ($\Omega^{-1}\,\mathrm{m}^{-1}$)`. State the energy zero in the caption sentence that follows the figure.
 - In notebooks, a plotting cell carries the cell tag `hide-input`. The website then shows the figure with a "Show code cell source" toggle, and the downloaded notebook still holds the full code. Each plotting cell is standalone (it reads the output files of the run) so that it works in the downloaded notebook.
-- In how-tos, figures are PNGs in `docs/_static/images/howtos/<task>/`, written by the page's `figures.py`, and embedded with `![alt text describing the physics](../../_static/images/howtos/<task>/<name>.png)`. Alt text states what the figure shows ("Si bands along L–Γ–X, PAO vs DFT"). Because the script that draws a figure is kept, a later developer redraws every figure of the page by running it again when the code changes.
+- In how-tos, figures are PNGs in `docs/_static/images/howtos/<task>/`, written by the page's `docs/learn/howtos/<task>/figures.py`, and embedded with `![alt text describing the physics](../../_static/images/howtos/<task>/<name>.png)`. Alt text states what the figure shows ("Si bands along L–Γ–X, PAO vs DFT"). Because the script that draws a figure is kept, a later developer redraws every figure of the page by running it again when the code changes.
 - Save figures as PNG at 150 dpi (`fig.savefig(..., dpi=150)`), at most 200 KB each. A larger file usually means too many points or markers; thin the data rather than lower the resolution.
 - After the figure, a few sentences tell the reader what to see in it, with numbers, and which run it shows where that is not obvious from the page: the dataset and the options that shape it (truncation, energy ranges, windows, k-mesh).
 
 ## Notation
 
-Use these symbols, taken from Tutorial 01, Tutorial 04 and the theory pages. Add a symbol here when a new page introduces one that other pages will reuse.
+Use these symbols, taken from the bands and DOS tutorial, the large-cell tutorial and the theory pages. Add a symbol here when a new page introduces one that other pages will reuse.
 
 | Symbol                                                                              | Meaning                                                    |
 | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -265,7 +268,7 @@ Several developers use this skill, and a rule is sometimes broken on purpose. A 
 
 The same applies to a page that already breaks a rule when you are asked to revise it. Point out the violations the checks report, and fix them unless a commit of the page records an override for that rule (the checks read the `Override:` trailers from `git log` of the page). If the developer wants to keep one, they give the override and you report its trailer line.
 
-Check keys: `banned-phrase`, `history`, `em-dash`, `bold`, `greek`, `voice`, `todo`, `repo-path`, `color`, `hide-input`, `no-output`, `registration`, `base-example`, `length`, `script`, `howto-math`, `theory-link`, `theory-code`. Rules without a key (jargon, titles, physics depth, numbers from the run, the rules of "Connecting the facts") are checked by reading. Their overrides use the section name as the key, for example `Override: docs/learn/tutorials/tutorial01.ipynb titles | ...`.
+Check keys: `banned-phrase`, `history`, `em-dash`, `bold`, `greek`, `voice`, `todo`, `repo-path`, `color`, `hide-input`, `no-output`, `registration`, `base-case`, `length`, `script`, `howto-math`, `theory-link`, `theory-code`. Rules without a key (jargon, titles, physics depth, numbers from the run, the rules of "Connecting the facts") are checked by reading. Their overrides use the section name as the key, for example `Override: docs/learn/tutorials/tutorial01.ipynb titles | ...`.
 
 ## Checks
 
@@ -340,13 +343,21 @@ def check_code(text, say):
     if re.search(r"\.plot_\w+\(", text) and not re.search(r"\bcols?\s*=", text):
         say("color", "GPAO call without col/cols falls back to non-palette defaults")
 
-def check_blocks(page, lines, say):
-    """Every line of main.py is shown by a literalinclude, split at unique step comments."""
+INCLUDE = r"^```\{literalinclude\}\s+(\S+)\n((?::[\w-]+:.*\n)*)```"
+
+def base_case(allmd):
+    """The case named by the first tip of the page, or None."""
+    tip = re.search(r":::\{tip\}\n(.*?)\n:::", allmd, re.S)
+    m = re.search(r"paoflow-gen --example (\w+)", tip.group(1)) if tip else None
+    return m.group(1) if m else None
+
+def check_blocks(page, script, say):
+    """Every line of the workflow script is shown by a literalinclude, split at unique step comments."""
+    lines = script.read_text().splitlines()
     shown, comments = [False] * len(lines), set()
-    pattern = r"^```\{literalinclude\}\s+(\S+)\n((?::[\w-]+:.*\n)*)```"
-    for m in re.finditer(pattern, page.read_text(), re.M):
-        if m.group(1) != f"{page.stem}/main.py":
-            say("script", f"literalinclude of {m.group(1)}; the page shows only {page.stem}/main.py")
+    for m in re.finditer(INCLUDE, page.read_text(), re.M):
+        if (page.parent / m.group(1)).resolve() != script.resolve():
+            say("script", f"literalinclude of {m.group(1)}; the page shows only {script}")
             continue
         opts = {k: v.strip().strip("'\"") for k, v in re.findall(r"^:([\w-]+):(.*)$", m.group(2), re.M)}
         ends = []
@@ -356,7 +367,7 @@ def check_blocks(page, lines, say):
                 continue
             hits = [i for i, line in enumerate(lines) if opts[key] in line]
             if len(hits) != 1:
-                say("script", f"step comment {opts[key]!r} is on {len(hits)} lines of main.py, not 1")
+                say("script", f"step comment {opts[key]!r} is on {len(hits)} lines of {script.name}, not 1")
                 break
             ends.append(hits[0])
             comments.add(hits[0])
@@ -365,7 +376,7 @@ def check_blocks(page, lines, say):
                 shown[i] = True
     hidden = [i + 1 for i, line in enumerate(lines) if line.strip() and not shown[i] and i not in comments]
     if hidden:
-        say("script", f"lines {hidden[:10]} of main.py are not on the page")
+        say("script", f"lines {hidden[:10]} of {script.name} are not on the page")
 
 problems, overridden = [], []
 for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
@@ -425,29 +436,34 @@ for name in [a for a in sys.argv[1:] if not a.startswith("--")]:
         say("registration", f"missing list entry in {path.parent / 'index.md'}")
     if path.parent.name in ("howtos", "theory") and not re.search(rf"^{path.stem}$", idx, re.M):
         say("registration", f"missing toctree entry in {path.parent / 'index.md'}")
-    if path.parent.name == "howtos":
-        folder = path.parent / path.stem
-        for script in (folder / "main.py", folder / "figures.py"):
+    case = base_case(allmd) if path.parent.name in ("howtos", "tutorials") else None
+    if path.parent.name in ("howtos", "tutorials") and path.name != "index.md":
+        folder = Path("examples/cases") / str(case)
+        if case is None:
+            say("base-case", "the first tip names no case (paoflow-gen --example <case>)")
+        elif not (folder / "case.json").is_file():
+            say("base-case", f"{folder} is not a case")
+        elif str(path.relative_to("docs")) not in json.loads((folder / "case.json").read_text()).get("docs", []):
+            say("base-case", f"{folder}/case.json does not list the page under docs")
+    if path.parent.name == "howtos" and case:
+        targets = {(path.parent / t).resolve() for t in re.findall(INCLUDE, path.read_text(), re.M) for t in [t[0]]}
+        if len(targets) != 1:
+            say("script", f"{len(targets)} scripts included; show one workflow script of the base case")
+        else:
+            script = targets.pop()
+            figures = path.with_suffix("") / "figures.py"
+            if script.parent != (Path("examples/cases") / case).resolve():
+                say("script", f"{script} is not in the base case {case}")
+            for f in (script, figures):
+                if f.is_file():
+                    check_code(f.read_text(), say)
+                else:
+                    say("script", f"no {f}")
             if script.is_file():
-                check_code(script.read_text(), say)
-            else:
-                say("script", f"no {script}")
-        if (folder / "main.py").is_file():
-            check_blocks(path, (folder / "main.py").read_text().splitlines(), say)
-        m = re.search(r"^Base examples?:(.*)$", allmd, re.M)  # optional; checked when present
-        paths = re.findall(r"(?<![/\w])examples/[\w./-]+", m.group(1)) if m else []
-        if m and not paths:
-            say("base-example", "'Base example:' line without an examples/... path")
-        for ex in paths:
-            if not Path(ex).exists():
-                say("base-example", f"{ex} does not exist")
+                check_blocks(path, script, say)
     elif path.name.startswith("tutorial"):
         if not re.search(r"theory/[\w-]+\.md", allmd):
             say("theory-link", "no link to a theory page in docs/learn/theory/")
-        if not (path.parent / path.stem / "main.py").is_file():
-            say("script", f"no {path.stem}/main.py; the page test compares its PAOFLOW calls with the notebook")
-        if f"<{path.stem}/main.py>" not in allmd:
-            say("script", f"the tip does not link {path.stem}/main.py")
     waived = overrides(path)
     problems += [f"{name}: [{k}] {msg}" for k, msg in found if k not in waived]
     overridden += [f"{name}: [{k}] overridden ({why})" for k, why in waived.items()]

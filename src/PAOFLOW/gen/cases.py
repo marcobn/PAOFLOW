@@ -18,11 +18,14 @@ key                 content
                     with an optional ``cwd`` (folder of the step, relative to the case)
 ``steps``           the PAOFLOW steps of the case, after the QE ones and the generated drivers:
                     ``{"label": ..., "command": ["python", "main.py"], "cwd": ".", "mpi": false,
-                    "interactive": false, "note": ...}`` (required for ``scripts`` cases); a script that
+                    "interactive": false, "note": ..., "stdout": "main.log"}`` (required for ``scripts``
+                    cases; ``stdout`` saves the printed output); a script that
                     runs Quantum ESPRESSO itself (``bash run_qe.sh``) adds ``"ranks_env": "NP"`` and
                     ``"qe_launch": true`` (the Runs tab passes the ranks and the QE build)
 ``tags``            keywords
 ``source``          the folder of the former example
+``docs``            the pages of the website built on the case, relative to ``docs/``
+                    (``learn/tutorials/tutorial01.ipynb``); each names the case in its opening tip
 ==================  =====================================================================================
 
 The pseudopotentials live once in ``PSEUDOS/library``; :func:`copy_case` copies them next to the
@@ -74,9 +77,11 @@ class Case:
         Folder of the former example.
     steps : list of dict
         PAOFLOW steps (``label``, ``command``, optional ``cwd``, ``mpi``, ``interactive``,
-        ``note``).
+        ``note``, ``stdout``).
     pseudo_dir : str
         Folder of the case that receives the pseudopotentials.
+    docs : list of str
+        Pages of the website built on the case, relative to ``docs/``.
     """
 
     name: str
@@ -91,6 +96,7 @@ class Case:
     source: str = ''
     steps: list[dict[str, Any]] = field(default_factory=list)
     pseudo_dir: str = '.'
+    docs: list[str] = field(default_factory=list)
 
     @property
     def scripts(self) -> bool:
@@ -111,6 +117,7 @@ class Case:
             'source': self.source,
             'steps': self.steps,
             'scripts': self.scripts,
+            'docs': self.docs,
         }
 
 
@@ -174,6 +181,7 @@ def load_case(folder: Path) -> Case:
         source=data.get('source', ''),
         steps=list(data.get('steps', [])),
         pseudo_dir=str(data.get('pseudo_dir', '.')),
+        docs=list(data.get('docs', [])),
     )
 
 
@@ -261,6 +269,7 @@ def case_plan(case: Case) -> list[RunStep]:
                 interactive=bool(step.get('interactive', False)),
                 note=step.get('note', ''),
                 qe_launch=bool(step.get('qe_launch', False)),
+                stdout=step.get('stdout'),
             )
         )
     return steps

@@ -1,8 +1,9 @@
-"""Figures and checks of the how-to "How to compute the non-linear optical response of a
-tight-binding model".
+"""Figures and checks of the how-to "How to compute the non-linear optical response of a tight-binding
+model" (docs/learn/howtos/nonlinear-optics-model.md).
 
-Run it after ``python main.py > main.log``, in the same directory: it reads the spectra in
-``nlo/`` and ``nlo_inv/``, draws ``nlo_shift.png`` and ``nlo_shg.png`` and asserts the numbers
+Run it after ``python main.py > main.log``, in the folder of that run, by the path of this script
+(``python <PAOFLOW>/docs/learn/howtos/nonlinear-optics-model/figures.py``): it reads the spectra in
+``output/`` and ``output_inv/``, draws ``nlo_shift.png`` and ``nlo_shg.png`` and asserts the numbers
 the page quotes.
 """
 
@@ -21,7 +22,7 @@ warnings.filterwarnings('ignore', 'FigureCanvasAgg is non-interactive')
 plotter = GPAO.GPAO()
 plotter.plot_optical(
     'shift',
-    path='nlo',
+    path='output',
     component=['yyy', 'yxx', 'xxy', 'xxx'],
     x_lim=(0.0, 4.0),
     title=r'Gapped graphene, $\delta = 1$ eV: shift current',
@@ -32,7 +33,7 @@ plotter.plot_optical(
 plt.gcf().savefig('nlo_shift.png', dpi=150, bbox_inches='tight')  # bbox: keep the y label
 plotter.plot_optical(
     ['shgr', 'shgi', 'shga'],
-    path='nlo',
+    path='output',
     component='yyy',
     x_lim=(0.0, 3.0),
     title=r'Gapped graphene, $\delta = 1$ eV: $\chi^{yyy}$',
@@ -43,7 +44,7 @@ plt.gcf().savefig('nlo_shg.png', dpi=150, bbox_inches='tight')
 plt.close('all')
 
 
-def spectrum(name: str, path: str = 'nlo') -> tuple[np.ndarray, np.ndarray]:
+def spectrum(name: str, path: str = 'output') -> tuple[np.ndarray, np.ndarray]:
     """Photon energy (eV) and value of one output file."""
     return np.loadtxt(f'{path}/{name}.dat', unpack=True)
 
@@ -55,7 +56,8 @@ _, chi = spectrum('shga_yyy')
 _, chi_re = spectrum('shgr_yyy')
 gap = (energy > 0.8) & (energy < 1.5)  # the one-photon resonance at the 1 eV gap
 re_gap = chi_re[gap].min()
-inv_shift, inv_chi = spectrum('shift_yyy', 'nlo_inv')[1], spectrum('shga_yyy', 'nlo_inv')[1]
+inv_shift = spectrum('shift_yyy', 'output_inv')[1]
+inv_chi = spectrum('shga_yyy', 'output_inv')[1]
 
 # The numbers the page quotes, at the precision it quotes them.
 assert abs(yyy.max() - 14.74) < 0.01, f'shift-current peak {yyy.max():.3f} nm muA/V^2'

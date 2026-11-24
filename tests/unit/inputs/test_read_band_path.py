@@ -6,7 +6,7 @@ from PAOFLOW.inputs.read_pao_output import read_band_path_PAO
 
 
 def test_jump_label_sits_on_the_jump(tmp_path):
-    # fcc path of Tutorial 01: ... W-L-K | U-X, the jump is between K and U
+    # fcc path of the bands and DOS tutorial: ... W-L-K | U-X, the jump is between K and U
     kpath = tmp_path / 'kpath_points.txt'
     kpath.write_text(
         'gG 312\nX 156\nW 111\nK 331\ngG 270\nL 191\nU 111\nW 221\nL 191\nK 0\nU 111\nX 0\n\n'

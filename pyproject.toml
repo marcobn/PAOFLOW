@@ -35,7 +35,7 @@ phonon = ["phonopy>=2.21", "phono3py>=2.3", "seekpath>=2.0"]
 sscha = ["python-sscha>=1.6", "cellconstructor>=1.6", "ase>=3.22"]
 fast = ["numba>=0.58"]
 gui = ["plotly>=5.18"]
-dev = ["pre-commit>=2.20.0", "pytest>=7"]
+dev = ["pre-commit>=2.20.0", "pytest>=7", "nbclient", "ipykernel"]
 docs = [
     "sphinx>=8",
     "myst-parser>=4",

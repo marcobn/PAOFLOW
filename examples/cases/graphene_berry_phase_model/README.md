@@ -1,33 +1,36 @@
-# Gapped graphene model: Berry phase and Berry flux around K
+# Gapped graphene model: Berry phases and Chern number
 
-The honeycomb tight-binding model with a sublattice potential (`{'label': 'graphene', 't': -1.0,
-'delta': -0.2}`, eV) passed to `PAOFLOW(model=...)`: no DFT run. The script computes
-
-- the band structure along Γ-M-K-Γ;
-- the Berry phase of the lower band, of the upper band and of both on a circle of radius 0.05
-  around K (`berry_phase(kspace_method='circle', ...)`);
-- the Berry flux of the same bands through a square patch of side 0.1 around K
-  (`berry_phase(kspace_method='square', ...)`), and a map of the Berry curvature of the lower
-  band on the patch.
+Spinless graphene with a sublattice potential (`{'label': 'graphene', 't': -1.0, 'delta': -0.2}`,
+eV), built in code with `PAOFLOW(model=...)`: no DFT run. PAOFLOW computes its bands, the Berry
+phases of its bands on circles around the valley K', from the overlaps of the Bloch states along
+each loop, their dependence on the radius of the loop for the gapped and the gapless model, and
+the Chern number of the lower band from the Berry phases of the plaquettes that tile the zone.
 
 ## Run it
 
-- **PAOFLOW Studio**: Setup tab, *Examples…*, pick this case and a folder name; the Runs tab
-  lists the step below.
+- **PAOFLOW Studio**: *Examples…* → `graphene_berry_phase_model`. Studio copies the case, lists
+  its scripts and runs the step below in the Runs tab.
 - **Command line**: `paoflow-gen --example graphene_berry_phase_model` copies the case into
-  `./graphene_berry_phase_model`; then run the step in that folder.
+  `./graphene_berry_phase_model`; run the step below in that folder.
+- **Python**: `main.py` is the workflow; read it to change a call.
 
 ## Steps
 
-1. `python graphene2.py` (a few seconds): prints the Berry phases and fluxes and writes
-   `output/` (`bands_0.dat`, `circle_berry_phase_*.dat`, `square_berry_phase_*.dat` with their
-   `*_kgrid_corners.dat`, and the curvature map `berry_phase_k.pdf`).
+| step | command | run time |
+| ---- | ------- | -------- |
+| Bands, Berry phases and Chern number of gapped graphene | `python main.py` | 70 s on 1 core |
 
-## What to look at
+## Outputs
 
-The Berry phase around K is −2.07 rad for the lower band and +2.07 rad for the upper one, and
-vanishes for the two together; the Berry flux through the square patch is ∓2.18 rad. The gap
-`delta` spreads the π Berry phase of the Dirac cone over the valley, so a small loop catches part
-of it, with opposite signs for the two bands. `Reference/` holds the expected outputs. The
-commented line in `graphene2.py` runs the PythTB version of the model (`graphene_pythtb`); the
-other models of `PAOFLOW(model=...)` are listed in the README of the case `graphene_tb_model`.
+- `graphene/bands_0.dat`, `graphene/kpath_points.txt`: the bands along Γ-M-K-Γ and the positions
+  of the labels.
+- `graphene/circle_{lower,upper,both}.dat`: the Berry phase (last line) of the lower band, the
+  upper band and both on the circle of radius 0.05 around K'.
+- `graphene/patch_lower.dat` with `patch_lower_kgrid_corners.dat`: the Berry phase per plaquette
+  (columns k_x, k_y, phase) of the lower band on a square around K', and the plaquette corners.
+- `graphene/radius_<r>.dat`, `gapless/radius_<r>.dat`: the Berry phase of the lower band on
+  circles of radius r, gapped and gapless graphene.
+- `graphene/zone_lower.dat` with `zone_lower_kgrid_corners.dat`: the plaquette phases over the
+  whole zone; their sum divided by 2π is the Chern number.
+
+Explained in: [Berry phases and Chern number of gapped graphene](https://paoflow.readthedocs.io/en/latest/learn/tutorials/tutorial06.html)

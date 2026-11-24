@@ -6,11 +6,12 @@ Each tutorial walks through a complete workflow end-to-end: from the required in
 
 ---
 
-- [Tutorial 01: Band structure and density of states of silicon](tutorial01.ipynb)
-- [Tutorial 02: Boltzmann transport in silicon](tutorial02.ipynb)
-- [Tutorial 03: Linear Response](tutorial03.ipynb)
-- [Tutorial 04: Large cells on the sparse backend](tutorial04.ipynb)
-- [Tutorial 05: Topology of tight-binding models](tutorial05.ipynb)
+- [Band structure and density of states of silicon](tutorial01.ipynb)
+- [Boltzmann transport in silicon](tutorial02.ipynb)
+- [Linear response](tutorial03.ipynb)
+- [Large cells on the sparse backend](tutorial04.ipynb)
+- [Spin Hall conductivity of the Kane–Mele model](tutorial05.ipynb)
+- [Berry phases and Chern number of gapped graphene](tutorial06.ipynb)
 
 ```{toctree}
 :hidden:

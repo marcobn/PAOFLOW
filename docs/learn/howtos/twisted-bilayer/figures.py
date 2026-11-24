@@ -1,25 +1,31 @@
 """Figures and checks of the how-to "How to compute the band structure of twisted bilayer graphene"
 (docs/learn/howtos/twisted-bilayer.md).
 
-Run it after ``OMP_NUM_THREADS=1 python main.py > main.log``, in the same directory, or inside the
-folder ``twisted-bilayer/`` of ``howto_assets.tar.gz`` of the release tutorial-assets-v2, which
-holds the outputs of ``main.py`` and its ``main.log``. It reads the files ``main.py`` writes to
-``tbg_<n>_<m>/`` and ``near_K_<n>_<m>/`` and the numbers it prints, draws the figures of the page
+Run it after ``OMP_NUM_THREADS=1 python twisted_bilayer.py > twisted_bilayer.log``, in the folder of
+that run, by the path of this script (``python
+<PAOFLOW>/docs/learn/howtos/twisted-bilayer/figures.py``), or inside the folder ``twisted-bilayer/``
+of ``howto_assets.tar.gz`` of the release tutorial-assets-v2, which holds the outputs of
+``twisted_bilayer.py`` and its log as ``main.log``. It reads the files ``twisted_bilayer.py`` writes
+to ``tbg_<n>_<m>/`` and ``near_K_<n>_<m>/`` and the numbers it prints, draws the figures of the page
 and asserts the numbers the page quotes.
 """
 
 import json
 import re
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 palette = ['#004488', '#D55E00', '#FFC20A', '#8A6800', '#000000']  # blue, vermillion, amber
-log = open('main.log').read()
+# shortcut: the release asset tutorial-assets-v2 holds the log as main.log; drop the fallback
+# once the case-data release holds twisted_bilayer.log
+log_file = Path('twisted_bilayer.log')
+log = (log_file if log_file.exists() else Path('main.log')).read_text()
 
 
 def printed(pattern: str) -> float:
-    """The number that ``main.py`` printed in place of the group of ``pattern``."""
+    """The number that ``twisted_bilayer.py`` printed in place of the group of ``pattern``."""
     return float(re.search(pattern, log).group(1))
 
 
@@ -74,7 +80,7 @@ ax.legend(
 fig.tight_layout()
 fig.savefig('moire_6_5.png', dpi=150)
 
-# the bands of the two cells, with the Dirac cone of one layer (slope hbar v0 from main.log)
+# the bands of the two cells, with the Dirac cone of one layer (slope hbar v0 from the log)
 v0 = printed(r'hbar v0 = (\S+) eV alat')
 fig, axs = plt.subplots(1, 2, figsize=(9.5, 4.4), sharey=True)
 E_D, edges = {}, {}
@@ -134,7 +140,7 @@ axs[0].legend(fontsize=9, loc='lower left')
 fig.tight_layout()
 fig.savefig('bands.png', dpi=150)
 
-# the velocities of the two cells and the continuum model fitted by main.py
+# the velocities of the two cells and the continuum model fitted by twisted_bilayer.py
 angles = np.array([angle[4, 3], angle[6, 5]])
 ratio = np.array([printed(rf'\({n}, {m}\): .* v\*/v0 = (\S+)') for n, m in ((4, 3), (6, 5))])
 alpha = printed(r'alpha\(\S+ deg\) = (\S+),')

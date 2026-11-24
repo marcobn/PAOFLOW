@@ -1,7 +1,9 @@
 """Figure and checks of the how-to "How to choose which states the sparse backend solves".
 
-Run it after ``python main.py > main.log``, in the same directory: it reads the ``sparse.log``
-and band files of the runs, draws ``windows.png`` and asserts the numbers the page quotes.
+Run it after ``python sparse_states.py > sparse_states.log``, in the folder of that run, by the path
+of this script (``python <PAOFLOW>/docs/learn/howtos/sparse-states/figures.py``): it reads the
+``sparse.log`` and band files of the runs, draws ``windows.png`` and asserts the numbers the page
+quotes.
 """
 
 import re

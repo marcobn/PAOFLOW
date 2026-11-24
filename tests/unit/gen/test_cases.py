@@ -85,11 +85,12 @@ def test_plan_and_copy_conflicts(tmp_path):
         ('pw.x', '-in', 'scf.in'),
         ('pw.x', '-in', 'nscf.in'),
     ]
-    assert plan[0].stdout == 'scf.out' and plan[-1].action == 'setup:run' and plan[-1].manual
-    assert len(plan) == 3  # internal projections: no projwfc.x
+    assert plan[0].stdout == 'scf.out' and plan[2].action == 'setup:run' and plan[2].manual
+    assert len(plan) == 4  # internal projections: no projwfc.x; then the plotting how-to
+    assert plan[3].argv == ('python', 'plotting.py')
     written = copy_case(case, tmp_path)
     assert sorted(str(p) for p in written) == [
-        'README.md', 'Si.pbe-tm-new-gipaw-v2.1.UPF', 'nscf.in', 'scf.in',
+        'README.md', 'Si.pbe-tm-new-gipaw-v2.1.UPF', 'nscf.in', 'plotting.py', 'scf.in',
     ]  # fmt: skip
     assert not (tmp_path / 'silicon.save').exists() and not (tmp_path / 'case.json').exists()
     assert copy_case(case, tmp_path) == []  # identical files are left alone
@@ -187,3 +188,30 @@ def test_scripts_case_plan_and_example(tmp_path, capsys):
     printed = capsys.readouterr().out
     assert (out / 'model.py').is_file() and (out / 'qe' / 'scf.in').is_file()
     assert '1. scf.in (pw.x)' in printed and '2. The model: mpirun -np 4 python model.py' in printed
+
+
+def _page_case(page):
+    """The case named by the first tip of a Learn page (``paoflow-gen --example <case>``)."""
+    import json
+
+    text = page.read_text()
+    if page.suffix == '.ipynb':
+        cells = json.loads(text)['cells']
+        text = '\n'.join(''.join(c['source']) for c in cells if c['cell_type'] == 'markdown')
+    tip = re.search(r':::\{tip\}\n(.*?)\n:::', text, re.S)
+    found = re.search(r'paoflow-gen --example (\w+)', tip.group(1)) if tip else None
+    return found.group(1) if found else None
+
+
+def test_case_docs_match_the_pages():
+    """``docs`` of each case lists exactly the tutorials and how-tos whose tip names the case."""
+    docs = cases_root().parents[1] / 'docs'
+    pages = sorted((docs / 'learn').glob('tutorials/tutorial*.ipynb'))
+    pages += [p for p in sorted((docs / 'learn').glob('howtos/*.md')) if p.name != 'index.md']
+    named = {str(page.relative_to(docs)): _page_case(page) for page in pages}
+    missing_tip = sorted(page for page, case in named.items() if case is None)
+    assert not missing_tip, 'pages without a tip naming their case: %s' % missing_tip
+    listed = {page: case.name for case in CASES for page in case.docs}
+    unknown = sorted(page for page in listed if page not in named)
+    assert not unknown, 'case.json docs entries that are no Learn page: %s' % unknown
+    assert listed == named, sorted(set(listed.items()) ^ set(named.items()))

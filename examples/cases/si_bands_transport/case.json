@@ -35,11 +35,29 @@
    "label": "Non-self-consistent run on the full k grid"
   }
  ],
+ "steps": [
+  {
+   "label": "Plots of the bands, DOS and PDOS with GPAO (how-to)",
+   "command": [
+    "python",
+    "plotting.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "reads output/ of main.py; writes si_bands_dos.png and si_pdos.png",
+   "stdout": "plotting.log"
+  }
+ ],
  "tags": [
   "bands",
   "dos",
   "transport",
   "semiconductor"
  ],
- "source": "examples/qe_examples/example01"
+ "source": "examples/qe_examples/example01",
+ "docs": [
+  "learn/tutorials/tutorial01.ipynb",
+  "learn/howtos/plotting.md"
+ ]
 }

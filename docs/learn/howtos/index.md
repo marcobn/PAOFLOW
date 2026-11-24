@@ -2,7 +2,7 @@
 
 Where the tutorials teach a complete workflow end-to-end, a **How-To** answers a narrower, practical question: _how do I set this up, which flags matter, and how do I know the result is right?_
 
-How-Tos assume you have already worked through [Tutorial 01](../tutorials/tutorial01.ipynb) and are comfortable with the basic PAOFLOW call sequence.
+How-Tos assume you have already worked through the [bands and DOS tutorial](../tutorials/tutorial01.ipynb) and are comfortable with the basic PAOFLOW call sequence.
 
 ---
 

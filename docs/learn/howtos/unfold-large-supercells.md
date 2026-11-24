@@ -3,14 +3,14 @@
 On this page you unfold the bands of a supercell of hundreds to thousands of atoms with {py:func}`~PAOFLOW.models.band_unfold.unfold_bands_sparse`, which computes at each k-point only the `n_eigs` supercell states closest to an energy `sigma`, together with their spectral weights. You need it when the full diagonalisation of {py:func}`~PAOFLOW.models.band_unfold.unfold_bands`, described in [How to unfold supercell bands onto the primitive Brillouin zone](band-unfolding.md), runs out of memory or time. The weights of the returned states are the same as on the full route; the approximation is that only part of the spectrum is unfolded ([Partial spectra](../theory/band-unfolding.md#partial-spectra)). The route needs a tight-binding model whose hoppings are a function of the bond length.
 
 :::{tip}
-The model and the cells are built in code, so the page needs no input files. Download {download}`main.py <unfold-large-supercells/main.py>` to unfold your own large supercell: replace the model, the cell builder and the path with yours. Run it as `OMP_NUM_THREADS=1 python main.py`; it takes about 2 minutes on 4 cores. Run {download}`figures.py <unfold-large-supercells/figures.py>` after it, in the same directory, to redraw the figure of this page from that run.
+This page is built on the case [`tbg_unfold`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/tbg_unfold): open it in PAOFLOW Studio with *Examples…* → `tbg_unfold`, or copy it with `paoflow-gen --example tbg_unfold`. The model and the cells are built in code, so the page needs no input files. Download {download}`unfold_large_supercells.py <../../../examples/cases/tbg_unfold/unfold_large_supercells.py>` to unfold your own large supercell: replace the model, the cell builder and the path with yours. Run it as `OMP_NUM_THREADS=1 python unfold_large_supercells.py`; it takes about 2 minutes on 4 cores. Run {download}`figures.py <unfold-large-supercells/figures.py>` after it, in the same directory, to redraw the figure of this page from that run.
 :::
 
 ## A carbon model with distance-dependent hoppings
 
 Give the supercell as an environment-dependent tight-binding (EDTB) model whose hoppings are distance dependent, because the sparse route evaluates each hopping from the bond length, not from one parameter set per neighbour shell as in the silicon model of the dense how-to. Each Slater–Koster channel of the carbon model below decays with the bond length $r$ in the form of L. Goodwin, A. J. Skinner and D. G. Pettifor, Europhys. Lett. 9, 701 (1989): its value `V0` at $r_0 = 2.684$ bohr, the nearest-neighbour distance of graphene, falls off as the power `n` of $r_0/r$, multiplied by an exponential decay whose length and sharpness are `r_c` and `n_c`. Energies are in eV and distances in bohr; the basis is $sp^3d^5$, and the screening by the atoms around each bond is described in [Environment-dependent Slater–Koster models](../../internals/sk-edtb.md).
 
-```{literalinclude} unfold-large-supercells/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/unfold_large_supercells.py
 :language: python
 :end-before: '# The (n, m) supercell of AA bilayer graphene'
 ```
@@ -19,7 +19,7 @@ Give the supercell as an environment-dependent tight-binding (EDTB) model whose 
 
 The system is AA-stacked bilayer graphene, 3.35 Å between the layers, in the $(n, m)$ supercell spanned by $n\mathbf{a}_1 + m\mathbf{a}_2$ and its $60^\circ$ rotation, which holds $n^2 + nm + m^2$ primitive cells per layer. The function below builds this cell with the lattice constant of graphene as `alat`. It places every atom on a primitive site shifted by a primitive lattice vector inside the cell, as the unfolding requires ([The atom mapping](../theory/band-unfolding.md#the-atom-mapping)):
 
-```{literalinclude} unfold-large-supercells/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/unfold_large_supercells.py
 :language: python
 :start-after: '# The (n, m) supercell of AA bilayer graphene'
 :end-before: '# Unfolding with the sparse solver'
@@ -29,7 +29,7 @@ The system is AA-stacked bilayer graphene, 3.35 Å between the layers, in the $(
 
 Call `unfold_bands_sparse` with the same arguments as `unfold_bands`, plus the number of states and the energy at which to compute them:
 
-```{literalinclude} unfold-large-supercells/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/unfold_large_supercells.py
 :language: python
 :start-after: '# Unfolding with the sparse solver'
 :end-before: '# The edges of the window'
@@ -47,15 +47,15 @@ Give K as $(\tfrac23, \tfrac13)$ when the primitive vectors are at $60^\circ$, a
 
 Choose `sigma` inside the energy range you want to resolve, here the Dirac energy of the bilayer, and `n_eigs` large enough that the window covers that range at every k-point. The number of supercell states per eV is $N$ times that of the primitive cell, so the same `n_eigs` covers a narrower window in a larger cell, and the window is narrowest where the bands are densest. A larger `n_eigs` costs more per k-point. To check the window, compare its edges with the energy range you plot:
 
-```{literalinclude} unfold-large-supercells/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/unfold_large_supercells.py
 :language: python
 :start-after: '# The edges of the window'
 :end-before: '# Saving the bands, the weights and the supercell model'
 ```
 
-Then save the results and the supercell model for `figures.py`:
+Then save the results and the supercell model:
 
-```{literalinclude} unfold-large-supercells/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/unfold_large_supercells.py
 :language: python
 :start-after: '# Saving the bands, the weights and the supercell model'
 ```

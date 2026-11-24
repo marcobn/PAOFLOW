@@ -1,8 +1,9 @@
 """Figures and checks of the how-to "How to unfold supercell bands onto the primitive Brillouin zone".
 
-The page is docs/learn/howtos/band-unfolding.md. Run it after ``python main.py`` in the same
-directory: it reads ``si_unfolded.npz``, writes the figures of the page to the working directory
-and ends with asserts of the numbers the page quotes.
+The page is docs/learn/howtos/band-unfolding.md. Run it after ``python main.py`` in the folder of
+that run, by the path of this script (``python
+<PAOFLOW>/docs/learn/howtos/band-unfolding/figures.py``): it reads ``si_unfolded.npz``, writes the
+figures of the page to the working directory and ends with asserts of the numbers the page quotes.
 """
 
 import matplotlib.pyplot as plt

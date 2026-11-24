@@ -1,16 +1,16 @@
 # How to choose which states the sparse backend solves
 
-On this page you choose which eigenstates the sparse backend computes at each k-point. The dense pipeline of [Tutorial 01](../tutorials/tutorial01.ipynb) solves every band the pseudo-atomic orbital (PAO) basis represents. The sparse backend instead solves in each pass, one loop over all k-points of the mesh ([Tutorial 04](../tutorials/tutorial04.ipynb)), only the states that the properties of that pass need, because for a large cell the time and memory per k-point grow with the number of states solved. This is the second approximation of the backend, after the truncation of $H(\mathbf{R})$: a state left out contributes nothing, which is exact only where the property gives it no weight ([Solving part of the spectrum](../theory/large-cells.md#solving-part-of-the-spectrum)). In normal use you set nothing, because the backend derives the states from the energy ranges you give the properties; you read that choice in `sparse.log`, and change it with `nev` or `interior_window`.
+On this page you choose which eigenstates the sparse backend computes at each k-point. The dense pipeline of the [bands and DOS tutorial](../tutorials/tutorial01.ipynb) solves every band the pseudo-atomic orbital (PAO) basis represents. The sparse backend instead solves in each pass, one loop over all k-points of the mesh (the [large-cell tutorial](../tutorials/tutorial04.ipynb)), only the states that the properties of that pass need, because for a large cell the time and memory per k-point grow with the number of states solved. This is the second approximation of the backend, after the truncation of $H(\mathbf{R})$: a state left out contributes nothing, which is exact only where the property gives it no weight ([Solving part of the spectrum](../theory/large-cells.md#solving-part-of-the-spectrum)). In normal use you set nothing, because the backend derives the states from the energy ranges you give the properties; you read that choice in `sparse.log`, and change it with `nev` or `interior_window`.
 
 :::{tip}
-Download {download}`main.py <sparse-states/main.py>` to compare these settings on your own calculation: set `savedir` to its `.save` directory and `ibrav` of `bands()` to its lattice. Download {download}`figures.py <sparse-states/figures.py>` to redraw the figure of this page from that run and print the parts of `sparse.log` quoted below; run it in the same directory after `python main.py > main.log`. The input of this page is `tutorial01/silicon.save` in `tutorial_assets.tar.gz` of the release [tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2), extracted with `tar xzf tutorial_assets.tar.gz` where you run. The script runs the two-atom Si cell with `bond_order=36` under each setting of this page, in about a minute on 4 cores.
+This page is built on the case [`si_sparse_backend`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/si_sparse_backend): open it in PAOFLOW Studio with *Examples…* → `si_sparse_backend`, or copy it with `paoflow-gen --example si_sparse_backend`. Download {download}`sparse_states.py <../../../examples/cases/si_sparse_backend/sparse_states.py>` to compare these settings on your own calculation: set `savedir` to its `.save` directory and `ibrav` of `bands()` to its lattice. Download {download}`figures.py <sparse-states/figures.py>` to redraw the figure of this page from that run, in the same directory after `python sparse_states.py > sparse_states.log`. Both read `silicon.save`, which the QE runs of the case write; to skip them, extract it from `tutorial_assets.tar.gz` of the release [tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2) with `tar xzf tutorial_assets.tar.gz --strip-components=1 tutorial01/silicon.save`. The workflow runs in about a minute on 4 cores.
 :::
 
 ## The change
 
 Every setting of this page is an entry of `sparse_config` in the constructor. The script builds the Si Hamiltonian of each run with this function, in which only `sparse_config` changes:
 
-```{literalinclude} sparse-states/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_states.py
 :language: python
 :end-before: '# The window derived from the property ranges'
 ```
@@ -26,9 +26,9 @@ By default each pass solves the states from the bottom of the spectrum up to the
 | `fermi_surface`, `spin_texture`, `orbital_texture` | `fermi_dw`, `fermi_up` | none |
 | `dielectric_tensor` | up to `emax` | none |
 
-Each margin is the reach of the weight the property gives a state beyond its range. A Gaussian of adaptive width $\sigma$ ([Tutorial 01, section 6](../tutorials/tutorial01.ipynb#6-band-velocities-and-adaptive-smearing)) is $10^{-7}$ of its peak at $4\sigma$ ([Smearing tails](../theory/large-cells.md#smearing-tails)), and the derivative of the Fermi function in the transport integrals is $1.8\times10^{-4}$ of its peak at $10\,k_BT$, 0.26 eV at 300 K ([The Fermi window](../theory/large-cells.md#the-fermi-window)). For a pass on the two-atom Si cell with `{'bond_order': 36}`,
+Each margin is the reach of the weight the property gives a state beyond its range. A Gaussian of adaptive width $\sigma$ ([Band velocities and adaptive smearing](../tutorials/tutorial01.ipynb#band-velocities-and-adaptive-smearing)) is $10^{-7}$ of its peak at $4\sigma$ ([Smearing tails](../theory/large-cells.md#smearing-tails)), and the derivative of the Fermi function in the transport integrals is $1.8\times10^{-4}$ of its peak at $10\,k_BT$, 0.26 eV at 300 K ([The Fermi window](../theory/large-cells.md#the-fermi-window)). For a pass on the two-atom Si cell with `{'bond_order': 36}`,
 
-```{literalinclude} sparse-states/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_states.py
 :language: python
 :start-after: '# The window derived from the property ranges'
 :end-before: '# A fixed number of bands'
@@ -65,7 +65,7 @@ Raise `shift_margin` when a band plot shows flat or erratic bands just below the
 
 ## `nev`: a fixed number of bands
 
-```{literalinclude} sparse-states/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_states.py
 :language: python
 :start-after: '# A fixed number of bands'
 :end-before: '# An interior window with fixed bounds'
@@ -83,17 +83,17 @@ WARNING: sparse dos may be contaminated near the window edge: the largest adapti
 
 ## `interior_window`: only the states inside a window
 
-```{literalinclude} sparse-states/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_states.py
 :language: python
 :start-after: '# An interior window with fixed bounds'
 :end-before: '# An interior window around the property ranges'
 ```
 
-An interior window solves only the states between $\varepsilon_\mathrm{lo}$ and $\varepsilon_\mathrm{hi}$, the one setting whose cost per k-point falls below that of a full diagonalisation on a large cell. A window from the bottom of the spectrum reaches the Fermi level, so it holds a fixed fraction of all states, 9 of 18 for the two-atom Si cell and 62 of 144 for the 16-atom cell of Tutorial 04, whatever the cell size ([Growth with the cell size](../theory/large-cells.md#growth-with-the-cell-size)). The fraction inside an interior window shrinks as the cell grows, and only a small fraction lets the backend use an iterative eigensolver ([The eigensolver of the sparse backend](../../internals/sparse-eigensolver.md)). With explicit bounds, as above, the property ranges are clipped to the window and transport keeps the chemical potential $10\,k_BT$ inside each edge. The right panel of the figure shows the states `bands()` solves in this window, over the full bands in grey: up to 5 states per k-point, and none where no band lies inside the window.
+An interior window solves only the states between $\varepsilon_\mathrm{lo}$ and $\varepsilon_\mathrm{hi}$, the one setting whose cost per k-point falls below that of a full diagonalisation on a large cell. A window from the bottom of the spectrum reaches the Fermi level, so it holds a fixed fraction of all states, 9 of 18 for the two-atom Si cell and 62 of 144 for the 16-atom cell of the large-cell tutorial, whatever the cell size ([Growth with the cell size](../theory/large-cells.md#growth-with-the-cell-size)). The fraction inside an interior window shrinks as the cell grows, and only a small fraction lets the backend use an iterative eigensolver ([The eigensolver of the sparse backend](../../internals/sparse-eigensolver.md)). With explicit bounds, as above, the property ranges are clipped to the window and transport keeps the chemical potential $10\,k_BT$ inside each edge. The right panel of the figure shows the states `bands()` solves in this window, over the full bands in grey: up to 5 states per k-point, and none where no band lies inside the window.
 
 With `{}` the backend places the window around the property ranges of each pass, with the margins of the table on both sides:
 
-```{literalinclude} sparse-states/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_states.py
 :language: python
 :start-after: '# An interior window around the property ranges'
 ```

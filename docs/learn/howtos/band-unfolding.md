@@ -3,14 +3,14 @@
 On this page you unfold the bands of a supercell onto the Brillouin zone of its primitive cell with {py:func}`~PAOFLOW.models.band_unfold.unfold_bands`, so that you can compare the bands of a cell that breaks the primitive periodicity (an alloy, an impurity, a superstructure) with primitive-cell bands or with angle-resolved photoemission (ARPES), instead of the folded branches of its smaller zone. Unfolding gives each supercell eigenstate $n$ a spectral weight $w_n(\mathbf{k})$, the probability that it has primitive crystal momentum $\mathbf{k}$ ([The weight in an orbital basis](../theory/band-unfolding.md#the-weight-in-an-orbital-basis)). The input is the real-space Hamiltonian $H_{\alpha\beta}(\mathbf{R})$ of both cells, from a tight-binding model or from a projected DFT calculation. Two approximations come with the method: the weights are those of an orthonormal orbital basis, and every supercell atom must sit on an ideal site of the primitive crystal, so relaxed positions, vacancies and interstitials are outside it.
 
 :::{tip}
-The models are built in code, so the page needs no input files. Download {download}`main.py <band-unfolding/main.py>` to unfold your own supercell: replace its geometries and model with yours. It runs in about a minute. Run {download}`figures.py <band-unfolding/figures.py>` after it, in the same directory, to redraw the figures of this page from that run.
+This page is built on the case [`si_supercell_unfold`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/si_supercell_unfold): open it in PAOFLOW Studio with *Examples…* → `si_supercell_unfold`, or copy it with `paoflow-gen --example si_supercell_unfold`. It needs no DFT data and runs in about a minute. Download {download}`main.py <../../../examples/cases/si_supercell_unfold/main.py>` to unfold your own supercell with your parameters and geometries, and {download}`figures.py <band-unfolding/figures.py>` to redraw the figures of this page from that run, in the same directory.
 :::
 
 ## The model
 
-Give `unfold_bands` one model dictionary per cell, both from the same parameters, so that the cells differ only by the perturbation you add. The model here is an environment-dependent tight-binding (EDTB) model of silicon: Slater–Koster bond integrals for an $sp^3d^5$ basis on three neighbour shells, with each hopping screened by the atoms around the bond (see [Environment-dependent Slater–Koster models](../../internals/sk-edtb.md)). Energies are in eV and distances in bohr.
+Give `unfold_bands` one model dictionary per cell, both from the same parameters, so that the cells differ only by the perturbation you add. The model here is an environment-dependent tight-binding (EDTB) model of silicon, read from `Si_SK_params.json`: Slater–Koster bond integrals for an $sp^3d^5$ basis on three neighbour shells, with each hopping screened by the atoms around the bond (see [Environment-dependent Slater–Koster models](../../internals/sk-edtb.md)).
 
-```{literalinclude} band-unfolding/main.py
+```{literalinclude} ../../../examples/cases/si_supercell_unfold/main.py
 :language: python
 :end-before: '# The primitive cell and the conventional cube of silicon'
 ```
@@ -19,7 +19,7 @@ Give `unfold_bands` one model dictionary per cell, both from the same parameters
 
 The primitive cell is the two-atom fcc cell, and the supercell the eight-atom conventional cube, which holds $N = 4$ primitive cells. Give both geometries in Cartesian coordinates in units of the same `alat`, because `unfold_bands` matches the atoms of the two cells by position:
 
-```{literalinclude} band-unfolding/main.py
+```{literalinclude} ../../../examples/cases/si_supercell_unfold/main.py
 :language: python
 :start-after: '# The primitive cell and the conventional cube of silicon'
 :end-before: '# Unfolding the perfect supercell'
@@ -35,7 +35,7 @@ The figure draws this geometry for one graphene layer in the supercell spanned b
 
 Unfold the perfect supercell first, because its weights must reproduce the primitive bands, which tests the geometry and the path. {py:class}`~PAOFLOW.models.edtb_params.EDTBModel` turns the parameters and a geometry into the model dictionary of the [tight-binding how-to](tight-binding-model.md), which `unfold_bands` reads:
 
-```{literalinclude} band-unfolding/main.py
+```{literalinclude} ../../../examples/cases/si_supercell_unfold/main.py
 :language: python
 :start-after: '# Unfolding the perfect supercell'
 :end-before: '# A substitutional impurity'
@@ -69,15 +69,15 @@ The weights at each $\mathbf{k}$ add up to the number of orbitals of the primiti
 
 Model a substitutional impurity by changing the on-site energies of one atom in the supercell dictionary. The block below raises all nine orbitals of atom 0 by 1 eV, one impurity in eight atoms:
 
-```{literalinclude} band-unfolding/main.py
+```{literalinclude} ../../../examples/cases/si_supercell_unfold/main.py
 :language: python
 :start-after: '# A substitutional impurity'
 :end-before: '# Saving the bands and weights'
 ```
 
-Then save both runs for `figures.py`:
+Then save both runs to one file:
 
-```{literalinclude} band-unfolding/main.py
+```{literalinclude} ../../../examples/cases/si_supercell_unfold/main.py
 :language: python
 :start-after: '# Saving the bands and weights'
 ```

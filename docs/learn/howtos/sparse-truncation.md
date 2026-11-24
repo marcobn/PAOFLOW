@@ -1,23 +1,23 @@
 # How to choose the truncation of the sparse Hamiltonian
 
-On this page you choose which hoppings of the PAO Hamiltonian $H_{\alpha\beta}(\mathbf{R})$ the sparse backend keeps. The backend stores $H_{\alpha\beta}(\mathbf{R})$ as a list of hoppings between pairs of pseudo-atomic orbitals (PAOs) and drops the small ones, and that truncation is an approximation: it moves every band, and with them every property of the run ([Truncating the hoppings](../theory/large-cells.md#truncating-the-hoppings)). You choose a cutoff on the bond length, with `bond_order` or `rcut`, and converge it on the bands near the energies your properties use. [Tutorial 04](../tutorials/tutorial04.ipynb) shows the workflow in which the truncation sits; the examples below use its Si calculation.
+On this page you choose which hoppings of the PAO Hamiltonian $H_{\alpha\beta}(\mathbf{R})$ the sparse backend keeps. The backend stores $H_{\alpha\beta}(\mathbf{R})$ as a list of hoppings between pairs of pseudo-atomic orbitals (PAOs) and drops the small ones, and that truncation is an approximation: it moves every band, and with them every property of the run ([Truncating the hoppings](../theory/large-cells.md#truncating-the-hoppings)). You choose a cutoff on the bond length, with `bond_order` or `rcut`, and converge it on the bands near the energies your properties use. [Large cells on the sparse backend](../tutorials/tutorial04.ipynb) shows the workflow in which the truncation sits; the examples below use its Si calculation.
 
 :::{tip}
-Download {download}`main.py <sparse-truncation/main.py>` to converge the truncation of your own calculation: set `savedir` to its `.save` directory and `ibrav` of `bands()` to its lattice. Download {download}`figures.py <sparse-truncation/figures.py>` to redraw the figures of this page from that run, by running it in the same directory after `python main.py > main.log`. The input of this page is `tutorial01/silicon.save` in `tutorial_assets.tar.gz` of the release [tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2); extract it with `tar xzf tutorial_assets.tar.gz` in the directory you run in. The script computes the Si bands with the full Hamiltonian and 14 truncations, in about a minute on 4 cores.
+This page is built on the case [`si_sparse_backend`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/si_sparse_backend): open it in PAOFLOW Studio with *Examples…* → `si_sparse_backend`, or copy it with `paoflow-gen --example si_sparse_backend`. Download {download}`sparse_truncation.py <../../../examples/cases/si_sparse_backend/sparse_truncation.py>` to converge the truncation of your own calculation: set `savedir` to its `.save` directory and `ibrav` of `bands()` to its lattice. Download {download}`figures.py <sparse-truncation/figures.py>` to redraw the figures of this page from that run, by running it in the same directory after `python sparse_truncation.py > sparse_truncation.log`. Both read `silicon.save`, which the QE runs of the case write; to skip them, extract it from `tutorial_assets.tar.gz` of the release [tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2) with `tar xzf tutorial_assets.tar.gz --strip-components=1 tutorial01/silicon.save`. The script computes the Si bands with the full Hamiltonian and 14 truncations, in about a minute on 4 cores.
 :::
 
 ## The change
 
 The truncation is an entry of `sparse_config` in the constructor. The script computes the Si bands of each run with this function, in which only `sparse_config` changes:
 
-```{literalinclude} sparse-truncation/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_truncation.py
 :language: python
 :end-before: '# Truncate by neighbour shells'
 ```
 
 Give `bond_order` or `rcut` in every run, because without either the backend drops the hoppings below $10^{-3}$ eV, a cut that splits degenerate bands (see [`hopping_threshold`](#hopping_threshold-a-quick-truncation-for-tests)):
 
-```{literalinclude} sparse-truncation/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_truncation.py
 :language: python
 :start-after: '# Truncate by neighbour shells'
 :end-before: '# Keep every hopping'
@@ -29,7 +29,7 @@ The hoppings are dropped once, inside `pao_hamiltonian()`, so the truncation can
 
 Plot the hoppings against bond length to see which ones a truncation can drop. `save_sparse_hamiltonian()` in the function above writes the kept hoppings to `hamiltonian.npz` in the output directory, and a threshold of zero keeps all of them:
 
-```{literalinclude} sparse-truncation/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_truncation.py
 :language: python
 :start-after: '# Keep every hopping'
 :end-before: '# One shell beyond the R grid'
@@ -55,7 +55,7 @@ The cutoff also has an upper limit, the radius up to which the $\mathbf{R}$ grid
 
 `bond_order=n` keeps the bonds up to the $n$-th distinct interatomic distance: 1 is the nearest neighbours (4.59 Bohr in Si), 2 the second neighbours. Because the shells move with the lattice, the same `bond_order` describes the same physical truncation along a series of strained or relaxed structures, which makes it the choice for comparing them. On the $12\times12\times12$ grid of Si the largest allowed value is 47, and one shell more stops the run:
 
-```{literalinclude} sparse-truncation/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_truncation.py
 :language: python
 :start-after: '# One shell beyond the R grid'
 :end-before: '# Truncate by radius'
@@ -63,7 +63,7 @@ The cutoff also has an upper limit, the radius up to which the $\mathbf{R}$ grid
 
 ### `rcut`: a radius
 
-```{literalinclude} sparse-truncation/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_truncation.py
 :language: python
 :start-after: '# Truncate by radius'
 :end-before: '# Converge the cutoff against the full Hamiltonian'
@@ -79,7 +79,7 @@ The cutoff also has an upper limit, the radius up to which the $\mathbf{R}$ grid
 
 Raise `bond_order` or `rcut` until the bands near the energies your property uses stop moving, within the limit of the $\mathbf{R}$ grid. Judge the bands rather than the DOS, because each band moves by its own amount and with either sign, and the integral over the Brillouin zone averages these shifts, so a DOS can look converged while single bands have moved ([Error of the eigenvalues](../theory/large-cells.md#error-of-the-eigenvalues)). For Si, the script repeats the run for a series of `bond_order` values:
 
-```{literalinclude} sparse-truncation/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_truncation.py
 :language: python
 :start-after: '# Converge the cutoff against the full Hamiltonian'
 :end-before: '# Truncate by hopping size'
@@ -99,7 +99,7 @@ No eigenvalue at any k-point moves by more than this bound ([A bound on the eige
 
 ## `hopping_threshold`: a quick truncation for tests
 
-```{literalinclude} sparse-truncation/main.py
+```{literalinclude} ../../../examples/cases/si_sparse_backend/sparse_truncation.py
 :language: python
 :start-after: '# Truncate by hopping size'
 ```

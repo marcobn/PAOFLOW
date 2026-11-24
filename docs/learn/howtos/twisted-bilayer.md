@@ -1,17 +1,17 @@
 # How to compute the band structure of twisted bilayer graphene
 
-On this page you build the commensurate cells of twisted bilayer graphene, compute their bands near the Dirac energy, and follow the Dirac velocity as the twist angle $\theta$ decreases. Small angles need cells of thousands of atoms, too many for the dense diagonalisation of [Tutorial 01](../tutorials/tutorial01.ipynb), so a sparse solver computes only the states near the Dirac energy. The Hamiltonian is a tight-binding model, and its layers are rigid and flat: the relaxation of real samples, which changes the bands at small angles, is not included.
+On this page you build the commensurate cells of twisted bilayer graphene, compute their bands near the Dirac energy, and follow the Dirac velocity as the twist angle $\theta$ decreases. Small angles need cells of thousands of atoms, too many for the dense diagonalisation of the [bands and DOS tutorial](../tutorials/tutorial01.ipynb), so a sparse solver computes only the states near the Dirac energy. The Hamiltonian is a tight-binding model, and its layers are rigid and flat: the relaxation of real samples, which changes the bands at small angles, is not included.
 
-The model is the [environment-dependent tight-binding (EDTB) model of carbon](unfold-large-supercells.md#a-carbon-model-with-distance-dependent-hoppings) of the how-to on unfolding large supercells. The script holds its own copy of it, the `carbon` dictionary, and builds the cells in code, so it needs no input files.
+:::{tip}
+This page is built on the case [`tbg_unfold`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/tbg_unfold): open it in PAOFLOW Studio with *Examples…* → `tbg_unfold`, or copy it with `paoflow-gen --example tbg_unfold`. Download {download}`twisted_bilayer.py <../../../examples/cases/tbg_unfold/twisted_bilayer.py>` to compute other cells or use your own model, and run it as `OMP_NUM_THREADS=1 python twisted_bilayer.py > twisted_bilayer.log`; its two cells take 6 minutes on 4 cores. Run {download}`figures.py <twisted-bilayer/figures.py>` after it, in the same directory, to redraw the figures of this page from that run. To redraw them without the calculation, run `figures.py` inside the folder `twisted-bilayer/` of `howto_assets.tar.gz` in the release [tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2), which holds the outputs of `twisted_bilayer.py`.
+:::
 
-```{literalinclude} twisted-bilayer/main.py
+The model is the [environment-dependent tight-binding (EDTB) model of carbon](unfold-large-supercells.md#a-carbon-model-with-distance-dependent-hoppings) of the how-to on unfolding large supercells. The script holds a copy of it, the `carbon` dictionary, and builds the cells in code, so it needs no input files.
+
+```{literalinclude} ../../../examples/cases/tbg_unfold/twisted_bilayer.py
 :language: python
 :end-before: '# The commensurate cell (n, m)'
 ```
-
-:::{tip}
-Download {download}`main.py <twisted-bilayer/main.py>` to compute the bands and the Dirac velocity of other cells or with your own model, and run it as `OMP_NUM_THREADS=1 python main.py > main.log`; its two cells take 6 minutes on 4 cores. Run {download}`figures.py <twisted-bilayer/figures.py>` after it, in the same directory, to redraw the figures of this page from that run. To redraw them without the calculation, run `figures.py` inside the folder `twisted-bilayer/` of `howto_assets.tar.gz` in the release [tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2), which holds the outputs of `main.py`.
-:::
 
 ## Commensurate cells
 
@@ -30,7 +30,7 @@ A twisted bilayer is a crystal only at the angles where a lattice vector of the 
 
 The function below builds the $(n, m)$ cell with the lattice constant of graphene, $a = 2.46$ Å, as `alat`, the lower layer at $z = 0$ and the upper layer rotated about the origin, a site of both layers:
 
-```{literalinclude} twisted-bilayer/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/twisted_bilayer.py
 :language: python
 :start-after: '# The commensurate cell (n, m)'
 :end-before: '# Dirac points of the AA bilayer at K, split by the interlayer hopping'
@@ -44,7 +44,7 @@ The figure shows `twisted_bilayer(6, 5)` repeated in the plane, with one cell ou
 
 Set the interlayer distance `d` by the interlayer coupling it gives in your model, because the coupling decides at which angles the bands flatten: the angle at which the Dirac velocity vanishes is proportional to the interlayer tunnelling ([Dirac velocity in the continuum model](../theory/band-unfolding.md#dirac-velocity-in-the-continuum-model)). The default `d=2.68` Å suits this carbon model, whose hoppings between the layers are weak at the spacing of real bilayers, 3.35 Å. In the AA-stacked bilayer the interlayer hopping shifts the Dirac cones of the two layers apart, and its two Dirac points at K lie 0.188 eV apart at 3.35 Å and 0.684 eV apart at 2.68 Å. The shorter distance therefore moves the flat bands to larger angles, whose cells are smaller. Before you compare angles with experiment, check this coupling against the AA splitting from DFT. This block computes both splittings:
 
-```{literalinclude} twisted-bilayer/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/twisted_bilayer.py
 :language: python
 :start-after: '# Dirac points of the AA bilayer at K, split by the interlayer hopping'
 :end-before: '# Bands of the (4, 3) and (6, 5) cells'
@@ -54,7 +54,7 @@ Set the interlayer distance `d` by the interlayer coupling it gives in your mode
 
 Compute the bands with {py:class}`~PAOFLOW.spectrum.sparse_bands.SparseEDTB`, which stores the Hamiltonian of the cell as a sparse matrix of bonds and computes, at each k-point, only the `n_eigs` eigenvalues closest to the energy `sigma` (eV), with the shift-invert Lanczos method of SciPy's `eigsh`. The energy range of these states is called the window below. The script runs it for the cells $(4, 3)$ and $(6, 5)$:
 
-```{literalinclude} twisted-bilayer/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/twisted_bilayer.py
 :language: python
 :start-after: '# Bands of the (4, 3) and (6, 5) cells'
 :end-before: '# A short segment from the moire K point towards G'
@@ -64,7 +64,7 @@ The path is in fractional coordinates of the reciprocal lattice of the cell, so 
 
 Choose `n_eigs` so that the window covers your plot at every k-point. The states per eV grow with the number of atoms, so 40 states span at least $E_\mathrm{D} - 1.623$ to $E_\mathrm{D} + 1.678$ eV at every k-point of the $(4, 3)$ path, but only $E_\mathrm{D} - 1.084$ to $E_\mathrm{D} + 1.151$ eV for $(6, 5)$ ($E_\mathrm{D}$ is defined below the figure). To check a run, compare these edges with your plot.
 
-`n_workers=-1` distributes the k-points over the cores of the process (its share of the node under `mpirun`), with at most four workers above 5000 orbitals (see [Smaller angles](#smaller-angles)). Start the script with `OMP_NUM_THREADS=1`, because several threads per worker oversubscribe the cores and slow the run down. `compute_bands` writes the bands to `bands_0.dat` in `outputdir` and the high-symmetry points to `kpath_points.txt`.
+`n_workers=-1` distributes the k-points over the cores of the process (its share of the node under `mpirun`), with at most four workers above 5000 orbitals (see [Smaller angles](#smaller-angles)). Start the script with `OMP_NUM_THREADS=1`, because several threads per worker oversubscribe the cores. `compute_bands` writes the bands to `bands_0.dat` in `outputdir` and the high-symmetry points to `kpath_points.txt`.
 
 ![Bands of twisted bilayer graphene at 9.43 and 6.01 degrees along K-Gamma-M-K, with the Dirac cone of one layer](../../_static/images/howtos/twisted-bilayer/bands.png)
 
@@ -76,7 +76,7 @@ In the figure, the cones of the two layers meet at M, where the interlayer coupl
 
 To measure that drop, fit the renormalised velocity $v^*$ at the Dirac point: $v^*/v_0 = 1$ for decoupled layers, and $v^*$ vanishes at the magic angle. Compute the bands on a segment from K towards $\Gamma$, 4 % of its length,
 
-```{literalinclude} twisted-bilayer/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/twisted_bilayer.py
 :language: python
 :start-after: '# A short segment from the moire K point towards G'
 :end-before: '# Slope of the Dirac cone'
@@ -85,7 +85,7 @@ To measure that drop, fit the renormalised velocity $v^*$ at the Dirac point: $v
 
 and fit the slope of the lower of the two bands that leave the Dirac point upwards:
 
-```{literalinclude} twisted-bilayer/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/twisted_bilayer.py
 :language: python
 :start-after: '# Slope of the Dirac cone'
 :end-before: '# Continuum model of Bistritzer and MacDonald'
@@ -95,7 +95,7 @@ The k-distances are in radians per `alat`, so the slope is $\hbar v^*$ in eV $\c
 
 The continuum model of R. Bistritzer and A. H. MacDonald, Proc. Natl. Acad. Sci. USA 108, 12233 (2011), predicts how $v^*$ continues to smaller angles. In it, $v^*/v_0$ depends only on the ratio $\alpha$ of the interlayer tunnelling to the kinetic energy across the moiré zone, which grows as $1/\theta$ at small angles, and vanishes at $\alpha = 1/\sqrt3$ ([Dirac velocity in the continuum model](../theory/band-unfolding.md#dirac-velocity-in-the-continuum-model)). The last block fits $\alpha$ to the $9.43^\circ$ cell, which gives $\alpha = 0.132$, and scales it as $1/\theta$:
 
-```{literalinclude} twisted-bilayer/main.py
+```{literalinclude} ../../../examples/cases/tbg_unfold/twisted_bilayer.py
 :language: python
 :start-after: '# Continuum model of Bistritzer and MacDonald'
 ```
@@ -104,7 +104,7 @@ The model then gives $v^*/v_0 = 0.693$ at $6.01^\circ$, 0.041 below the computed
 
 ![Dirac velocity against twist angle: two tight-binding cells and the continuum model, which vanishes at 2.16 degrees](../../_static/images/howtos/twisted-bilayer/velocity.png)
 
-The markers are the two cells, the line the continuum model fitted at $9.43^\circ$, and the dashed line the angle where it vanishes. A cell such as $(10, 9)$ at $3.48^\circ$ would test the extrapolation.
+The markers are the two cells, the line the continuum model fitted at $9.43^\circ$, and the dashed line the angle where it vanishes.
 
 ## Smaller angles
 

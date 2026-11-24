@@ -1,6 +1,6 @@
 {
  "title": "Si: the sparse backend on a doubled cell",
- "summary": "Bulk silicon through PAOFLOW(sparse=True), the bond-list Hamiltonian meant for large cells: PAO Hamiltonian, the cell doubled along the three axes (16 atoms), an energy window, then bands, DOS/PDOS and Boltzmann transport without dense (nk, nawf, nawf) arrays.",
+ "summary": "Bulk silicon through PAOFLOW(sparse=True), the bond-list Hamiltonian meant for large cells: the PAO Hamiltonian truncated at the 36th neighbour shell, the cell doubled along the three axes (16 atoms), its folded bands, the DOS and the Boltzmann transport tensors in one mesh pass, checked against the dense pipeline on the 2-atom cell; then the choice of the truncation and of the states solved per k-point.",
  "workflow": "scripts",
  "pseudopotentials": [
   "library/Si.pbe-tm-new-gipaw-v2.1.UPF"
@@ -24,15 +24,40 @@
  ],
  "steps": [
   {
-   "label": "Sparse backend: doubled cell, bands, DOS and transport",
+   "label": "Sparse backend: doubled cell, bands, DOS and transport, checked against the dense pipeline",
    "command": [
     "python",
-    "main_sparse.py"
+    "main.py"
    ],
    "cwd": ".",
    "mpi": true,
    "interactive": false,
-   "note": "reads silicon.save (with the projwfc.x projections); writes output_sparse/"
+   "note": "reads silicon.save (with the projwfc.x projections); writes output/ (sparse, 16 atoms) and output_dense/ (dense, 2 atoms)",
+   "stdout": "main.log"
+  },
+  {
+   "label": "Truncation of the sparse Hamiltonian: bond_order, rcut, hopping_threshold (how-to)",
+   "command": [
+    "python",
+    "sparse_truncation.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "the next step reads its output, sparse_truncation.log; writes output_full/, output_bo*/, output_rcut30/, output_t1e-0*/",
+   "stdout": "sparse_truncation.log"
+  },
+  {
+   "label": "States solved per k-point: the derived window, nev, interior_window (how-to)",
+   "command": [
+    "python",
+    "sparse_states.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "writes output_auto/, output_nev/, output_interior/, output_interior_auto/",
+   "stdout": "sparse_states.log"
   }
  ],
  "tags": [
@@ -43,5 +68,10 @@
   "transport",
   "semiconductor"
  ],
- "source": "examples/recipes/sparse_backend"
+ "source": "examples/recipes/sparse_backend",
+ "docs": [
+  "learn/tutorials/tutorial04.ipynb",
+  "learn/howtos/sparse-truncation.md",
+  "learn/howtos/sparse-states.md"
+ ]
 }

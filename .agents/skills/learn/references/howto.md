@@ -1,6 +1,6 @@
 # How-to template
 
-A how-to is a Markdown page `docs/learn/howtos/<task>.md` for a reader who already has their own calculation and needs one change to it: how to set something up, which flags matter, and how to check that the result is right. It varies an existing workflow (a flag, a route, a plot), often one of the examples under `examples/`, assumes [Tutorial 01](../tutorials/tutorial01.ipynb), and shows only what differs from them. Its code is the script `docs/learn/howtos/<task>/main.py`. The file name is the task in kebab case (`adhoc-spin-orbit.md`, `projectability-threshold.md`), and the script's directory has the same name.
+A how-to is a Markdown page `docs/learn/howtos/<task>.md` for a reader who already has their own calculation and needs one change to it: how to set something up, which flags matter, and how to check that the result is right. It varies an existing workflow (a flag, a route, a plot) on its base case, one case of `examples/cases/`, assumes the [bands and DOS tutorial](../tutorials/tutorial01.ipynb), and shows only what differs from them. Its code is the script `examples/cases/<case>/main.py` of the base case. The file name is the task in kebab case (`adhoc-spin-orbit.md`, `projectability-threshold.md`).
 
 A how-to has at most 1500 words of prose (see the table at the top of SKILL.md). When it needs more, it usually answers several questions: split it into one how-to per question, or, if it teaches a workflow on one system, make it a tutorial.
 
@@ -9,10 +9,15 @@ A how-to has at most 1500 words of prose (see the table at the top of SKILL.md).
 The items below are the default order, not a list of required sections. The title, the opening paragraph and the change are always there. Every other section is written only when it adds information the reader does not already have from the sections above it; a section that repeats values or checks already stated next to their output is left out, and its content stays where it is.
 
 1. **Title**: `# How to <verb> <object>` (for example "How to add spin–orbit coupling to a scalar-relativistic calculation").
-2. **Opening paragraph**: what the reader does with the page, the situation in which they need it, and the physical approximation it introduces, if any. The first sentence says what the reader does (see "Openings" in SKILL.md). The page is written for every system the task applies to. The system used to test it (the base example, a supercell chosen for the runs) is not its subject and appears only where a concrete example helps. When the page builds on an example under `examples/`, follow with a line of the form
-   `Base example: [examples/<family>/<name>/](https://github.com/marcobn/PAOFLOW/tree/master/examples/<family>/<name>)`
-   (the checks verify that the path exists). A page whose code is complete on its own, such as one that builds its model in code, has no such line and says in its opening which inputs, if any, the reader needs. A page that draws on several workflows, such as plotting the output of different calculations, writes `Base examples:` followed by one such link per example, all on that line; the checks verify every path, and the text after each figure names the example its data come from.
-3. **The change**: the page's `main.py`, shown in full and split into blocks that each follow the text explaining them (see "The scripts"). Keep it to the workflow of this page: when it varies a base example, write `main.py` as that workflow with the change applied, and say in the text which blocks differ from the base example. When the change is a single argument, the block that holds the call is the one to explain. In the tip, link both scripts, each with what the reader gains from it: ``{download}`main.py <<task>/main.py>` `` to run the workflow on their own calculation, and ``{download}`figures.py <<task>/figures.py>` `` to redraw the figures of the page from that run (see "Connectors" in SKILL.md: an instruction carries its reason).
+2. **Opening paragraph**: what the reader does with the page, the situation in which they need it, and the physical approximation it introduces, if any. The first sentence says what the reader does (see "Openings" in SKILL.md). The page is written for every system the task applies to. The base case is the system the page runs on; it appears where a concrete example helps, and other systems are linked, never shown.
+   Then the **case tip**, the same on every tutorial and how-to, whose first sentence the checks and the page test read:
+
+   ```markdown
+   :::{tip}
+   This page is built on the case [`<case>`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/<case>): open it in PAOFLOW Studio with *Examples…* → `<case>`, or copy it with `paoflow-gen --example <case>`. <the scripts, the data, the run time>
+   :::
+   ```
+3. **The change**: the page's `main.py`, shown in full and split into blocks that each follow the text explaining them (see "The scripts"). Keep it to the workflow of this page: when it varies a base example, write `main.py` as that workflow with the change applied, and say in the text which blocks differ from the base example. When the change is a single argument, the block that holds the call is the one to explain. In the tip, link both scripts, each with what the reader gains from it: ``{download}`main.py <../../../examples/cases/<case>/main.py>` `` to run the workflow on their own calculation, and ``{download}`figures.py <<task>/figures.py>` `` to redraw the figures of the page from that run (see "Connectors" in SKILL.md: an instruction carries its reason).
 4. **The parameters that matter**: one short subsection or a table per flag, giving the physical meaning, units, default, how to choose the value for a given material, and what goes wrong when it is too small or too large. Explain the physics of each flag in one or two sentences, without display equations: what it approximates and why the default is what it is, with a link to the section of the theory page that has the rest. Quote a measured number only where it drives a choice ("on Si, `1e-4` moves the bands near the gap by about 10 meV, the default `1e-3` by about 0.1 eV"). Tables of statistics from the test runs (bond counts, timings, memory, error sweeps) put a load on the reader without helping them choose, so they stay in the report to the developer. Flags that share their physics (two ways of setting the same cutoff) get a parent subsection that states the shared physics once, then one subsection per flag.
 5. **Other cases** (when the change affects many properties): one or two sentences on how to apply it to the properties the page does not show, with a link to the list of supported methods.
 6. **Checking the result** (only when it adds information): the concrete checks in order of cost, for example the log lines to read, a comparison with the dense pipeline or the DFT bands, and a convergence test. Each check states what a good result looks like. When each section already states what its output should show, as on a page whose figures and printed output carry the expected values, there is no separate checking section.
@@ -23,12 +28,12 @@ Leave out any physics background beyond what is needed to choose the flags, and 
 
 ## The scripts
 
-A how-to has two scripts in `docs/learn/howtos/<task>/`, so that a reader who downloads the workflow gets the workflow and nothing else (see "Running the code" in SKILL.md):
+A how-to has two scripts in its base case `examples/cases/<case>/`, so that a reader who downloads the workflow gets the workflow and nothing else (see "Running the code" in SKILL.md):
 
-- `main.py` is the workflow the page teaches, and every line of it appears on the page. It reads its input from the extracted asset in the working directory (`savedir = 'tutorial01/silicon.save'`), writes its output files there, and prints what the page quotes. It draws no figures, unless drawing them is what the page teaches.
-- `figures.py` reads the output files of `main.py` and its printed output, saved as `main.log`, draws every figure of the page with `fig.savefig(name, dpi=150)` into the working directory, and ends with the asserts. It never imports `main.py`, so it also redraws the figures from a run that was made elsewhere, for example on a cluster.
+- `main.py` is the workflow the page teaches, and every line of it appears on the page. It reads its input where the case's own runs put it (`savedir = 'silicon.save'`), writes its output files in the case folder, and prints what the page quotes. It draws no figures, unless drawing them is what the page teaches.
+- `docs/learn/howtos/<task>/figures.py`, kept beside the page and not in the case, reads the output files of `main.py` and its printed output, saved as `main.log`, draws every figure of the page with `fig.savefig(name, dpi=150)` into the working directory, and ends with the asserts. It never imports `main.py`, so it also redraws the figures from a run that was made elsewhere, for example on a cluster.
 
-The page test runs `python main.py > main.log` and then `python figures.py` in a scratch directory. Run them the same way, then copy the PNGs to `docs/_static/images/howtos/<task>/`.
+When several how-tos share a case, each takes its own workflow name, `<name>.py`, and log `<name>.log`. List the workflow in the `steps` of the case's `case.json`, so that Studio and `paoflow-gen --example` run it (with `"stdout": "main.log"`), and add the page to its `docs`; the figures script is not a step. The page test runs `python main.py > main.log` in a copy of the case and then the figures script in that folder. Run them the same way, then copy the PNGs to `docs/_static/images/howtos/<task>/`.
 
 Split `main.py` into blocks with plain step comments, one per step of the page, and pull each block onto the page with `literalinclude`. A step comment is an ordinary comment that also helps a reader of the downloaded script:
 
@@ -46,7 +51,7 @@ files = sorted(Path(si).glob('Si*_pdosdk_0.dat'))
 ```
 
 ````markdown
-```{literalinclude} <task>/main.py
+```{literalinclude} ../../../examples/cases/<case>/main.py
 :language: python
 :start-after: '# Band structure and DOS'
 :end-before: '# Projected DOS grouped by orbital'
@@ -55,7 +60,7 @@ files = sorted(Path(si).glob('Si*_pdosdk_0.dat'))
 
 `:start-after:` starts the block on the line after the first line of the file that contains the text, so the comment itself is not shown, and `:end-before:` stops it before the next step comment. The first block takes only `:end-before:`, the last only `:start-after:`. Because `:start-after:` matches any line that contains the text, each step comment must be unique and must not be part of another line (`# Bands` also matches `# Bands and DOS`). Sphinx only warns when the text is missing and then leaves the block out, so the checks of SKILL.md report a step comment that no block uses and a block whose text is not in the file; together they guarantee that every line of `main.py` is on the page.
 
-A how-to whose `main.py` runs longer than the budget of "Assets and budgets" in SKILL.md ships the outputs of `main.py` in its asset folder, and the page test runs `figures.py` on them; ask the developer before writing such a page.
+A how-to whose `main.py` runs longer than the budget of "Assets and budgets" in SKILL.md ships the outputs of `main.py` with the case's release data, and the page test runs `figures.py` on them; ask the developer before writing such a page.
 
 ## Figures and output
 

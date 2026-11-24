@@ -116,7 +116,7 @@ The band velocities carry over when the velocity matrix uses the orbital centres
 
 Three things change. The supercell has $N$ times as many bands at each $\mathbf{K}$, so solving one k-point costs more, while the number of k-points falls by $N$. A supercell band index does not label a band of the crystal, because the folded branches interleave, and a band path shows $N$ times as many bands; unfolding assigns each supercell state its weight at a crystal momentum $\mathbf{k}$ [1]. Finally, wavevectors $\mathbf{K} + \mathbf{G}_j$ related by a symmetry fold onto the same $\mathbf{K}$ with equal energies, so the folded bands contain exact multiplets that the original cell does not have; quantities of single states in such a multiplet depend on the basis chosen inside it, sums over the multiplet do not.
 
-Doubling adds no physics, so the supercell is a cell of known answer on which the large-cell route can be checked against the original cell, as in [Tutorial 04](../tutorials/tutorial04.ipynb). A cell that breaks the periodicity, such as a defect supercell or a slab, needs its own DFT calculation, whose $H(\mathbf{R})$ is truncated in the same way.
+Doubling adds no physics, so the supercell is a cell of known answer on which the large-cell route can be checked against the original cell, as in the [large-cell tutorial](../tutorials/tutorial04.ipynb). A cell that breaks the periodicity, such as a defect supercell or a slab, needs its own DFT calculation, whose $H(\mathbf{R})$ is truncated in the same way.
 
 ## Solving part of the spectrum
 
@@ -160,7 +160,7 @@ A state far away in energy still contributes to these sums: its term falls as $|
 
 ## Used in
 
-- [Tutorial 04](../tutorials/tutorial04.ipynb): the truncated list of hoppings of Si at a neighbour shell and its eigenvalue bound, a $2\times2\times2$ supercell built by doubling, and the DOS and transport tensors of the supercell from a pass that solves part of the spectrum, compared with the original cell.
+- [Large cells on the sparse backend](../tutorials/tutorial04.ipynb): the truncated list of hoppings of Si at a neighbour shell and its eigenvalue bound, a $2\times2\times2$ supercell built by doubling and its folded bands, and the DOS and transport tensors of the supercell from a pass that solves part of the spectrum, compared with the original cell.
 - [How to choose the truncation of the sparse Hamiltonian](../howtos/sparse-truncation.md): `bond_order`, `rcut` and `hopping_threshold` on Si, the decay of its hoppings with bond length, the degeneracy split by a threshold and the convergence of the band shifts with the cutoff.
 - [How to choose which states the sparse backend solves](../howtos/sparse-states.md): the margins of each property, the properties that need every state, the cap below the PAO shift, and the options `nev` and `interior_window`.
 

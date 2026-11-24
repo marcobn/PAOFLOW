@@ -1,10 +1,11 @@
 """Figure and checks of the how-to "How to compare pyskeaf orbits with measured quantum-oscillation
 frequencies" (docs/learn/howtos/quantum-oscillations.md).
 
-Run it after ``python main.py > main.log``, in the same directory. It reads the tables that
-``main.py`` writes to ``qo_analysis/sweep/``, its printed output ``main.log``, and the pyskeaf
-tables of ``quantum-oscillations/pyskeaf/`` for the calculated orbits, draws the figure of the
-page and asserts the numbers the page quotes.
+Run it after ``python qo_rotation.py > qo_rotation.log``, in the folder of that run, by the path of
+this script (``python <PAOFLOW>/docs/learn/howtos/quantum-oscillations/figures.py``). It reads the
+tables that ``qo_rotation.py`` writes to ``qo_rotation/sweep/``, its printed output
+``qo_rotation.log``, and the pyskeaf tables of ``calc/soc/`` for the calculated orbits, draws the
+figure of the page and asserts the numbers the page quotes.
 """
 
 import re
@@ -16,10 +17,10 @@ from PAOFLOW.agentic.qo_analysis.orbit_tables import robust_orbits
 from PAOFLOW.agentic.qo_analysis.skeaf_output import read_orbits
 
 palette = {'11,12': '#004488', '13,14': '#D55E00', '15,16': '#FFC20A', '17,18': '#009E73'}
-pairs = {b: f'{b - 1 + b % 2},{b + b % 2}' for b in range(11, 19)}  # Kramers pairs, as in main.py
-orbits = robust_orbits(read_orbits('quantum-oscillations/pyskeaf', list(pairs), '0', pairs), 50)
-table = pd.read_csv('qo_analysis/sweep/sweep_match_table.csv', dtype={'group': str})
-table_100 = pd.read_csv('qo_analysis/sweep/sweep_match_table_N100.csv')
+pairs = {b: f'{b - 1 + b % 2},{b + b % 2}' for b in range(11, 19)}  # Kramers pairs (qo_rotation.py)
+orbits = robust_orbits(read_orbits('calc/soc', list(pairs), '0', pairs), 50)
+table = pd.read_csv('qo_rotation/sweep/sweep_match_table.csv', dtype={'group': str})
+table_100 = pd.read_csv('qo_rotation/sweep/sweep_match_table_N100.csv')
 
 # Calculated orbits over the measured peaks, matched peaks open, unmatched crossed.
 fig, ax = plt.subplots(figsize=(6.4, 5.2))
@@ -37,8 +38,8 @@ ax.legend(fontsize=7.5, loc='lower right', markerscale=1.5, framealpha=0.9)
 fig.tight_layout()
 fig.savefig('nbsn2_sweep_overlay.png', dpi=150)
 
-# The tables of direction_analysis as main.py printed them: {(first, second): {label: row}}
-log = open('main.log').read()
+# The tables of direction_analysis as qo_rotation.py printed them: {(first, second): {label: row}}
+log = open('qo_rotation.log').read()
 chance = [int(p) for p in re.findall(r'log-uniform (\d+) \+/- \d+ %, angle-shuffled (\d+)', log)[0]]
 chance_100 = int(re.findall(r'log-uniform (\d+) \+/-', log)[1])
 anisotropy, pair = {}, None

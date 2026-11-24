@@ -1,38 +1,32 @@
-# Gapped graphene (tight-binding model): shift current and second-harmonic generation
+# Gapped graphene model: shift current and SHG
 
-The honeycomb tight-binding model with a sublattice potential (`delta = 1 eV`, `t = 2.7 eV`) is
-the simplest crystal without inversion symmetry: its point group is D3h with `a_1` along `x`.
-`PAOFLOW.nonlinear_optics` evaluates, from the real-space Hamiltonian `HRs` of the model and the
-orbital centres, the shift current, the injection currents and the SHG susceptibility of the
-sheet (`twoD=True`: nm µA/V² and pm²/V, the slab height being the 10 alat vacuum of the model).
-No DFT run: the model is `PAOFLOW(model={'label': 'graphene', ...})`.
+The honeycomb tight-binding model with a 1 eV sublattice gap (point group D3h): PAOFLOW computes
+the shift current, the injection currents and the second-harmonic susceptibility of the sheet
+with `PAOFLOW.nonlinear_optics`, checks the selection rules yyy = -yxx = -xxy and xxx = 0, and
+repeats the run on the model without the gap, where inversion makes every response vanish. No DFT
+run: the model is built in code.
 
 ## Run it
 
-- **PAOFLOW Studio**: Setup tab, *Examples…*, pick this case and a folder name; the Runs tab
-  lists the step below.
-- **Command line**: `paoflow-gen --example graphene_nlo_model` copies the case into
-  `./graphene_nlo_model`; then run the step in that folder.
+- **PAOFLOW Studio**: *Examples…* → `graphene_nlo_model`. Studio copies the case, lists its scripts and runs the steps below in the Runs tab.
+- **Command line**: `paoflow-gen --example graphene_nlo_model` copies the case into `./graphene_nlo_model`; run the steps below in that folder.
+- **Python**: `main.py` is the workflow; read it to change a call.
 
 ## Steps
 
-1. `python graphene_nonlinear.py`: 300 × 300 k-points, 601 photon energies; a few seconds on one
-   core. Writes `output/`.
+| step | command | run time |
+| ---- | ------- | -------- |
+| Shift current, injection currents and SHG of gapped graphene, with and without inversion | `python main.py > main.log` | under a minute on one core |
 
-## What to look at (`output/`)
+## Outputs
 
-- `shift_yyy.dat`, `shift_yxx.dat`, `shift_xxy.dat`: the D3h selection rules
-  σ^{yyy} = −σ^{yxx} = −σ^{xxy} hold to machine precision and σ^{xxx} = 0 (`shift_xxx.dat`);
-  the spectrum starts at the 1 eV gap (K point) with a peak of 14.7 nm µA/V² at 1.07 eV.
-- `shgr_yyy.dat`, `shgi_yyy.dat`, `shga_yyy.dat`: Re, Im and |χ^{(2)}| with the two-photon
-  resonance at half the gap (0.5 eV) and the one-photon resonance at 1 eV; the same relations
-  as the shift current hold between the components.
-- `shiftm_*.dat`, `injectm_*.dat` vanish (time-reversal symmetry) and `injectc_*.dat`
-  vanishes by the mirror symmetry (no circular photogalvanic effect in a non-gyrotropic group).
+- `output/shift_<abc>.dat`, `output/shiftm_<abc>.dat`: shift current and magnetic shift current (photon energy in eV, nm µA/V²), for `abc` = `yyy`, `yxx`, `xxy`, `xxx`.
+- `output/injectc_<abc>.dat`, `output/injectm_<abc>.dat`: circular and magnetic injection currents (nm A V⁻² s⁻¹).
+- `output/shgr_<abc>.dat`, `output/shgi_<abc>.dat`, `output/shga_<abc>.dat`: real part, imaginary part and modulus of the SHG susceptibility (pm²/V).
+- `output_inv/`: the same files for the centrosymmetric model, component `yyy` only.
+- `main.log`: the symmetry checks printed by `main.py`.
 
-`delta = 0` (graphene) restores inversion and every response vanishes. The figure of this case in
-the non-linear optics validation report (`examples/cases/gaas_nlo/REPORT.md`, Fig. 1) is drawn by
-`make_report_figures.py` of the case `gaas_nlo` from this `output/` folder when the two cases sit
-in the same parent folder. See `docs/internals/nonlinear-optics.md` for the formulas and
-conventions; the other tight-binding models are listed in the README of the case
-`graphene_tb_model`.
+The case `gaas_nlo` draws Fig. 1 of its validation report from `output/` when the two cases sit in
+the same folder.
+
+Explained in: [How to compute the non-linear optical response of a tight-binding model](https://paoflow.readthedocs.io/en/latest/learn/howtos/nonlinear-optics-model.html)

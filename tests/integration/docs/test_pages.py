@@ -1,11 +1,20 @@
-"""Re-run the tutorial notebooks and how-to scripts of the website.
+"""Re-run the tutorial notebooks and how-tos of the website on their base cases.
 
-The docs build does not execute the pages (``nb_execution_mode = 'off'``), so this test is what
-notices that a page's code no longer runs, or that a number the page quotes has changed: each
-page ends with asserts of those numbers (a ``remove-cell`` cell in a notebook, the end of a
-how-to's ``figures.py``). A how-to runs as ``python main.py > main.log`` followed by
-``python figures.py``. Each case runs in a scratch directory with the release asset of the page,
-so the committed outputs and figures are never touched.
+Every tutorial and how-to is built on one case of ``examples/cases``, which its opening tip names
+(``paoflow-gen --example <case>``). The docs build does not execute the pages
+(``nb_execution_mode = 'off'``), so this test is what notices that a page's code no longer runs,
+or that a number the page quotes has changed: each page ends with asserts of those numbers (a
+``remove-cell`` cell in a notebook, the end of a how-to's figures script).
+
+- A tutorial makes the PAOFLOW calls of its case's driver: the ``main.py`` that ``paoflow-gen``
+  and Studio write from the answers of a generator case, or the ``main.py`` of a scripts case.
+  :func:`test_tutorial_follows_its_case` compares them without running anything.
+- A how-to shows one workflow script of its case with ``literalinclude`` (``main.py``, or
+  ``<name>.py`` when several pages share the case). It runs as ``python main.py > main.log`` in a
+  copy of the case, followed there by the page's figures script,
+  ``docs/learn/howtos/<page>/figures.py``, which draws the figures and asserts the numbers.
+
+Each page runs in a scratch directory, so the committed outputs and figures are never touched.
 """
 
 from __future__ import annotations
@@ -13,6 +22,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,66 +48,207 @@ ASSETS = {  # archive -> (release tag, sha256)
         'a3515fa9ab519216b153c93971405bd02ddfdf9976f62257ccae4e9f0ce48426',
     ),
 }
-UNWRITTEN = {'tutorial03'}  # stub without stored outputs; add it to the test once it is written
-# how-tos whose main.py exceeds the run-time budget of the learn skill (5 min on 4
-# cores): their asset folder holds what main.py writes, so figures.py runs on it on every pull
-# request, and the <task>-workflow case that runs main.py is marked slow
+# shortcut: until the case-data release (PR 3 of docs-restructure-plan.md) a how-to reads its
+# inputs from the tutorial-assets archives; each entry extracts a folder of an archive into the
+# copy of the case: page -> [(archive, folder in the archive, destination in the case copy)]
+SILICON = [('tutorial_assets.tar.gz', 'tutorial01', '.')]  # silicon.save with the projwfc.x output
+DATA: dict[str, list[tuple[str, str, str]]] = {
+    'plotting': [('howto_assets.tar.gz', 'plotting/si', 'output')],
+    'sparse-truncation': SILICON,
+    'sparse-states': SILICON,
+    'twisted-bilayer': [('howto_assets.tar.gz', 'twisted-bilayer', '.')],
+}
+# notebooks that are not run: stubs, and pages whose case data are not published yet
+UNWRITTEN = {'tutorial01', 'tutorial03'}
+# how-tos whose workflow exceeds the run-time budget of the learn skill (5 min on 4 cores): their
+# DATA hold what the workflow writes, so the figures script runs on it on every pull request, and
+# the <page>-workflow case that runs the workflow is marked slow
 PRECOMPUTED = {'twisted-bilayer'}
 TIMEOUT = 1800  # s; catches a hung page, far above the budget
 HIDDEN = {'hide-input', 'remove-cell'}  # plotting and asserts: not part of the workflow
+TIP = re.compile(r':::\{tip\}\n(.*?)\n:::', re.S)
+EXAMPLE = re.compile(r'paoflow-gen --example (\w+)')
+INCLUDE = re.compile(r'^```\{literalinclude\}\s+(\S+)', re.M)
 
 
-def paoflow_calls(source: str) -> list[str]:
-    """The PAOFLOW calls of some code in source order: the constructor and every method."""
+def markdown(page: Path) -> str:
+    """The Markdown of a page: the file, or the Markdown cells of a notebook."""
+    if page.suffix != '.ipynb':
+        return page.read_text()
+    cells = json.loads(page.read_text())['cells']
+    return '\n'.join(''.join(c['source']) for c in cells if c['cell_type'] == 'markdown')
+
+
+def base_case(page: Path):
+    """The case named by the first tip of the page."""
+    from PAOFLOW.gen.cases import find_case
+
+    tip = TIP.search(markdown(page))
+    found = EXAMPLE.search(tip.group(1)) if tip else None
+    if found is None:
+        pytest.fail(f'{page}: the first tip names no case (paoflow-gen --example <case>)')
+    return find_case(found.group(1))
+
+
+def driver(case) -> str:
+    """Source of the case's driver: generated from its answers, or its own ``main.py``."""
+    if case.scripts:
+        return (case.folder / 'main.py').read_text()
+    from PAOFLOW.gen.outputs import workflow_outputs
+    from PAOFLOW.gen.questions import WORKFLOWS
+    from PAOFLOW.gen.questions.model import Context
+    from PAOFLOW.gen.questions.resolve import resolve_form
+
+    form = resolve_form(WORKFLOWS[case.workflow], case.answers, Context(workdir=str(case.folder)))
+    return next(
+        f for f in workflow_outputs(case.workflow, form.config) if f.path == 'main.py'
+    ).content()
+
+
+def _constants(tree: ast.Module) -> dict[str, object]:
+    """Module-level ``NAME = <literal>`` and ``A, B = <literals>`` assignments."""
+    found = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except ValueError:
+            continue
+        target = node.targets[0]
+        if isinstance(target, ast.Name):
+            found[target.id] = value
+        elif isinstance(target, ast.Tuple) and isinstance(value, tuple):
+            found.update({t.id: v for t, v in zip(target.elts, value) if isinstance(t, ast.Name)})
+    return found
+
+
+def _value(node: ast.expr, constants: dict[str, object]) -> object:
+    """The literal value of an argument, with module constants resolved; None if not literal."""
+    try:
+        return ast.literal_eval(node)
+    except ValueError:
+        pass
+    if isinstance(node, ast.Name) and node.id in constants:
+        return constants[node.id]
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+        try:
+            return constants[node.value.id][ast.literal_eval(node.slice)]
+        except (KeyError, ValueError, IndexError, TypeError):
+            return None
+    return None
+
+
+def paoflow_calls(source: str) -> list[tuple[str, dict[str, object]]]:
+    """The PAOFLOW calls of some code in source order: the constructor and every method, with
+    their literal arguments (positional ones keyed by position). Arguments that are not literal
+    (paths built at run time, variables) are kept as None."""
     from PAOFLOW.PAOFLOW import PAOFLOW
 
     names = {m for m in dir(PAOFLOW) if not m.startswith('_')} | {'PAOFLOW'}
-    calls = [
-        node
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr in names
+    tree = ast.parse(source)
+    constants = _constants(tree)
+    calls = sorted(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in names
+        ),
+        key=lambda c: (c.lineno, c.col_offset),
+    )
+    return [
+        (
+            call.func.attr,
+            {
+                **{i: _value(a, constants) for i, a in enumerate(call.args)},
+                **{k.arg: _value(k.value, constants) for k in call.keywords},
+            },
+        )
+        for call in calls
     ]
-    return [ast.unparse(c) for c in sorted(calls, key=lambda c: (c.lineno, c.col_offset))]
 
 
-def _workflow_matches(notebook: Path) -> None:
-    """``tutorialNN/main.py`` makes the same PAOFLOW calls as the visible cells of the notebook."""
+def compare_calls(expected: str, found: str) -> list[str]:
+    """Differences between the PAOFLOW calls of ``found`` and those of the driver ``expected``.
+
+    Methods must come in the same order with the same literal arguments; an argument that the
+    driver does not give as a literal (``savedir``, ``workpath``: paths of the run) is not
+    compared, so the page may give it as it needs or leave it out.
+    """
+    driver_calls, page_calls = paoflow_calls(expected), paoflow_calls(found)
+    problems = []
+    if [m for m, _ in driver_calls] != [m for m, _ in page_calls]:
+        problems.append(
+            'methods differ:\n  driver: %s\n  page:   %s'
+            % (' '.join(m for m, _ in driver_calls), ' '.join(m for m, _ in page_calls))
+        )
+        return problems
+    for (method, want), (_, got) in zip(driver_calls, page_calls):
+        free = {key for key, value in want.items() if value is None}
+        want = {k: v for k, v in want.items() if k not in free}
+        got = {k: v for k, v in got.items() if k not in free}
+        if want != got:
+            problems.append(f'{method}: driver {want}, page {got}')
+    return problems
+
+
+def _notebooks() -> list[Path]:
+    return sorted(PAGES.glob('tutorials/tutorial*.ipynb'))
+
+
+@pytest.mark.parametrize('notebook', _notebooks(), ids=lambda p: p.stem)
+def test_tutorial_follows_its_case(notebook: Path) -> None:
+    """The visible cells of a tutorial make the PAOFLOW calls of its case's driver."""
+    if notebook.stem == 'tutorial03':
+        pytest.skip('stub')
     cells = json.loads(notebook.read_text())['cells']
     visible = '\n'.join(
         ''.join(c['source'])
         for c in cells
         if c['cell_type'] == 'code' and not HIDDEN & set(c['metadata'].get('tags', []))
     )
-    script = notebook.parent / notebook.stem / 'main.py'
-    if not script.is_file():
-        pytest.fail(f'no {script}', pytrace=False)
-    expected, found = paoflow_calls(visible), paoflow_calls(script.read_text())
-    if found != expected:
+    case = base_case(notebook)
+    problems = compare_calls(driver(case), visible)
+    if problems:
         pytest.fail(
-            f'{script} does not make the PAOFLOW calls of {notebook.name}:\n'
-            + '\n'.join(
-                f'  notebook: {a}\n  main.py:  {b}' for a, b in zip(expected, found) if a != b
-            )
-            + f'\n  ({len(expected)} calls in the notebook, {len(found)} in main.py)',
+            f'{notebook.name} does not make the PAOFLOW calls of the driver of {case.name}:\n'
+            + '\n'.join(problems),
             pytrace=False,
         )
 
 
+def _howtos() -> list[Path]:
+    return sorted(PAGES.glob('howtos/*.md'))
+
+
+def workflow_script(page: Path) -> Path:
+    """The one script of the base case that the how-to shows with ``literalinclude``."""
+    targets = {(page.parent / t).resolve() for t in INCLUDE.findall(page.read_text())}
+    if len(targets) != 1:
+        pytest.fail(f'{page.name} includes {len(targets)} scripts, not 1', pytrace=False)
+    return targets.pop()
+
+
+def figures_script(page: Path) -> Path:
+    """The figures and asserts of a how-to: ``docs/learn/howtos/<page>/figures.py``."""
+    return page.with_suffix('') / 'figures.py'
+
+
 def _cases() -> list:
     cases = [
-        pytest.param(p, 'notebook', id=p.stem)
-        for p in sorted(PAGES.glob('tutorials/tutorial*.ipynb'))
-        if p.stem not in UNWRITTEN
+        pytest.param(p, 'notebook', id=p.stem) for p in _notebooks() if p.stem not in UNWRITTEN
     ]
-    for folder in sorted(p.parent for p in PAGES.glob('howtos/*/main.py')):
-        if folder.name in PRECOMPUTED:
-            cases.append(pytest.param(folder, 'figures', id=folder.name))
+    for page in _howtos():
+        if INCLUDE.search(page.read_text()) is None:
+            continue  # index
+        if page.stem in PRECOMPUTED:
+            cases.append(pytest.param(page, 'figures', id=page.stem))
             slow = pytest.mark.slow
-            cases.append(pytest.param(folder, 'scripts', id=f'{folder.name}-workflow', marks=slow))
+            cases.append(pytest.param(page, 'scripts', id=f'{page.stem}-workflow', marks=slow))
         else:
-            cases.append(pytest.param(folder, 'scripts', id=folder.name))
+            cases.append(pytest.param(page, 'scripts', id=page.stem))
     return cases
 
 
@@ -117,8 +268,21 @@ def _archive(name: str) -> Path:
     return ensure_assets_available(source)
 
 
+def _extract(archive: str, folder: str, destination: Path) -> None:
+    """Extract ``folder/`` of a release archive into ``destination`` (without the prefix)."""
+    prefix = folder.rstrip('/') + '/'
+    with tarfile.open(_archive(archive), 'r:gz') as tar:
+        members = []
+        for member in tar.getmembers():
+            if member.name.startswith(prefix):
+                member.name = member.name[len(prefix) :]
+                members.append(member)
+        if not members:
+            pytest.fail(f'{archive} has no folder {folder}', pytrace=False)
+        tar.extractall(destination, members=members, filter='data')
+
+
 def _run_notebook(path: Path, workdir: Path) -> None:
-    _workflow_matches(path)
     nbclient = pytest.importorskip('nbclient')
     nbformat = pytest.importorskip('nbformat')
     # the setup cell extracts its input from this archive instead of downloading it again
@@ -133,11 +297,11 @@ def _run_notebook(path: Path, workdir: Path) -> None:
     client.execute()
 
 
-def _run(script: Path, cwd: Path, log: Path | None = None) -> None:
+def _run(script: str, cwd: Path, log: Path | None = None) -> None:
     """Run one script in ``cwd``; with ``log``, save its printed output there."""
     env = {**os.environ, 'MPLBACKEND': 'Agg'}
     run = subprocess.run(
-        [sys.executable, script.name],
+        [sys.executable, script],
         cwd=cwd,
         env=env,
         capture_output=True,
@@ -150,21 +314,19 @@ def _run(script: Path, cwd: Path, log: Path | None = None) -> None:
         pytest.fail(f'{script} failed:\n{run.stdout[-3000:]}\n{run.stderr[-5000:]}', pytrace=False)
 
 
-def _run_howto(folder: Path, mode: str, workdir: Path) -> None:
-    # a how-to reads its own folder of the how-to archive, or the DFT data of the tutorials
-    with tarfile.open(_archive('howto_assets.tar.gz'), 'r:gz') as tar:
-        members = [m for m in tar.getmembers() if m.name.startswith(f'{folder.name}/')]
-        tar.extractall(workdir, members=members, filter='data')
-    if mode == 'figures':  # the asset folder holds the outputs and main.log of main.py
-        precomputed = workdir / folder.name
-        shutil.copy(folder / 'figures.py', precomputed)
-        _run(precomputed / 'figures.py', precomputed)
-        return
-    with tarfile.open(_archive('tutorial_assets.tar.gz'), 'r:gz') as tar:
-        tar.extractall(workdir, filter='data')
-    shutil.copytree(folder, workdir, dirs_exist_ok=True)
-    _run(workdir / 'main.py', workdir, log=workdir / 'main.log')
-    _run(workdir / 'figures.py', workdir)
+def _run_howto(page: Path, mode: str, workdir: Path) -> None:
+    from PAOFLOW.gen.cases import copy_case
+
+    case = base_case(page)
+    script = workflow_script(page)
+    if script.parent != case.folder:
+        pytest.fail(f'{page.name} shows {script}, not a script of its case {case.name}')
+    copy_case(case, workdir)
+    for archive, folder, destination in DATA.get(page.stem, []):
+        _extract(archive, folder, workdir / destination)
+    if mode == 'scripts':
+        _run(script.name, workdir, log=workdir / f'{script.stem}.log')
+    _run(str(figures_script(page)), workdir)
 
 
 @pytest.mark.parametrize(('page', 'mode'), _cases())

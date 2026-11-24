@@ -14,9 +14,9 @@ bands (``calc/soc/qo_EF_0_freqvsangle_1[1-8].out.gz``, 49^3 BXSF grid, azimuth 2
 0-90 deg in 90 angles) and ``experiment/`` the measured tables (``data/exp_sweep_peaks.csv``,
 ``data/exp_LK_table.csv``).
 
-It also holds ``twisted-bilayer/``, what ``docs/learn/howtos/twisted-bilayer/main.py``
+It also holds ``twisted-bilayer/``, what ``examples/cases/tbg_unfold/twisted_bilayer.py``
 writes, because running it takes longer than the page budget (6 min on 4 cores): the page test
-runs ``figures.py`` inside this folder. Make it by running, in an empty directory,
+runs ``docs/learn/howtos/twisted-bilayer/figures.py`` inside this folder. Make it by running, in an empty directory,
 ``OMP_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=4 python main.py > main.log``, and pass that directory,
 with the output files and ``main.log``, as ``--twisted-bilayer``.
 
@@ -88,7 +88,7 @@ def main() -> None:
         '--twisted-bilayer',
         type=Path,
         required=True,
-        help='twisted-bilayer/ written by docs/learn/howtos/twisted-bilayer/main.py',
+        help='twisted-bilayer/ written by examples/cases/tbg_unfold/twisted_bilayer.py',
     )
     parser.add_argument(
         '--out', type=Path, default=Path(__file__).resolve().parent / 'howto_assets.tar.gz'

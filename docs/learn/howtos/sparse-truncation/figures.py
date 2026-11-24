@@ -1,8 +1,10 @@
 """Figures and checks of the how-to "How to choose the truncation of the sparse Hamiltonian".
 
-Run it after ``python main.py > main.log``, in the same directory: it reads the band files,
-``sparse.log`` and ``hamiltonian.npz`` of the runs and ``main.log``, draws ``hoppings.png``,
-``degeneracy.png`` and ``convergence.png`` and asserts the numbers the page quotes.
+Run it after ``python sparse_truncation.py > sparse_truncation.log``, in the folder of that run, by
+the path of this script (``python <PAOFLOW>/docs/learn/howtos/sparse-truncation/figures.py``): it
+reads the band files, ``sparse.log`` and ``hamiltonian.npz`` of the runs and
+``sparse_truncation.log``, draws ``hoppings.png``, ``degeneracy.png`` and ``convergence.png`` and
+asserts the numbers the page quotes.
 """
 
 import json
@@ -43,7 +45,8 @@ print('rcut=30.0:', log_value('output_rcut30', 'cutoff radius (Bohr)'))
 print('largest band shift within 2 eV of the VBM (meV):')
 for key, value in sorted(shift.items(), key=lambda kv: -kv[0]):
     print(f'  {key!s:>8}  {1000 * value:6.1f}')
-too_long = re.search(r'^bond_order=48: (.*)$', Path('main.log').read_text(), re.M).group(1)
+log = Path('sparse_truncation.log').read_text()
+too_long = re.search(r'^bond_order=48: (.*)$', log, re.M).group(1)
 
 # ---- figure: every hopping against its bond length, inside the range the grid represents
 archive = np.load('output_full/hamiltonian.npz')

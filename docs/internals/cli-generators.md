@@ -51,7 +51,7 @@ The tests in `tests/unit/gen/` keep the two routes identical:
 `PAOFLOW.gen.outputs` lists the files of a workflow before writing (`workflow_outputs`) and its commands
 (`run_plan`). Some defaults come from the QE save and the `pw.x` template (`PAOFLOW.gen.system_summary`):
 `ibrav`, spin-orbit and 2D; for the electron–phonon workflow, metal, `nelec`, `nbnd` and the coupling source.
-See [the browser interface](../tutorials/howtos/browser-gui.md).
+See [the browser interface](../studio/browser-gui.md).
 
 **Errors under MPI.** Every driver (`main.py`, `main.acbn0.py`, `main.phonon.py`, `main.raman.py`,
 `main.sscha.py` and the electron–phonon drivers that run under `mpirun`) ends with

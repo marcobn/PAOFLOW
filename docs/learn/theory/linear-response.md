@@ -199,7 +199,7 @@ The dielectric tensor is that of independent Kohn–Sham electrons, and each app
 
 ## Used in
 
-- [Tutorial 03](../tutorials/tutorial03.ipynb): the spin Hall conductivity, Rashba–Edelstein tensors, anomalous Hall and charge conductivities of `linear_response()`, equations (1) to (5).
+- [Linear response](../tutorials/tutorial03.ipynb): the spin Hall conductivity, Rashba–Edelstein tensors, anomalous Hall and charge conductivities of `linear_response()`, equations (1) to (5).
 
 ## References
 
