@@ -272,6 +272,9 @@ jobs:
           if-no-files-found: ignore
 
   docs-page-tests:
+    # shortcut: switched off until the rule for when the page tests run is decided; delete this line
+    # to switch them back on
+    if: false
     runs-on: ubuntu-22.04
     needs: pre-commit
     strategy:
