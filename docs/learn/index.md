@@ -44,7 +44,7 @@ The physics behind each result: equations, derivations and approximations.
 
 ::::
 
-Every tutorial and how-to is built on one case of `examples/cases`, named in the tip at its top: the case holds the inputs and the code the page explains, and PAOFLOW Studio (*Examples…*) or `paoflow-gen --example <case>` copies it into a folder of your own.
+Every tutorial and how-to is built on one case of `examples/cases`, named in the tip at its top: the case holds the inputs and the code the page explains, and PAOFLOW Studio (*Examples…*) or `paoflow-gen --example <case>` copies it into a folder of your own. [Examples](examples.md) lists every case and the pages built on it.
 
 ```{toctree}
 :hidden:
@@ -53,4 +53,5 @@ Every tutorial and how-to is built on one case of `examples/cases`, named in the
 tutorials/index
 howtos/index
 theory/index
+examples
 ```

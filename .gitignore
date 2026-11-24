@@ -60,6 +60,7 @@ cover/
 docs/_build/
 docs/api/generated/
 docs/api/autoapi/
+docs/learn/examples.md
 
 # PyBuilder
 .pybuilder/

@@ -114,7 +114,8 @@ user-invocable: true
                           campaign/: same layout, orchestrating and watching campaigns on several machines
                           (plan, preflight, pilot, watcher, interventions within report/act/ask)
     docs/                 Sphinx + MyST site (Read the Docs): learn/ (tutorials/, howtos/, theory/; each tutorial
-                          and how-to names its base case in its opening tip), studio/ (PAOFLOW Studio), api/,
+                          and how-to names its base case in its opening tip; examples.md, the catalogue of the
+                          cases, is written by conf.py from case.json), studio/ (PAOFLOW Studio), api/,
                           internals/ (developer notes)
     .github/              CI workflows; assets_generation/: the integration-test tarballs, and cases/ (build and
                           upload the case data, release case-data)
