@@ -257,6 +257,13 @@ export class SetupView {
       placeholder: 'Filter: system, property or workflow (e.g. spin Hall, 2D, landauer)',
     });
     const target = h('input', { type: 'text', class: 'grow', placeholder: 'folder to create' });
+    const withData = h('input', { type: 'checkbox', disabled: true });
+    const dataRow = h(
+      'label',
+      { class: 'row muted' },
+      withData,
+      h('span', {}, 'Use the precomputed data of the case (downloaded; no QE runs)'),
+    );
     const list = h('div', { class: 'case-list' });
     const render = () => {
       clear(list);
@@ -275,6 +282,9 @@ export class SetupView {
               onclick: () => {
                 chosen = item;
                 target.value = joinPath(this.workdir, item.name);
+                withData.disabled = !item.data;
+                withData.checked = item.data;
+                dataRow.classList.toggle('muted', !item.data);
                 render();
               },
             },
@@ -304,6 +314,7 @@ export class SetupView {
       filter,
       list,
       h('div', { class: 'row' }, h('span', {}, 'Copy into'), target),
+      dataRow,
     );
     const folder = await dialog({
       title: 'Start from an example',
@@ -319,13 +330,18 @@ export class SetupView {
       toast('Pick a case first', 'warn');
       return;
     }
-    await this.copyExample(chosen, folder);
+    await this.copyExample(chosen, folder, false, withData.checked);
   }
 
-  async copyExample(item, folder, overwrite = false) {
+  async copyExample(item, folder, overwrite = false, withData = false) {
     let result;
     try {
-      result = await api.post('/api/cases/copy', { name: item.name, folder, overwrite });
+      result = await api.post('/api/cases/copy', {
+        name: item.name,
+        folder,
+        overwrite,
+        with_data: withData,
+      });
     } catch (error) {
       if (error.status === 409 && !overwrite) {
         const conflicts = (error.details.conflicts || []).join(', ');
@@ -337,7 +353,7 @@ export class SetupView {
             { label: 'Replace', kind: 'danger', value: true },
           ],
         });
-        if (replace) await this.copyExample(item, folder, true);
+        if (replace) await this.copyExample(item, folder, true, withData);
         return;
       }
       toast(error.message, 'bad');
@@ -363,7 +379,9 @@ export class SetupView {
     this.app.runs?.setPlan?.(result.folder, result.plan, result.workflow);
     await this.openFolder(result.folder);
     toast(
-      `${result.title}: copied into ${result.folder}. Run the QE steps in Runs, then write the drivers here.`,
+      withData
+        ? `${result.title}: copied into ${result.folder} with its DFT output. Write the drivers here, then run them in Runs.`
+        : `${result.title}: copied into ${result.folder}. Run the QE steps in Runs, then write the drivers here.`,
       'ok',
       9000,
     );

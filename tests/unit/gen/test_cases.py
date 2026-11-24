@@ -215,3 +215,65 @@ def test_case_docs_match_the_pages():
     unknown = sorted(page for page in listed if page not in named)
     assert not unknown, 'case.json docs entries that are no Learn page: %s' % unknown
     assert listed == named, sorted(set(listed.items()) ^ set(named.items()))
+
+
+WITH_DATA = [case for case in CASES if case.data]
+
+
+@pytest.mark.parametrize('case', WITH_DATA, ids=[case.name for case in WITH_DATA])
+def test_case_data_pins(case):
+    """A data pin names a versioned archive of this case (never replaced, so the name changes
+    with the content) and its full checksum."""
+    assert re.fullmatch(re.escape(case.name) + r'-v[1-9]\d*\.tar\.gz', case.data['file'])
+    assert re.fullmatch(r'[0-9a-f]{64}', case.data['sha256'])
+
+
+def test_case_data_fetched_and_checked(tmp_path, monkeypatch):
+    """The archive comes from the cache when its checksum matches, a download that does not match
+    is refused, the extraction keeps differing files unless told otherwise, and the plan of a copy
+    with data starts after the QE steps."""
+    import dataclasses
+    import hashlib
+    import io
+    import tarfile
+
+    import PAOFLOW.gen.cases as cases_module
+    from PAOFLOW.gen.cases import case_data_archive, fetch_case_data
+
+    run = tmp_path / 'run'
+    (run / 'silicon.save').mkdir(parents=True)
+    (run / 'silicon.save' / 'data-file-schema.xml').write_text('<qes/>\n')
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    archive = cache / 'si_bands_transport-v1.tar.gz'
+    with tarfile.open(archive, 'w:gz') as tar:
+        tar.add(run / 'silicon.save', arcname='silicon.save')
+    sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
+    case = dataclasses.replace(
+        find_case('si_bands_transport'), data={'file': archive.name, 'sha256': sha256}
+    )
+    assert case_data_archive(case, cache) == archive
+    copy = tmp_path / 'copy'
+    written = fetch_case_data(case, copy, cache=cache)
+    assert [str(path) for path in written] == ['silicon.save/data-file-schema.xml']
+    assert (copy / 'silicon.save' / 'data-file-schema.xml').read_text() == '<qes/>\n'
+    (copy / 'silicon.save' / 'data-file-schema.xml').write_text('mine\n')
+    with pytest.raises(FileExistsError) as error:
+        fetch_case_data(case, copy, cache=cache)
+    assert error.value.args[1] == ['silicon.save/data-file-schema.xml']
+    assert (copy / 'silicon.save' / 'data-file-schema.xml').read_text() == 'mine\n'
+    fetch_case_data(case, copy, overwrite=True, cache=cache)
+    assert (copy / 'silicon.save' / 'data-file-schema.xml').read_text() == '<qes/>\n'
+
+    plan = case_plan(case, with_data=True)
+    assert plan[0].action == 'setup:run' and len(plan) == len(case_plan(case)) - len(case.qe)
+
+    archive.write_bytes(b'stale')  # a cached file with another checksum is downloaded again
+    monkeypatch.setattr(
+        cases_module.urllib.request, 'urlopen', lambda url: io.BytesIO(b'not the archive')
+    )
+    with pytest.raises(ValueError, match='checksum'):
+        case_data_archive(case, cache)
+    assert sorted(p.name for p in cache.iterdir()) == [archive.name]  # no partial download left
+    with pytest.raises(ValueError, match='no data'):
+        case_data_archive(dataclasses.replace(case, data={}), cache)

@@ -16,9 +16,10 @@ Hamiltonian and the choices of the states solved per k-point.
 - **Python**: `main.py` is the workflow; `sparse_truncation.py` and `sparse_states.py` are the
   variations of the two how-tos. Read them to change a call.
 
-To skip the QE runs, extract `silicon.save` from `tutorial_assets.tar.gz` of the release
-[tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2):
-`tar xzf tutorial_assets.tar.gz --strip-components=1 tutorial01/silicon.save`.
+To skip the QE runs, copy the case with `paoflow-gen --example si_sparse_backend --with-data`
+(in Studio, *Use the precomputed data of the case*): it extracts `silicon.save`, with the projections of
+`projwfc.x`, from `si_sparse_backend-v1.tar.gz` of the release
+[case-data](https://github.com/marcobn/PAOFLOW/releases/tag/case-data).
 
 ## Steps
 

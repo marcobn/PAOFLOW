@@ -22,9 +22,10 @@ them a custom `TauModel`, all from the PAO Hamiltonian interpolated on a 36Ã—36Ã
 | Atomic projections (read by main.py) | `projwfc.x -in proj.in` | not measured |
 | Transport, doping and resistivity with relaxation-time models | `python main.py > main.log` | 8 min on 1 core, 2.9 GB |
 
-To skip the QE runs, extract `tutorial01/silicon.save` of `tutorial_assets.tar.gz` (release
-[tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2)) into
-this folder.
+To skip the QE runs, copy the case with `paoflow-gen --example si_relaxation_times --with-data`
+(in Studio, *Use the precomputed data of the case*): it extracts `silicon.save`, with the projections of
+`projwfc.x`, from `si_relaxation_times-v1.tar.gz` of the release
+[case-data](https://github.com/marcobn/PAOFLOW/releases/tag/case-data).
 
 ## Outputs
 

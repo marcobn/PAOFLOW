@@ -611,8 +611,9 @@ def case_copy(app: 'GuiApp', payload: dict) -> dict:
     app : GuiApp
         The application.
     payload : dict
-        ``name`` (the case), ``folder`` (destination, relative to the root; created) and
-        ``overwrite`` (bool).
+        ``name`` (the case), ``folder`` (destination, relative to the root; created),
+        ``overwrite`` (bool) and ``with_data`` (bool: also extract the data of the case, its
+        precomputed DFT output, so that the plan starts at the PAOFLOW drivers).
 
     Returns
     -------
@@ -624,10 +625,11 @@ def case_copy(app: 'GuiApp', payload: dict) -> dict:
     Raises
     ------
     HttpError
-        404 for an unknown case, 409 (with ``conflicts``) when files of the case differ in the
-        folder, 400 without a folder.
+        404 for an unknown case, 409 (with ``conflicts``) when files of the case or of its data
+        differ in the folder, 400 without a folder or for data of a case that has none, 502 when
+        the data cannot be downloaded.
     """
-    from ..gen.cases import case_plan, copy_case, find_case
+    from ..gen.cases import case_plan, copy_case, fetch_case_data, find_case
 
     app.require_writable()
     folder = str(payload.get('folder') or '').strip()
@@ -644,6 +646,18 @@ def case_copy(app: 'GuiApp', payload: dict) -> dict:
         raise HttpError(409, 'files of the case differ in the folder', {'conflicts': exc.args[1]})
     except FileNotFoundError as exc:
         raise HttpError(500, str(exc)) from None
+    with_data = bool(payload.get('with_data'))
+    if with_data:
+        if not case.data:
+            raise HttpError(400, 'the case %s has no data' % case.name)
+        try:
+            fetch_case_data(case, destination, overwrite=bool(payload.get('overwrite')))
+        except FileExistsError as exc:
+            raise HttpError(
+                409, 'files of the case data differ in the folder', {'conflicts': exc.args[1]}
+            )
+        except (OSError, ValueError) as exc:
+            raise HttpError(502, 'could not fetch the data of %s: %s' % (case.name, exc)) from None
     return {
         'folder': app.sandbox.relative(destination),
         'written': [str(path) for path in written],
@@ -651,7 +665,7 @@ def case_copy(app: 'GuiApp', payload: dict) -> dict:
         'answers': case.answers,
         'scripts': case.scripts,
         'title': case.title,
-        'plan': [step.to_json() for step in case_plan(case)],
+        'plan': [step.to_json() for step in case_plan(case, with_data=with_data)],
     }
 
 

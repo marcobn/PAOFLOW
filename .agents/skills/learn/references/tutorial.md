@@ -16,20 +16,20 @@ Cells in this order. Headings are numbered so that other pages can link to a ste
    from tarfile import open as open_tar
    from urllib.request import urlretrieve
 
-   savedir = 'tutorial01/silicon.save'
+   savedir = 'silicon.save'
    outputdir = 'output'
 
-   # fetch the input of this tutorial from the release named in the tip, unless it is here already
+   # fetch the DFT output of the case from the release named in the tip, unless it is here already
    if not Path(savedir).is_dir():
-       archive = Path('tutorial_assets.tar.gz')
+       archive = Path('<case>-v<N>.tar.gz')  # the data file of case.json
        if not archive.is_file():
            urlretrieve(
                'https://github.com/marcobn/PAOFLOW/releases/download/'
-               'tutorial-assets-v2/tutorial_assets.tar.gz',
+               'case-data/<case>-v<N>.tar.gz',
                archive,
            )
        with open_tar(archive, 'r:gz') as tar:
-           members = [m for m in tar.getmembers() if m.name.startswith('tutorial01/')]
+           members = [m for m in tar.getmembers() if m.name.startswith('silicon.save/')]
            tar.extractall(members=members, filter='data')
    ```
 5. **One section per step**, each made of:

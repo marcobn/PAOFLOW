@@ -3451,14 +3451,15 @@ def start_from_example(args: argparse.Namespace) -> int:
     ----------
     args : argparse.Namespace
         ``example`` (a case name, or ``list``), ``workdir`` (the destination when not ``.``),
-        ``force`` (replace files that differ).
+        ``force`` (replace files that differ), ``with_data`` (extract the data of the case, its
+        precomputed DFT output, so that the steps start at the PAOFLOW drivers).
 
     Returns
     -------
     int
         Exit status.
     """
-    from .cases import case_plan, copy_case, find_case, list_cases
+    from .cases import case_plan, copy_case, fetch_case_data, find_case, list_cases
     from .outputs import workflow_outputs
     from .questions import WORKFLOWS
     from .questions.model import Context
@@ -3471,12 +3472,19 @@ def start_from_example(args: argparse.Namespace) -> int:
             return 1
         width = max(len(case.name) for case in cases)
         for case in cases:
-            print('%-*s  %s  [%s]' % (width, case.name, case.title, case.workflow))
+            data = ', data' if case.data else ''
+            print('%-*s  %s  [%s%s]' % (width, case.name, case.title, case.workflow, data))
         return 0
     try:
         case = find_case(args.example)
     except KeyError as error:
         sys.stderr.write('%s\n' % error.args[0])
+        return 1
+    with_data = getattr(args, 'with_data', False)
+    if with_data and not case.data:
+        sys.stderr.write(
+            'The case %s has no data (--example list marks the cases that have).\n' % case.name
+        )
         return 1
     destination = os.path.abspath(
         os.path.expanduser(args.workdir if args.workdir != '.' else case.name)
@@ -3491,9 +3499,24 @@ def start_from_example(args: argparse.Namespace) -> int:
         return 1
     print('%s\n%s\n' % (case.title, case.summary))
     print('Copied %d file(s) into %s' % (len(written), destination))
+    if with_data:
+        try:
+            fetched = fetch_case_data(case, Path(destination), overwrite=args.force)
+        except FileExistsError as error:
+            sys.stderr.write(
+                'Files of the case data differ in %s: %s (use --force to replace them).\n'
+                % (destination, ', '.join(error.args[1]))
+            )
+            return 1
+        except (OSError, ValueError) as error:
+            sys.stderr.write('Could not fetch the data of %s: %s\n' % (case.name, error))
+            return 1
+        print('Extracted %d file(s) of %s' % (len(fetched), case.data['file']))
+    plan = case_plan(case, with_data=with_data)
+    nqe = len(plan) - len(case.steps) - (0 if case.scripts else 1)  # QE steps left in the plan
     if case.scripts:
         print('\nSteps, in %s (see README.md):' % destination)
-        for index, step in enumerate(case_plan(case), 1):
+        for index, step in enumerate(plan, 1):
             print('  %d. %s: %s' % (index, step.label, step.command(4)))
         return 0
     form = resolve_form(WORKFLOWS[case.workflow], case.answers, Context(workdir=destination))
@@ -3507,14 +3530,13 @@ def start_from_example(args: argparse.Namespace) -> int:
             continue
         print('Wrote %s' % generated.write(destination))
     print('\nSteps, in %s:' % destination)
-    plan = case_plan(case)
-    for index, step in enumerate(plan[: len(case.qe)], 1):
+    for index, step in enumerate(plan[:nqe], 1):
         print('  %d. %s: %s' % (index, step.label, step.command(4)))
     print(
         '  %d. the drivers written above (see README.md), e.g. mpirun -np 4 python main.py'
-        % (len(case.qe) + 1)
+        % (nqe + 1)
     )
-    for index, step in enumerate(plan[len(case.qe) + 1 :], len(case.qe) + 2):
+    for index, step in enumerate(plan[nqe + 1 :], nqe + 2):
         print('  %d. %s: %s' % (index, step.label, step.command(4)))
     return 0
 
@@ -3583,6 +3605,12 @@ def main(argv: list[str] | None = None) -> int:
         metavar='NAME',
         help='Copy the example case NAME (examples/cases) into ./NAME, or into -d/--workdir when '
         'given, write its drivers and print the steps; --example list shows the cases',
+    )
+    parser.add_argument(
+        '--with-data',
+        action='store_true',
+        help='With --example: also download and extract the data of the case (its precomputed '
+        'DFT output, from the release case-data), so that the steps start at the PAOFLOW drivers',
     )
     args = parser.parse_args(argv)
     if args.example:

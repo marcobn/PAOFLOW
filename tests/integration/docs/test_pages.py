@@ -11,8 +11,13 @@ or that a number the page quotes has changed: each page ends with asserts of tho
   :func:`test_tutorial_follows_its_case` compares them without running anything.
 - A how-to shows one workflow script of its case with ``literalinclude`` (``main.py``, or
   ``<name>.py`` when several pages share the case). It runs as ``python main.py > main.log`` in a
-  copy of the case, followed there by the page's figures script,
+  copy of the case made by ``paoflow-gen --example <case> --with-data`` (on a generator case after
+  the generated ``main.py``), followed there by the page's figures script,
   ``docs/learn/howtos/<page>/figures.py``, which draws the figures and asserts the numbers.
+
+The data of a case (``case.json`` ``data``) come from the release ``case-data`` through the
+download cache of :func:`PAOFLOW.gen.cases.case_data_archive`; an archive placed in that cache
+(``~/.cache/paoflow/case-data``) is used without a download, for data not yet published.
 
 Each page runs in a scratch directory, so the committed outputs and figures are never touched.
 """
@@ -26,42 +31,18 @@ import re
 import shutil
 import subprocess
 import sys
-import tarfile
 from pathlib import Path
 
 import pytest
-
-from tests.integration.qe.assets import ensure_assets_available, resolve_asset_source
 
 pytestmark = pytest.mark.integration
 
 REPO = Path(__file__).resolve().parents[3]
 PAGES = REPO / 'docs' / 'learn'
-URL = 'https://github.com/marcobn/PAOFLOW/releases/download/'
-ASSETS = {  # archive -> (release tag, sha256)
-    'tutorial_assets.tar.gz': (
-        'tutorial-assets-v2',
-        '39940d3e8b02dd77ba914cf05843e4e09a18539c20c665b2f0b5691ed1a9b6e3',
-    ),
-    'howto_assets.tar.gz': (
-        'tutorial-assets-v2',
-        'a3515fa9ab519216b153c93971405bd02ddfdf9976f62257ccae4e9f0ce48426',
-    ),
-}
-# shortcut: until the case-data release (PR 3 of docs-restructure-plan.md) a how-to reads its
-# inputs from the tutorial-assets archives; each entry extracts a folder of an archive into the
-# copy of the case: page -> [(archive, folder in the archive, destination in the case copy)]
-SILICON = [('tutorial_assets.tar.gz', 'tutorial01', '.')]  # silicon.save with the projwfc.x output
-DATA: dict[str, list[tuple[str, str, str]]] = {
-    'plotting': [('howto_assets.tar.gz', 'plotting/si', 'output')],
-    'sparse-truncation': SILICON,
-    'sparse-states': SILICON,
-    'twisted-bilayer': [('howto_assets.tar.gz', 'twisted-bilayer', '.')],
-}
 # notebooks that are not run: stubs, and pages whose case data are not published yet
-UNWRITTEN = {'tutorial01', 'tutorial03'}
-# how-tos whose workflow exceeds the run-time budget of the learn skill (5 min on 4 cores): their
-# DATA hold what the workflow writes, so the figures script runs on it on every pull request, and
+UNWRITTEN = {'tutorial03'}
+# how-tos whose workflow exceeds the run-time budget of the learn skill (5 min on 4 cores): the
+# data of their case hold what the workflow writes, so the figures script runs on it on every pull request, and
 # the <page>-workflow case that runs the workflow is marked slow
 PRECOMPUTED = {'twisted-bilayer'}
 TIMEOUT = 1800  # s; catches a hung page, far above the budget
@@ -211,6 +192,8 @@ def test_tutorial_follows_its_case(notebook: Path) -> None:
     )
     case = base_case(notebook)
     problems = compare_calls(driver(case), visible)
+    if case.data and f'case-data/{case.data["file"]}' not in visible:
+        problems.append(f'the setup cell does not download case-data/{case.data["file"]}')
     if problems:
         pytest.fail(
             f'{notebook.name} does not make the PAOFLOW calls of the driver of {case.name}:\n'
@@ -252,41 +235,14 @@ def _cases() -> list:
     return cases
 
 
-def _archive(name: str) -> Path:
-    """Local copy of a release archive, downloaded once into the test-asset cache."""
-    release, sha256 = ASSETS[name]
-    source = resolve_asset_source(
-        url=f'{URL}{release}/{name}',
-        sha256=sha256,
-        version=release,
-        env_archive_var='PAOFLOW_DOCS_ASSET_ARCHIVE',
-        env_url_var='PAOFLOW_DOCS_ASSET_URL',
-        env_sha256_var='PAOFLOW_DOCS_ASSET_SHA256',
-        env_version_var='PAOFLOW_DOCS_ASSET_VERSION',
-        cache_key=name.removesuffix('.tar.gz'),
-    )
-    return ensure_assets_available(source)
-
-
-def _extract(archive: str, folder: str, destination: Path) -> None:
-    """Extract ``folder/`` of a release archive into ``destination`` (without the prefix)."""
-    prefix = folder.rstrip('/') + '/'
-    with tarfile.open(_archive(archive), 'r:gz') as tar:
-        members = []
-        for member in tar.getmembers():
-            if member.name.startswith(prefix):
-                member.name = member.name[len(prefix) :]
-                members.append(member)
-        if not members:
-            pytest.fail(f'{archive} has no folder {folder}', pytrace=False)
-        tar.extractall(destination, members=members, filter='data')
-
-
 def _run_notebook(path: Path, workdir: Path) -> None:
     nbclient = pytest.importorskip('nbclient')
     nbformat = pytest.importorskip('nbformat')
-    # the setup cell extracts its input from this archive instead of downloading it again
-    shutil.copy(_archive('tutorial_assets.tar.gz'), workdir / 'tutorial_assets.tar.gz')
+    from PAOFLOW.gen.cases import case_data_archive
+
+    case = base_case(path)
+    if case.data:  # the setup cell extracts this archive instead of downloading it again
+        shutil.copy(case_data_archive(case), workdir / case.data['file'])
     notebook = nbformat.read(path, as_version=4)
     client = nbclient.NotebookClient(
         notebook,
@@ -315,16 +271,18 @@ def _run(script: str, cwd: Path, log: Path | None = None) -> None:
 
 
 def _run_howto(page: Path, mode: str, workdir: Path) -> None:
-    from PAOFLOW.gen.cases import copy_case
+    from PAOFLOW.gen.paoflow_driver import main as paoflow_gen
 
     case = base_case(page)
     script = workflow_script(page)
     if script.parent != case.folder:
         pytest.fail(f'{page.name} shows {script}, not a script of its case {case.name}')
-    copy_case(case, workdir)
-    for archive, folder, destination in DATA.get(page.stem, []):
-        _extract(archive, folder, workdir / destination)
+    argv = ['--example', case.name, '--workdir', str(workdir)]
+    if paoflow_gen(argv + (['--with-data'] if case.data else [])) != 0:
+        pytest.fail(f'paoflow-gen --example {case.name} failed', pytrace=False)
     if mode == 'scripts':
+        if not case.scripts and script.name != 'main.py':  # it reads the output of the driver
+            _run('main.py', workdir, log=workdir / 'main.log')
         _run(script.name, workdir, log=workdir / f'{script.stem}.log')
     _run(str(figures_script(page)), workdir)
 

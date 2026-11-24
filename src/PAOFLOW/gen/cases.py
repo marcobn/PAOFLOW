@@ -26,6 +26,10 @@ key                 content
 ``source``          the folder of the former example
 ``docs``            the pages of the website built on the case, relative to ``docs/``
                     (``learn/tutorials/tutorial01.ipynb``); each names the case in its opening tip
+``data``            the data of the case, published once in the release ``case-data`` and never
+                    replaced: ``{"file": "<case>-v<N>.tar.gz", "sha256": ...}``; the archive holds
+                    paths relative to the case folder (a trimmed ``.save``, files too large for the
+                    repository) and :func:`fetch_case_data` extracts it into a copy
 ==================  =====================================================================================
 
 The pseudopotentials live once in ``PSEUDOS/library``; :func:`copy_case` copies them next to the
@@ -35,8 +39,12 @@ of PAOFLOW has no ``examples`` folder, and :func:`cases_root` returns None.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import shutil
+import tarfile
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -51,6 +59,9 @@ SCRIPTS = 'scripts'
 #: Entries of a case folder that a copy leaves behind (local runs, generated basis tables and kept
 #: reference outputs).
 NOT_COPIED = ('Reference', 'output', '__pycache__', 'BASIS_PS', '.ipynb_checkpoints')
+
+#: Release that holds the data of the cases, one archive per case and version.
+DATA_URL = 'https://github.com/marcobn/PAOFLOW/releases/download/case-data/'
 
 
 @dataclass
@@ -82,6 +93,9 @@ class Case:
         Folder of the case that receives the pseudopotentials.
     docs : list of str
         Pages of the website built on the case, relative to ``docs/``.
+    data : dict
+        ``file`` and ``sha256`` of the case's archive in the release ``case-data``; empty for a
+        case without data.
     """
 
     name: str
@@ -97,6 +111,7 @@ class Case:
     steps: list[dict[str, Any]] = field(default_factory=list)
     pseudo_dir: str = '.'
     docs: list[str] = field(default_factory=list)
+    data: dict[str, str] = field(default_factory=dict)
 
     @property
     def scripts(self) -> bool:
@@ -118,6 +133,7 @@ class Case:
             'steps': self.steps,
             'scripts': self.scripts,
             'docs': self.docs,
+            'data': bool(self.data),
         }
 
 
@@ -168,6 +184,8 @@ def load_case(folder: Path) -> Case:
     for step in data.get('steps', []):
         if not step.get('label') or not step.get('command'):
             raise ValueError('%s: every step needs a label and a command' % folder.name)
+    if 'data' in data and not {'file', 'sha256'} <= set(data['data']):
+        raise ValueError('%s: data needs a file and a sha256' % folder.name)
     return Case(
         name=folder.name,
         folder=folder,
@@ -182,6 +200,7 @@ def load_case(folder: Path) -> Case:
         steps=list(data.get('steps', [])),
         pseudo_dir=str(data.get('pseudo_dir', '.')),
         docs=list(data.get('docs', [])),
+        data=dict(data.get('data', {})),
     )
 
 
@@ -221,12 +240,15 @@ def find_case(name: str, root: Path | None = None) -> Case:
     return cases[name]
 
 
-def case_plan(case: Case) -> list[RunStep]:
+def case_plan(case: Case, with_data: bool = False) -> list[RunStep]:
     """The runs of a copied case: its QE steps, the PAOFLOW drivers of its workflow, its steps.
 
     Parameters
     ----------
     case : Case
+    with_data : bool, optional
+        The data of the case were extracted into the copy (:func:`fetch_case_data`): the plan
+        starts at the PAOFLOW drivers, without the QE steps.
 
     Returns
     -------
@@ -244,7 +266,7 @@ def case_plan(case: Case) -> list[RunStep]:
             stdout=step['input'][:-3] + '.out' if step['input'].endswith('.in') else None,
             note='%s must be on the PATH of paoflow-studio' % step['program'],
         )
-        for step in case.qe
+        for step in ([] if with_data and case.data else case.qe)
     ]
     if not case.scripts:
         steps.append(
@@ -343,3 +365,96 @@ def copy_case(
         shutil.copyfile(source, target)
         written.append(relative)
     return written
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open('rb') as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def case_data_archive(case: Case, cache: Path | None = None) -> Path:
+    """The archive of the case's data, downloaded once from ``case-data`` into ``cache``.
+
+    Parameters
+    ----------
+    case : Case
+        A case with ``data``.
+    cache : Path, optional
+        Folder of the downloaded archives (default ``$XDG_CACHE_HOME/paoflow/case-data``, or
+        ``~/.cache/paoflow/case-data``). An archive already there with the pinned checksum is not
+        downloaded again.
+
+    Returns
+    -------
+    Path
+        The archive, its checksum verified.
+
+    Raises
+    ------
+    ValueError
+        If the case has no data, or the download does not match the pinned checksum.
+    urllib.error.URLError
+        If the download fails.
+    """
+    if not case.data:
+        raise ValueError('the case %s has no data' % case.name)
+    if cache is None:
+        base = os.environ.get('XDG_CACHE_HOME') or Path.home() / '.cache'
+        cache = Path(base) / 'paoflow' / 'case-data'
+    archive = cache / case.data['file']
+    if archive.is_file() and _sha256(archive) == case.data['sha256']:
+        return archive
+    cache.mkdir(parents=True, exist_ok=True)
+    partial = archive.with_name(archive.name + '.part')
+    with urllib.request.urlopen(DATA_URL + case.data['file']) as response:
+        with partial.open('wb') as handle:
+            shutil.copyfileobj(response, handle)
+    if _sha256(partial) != case.data['sha256']:
+        partial.unlink()
+        raise ValueError('%s does not match the checksum of case.json' % case.data['file'])
+    partial.replace(archive)
+    return archive
+
+
+def fetch_case_data(
+    case: Case, destination: Path, overwrite: bool = False, cache: Path | None = None
+) -> list[Path]:
+    """Extract the data of a case (:func:`case_data_archive`) into a copy of it.
+
+    Parameters
+    ----------
+    case : Case
+        A case with ``data``.
+    destination : Path
+        The copy of the case (created).
+    overwrite : bool, optional
+        Replace files that exist and differ.
+    cache : Path, optional
+        Folder of the downloaded archives.
+
+    Returns
+    -------
+    list of Path
+        The files of the data, relative to ``destination``.
+
+    Raises
+    ------
+    FileExistsError
+        Without ``overwrite``, if files of the data exist in ``destination`` with another content
+        (``args[1]``: their relative paths); nothing is written then.
+    """
+    with tarfile.open(case_data_archive(case, cache), 'r:gz') as tar:
+        members = [member for member in tar.getmembers() if member.isfile()]
+        conflicts = [
+            member.name
+            for member in members
+            if (destination / member.name).is_file()
+            and (destination / member.name).read_bytes() != tar.extractfile(member).read()
+        ]
+        if conflicts and not overwrite:
+            raise FileExistsError('files of the case data exist in %s' % destination, conflicts)
+        tar.extractall(destination, members=members, filter='data')
+    return [Path(member.name) for member in members]

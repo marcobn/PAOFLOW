@@ -59,5 +59,9 @@
  "docs": [
   "learn/tutorials/tutorial01.ipynb",
   "learn/howtos/plotting.md"
- ]
+ ],
+ "data": {
+  "file": "si_bands_transport-v1.tar.gz",
+  "sha256": "421b2aec7d93045e5ae686104b3201e91ceda37160d1d7ffc78b67248ba1638d"
+ }
 }

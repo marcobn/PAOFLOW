@@ -18,11 +18,16 @@ coefficient and electronic thermal conductivity at constant relaxation time.
 
 | step | command | run time |
 | ---- | ------- | -------- |
-| Self-consistent run | `pw.x -in scf.in` | not measured |
-| Non-self-consistent run on the full k grid | `pw.x -in nscf.in` | not measured |
-| PAOFLOW | `mpirun -np 4 python main.py` | not measured; the basis generation of the first run takes about 2 minutes |
+| Self-consistent run | `pw.x -in scf.in` | under a second on 1 core |
+| Non-self-consistent run on the full k grid | `pw.x -in nscf.in` | about 9 s on 1 core |
+| PAOFLOW | `mpirun -np 4 python main.py` | 1 min 45 s on 1 core with the basis generation of the first run, 5.0 GB |
 | Figures | `python plot.py` (or the Plots tab) | a few seconds |
 | Plots of the bands, DOS and PDOS with GPAO (how-to) | `python plotting.py` | about 10 s on 1 core |
+
+To skip the QE runs, copy the case with `paoflow-gen --example si_bands_transport --with-data`
+(in Studio, *Use the precomputed data of the case*): it extracts `silicon.save`, with the
+wavefunctions that the internal projections read, from `si_bands_transport-v1.tar.gz` of the
+release [case-data](https://github.com/marcobn/PAOFLOW/releases/tag/case-data) (QE 7.4.1).
 
 `main.py` projects on the `standard` basis, which it generates from the pseudopotential in
 `BASIS_PS/` on the first run; choose *projwfc* in the form to use QE's `projwfc.x` instead, and

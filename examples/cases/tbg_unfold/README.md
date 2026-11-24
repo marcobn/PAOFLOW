@@ -27,9 +27,10 @@ velocity of the (4, 3) and (6, 5) twisted cells. No DFT run.
 | Twisted cells (4,3) and (6,5): bands and Dirac velocity | `python twisted_bilayer.py > twisted_bilayer.log` | about 6 min, 4 cores |
 
 `TBG.py` and `TBG_sparse.py` take another cell as (n, m) with n > m ≥ 0, for example `4 3` (148 atoms,
-9.43°). The outputs of `twisted_bilayer.py`, with its log as `main.log`, are also in the folder
-`twisted-bilayer/` of `howto_assets.tar.gz` in the release
-[tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2).
+9.43°). The outputs of `twisted_bilayer.py` and `twisted_bilayer.log` are the data of the case:
+`paoflow-gen --example tbg_unfold --with-data` (in Studio, *Use the precomputed data of the case*)
+extracts them from `tbg_unfold-v1.tar.gz` of the release
+[case-data](https://github.com/marcobn/PAOFLOW/releases/tag/case-data).
 
 ## Outputs
 

@@ -73,5 +73,9 @@
   "learn/tutorials/tutorial04.ipynb",
   "learn/howtos/sparse-truncation.md",
   "learn/howtos/sparse-states.md"
- ]
+ ],
+ "data": {
+  "file": "si_sparse_backend-v1.tar.gz",
+  "sha256": "3a92d5faf34906c28cd418d27df74d94f7c0e8b7d41bc63dc2160fda84084a37"
+ }
 }

@@ -14,21 +14,23 @@ The README of each base case is its run card (template `references/case.md` of t
 
 The docs build does not execute notebooks (`nb_execution_mode = 'off'`), so the website shows the committed outputs and figures.
 
-## Release assets
+## Case data
 
-Pages read their DFT data from a GitHub release, never from the repository, because a reader downloads a notebook alone. Until the `case-data` release (one archive per case, pinned in `case.json`) replaces them, the pages read `tutorial-assets-v2`:
+Pages read their DFT data from a GitHub release, never from the repository, because a reader downloads a notebook alone. The data of a case are one archive in the release `case-data`, `<case>-v<N>.tar.gz`, pinned in its `case.json` as `"data": {"file": ..., "sha256": ...}`. The archive holds paths relative to the case folder: a trimmed Quantum ESPRESSO `.save` (`data-file-schema.xml`, the pseudopotentials, and `atomic_proj.xml` or the `wfc*.dat` wavefunctions, whichever the driver reads), or, for a page whose run exceeds the budget below, the outputs of the slow step and its log.
 
-- `tutorial_assets.tar.gz`: one folder per tutorial, `tutorialNN/`, with trimmed Quantum ESPRESSO `.save` directories (`atomic_proj.xml`, `data-file-schema.xml`, pseudopotentials) and the QE inputs that made them. `python .github/assets_generation/tutorials/build_assets.py` packs it and `.github/assets_generation/tutorials/upload_release_assets.sh <tag>` publishes it.
-- `howto_assets.tar.gz`: one folder per how-to that needs data, `<task>/`. It holds DFT data, or, for a page whose run exceeds the budget below, the precomputed outputs the page reads. `.github/assets_generation/howtos/build_assets.py` packs it; its docstring records how every folder was made, so that a later developer can remake outputs that go stale when the code changes.
+- `python .github/assets_generation/cases/build_case_data.py <case> <run folder> --version N` packs the files of a run of the case (the patterns per case are in the script, whose docstring records how each published archive was made) and prints the `data` entry of `case.json`.
+- `.github/assets_generation/cases/upload_case_data.sh <archive>...` publishes archives; it refuses to replace one, because readers and CI pin its checksum. New data get the next version, a new pin and a new file name in the tutorial's setup cell.
+- `PAOFLOW.gen.cases.case_data_archive` downloads an archive once into `~/.cache/paoflow/case-data` and checks its checksum; `fetch_case_data` extracts it into a copy of the case. `paoflow-gen --example <case> --with-data` and Studio's *Use the precomputed data of the case* call them, and the plan of the copy then leaves out the QE steps. An archive placed in the cache by hand is used without a download, which is how a page is tested before its data are published.
+- A tutorial's setup cell downloads the archive itself, because a pip user has no `case.json`; `test_tutorial_follows_its_case` checks that the cell names the pinned file.
 
-The `DATA` table of the page test extracts a page's folder of these archives into the copy of its case, at the paths the case's own runs write. A published archive is never replaced, because readers and CI pin its checksum: a new payload goes under the next tag, and the tag in the tip of every page and the `ASSETS` entries of `tests/integration/docs/test_pages.py` follow it. Tutorial data never go into the `integration-assets-vN` releases, which hold the inputs and references of the integration tests.
+Case data never go into the `integration-assets-vN` releases, which hold the inputs and references of the integration tests. The release `tutorial-assets-v1` stays published for older notebooks, unused by the current pages.
 
 ## The page test
 
 `tests/integration/docs/test_pages.py` has two parts:
 
 - `test_tutorial_follows_its_case` compares the PAOFLOW calls of each tutorial's visible cells, methods and literal arguments in order, with those of its case's driver. Arguments the driver builds at run time (`savedir`, `workpath`, `basispath`) are not compared. It runs nothing and needs no data.
-- `test_page_runs` runs every tutorial notebook (with `nbclient`) that is not in `UNWRITTEN`, and every how-to in a copy of its case: `python main.py > main.log`, then the figures script of the page in that folder. A case fails when a call raises or an assert of the page fails, so it catches renamed methods and arguments as well as numbers on a page that the code no longer gives. It does not compare figures or stored outputs.
+- `test_page_runs` runs every tutorial notebook (with `nbclient`) that is not in `UNWRITTEN`, and every how-to in a copy of its case made by `paoflow-gen --example <case> --with-data`: the workflow script the page shows (after the generated `main.py` on a generator case), with its printed output in `<script>.log`, then the figures script of the page in that folder. A case fails when a call raises or an assert of the page fails, so it catches renamed methods and arguments as well as numbers on a page that the code no longer gives. It does not compare figures or stored outputs.
 
 ```bash
 pytest tests/integration/docs -m "integration and not slow" --durations=0

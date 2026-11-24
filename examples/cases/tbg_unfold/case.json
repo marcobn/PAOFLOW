@@ -65,5 +65,9 @@
  "docs": [
   "learn/howtos/unfold-large-supercells.md",
   "learn/howtos/twisted-bilayer.md"
- ]
+ ],
+ "data": {
+  "file": "tbg_unfold-v1.tar.gz",
+  "sha256": "5fe9a4f3b52f787d551ff5e53b9f081f745fc7fe6bea5ef22dcaa0936a2079ed"
+ }
 }

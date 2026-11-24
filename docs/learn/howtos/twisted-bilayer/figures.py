@@ -3,9 +3,9 @@
 
 Run it after ``OMP_NUM_THREADS=1 python twisted_bilayer.py > twisted_bilayer.log``, in the folder of
 that run, by the path of this script (``python
-<PAOFLOW>/docs/learn/howtos/twisted-bilayer/figures.py``), or inside the folder ``twisted-bilayer/``
-of ``howto_assets.tar.gz`` of the release tutorial-assets-v2, which holds the outputs of
-``twisted_bilayer.py`` and its log as ``main.log``. It reads the files ``twisted_bilayer.py`` writes
+<PAOFLOW>/docs/learn/howtos/twisted-bilayer/figures.py``), or in a copy of the case made with
+``paoflow-gen --example tbg_unfold --with-data``, whose data hold the outputs of
+``twisted_bilayer.py`` and its log. It reads the files ``twisted_bilayer.py`` writes
 to ``tbg_<n>_<m>/`` and ``near_K_<n>_<m>/`` and the numbers it prints, draws the figures of the page
 and asserts the numbers the page quotes.
 """
@@ -18,10 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 palette = ['#004488', '#D55E00', '#FFC20A', '#8A6800', '#000000']  # blue, vermillion, amber
-# shortcut: the release asset tutorial-assets-v2 holds the log as main.log; drop the fallback
-# once the case-data release holds twisted_bilayer.log
-log_file = Path('twisted_bilayer.log')
-log = (log_file if log_file.exists() else Path('main.log')).read_text()
+log = Path('twisted_bilayer.log').read_text()
 
 
 def printed(pattern: str) -> float:

@@ -99,7 +99,8 @@ user-invocable: true
                           unfolding, bi_pyskeaf, nbsn2_qo_analysis, vasp_*, *_basis_presets, si_sparse_backend,
                           al_transport_defect. README lists them; clean_runs.py cleans runs made in place.
                           Each case's README.md is a run card; case.json `docs` lists the Learn pages built on
-                          the case, whose code (how-to main.py, a tutorial's driver) lives in the case;
+                          the case, whose code (how-to main.py, a tutorial's driver) lives in the case; case.json
+                          `data` pins its archive in the release case-data (`paoflow-gen --example <case> --with-data`);
                           the figures and asserts of a how-to are docs/learn/howtos/<task>/figures.py
     BASIS/                Per-element radial orbital tables (e.g. BASIS/Si/3P.dat) for internal projections
     PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard); library/: one
@@ -115,7 +116,8 @@ user-invocable: true
     docs/                 Sphinx + MyST site (Read the Docs): learn/ (tutorials/, howtos/, theory/; each tutorial
                           and how-to names its base case in its opening tip), studio/ (PAOFLOW Studio), api/,
                           internals/ (developer notes)
-    .github/              CI workflows and asset_generation scripts for integration-test tarballs
+    .github/              CI workflows; assets_generation/: the integration-test tarballs, and cases/ (build and
+                          upload the case data, release case-data)
     ```
 
 5. **Architecture and design rules**

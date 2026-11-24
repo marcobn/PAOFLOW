@@ -15,6 +15,8 @@ A run card is the `README.md` of a case, `examples/cases/<case>/README.md`. It a
 - **Command line**: `paoflow-gen --example <case>` copies the case into `./<case>` <and writes the drivers>; run the steps below in that folder.
 - **Python**: <generator case: the `main.py` written by the command above is the workflow, a plain PAOFLOW script | scripts case: `main.py` is the workflow>; read it to change a call.
 
+<case with data: To skip the QE runs, copy the case with `paoflow-gen --example <case> --with-data` (in Studio, *Use the precomputed data of the case*): it extracts <what> from `<case>-v<N>.tar.gz` of the release [case-data](https://github.com/marcobn/PAOFLOW/releases/tag/case-data).>
+
 ## Steps
 
 | step | command | run time |

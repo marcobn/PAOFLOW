@@ -3,7 +3,7 @@
 On this page you plot the output files of a finished PAOFLOW run with the {py:class}`~PAOFLOW.GPAO.GPAO` class: the band structure, the density of states (DOS) and the projected DOS (PDOS). GPAO reads the text files that each property writes to `outputdir`, so you can plot a run without its `PAOFLOW` object, after a cluster job, for example. GPAO computes nothing, so a figure carries the approximations of the run that wrote the files.
 
 :::{tip}
-This page is built on the case [`si_bands_transport`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/si_bands_transport): open it in PAOFLOW Studio with *Examples…* → `si_bands_transport`, or copy it with `paoflow-gen --example si_bands_transport`. Download {download}`plotting.py <../../../examples/cases/si_bands_transport/plotting.py>` to plot your own run: it reads the files in `output/`, the `outputdir` of the case's `main.py`, and saves the figures of this page. Download {download}`figures.py <plotting/figures.py>` to check that a rerun still gives the numbers quoted here. To plot without running the case, extract the files of the figures, `plotting/si/` of `howto_assets.tar.gz` in the release [tutorial-assets-v2](https://github.com/marcobn/PAOFLOW/releases/tag/tutorial-assets-v2), into `output/` with `mkdir output && tar xzf howto_assets.tar.gz -C output --strip-components=2 plotting/si`. `plotting.py` runs in about 10 s on one core.
+This page is built on the case [`si_bands_transport`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/si_bands_transport): open it in PAOFLOW Studio with *Examples…* → `si_bands_transport`, or copy it with `paoflow-gen --example si_bands_transport`. Download {download}`plotting.py <../../../examples/cases/si_bands_transport/plotting.py>` to plot your own run: it reads the files in `output/`, the `outputdir` of the case's `main.py`, and saves the figures of this page. Download {download}`figures.py <plotting/figures.py>` to check that a rerun still gives the numbers quoted here. To make the files of the figures without the QE runs, copy the case with `paoflow-gen --example si_bands_transport --with-data`, which extracts `silicon.save` from `si_bands_transport-v1.tar.gz` of the release [case-data](https://github.com/marcobn/PAOFLOW/releases/tag/case-data), and run `python main.py` in the copy, in about two minutes on one core. `plotting.py` then runs in about 10 s.
 :::
 
 ## Setting up
@@ -31,7 +31,7 @@ The tick marks of the k axis come from `kpath_points.txt`, which `sym_points` re
 
 ![Si band structure along the fcc path with the DOS on the same energy axis to its right](../../_static/images/howtos/plotting/si_bands_dos.png)
 
-The figures show a run of this case with the projections of `projwfc.x` (the projector *projwfc* of the case's form), with the calls `bands(ibrav=2, nk=2000)` and `dos(emin=-12.0, emax=2.2, ne=1000)` of the case. The energy zero is $E_F$, here the valence-band maximum (VBM) at $\Gamma$, and the conduction-band minimum (CBM) is at 0.754 eV on the $\Gamma$–X line, so the DOS is zero between 0 and 0.754 eV. The DOS panel ends at `emax`, 2.2 eV.
+The figures show the run of the case's `main.py`, on the internal projections onto the `standard` basis, with the calls `bands(ibrav=2, nk=2000)` and `dos(emin=-12.0, emax=2.2, ne=1000)` of the case. The energy zero is $E_F$, here the valence-band maximum (VBM) at $\Gamma$, and the conduction-band minimum (CBM) is at 0.746 eV on the $\Gamma$–X line, so the DOS is zero between 0 and 0.746 eV. The DOS panel ends at `emax`, 2.2 eV.
 
 ## Projected DOS grouped by orbital
 
@@ -42,11 +42,11 @@ To see which orbitals make up each part of the DOS, you plot the PDOS ([Projecte
 :start-after: '# Projected DOS grouped by orbital'
 ```
 
-The script reads the shell of each file from its name, so the groups follow the basis of the run. With the `projwfc.x` projections of the figure, the PDOS covers the $3s$, $3p$ and $3d$ pseudo-orbitals, and the groups hold 2, 6 and 10 files; with the internal projections of the case's `main.py`, the $4s$, $4p$ and $4d$ shells of its `standard` basis add three more groups. With `psum_inds` given, `labels` and `cols` take one entry per group rather than per file.
+The script reads the shell of each file from its name, so the groups follow the basis of the run. The `standard` basis of the case's `main.py` holds the $3s$, $3p$ and $3d$ pseudo-orbitals and the $4s$, $4p$ and $4d$ shells, so the groups hold 2, 6, 10, 2, 6 and 10 files; with the projections of `projwfc.x` (the projector *projwfc* of the case's form), only the first three groups remain. With `psum_inds` given, `labels` and `cols` take one entry per group rather than per file.
 
-![Si PDOS summed over both atoms for the 3s, 3p and 3d orbitals](../../_static/images/howtos/plotting/si_pdos.png)
+![Si PDOS summed over both atoms for the 3s, 3p, 3d, 4s, 4p and 4d shells](../../_static/images/howtos/plotting/si_pdos.png)
 
-The $3s$ orbitals carry most of the weight at the bottom of the valence band, below $-10$ eV, and the $3p$ orbitals between $-4$ eV and the VBM. Integrated over the valence band, the three curves hold 0.81, 2.27 and 0.92 of the 4.00 states per spin; the [bands and DOS tutorial](../tutorials/tutorial01.ipynb#density-of-states-and-projected-dos) discusses this distribution.
+The $3s$ orbitals carry most of the weight at the bottom of the valence band, below $-10$ eV, and the $3p$ orbitals between $-4$ eV and the VBM. Integrated over the valence band, the six curves hold 0.49, 1.51, 0.70, 0.19, 0.57 and 0.54 of the 4.00 states per spin; the [bands and DOS tutorial](../tutorials/tutorial01.ipynb#density-of-states-and-projected-dos) discusses this distribution.
 
 ## Other properties
 
