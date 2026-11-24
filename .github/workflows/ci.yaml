@@ -282,6 +282,7 @@ jobs:
         # tutorial against the driver of its base case without running it
         page:
           - follows
+          - tutorial01
           - tutorial02
           - tutorial04
           - tutorial05
