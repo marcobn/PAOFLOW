@@ -282,6 +282,10 @@ def figure2(e, c, n):
 
 
 def figure3(e):
+    from matplotlib.colors import LinearSegmentedColormap
+
+    # one-hue sequential ramp, light = suppressed (|R_s| ~ 0), dark = full amplitude
+    ramp = LinearSegmentedColormap.from_list('rs', ['#cde2fb', '#5598e7', '#1c5cab', '#0d366b'])
     s = read_csv(DATA / 'spin_splitting.csv')
     angle, freq, copies = num(s, 'angle_deg'), num(s, 'freq_T'), num(s, 'num_orbit_copies')
     fig, axes = plt.subplots(1, 2, figsize=(14, 6.5), dpi=150, sharey=True)
@@ -290,7 +294,7 @@ def figure3(e):
         (axes[1], 'absRs_total_prop', '|R_s| with the Berry transport'),
     ):
         exp_scatter(ax, e)
-        points = ax.scatter(angle, freq, c=np.abs(num(s, column)), cmap='viridis_r', vmin=0, vmax=1,
+        points = ax.scatter(angle, freq, c=np.abs(num(s, column)), cmap=ramp, vmin=0, vmax=1,
                             s=8 + 0.04 * np.clip(copies, 0, 400), zorder=4)  # fmt: skip
         style(ax, f'{META["title"]}: {name}', ylim=(10, 10000))
     fig.colorbar(points, ax=axes, label='|R_s| (first harmonic)', shrink=0.8)
