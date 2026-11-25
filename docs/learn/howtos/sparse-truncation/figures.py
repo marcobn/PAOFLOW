@@ -75,6 +75,7 @@ ax.axhline(1e-4, color=palette[2], ls='--', lw=1.2, label=r'hopping_threshold $1
 top = ax.secondary_xaxis('top')  # one tick per neighbour shell
 top.set_xticks(archive['shell_distances'][archive['shell_distances'] < safe_radius + 2.0])
 top.set_xticklabels([])
+top.set_xlabel('neighbour shells (one column each)', fontsize=8)
 ax.set_xlim(0.0, safe_radius + 2.0)
 ax.set_ylim(1e-8, 10.0)
 ax.set_xlabel(r'bond length $|a\mathbf{R} + \tau_\alpha - \tau_\beta|$ (Bohr)')
@@ -100,7 +101,9 @@ for ax, (key, b), color in zip(axes, cases.items(), palette):
     ax.plot([], [], color='#000000', lw=3.0, alpha=0.3, label='full H(R)')
     ax.plot(x, b[x][:, pair], color=color, lw=1.0)
     ax.plot([], [], color=color, lw=1.0, label=key)
-    ax.set_title(f'pair split by {1000 * split[key]:.2f} meV at L', fontsize=9)
+    ax.set_title(
+        f'at L: split {1000 * split[key]:.2f} meV, moved {1000 * move[key]:+.0f} meV', fontsize=9
+    )
     ax.set_xticks([i_l], ['L'])
     ax.set_xlabel(r'along $\Gamma$-L')
     ax.legend(fontsize=7, loc='lower left')
@@ -116,6 +119,15 @@ ax.axhline(
 ax.axhline(
     1000 * shift[1e-4], color=palette[2], ls='--', lw=1.2, label=r'hopping_threshold $10^{-4}$ eV'
 )
+for n in (5, 33, 36, 40):  # the start and the rise after 33 that the page quotes
+    ax.annotate(
+        f'{1000 * shift[n]:.0f}',
+        (n, 1000 * shift[n]),
+        xytext=(0, 7),
+        textcoords='offset points',
+        ha='center',
+        fontsize=7,
+    )
 ax.set_xlabel('bond_order')
 ax.set_ylabel('largest band shift (meV)')
 ax.set_title('Si, bands within 2 eV of the VBM, against the full H(R)', fontsize=10)

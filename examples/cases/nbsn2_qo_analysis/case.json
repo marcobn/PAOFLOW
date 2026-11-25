@@ -24,18 +24,6 @@
    "mpi": false,
    "interactive": false,
    "note": "about 30 s; results in qo_analysis_sr/"
-  },
-  {
-   "label": "Rotation compared with the measured peaks (how-to)",
-   "command": [
-    "python",
-    "qo_rotation.py"
-   ],
-   "cwd": ".",
-   "mpi": false,
-   "interactive": false,
-   "note": "a few seconds; results in qo_rotation/",
-   "stdout": "qo_rotation.log"
   }
  ],
  "tags": [

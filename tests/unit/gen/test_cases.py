@@ -81,22 +81,15 @@ def test_case_is_consistent(case, tmp_path):
 def test_plan_and_copy_conflicts(tmp_path):
     case = find_case('si_bands_transport')
     plan = case_plan(case)
-    assert [step.argv for step in plan[:4]] == [
+    assert [step.argv for step in plan[:2]] == [
         ('pw.x', '-in', 'scf.in'),
-        ('pw.x', '-in', 'bands.in'),  # DFT reference of the projections how-to, before the nscf
         ('pw.x', '-in', 'nscf.in'),
-        ('projwfc.x', '-in', 'proj.in'),  # for the projwfc route of the projections how-to
     ]
-    assert plan[0].stdout == 'scf.out' and plan[4].action == 'setup:run' and plan[4].manual
-    assert len(plan) == 7  # then the plotting and projections how-tos
-    assert [step.argv for step in plan[5:]] == [
-        ('python', 'plotting.py'),
-        ('python', 'projections.py'),
-    ]
+    assert plan[0].stdout == 'scf.out' and plan[2].action == 'setup:run' and plan[2].manual
+    assert len(plan) == 3  # the scripts and inputs of its how-tos live beside the pages
     written = copy_case(case, tmp_path)
     assert sorted(str(p) for p in written) == [
-        'README.md', 'Si.pbe-tm-new-gipaw-v2.1.UPF', 'bands.in', 'nscf.in', 'plotting.py',
-        'proj.in', 'projections.py', 'scf.in',
+        'README.md', 'Si.pbe-tm-new-gipaw-v2.1.UPF', 'nscf.in', 'scf.in',
     ]  # fmt: skip
     assert not (tmp_path / 'silicon.save').exists() and not (tmp_path / 'case.json').exists()
     assert copy_case(case, tmp_path) == []  # identical files are left alone
@@ -115,7 +108,7 @@ GENERATED = [case for case in CASES if not case.scripts]
 @pytest.mark.parametrize('case', GENERATED, ids=[case.name for case in GENERATED])
 def test_cases_use_the_internal_projections(case):
     assert case.answers.get('projector', 'internal') == 'internal'
-    # a projwfc.x run only for a how-to step of the case (si_bands_transport: projections.py)
+    # a projwfc.x run only when a step of the case reads atomic_proj.xml
     projwfc = [step for step in case.qe if step['program'] != 'pw.x']
     assert all(step['program'] == 'projwfc.x' for step in projwfc)
     assert bool(projwfc) == (case.folder / 'proj.in').exists()

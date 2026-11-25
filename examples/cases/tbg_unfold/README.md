@@ -4,9 +4,7 @@ Twisted bilayer graphene in its commensurate cells, with a distance-dependent en
 tight-binding (EDTB) model of carbon (`C_EDTB_DD_params.json`; the how-to scripts hold their own copy).
 On the (3, 2) cell (76 atoms, 13.17°), PAOFLOW computes the moiré bands folded in the supercell zone
 and unfolds the bands of the AA-stacked supercell onto the zone of the bilayer cell, first with a dense
-diagonalisation, then with the sparse shift-invert Lanczos solver meant for large moiré cells. Two more
-scripts unfold the AA (4, 3) supercell with the sparse solver, and compute the bands and the Dirac
-velocity of the (4, 3) and (6, 5) twisted cells. No DFT run.
+diagonalisation, then with the sparse shift-invert Lanczos solver meant for large moiré cells. No DFT run.
 
 ## Run it
 
@@ -23,11 +21,10 @@ velocity of the (4, 3) and (6, 5) twisted cells. No DFT run.
 | ---- | ------- | -------- |
 | Moiré cell, bands and unfolding (dense solver) | `python TBG.py 3 2` | about 3 min (Mac Studio M2 Ultra) |
 | The same with the sparse Lanczos solver | `python TBG_sparse.py 3 2` | about 45 s, 4 workers (Mac Studio M2 Ultra) |
-| Sparse unfolding of the AA (4,3) supercell | `python unfold_large_supercells.py` | about 2 min, 4 cores |
-| Twisted cells (4,3) and (6,5): bands and Dirac velocity | `python twisted_bilayer.py > twisted_bilayer.log` | about 6 min, 4 cores |
 
 `TBG.py` and `TBG_sparse.py` take another cell as (n, m) with n > m ≥ 0, for example `4 3` (148 atoms,
-9.43°). The outputs of `twisted_bilayer.py` and `twisted_bilayer.log` are the data of the case:
+9.43°). The data of the case are the outputs of the script of the twisted-bilayer how-to, which runs
+for 6 minutes on 4 cores:
 `paoflow-gen --example tbg_unfold --with-data` (in Studio, *Use the precomputed data of the case*)
 extracts them from `tbg_unfold-v1.tar.gz` of the release
 [case-data](https://github.com/marcobn/PAOFLOW/releases/tag/case-data).
@@ -42,10 +39,6 @@ extracts them from `tbg_unfold-v1.tar.gz` of the release
   bands, and the atoms of the two (3, 2) cells.
 - `Carbon_tbg_3_2/`, `Carbon_tbg/`, `Carbon_tbg_3_2_sparse/` and the `_sparse` figures: the same from
   the sparse solver, in the ±4 eV window around the Dirac point.
-- `bilayer_unfolded.npz`, `carbon.json`, `bilayer_4_3.json`: the unfolded bands and weights of the
-  AA (4, 3) supercell and its model.
-- `tbg_4_3/`, `tbg_6_5/` (bands along K-Γ-M-K, `geometry.json`), `near_K_4_3/`, `near_K_6_5/` (bands
-  near the moiré K point): the twisted cells and their bands.
 
 Explained in: [How to unfold the bands of large supercells with the sparse solver](https://paoflow.readthedocs.io/en/latest/learn/howtos/unfold-large-supercells.html),
 [How to compute the band structure of twisted bilayer graphene](https://paoflow.readthedocs.io/en/latest/learn/howtos/twisted-bilayer.html)

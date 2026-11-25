@@ -15,8 +15,8 @@ are not raw data.
   scripts and runs the steps below in the Runs tab.
 - **Command line**: `paoflow-gen --example nbsn2_qo_analysis` copies the case into
   `./nbsn2_qo_analysis`; run the steps below in that folder.
-- **Python**: `main.py` is the full spin–orbit analysis, `main_sr.py` the scalar-relativistic one
-  and `qo_rotation.py` the comparison of the how-to; read them to change a call. They need
+- **Python**: `main.py` is the full spin–orbit analysis and `main_sr.py` the scalar-relativistic
+  one; read them to change a call. They need
   `pip install "PAOFLOW[qo_analysis]"`.
 
 ## Steps
@@ -25,7 +25,6 @@ are not raw data.
 | ---- | ------- | -------- |
 | Spin-orbit analysis against the torque rotation | `python main.py` | about 1.5 minutes on one core |
 | Scalar-relativistic run and its convergence (81^3 vs 49^3) | `python main_sr.py` | about 30 s on one core |
-| Rotation compared with the measured peaks (how-to) | `python qo_rotation.py > qo_rotation.log` | a few seconds |
 
 Set `RUN_NETWORK = True` in `main.py` to add the magnetic-breakdown network, about 15 minutes on
 24 cores.
@@ -40,8 +39,6 @@ Set `RUN_NETWORK = True` in `main.py` to add the magnetic-breakdown network, abo
   figures and a README.
 - `qo_analysis_sr/compare_runs/`: the scalar-relativistic frequencies on the 81³ grid against the
   49³ grid (`fig_run_comparison.png`).
-- `qo_rotation/`: the same steps for the how-to (`sweep/per_angle_listing.txt`: measured and
-  calculated frequencies at each measured angle).
 - `expected_results.json`: the reference numbers of `main.py`, checked by
   `tests/integration/agentic/qo_analysis`.
 

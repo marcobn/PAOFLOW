@@ -1,9 +1,10 @@
 """Figures and checks of the how-to "How to choose the projections onto the PAO basis".
 
-Run it in the folder where ``projections.py`` of the case ``si_bands_transport`` ran, by the path of
-this script (``python <PAOFLOW>/docs/learn/howtos/projections/figures.py``). It reads
-``projections.log`` (the printed output of ``projections.py``), ``output_<route>/bands_0.dat`` and
-``bands.out``, the output of the DFT band run ``pw.x -in bands.in`` of the case, writes
+Run it in the copy of the case ``si_bands_transport`` where ``projections.py``, the workflow kept
+beside this script, ran, by the path of this script
+(``python <PAOFLOW>/docs/learn/howtos/projections/figures.py``). It reads ``projections.log`` (the
+printed output of ``projections.py``), ``output_<route>/bands_0.dat`` and ``bands.out``, the
+output of the DFT band run ``pw.x -in bands.in`` (``bands.in`` is beside this script), writes
 ``projectability.png``, ``bands.png`` and ``band_errors.png``, and asserts the numbers the page
 quotes.
 """

@@ -28,30 +28,6 @@
    "mpi": false,
    "interactive": false,
    "note": "joblib workers within the core budget (LOKY_MAX_CPU_COUNT caps them); the 120 bands nearest the Dirac point; writes Carbon_tbg/, Carbon_tbg_3_2_sparse/ and tbg_3_2_*_sparse.png; under a minute with 4 workers"
-  },
-  {
-   "label": "Sparse unfolding of the AA (4,3) supercell",
-   "command": [
-    "python",
-    "unfold_large_supercells.py"
-   ],
-   "cwd": ".",
-   "mpi": false,
-   "interactive": false,
-   "note": "run with OMP_NUM_THREADS=1; joblib workers within the core budget; writes bilayer_unfolded.npz, carbon.json and bilayer_4_3.json",
-   "stdout": "unfold_large_supercells.log"
-  },
-  {
-   "label": "Twisted cells (4,3) and (6,5): bands and Dirac velocity",
-   "command": [
-    "python",
-    "twisted_bilayer.py"
-   ],
-   "cwd": ".",
-   "mpi": false,
-   "interactive": false,
-   "note": "run with OMP_NUM_THREADS=1; its output, saved as twisted_bilayer.log, is read by the next step; writes tbg_4_3/, tbg_6_5/, near_K_4_3/, near_K_6_5/",
-   "stdout": "twisted_bilayer.log"
   }
  ],
  "tags": [

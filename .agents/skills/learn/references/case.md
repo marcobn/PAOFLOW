@@ -34,6 +34,7 @@ Explained in: [<page title>](https://paoflow.readthedocs.io/en/latest/<page path
 ## Rules
 
 - The steps and their labels are those of `case.json` (`qe`, then the drivers, then `steps`), in that order. A run time is measured, with the core count; write "a few seconds" only below ten.
+- The run card covers the case's own calculation. The inputs, scripts, steps and outputs of a page's variation are on that page, beside it in `docs/learn/`, and the run card links the page under "Explained in".
 - Name the inputs only where the reader must act on them (a file to extract, a pseudopotential they must bring, a precomputed archive).
 - "Explained in" lists every page of the case's `docs`, by title; a case with no page leaves the line out. Links go to `latest` until the docs-URL helper picks the version of the installed PAOFLOW.
 - No equations, no parameter tables, no advice on choosing values: link the theory page or the how-to that has them.

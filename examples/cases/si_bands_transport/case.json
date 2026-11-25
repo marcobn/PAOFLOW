@@ -31,44 +31,8 @@
   },
   {
    "program": "pw.x",
-   "input": "bands.in",
-   "label": "DFT bands along the path (reference of the projections how-to)"
-  },
-  {
-   "program": "pw.x",
    "input": "nscf.in",
    "label": "Non-self-consistent run on the full k grid"
-  },
-  {
-   "program": "projwfc.x",
-   "input": "proj.in",
-   "label": "Projections on the pseudo-orbitals (read by the projections how-to)"
-  }
- ],
- "steps": [
-  {
-   "label": "Plots of the bands, DOS and PDOS with GPAO (how-to)",
-   "command": [
-    "python",
-    "plotting.py"
-   ],
-   "cwd": ".",
-   "mpi": false,
-   "interactive": false,
-   "note": "reads output/ of main.py; writes si_bands_dos.png and si_pdos.png",
-   "stdout": "plotting.log"
-  },
-  {
-   "label": "PAO Hamiltonian and bands of each projection route (how-to)",
-   "command": [
-    "python",
-    "projections.py"
-   ],
-   "cwd": ".",
-   "mpi": false,
-   "interactive": false,
-   "note": "reads silicon.save (wfc*.dat and atomic_proj.xml); writes BASIS_PS/ and output_<route>/",
-   "stdout": "projections.log"
   }
  ],
  "tags": [

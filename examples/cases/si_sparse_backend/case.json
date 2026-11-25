@@ -34,30 +34,6 @@
    "interactive": false,
    "note": "reads silicon.save (with the projwfc.x projections); writes output/ (sparse, 16 atoms) and output_dense/ (dense, 2 atoms)",
    "stdout": "main.log"
-  },
-  {
-   "label": "Truncation of the sparse Hamiltonian: bond_order, rcut, hopping_threshold (how-to)",
-   "command": [
-    "python",
-    "sparse_truncation.py"
-   ],
-   "cwd": ".",
-   "mpi": false,
-   "interactive": false,
-   "note": "the next step reads its output, sparse_truncation.log; writes output_full/, output_bo*/, output_rcut30/, output_t1e-0*/",
-   "stdout": "sparse_truncation.log"
-  },
-  {
-   "label": "States solved per k-point: the derived window, nev, interior_window (how-to)",
-   "command": [
-    "python",
-    "sparse_states.py"
-   ],
-   "cwd": ".",
-   "mpi": false,
-   "interactive": false,
-   "note": "writes output_auto/, output_nev/, output_interior/, output_interior_auto/",
-   "stdout": "sparse_states.log"
   }
  ],
  "tags": [

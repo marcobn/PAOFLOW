@@ -99,7 +99,8 @@ user-invocable: true
                           unfolding, bi_pyskeaf, nbsn2_qo_analysis, vasp_*, *_basis_presets, si_sparse_backend,
                           al_transport_defect. README lists them; clean_runs.py cleans runs made in place.
                           Each case's README.md is a run card; case.json `docs` lists the Learn pages built on
-                          the case, whose code (how-to main.py, a tutorial's driver) lives in the case; case.json
+                          the case, whose own calculation (a tutorial's driver, a how-to's main.py) lives in the case, while a
+                          how-to's variation of it (scripts, extra QE inputs) lives beside the page; case.json
                           `data` pins its archive in the release case-data (`paoflow-gen --example <case> --with-data`);
                           the figures and asserts of a how-to are docs/learn/howtos/<task>/figures.py
     BASIS/                Per-element radial orbital tables (e.g. BASIS/Si/3P.dat) for internal projections

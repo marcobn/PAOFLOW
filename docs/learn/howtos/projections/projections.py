@@ -27,7 +27,9 @@ hamiltonian('minimal', configuration='minimal')
 
 # Radial tables of the larger bases
 if not Path('BASIS_PS/Si').is_dir():
-    generate_basis_for_pseudo(f'{savedir}/Si.pbe-tm-new-gipaw-v2.1.UPF', 'BASIS_PS', preset='extended')
+    generate_basis_for_pseudo(
+        f'{savedir}/Si.pbe-tm-new-gipaw-v2.1.UPF', 'BASIS_PS', preset='extended'
+    )
 
 # The standard and extended presets
 hamiltonian('standard', configuration='standard', basispath='BASIS_PS/')

@@ -9,10 +9,12 @@ or that a number the page quotes has changed: each page ends with asserts of tho
 - A tutorial makes the PAOFLOW calls of its case's driver: the ``main.py`` that ``paoflow-gen``
   and Studio write from the answers of a generator case, or the ``main.py`` of a scripts case.
   :func:`test_tutorial_follows_its_case` compares them without running anything.
-- A how-to shows one workflow script of its case with ``literalinclude`` (``main.py``, or
-  ``<name>.py`` when several pages share the case). It runs as ``python main.py > main.log`` in a
-  copy of the case made by ``paoflow-gen --example <case> --with-data`` (on a generator case after
-  the generated ``main.py``), followed there by the page's figures script,
+- A how-to shows one workflow script with ``literalinclude``: the ``main.py`` of its case when the
+  page explains the case's own calculation, or a script of its own beside the page,
+  ``docs/learn/howtos/<page>/<name>.py``, when it varies that calculation. It runs in a copy of the
+  case made by ``paoflow-gen --example <case> --with-data`` (a script of the page is copied in
+  first, as its tip tells the reader; on a generator case it runs after the generated
+  ``main.py``), followed there by the page's figures script,
   ``docs/learn/howtos/<page>/figures.py``, which draws the figures and asserts the numbers.
 
 The data of a case (``case.json`` ``data``) come from the release ``case-data`` through the
@@ -207,7 +209,7 @@ def _howtos() -> list[Path]:
 
 
 def workflow_script(page: Path) -> Path:
-    """The one script of the base case that the how-to shows with ``literalinclude``."""
+    """The one workflow script that the how-to shows with ``literalinclude``."""
     targets = {(page.parent / t).resolve() for t in INCLUDE.findall(page.read_text())}
     if len(targets) != 1:
         pytest.fail(f'{page.name} includes {len(targets)} scripts, not 1', pytrace=False)
@@ -275,11 +277,14 @@ def _run_howto(page: Path, mode: str, workdir: Path) -> None:
 
     case = base_case(page)
     script = workflow_script(page)
-    if script.parent != case.folder:
-        pytest.fail(f'{page.name} shows {script}, not a script of its case {case.name}')
+    own = script.parent == page.with_suffix('')  # a variation kept beside the page
+    if not own and script.parent != case.folder:
+        pytest.fail(f'{page.name} shows {script}, neither its own script nor one of {case.name}')
     argv = ['--example', case.name, '--workdir', str(workdir)]
     if paoflow_gen(argv + (['--with-data'] if case.data else [])) != 0:
         pytest.fail(f'paoflow-gen --example {case.name} failed', pytrace=False)
+    if own:
+        shutil.copy(script, workdir)
     if mode == 'scripts':
         if not case.scripts and script.name != 'main.py':  # it reads the output of the driver
             _run('main.py', workdir, log=workdir / 'main.log')

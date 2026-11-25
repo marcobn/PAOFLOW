@@ -19,10 +19,12 @@ How the published data were made (QE 7.4.1, serial, in a copy of the case):
 - ``si_bands_transport``: v1 ``pw.x -in scf.in``, ``pw.x -in nscf.in`` (wavefunctions for the
   internal projections); v2 ``pw.x -in scf.in``, ``pw.x -in bands.in > bands.out`` (the DFT
   bands along the path, before the nscf run, which overwrites them), ``pw.x -in nscf.in`` and
-  ``projwfc.x -in proj.in`` (``atomic_proj.xml``), for the projections how-to.
+  ``projwfc.x -in proj.in`` (``atomic_proj.xml``), for the projections how-to, with ``bands.in``
+  and ``proj.in`` copied in from ``docs/learn/howtos/projections/``.
 - ``si_relaxation_times``, ``si_sparse_backend``: the same two runs and ``projwfc.x -in proj.in``
   (``tutorial01/silicon.save`` of the unpublished ``tutorial-assets-v2`` archive).
-- ``tbg_unfold``: ``OMP_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=4 python twisted_bilayer.py >
+- ``tbg_unfold``: with ``twisted_bilayer.py`` copied in from ``docs/learn/howtos/twisted-bilayer/``,
+  ``OMP_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=4 python twisted_bilayer.py >
   twisted_bilayer.log`` (6 min on 4 cores).
 """
 
