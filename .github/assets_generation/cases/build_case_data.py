@@ -16,8 +16,10 @@ new data get a new version, uploaded with ``upload_case_data.sh``.
 
 How the published data were made (QE 7.4.1, serial, in a copy of the case):
 
-- ``si_bands_transport``: ``pw.x -in scf.in``, ``pw.x -in nscf.in`` (wavefunctions for the
-  internal projections).
+- ``si_bands_transport``: v1 ``pw.x -in scf.in``, ``pw.x -in nscf.in`` (wavefunctions for the
+  internal projections); v2 ``pw.x -in scf.in``, ``pw.x -in bands.in > bands.out`` (the DFT
+  bands along the path, before the nscf run, which overwrites them), ``pw.x -in nscf.in`` and
+  ``projwfc.x -in proj.in`` (``atomic_proj.xml``), for the projections how-to.
 - ``si_relaxation_times``, ``si_sparse_backend``: the same two runs and ``projwfc.x -in proj.in``
   (``tutorial01/silicon.save`` of the unpublished ``tutorial-assets-v2`` archive).
 - ``tbg_unfold``: ``OMP_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=4 python twisted_bilayer.py >
@@ -38,7 +40,7 @@ PROJWFC = [*SAVE, 'silicon.save/atomic_proj.xml']
 
 # case -> glob patterns relative to the run folder; each must match at least one file
 CONTENT = {
-    'si_bands_transport': [*SAVE, 'silicon.save/wfc*.dat'],
+    'si_bands_transport': [*PROJWFC, 'silicon.save/wfc*.dat', 'bands.out'],
     'si_relaxation_times': PROJWFC,
     'si_sparse_backend': PROJWFC,
     'tbg_unfold': ['twisted_bilayer.log', 'tbg_4_3/*', 'tbg_6_5/*', 'near_K_4_3/*', 'near_K_6_5/*'],

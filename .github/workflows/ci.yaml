@@ -291,6 +291,7 @@ jobs:
           - tutorial05
           - tutorial06
           - plotting
+          - projections
           - band-unfolding
           - unfold-large-supercells
           - twisted-bilayer

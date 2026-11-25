@@ -9,6 +9,7 @@ How-Tos assume you have already worked through the [bands and DOS tutorial](../t
 - [How to choose the truncation of the sparse Hamiltonian](sparse-truncation.md)
 - [How to choose which states the sparse backend solves](sparse-states.md)
 - [How to compare pyskeaf orbits with measured quantum-oscillation frequencies](quantum-oscillations.md)
+- [How to choose the projections onto the PAO basis](projections.md)
 - [How to plot PAOFLOW output with GPAO](plotting.md)
 - [How to run PAOFLOW on a tight-binding model](tight-binding-model.md)
 - [How to compute the non-linear optical response of a tight-binding model](nonlinear-optics-model.md)
@@ -23,6 +24,7 @@ How-Tos assume you have already worked through the [bands and DOS tutorial](../t
 sparse-truncation
 sparse-states
 quantum-oscillations
+projections
 plotting
 tight-binding-model
 nonlinear-optics-model

@@ -31,8 +31,18 @@
   },
   {
    "program": "pw.x",
+   "input": "bands.in",
+   "label": "DFT bands along the path (reference of the projections how-to)"
+  },
+  {
+   "program": "pw.x",
    "input": "nscf.in",
    "label": "Non-self-consistent run on the full k grid"
+  },
+  {
+   "program": "projwfc.x",
+   "input": "proj.in",
+   "label": "Projections on the pseudo-orbitals (read by the projections how-to)"
   }
  ],
  "steps": [
@@ -47,6 +57,18 @@
    "interactive": false,
    "note": "reads output/ of main.py; writes si_bands_dos.png and si_pdos.png",
    "stdout": "plotting.log"
+  },
+  {
+   "label": "PAO Hamiltonian and bands of each projection route (how-to)",
+   "command": [
+    "python",
+    "projections.py"
+   ],
+   "cwd": ".",
+   "mpi": false,
+   "interactive": false,
+   "note": "reads silicon.save (wfc*.dat and atomic_proj.xml); writes BASIS_PS/ and output_<route>/",
+   "stdout": "projections.log"
   }
  ],
  "tags": [
@@ -58,10 +80,11 @@
  "source": "examples/qe_examples/example01",
  "docs": [
   "learn/tutorials/tutorial01.ipynb",
-  "learn/howtos/plotting.md"
+  "learn/howtos/plotting.md",
+  "learn/howtos/projections.md"
  ],
  "data": {
-  "file": "si_bands_transport-v1.tar.gz",
-  "sha256": "421b2aec7d93045e5ae686104b3201e91ceda37160d1d7ffc78b67248ba1638d"
+  "file": "si_bands_transport-v2.tar.gz",
+  "sha256": "8f7b2f2142e6519b5f3d73f67413e37fcec7b1a31a2b27c1bb8114fd62a167bd"
  }
 }

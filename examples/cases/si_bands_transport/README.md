@@ -19,19 +19,25 @@ coefficient and electronic thermal conductivity at constant relaxation time.
 | step | command | run time |
 | ---- | ------- | -------- |
 | Self-consistent run | `pw.x -in scf.in` | under a second on 1 core |
+| DFT bands along the path, before the nscf run, which overwrites them | `pw.x -in bands.in > bands.out` | a few seconds on 1 core |
 | Non-self-consistent run on the full k grid | `pw.x -in nscf.in` | about 9 s on 1 core |
 | PAOFLOW | `mpirun -np 4 python main.py` | 1 min 45 s on 1 core with the basis generation of the first run, 5.0 GB |
 | Figures | `python plot.py` (or the Plots tab) | a few seconds |
 | Plots of the bands, DOS and PDOS with GPAO (how-to) | `python plotting.py` | about 10 s on 1 core |
+| Projections on the pseudo-orbitals | `projwfc.x -in proj.in` | a second on 1 core |
+| PAO Hamiltonian and bands of each projection route (how-to) | `python projections.py > projections.log` | 18 s on 1 core |
 
 To skip the QE runs, copy the case with `paoflow-gen --example si_bands_transport --with-data`
 (in Studio, *Use the precomputed data of the case*): it extracts `silicon.save`, with the
-wavefunctions that the internal projections read, from `si_bands_transport-v1.tar.gz` of the
+wavefunctions that the internal projections read and the `atomic_proj.xml` of `projwfc.x`, and
+`bands.out`, from `si_bands_transport-v2.tar.gz` of the
 release [case-data](https://github.com/marcobn/PAOFLOW/releases/tag/case-data) (QE 7.4.1).
 
 `main.py` projects on the `standard` basis, which it generates from the pseudopotential in
-`BASIS_PS/` on the first run; choose *projwfc* in the form to use QE's `projwfc.x` instead, and
-Studio adds `proj.in` and its run.
+`BASIS_PS/` on the first run; choose *projwfc* in the form to read the projections of QE's
+`projwfc.x` (`proj.in`) instead. `projections.py` builds the PAO Hamiltonian and the bands once for
+each projection route: `projwfc.x`, the `minimal`, `standard` and `extended` presets, the basis
+generated at run time and a basis chosen by hand.
 
 ## Outputs
 
@@ -44,5 +50,9 @@ Studio adds `proj.in` and its run.
   `output/PFgauss_0.dat`: $\sigma/\tau$, $S$, $\kappa_0/\tau$ and $S^2\sigma/\tau$ at 300 K against
   $\mu$; columns $T$, $\mu$, then $xx$, $yy$, $zz$, $xy$, $xz$, $yz$.
 - `si_bands_dos.png`, `si_pdos.png`: the figures of `plotting.py`.
+- `output_<route>/bands_0.dat`, `projections.log`: the bands of each projection route of
+  `projections.py` and its printed output, with the projectability of each band.
+- `bands.out`: the DFT bands at 65 points of the band path, the reference of the projections
+  how-to.
 
-Explained in: [Band structure and density of states of silicon](https://paoflow.readthedocs.io/en/latest/learn/tutorials/tutorial01.html), [How to plot PAOFLOW output with GPAO](https://paoflow.readthedocs.io/en/latest/learn/howtos/plotting.html)
+Explained in: [Band structure and density of states of silicon](https://paoflow.readthedocs.io/en/latest/learn/tutorials/tutorial01.html), [How to plot PAOFLOW output with GPAO](https://paoflow.readthedocs.io/en/latest/learn/howtos/plotting.html), [How to choose the projections onto the PAO basis](https://paoflow.readthedocs.io/en/latest/learn/howtos/projections.html)

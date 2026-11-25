@@ -81,16 +81,22 @@ def test_case_is_consistent(case, tmp_path):
 def test_plan_and_copy_conflicts(tmp_path):
     case = find_case('si_bands_transport')
     plan = case_plan(case)
-    assert [step.argv for step in plan[:2]] == [
+    assert [step.argv for step in plan[:4]] == [
         ('pw.x', '-in', 'scf.in'),
+        ('pw.x', '-in', 'bands.in'),  # DFT reference of the projections how-to, before the nscf
         ('pw.x', '-in', 'nscf.in'),
+        ('projwfc.x', '-in', 'proj.in'),  # for the projwfc route of the projections how-to
     ]
-    assert plan[0].stdout == 'scf.out' and plan[2].action == 'setup:run' and plan[2].manual
-    assert len(plan) == 4  # internal projections: no projwfc.x; then the plotting how-to
-    assert plan[3].argv == ('python', 'plotting.py')
+    assert plan[0].stdout == 'scf.out' and plan[4].action == 'setup:run' and plan[4].manual
+    assert len(plan) == 7  # then the plotting and projections how-tos
+    assert [step.argv for step in plan[5:]] == [
+        ('python', 'plotting.py'),
+        ('python', 'projections.py'),
+    ]
     written = copy_case(case, tmp_path)
     assert sorted(str(p) for p in written) == [
-        'README.md', 'Si.pbe-tm-new-gipaw-v2.1.UPF', 'nscf.in', 'plotting.py', 'scf.in',
+        'README.md', 'Si.pbe-tm-new-gipaw-v2.1.UPF', 'bands.in', 'nscf.in', 'plotting.py',
+        'proj.in', 'projections.py', 'scf.in',
     ]  # fmt: skip
     assert not (tmp_path / 'silicon.save').exists() and not (tmp_path / 'case.json').exists()
     assert copy_case(case, tmp_path) == []  # identical files are left alone
@@ -109,8 +115,10 @@ GENERATED = [case for case in CASES if not case.scripts]
 @pytest.mark.parametrize('case', GENERATED, ids=[case.name for case in GENERATED])
 def test_cases_use_the_internal_projections(case):
     assert case.answers.get('projector', 'internal') == 'internal'
-    assert all(step['program'] == 'pw.x' for step in case.qe)
-    assert not (case.folder / 'proj.in').exists()
+    # a projwfc.x run only for a how-to step of the case (si_bands_transport: projections.py)
+    projwfc = [step for step in case.qe if step['program'] != 'pw.x']
+    assert all(step['program'] == 'projwfc.x' for step in projwfc)
+    assert bool(projwfc) == (case.folder / 'proj.in').exists()
 
 
 def test_projwfc_chosen_in_the_form_writes_proj_in(tmp_path):
