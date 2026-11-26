@@ -534,11 +534,11 @@ an array of per-k `(nawf, nawf)` matrices is not.
 
 ```bash
 python -m pytest tests/unit/sparse -q          # component + parity tests
-paoflow-gen --example si_sparse_backend -d /tmp/si_sparse   # the case: QE inputs + main_sparse.py
+paoflow-gen --example si_sparse_backend -d /tmp/si_sparse   # the case: QE inputs + main.py (the large-cell tutorial)
 cd /tmp/si_sparse                               # pw.x scf/nscf + projwfc.x, or copy tests/data/silicon/silicon.save
-cp <repo>/tests/integration/qe/example01/main.py .
-python main.py                                  # clean dense reference -> output/
-mpirun -n 4 python main_sparse.py               # sparse -> output_sparse/
+mpirun -n 4 python main.py                      # sparse -> output/, dense check of the same H(R) -> output_dense/
+mkdir reference && cd reference && ln -s ../silicon.save .
+cp <repo>/tests/integration/qe/example01/main.py . && python main.py && cd ..   # clean dense reference -> reference/output/
 # open compare_sparse.ipynb, run all cells, judge visually
-python main_sparse.py                           # serial must reproduce the MPI files
+python main.py                                  # serial must reproduce the MPI files
 ```

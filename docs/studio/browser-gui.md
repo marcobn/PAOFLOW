@@ -1,0 +1,332 @@
+# Working in the browser: PAOFLOW Studio
+
+PAOFLOW Studio (`paoflow-studio`) is a browser interface for PAOFLOW. It has four tabs:
+
+- **Setup** asks the questions of `paoflow-gen` as a form, previews the generated files and writes them.
+- **Runs** starts the generated drivers on the machine that serves the GUI and follows their logs.
+- **Results** finds the outputs of a folder and plots them interactively.
+- **Plots** runs the generated plot scripts without a display and shows the figures they make.
+
+The setup and plotting code is the same as on the command line. For the same answers, the form writes the same
+bytes as `paoflow-gen`, and the plots read the files with the same readers as `GPAO`.
+
+## Install and start
+
+```bash
+pip install "PAOFLOW[gui]"            # Plotly for the figures; the server needs nothing else
+pip install "PAOFLOW[fermisurface]"   # optional: 3D Fermi surfaces (scikit-image)
+
+paoflow-studio --root ~/runs             # serve ~/runs and open the browser
+paoflow-studio --root ~/runs plot Si/output    # open the Results tab on one folder
+paoflow-gen --gui                     # the same questions as paoflow-gen, in the browser
+```
+
+The server prints a URL that ends with `?token=...`; open it once and the browser keeps the session. The GUI
+starts on `--root`, shown in the header.
+
+### Folders
+
+The folder picker (*Change…*, *Browse…*) can browse the whole directory tree of the machine. Its *Places* are
+**root**, **home** and **computer** (`/`). Folders your account cannot read are left out of the listings.
+
+Browsing opens nothing. A folder outside the root joins the session only when you choose it:
+
+- A **working folder**, chosen with *Change…* in Setup or *Run a pw.x input…* in Runs, is opened for reading and
+  writing. The generators write there and the runs start there.
+- A folder picked **to read from** is opened for reading only: pseudopotentials (*Browse…* in a form), results (the
+  Results tab) or experimental data.
+
+The picker says which of the two it will do before you choose. Opened folders appear under *Places* and are
+remembered across restarts in `<root>/.paoflow-studio/opened.json`. Delete that file to forget them.
+
+Some folders are always read-only:
+
+- PAOFLOW's own `PSEUDOS/` and `BASIS/`;
+- every folder given with `--allow-read`, for example pseudopotentials or results kept elsewhere:
+
+```bash
+paoflow-studio --root ~/runs --allow-read ~/pseudos --allow-read /data/TaC_results
+```
+
+To keep a session inside the root and the `--allow-read` folders, start it with `--fixed-root`. The picker then
+has no *home* or *computer* place, and the browser cannot open other folders. This is the setting for a Studio
+whose root should be the only place written.
+
+**On a remote machine** (cluster login node, workstation), start the server without a browser, inside `tmux` so
+that it survives the logout, and tunnel its port from your laptop:
+
+```bash
+# on the remote machine
+tmux new -s studio                 # Ctrl-b d leaves it running; tmux attach -t studio returns
+conda activate <env with PAOFLOW>
+paoflow-studio --root ~/runs --no-browser --port 8780
+
+# on the laptop: the same port on both ends, then open the printed URL (with its ?token=...)
+ssh -N -o ExitOnForwardFailure=yes -L 8780:127.0.0.1:8780 user@remote
+```
+
+Three things make it work:
+- **The same port number on both ends.** The Studio only accepts requests addressed to its own port, so a tunnel
+  such as `-L 8766:127.0.0.1:8765` is refused. The page then says "use the same port on both ends".
+- **A port that is free on the laptop.** A local `paoflow-studio` holds 8765, so give the remote one another
+  `--port`. With `ExitOnForwardFailure`, ssh stops with an error instead of tunnelling to nothing. Without it, the
+  browser reaches the local Studio, which answers "not this session's token".
+- **The remote environment has Plotly** for the plots: `pip install "plotly>=5.18"`, or the `gui` extra.
+
+The server listens on `127.0.0.1` only. Every request needs the session token, and requests whose Host or Origin
+header is not the GUI's own are refused. These checks keep other users of a shared login node out of your session.
+Anyone holding the token URL can open any folder your account can reach, so keep it private. Start the server
+with `--fixed-root` to confine a session to its root.
+
+Other options:
+
+- `--allow-read DIR`: also read `DIR`, never write it (repeatable).
+- `--fixed-root`: no browsing or opening outside the root and the `--allow-read` folders.
+- `--read-only`: browse and plot only, with no writes and no runs. Folders chosen outside the root open for
+  reading.
+- `--max-ranks N`: cap the MPI ranks of a run (the default is the core budget of the machine).
+- `--port`: the first port to try (the default is 8765).
+
+## Setup
+
+![The Setup tab](../_static/images/gui-setup.png)
+
+1. **Working folder.** Choose the folder of the QE run. The GUI shows what it found: the `*.save` folder, the UPF
+   files, the `pw.x` inputs, existing drivers. From the save it reads a summary of the system: formula, lattice,
+   electrons, gap or metal, k-grid, pseudopotential types, 2D slab. The folder is shared by every tab (see
+   [One folder for every tab](#one-folder-for-every-tab)).
+
+   **Examples…** starts from a case of `examples/cases` instead (a source checkout of PAOFLOW): filter the
+   cases by system, property or workflow, pick one and the folder to create. Studio copies the QE inputs, the
+   README and the pseudopotentials (from `PSEUDOS/library`), opens the folder with the form of the case filled
+   in, and gives Runs its steps: `pw.x` (scf, nscf) and `projwfc.x` where the case needs them, then the
+   drivers. A case marked *scripts* brings its own drivers (a model Hamiltonian, an analysis, an
+   electron–phonon system folder, a recipe): Studio copies it and opens Runs on its steps, with no form to fill.
+   Files of the case that differ in the folder are replaced only after you confirm.
+
+   Under it, **Crystal structure** draws the cell, the atoms and the bonds of a save or of a `pw.x` input, chosen
+   in its menu. A save shows the structure after the run, so a relaxation shows the relaxed cell. The cell can
+   be repeated up to 3×3×3, and the card can be hidden. Hover an atom for its coordinates; the cell lengths,
+   angles and volume are listed below the view.
+2. **Workflow.** The workflows are those of `paoflow-gen`: property run, property run from a TB model (no DFT: the
+   parameters of a tight-binding model of `PAOFLOW.models.models` instead of a save), ACBN0/eACBN0, harmonic
+   phonons (with Raman), electron–phonon system folder, electron–phonon run from a model crystal (no DFT: λ, α²F,
+   T_c, resistivity and self-energy of a model metal, mobility and absorption of a model semiconductor, from
+   `PAOFLOW.models.electron_phonon`), SSCHA, quantum oscillations (pyskeaf, from the
+   Fermi-surface BXSF files of a property run). Two tools sit next to them: a QE input from an AFLOW or C2DB entry
+   (`paoflow-gen-qe`), and the pseudo-atom basis tables (`paoflow-genbasis-ps`).
+3. **Form.** These are the CLI questions, shown only when they apply. Defaults follow the earlier answers: the
+   dense grids follow the coarse ones, and the smearing follows the adaptive prefactor. Invalid values are marked
+   where they occur, for example a q-grid that does not divide the k-grid. The *advanced* switch shows the
+   settings the CLI leaves at the builder defaults, such as the SSCHA minimiser, `tr2_ph` and the coupled-SHG
+   components.
+
+   Fields that feed a PAOFLOW method have a *docs* link. It shows that parameter's description from the method's
+   docstring, or the comment `system.py` carries for electron–phonon settings.
+
+   ![The band-path preview](../_static/images/gui-bandpath.png)
+
+   **Band path.** For a band structure, the *Band path* section shows the path PAOFLOW follows for the lattice
+   (`ibrav` from the save, or the in-plane path of a slab), drawn inside the first Brillouin zone. You can drag to
+   rotate it. To change the path, edit the path string (`gG-X-W-K-gG-L|U-X`) or the point table (*advanced*: a
+   label and crystal coordinates on each row). `main.py` then gets `BAND_PATH` and `HIGH_SYM` constants and calls
+   `bands(..., band_path=BAND_PATH, high_sym_points=HIGH_SYM)`. An unchanged path writes the same `main.py` as the
+   CLI.
+
+   Some defaults come from the save, in the CLI as well:
+   - `ibrav`, spin-orbit and 2D from the save;
+   - metal, `nelec`, `nbnd` and the coupling source (`epw` for ultrasoft or PAW pseudopotentials) from the
+     `pw.x` template of the electron–phonon workflow.
+4. **Output.** Every workflow has an *Output* box. It holds the driver file name (the system folder for
+   electron–phonon) and one switch, *Write the plot scripts*:
+   - `plot.py`, `plot.acbn0.py`, `plot.phonon.py` (and `plot.raman.py`);
+   - the `plot_*.py` of the electron–phonon workflows;
+   - `plot.sscha.py` and `plot.pyskeaf.py`. These two save the figures of the Results tab as PDF files in
+     `output/figures`, so the Runs tab can run them.
+
+   The switch starts from what `paoflow-gen` does by default: on, except for SSCHA.
+5. **Preview and write.** Every generated file is shown with its status (new, changed, unchanged) and, for
+   changed files, its diff against the copy on disk. *Write files* asks before overwriting and keeps a timestamped
+   backup (`main.py.bak-YYYYmmdd-HHMMSS`).
+   - *Edit* opens the selected file in an editor before writing. An edited file is marked ✎, and *Write files*
+     writes your text. The edit stays while the form changes; when the form would generate a different file,
+     the panel says so, and *Take the new file* discards the edit.
+   - *Python* shows a script that writes the same files without the GUI (without your edits).
+   - *Next steps* lists the commands of the workflow in order.
+
+**From a database entry to a QE run.** The *QE input from a database* tool writes `<compound>.scf.in`, then
+shows its plan: the `pw.x` self-consistent run, and the PAOFLOW drivers. *Open in Runs* → *Run* starts `pw.x`
+with the chosen number of MPI ranks and writes `<compound>.scf.out` next to the input. When it has finished,
+*Open Setup (Property run)* continues on the new `<prefix>.save`. `pw.x` must be on the PATH of the shell that
+started `paoflow-studio`; the tool warns when it is not.
+
+An input already on disk (written earlier, by hand or by `paoflow-gen-qe`) runs the same way: the tool lists the
+`pw.x` inputs of the working folder at its top, each with *Run pw.x…*, and the Runs tab loads the plan of any
+input file through *Run a pw.x input…*.
+
+**Choosing the Quantum ESPRESSO build.** The *Quantum ESPRESSO* menu, in the QE-input tool and in the Runs tab,
+lists every build found on the machine, with its version:
+
+- the `pw.x` on the PATH of the shell that started `paoflow-studio` (the default, marked *PATH*);
+- the installations next to it (`qe-7.5` beside `qe-7.4.1`);
+- `~/Programs`, `~/Local/Programs`, `~/software`, `~/opt`, `~/apps`, `/opt`, `/usr/local`, Homebrew and the
+  conda environments;
+- the folders given with `paoflow-studio --qe-bin DIR` (repeatable; the installation or its `bin/`).
+
+The version comes from the build (`include/qe_version.h`), the conda metadata or the folder name; *serial* marks
+a build without MPI, which runs on one rank. The choice is remembered for the root, and *↻* searches again. The
+chosen `bin/` runs the QE programs and goes first on the PATH of every run, so `run_qe.sh` and the drivers that
+call QE use the same build. The server runs only the builds of its list: no path typed in the browser is executed.
+
+A yellow banner, *PAOFLOW was updated after this server started*, means the Python code changed on disk after
+`paoflow-studio` started (a source checkout after a pull or an edit). The page is already the new one but the
+server is not: stop it with Ctrl-C and start it again.
+
+### One folder for every tab
+
+A folder chosen in one tab becomes the folder of the others:
+
+- *Change…* in Setup moves Runs, Results and Plots to it.
+- *Run a pw.x input…* in Runs moves Setup and Results to the folder of the input.
+- *Change…* in Results moves Setup and Runs. For a folder named `output/`, they take its parent, the run folder.
+  Setup on that run folder leaves Results on its `output/`.
+
+Setup and Runs write, so a Results folder that can only be read stays in Results. This covers an `--allow-read`
+folder, PAOFLOW's `PSEUDOS/` and a folder opened for reading. Setup and Runs keep their folder and say so.
+
+## Runs
+
+The Runs tab shows the run plan of the last workflow written in the working folder, or of a `pw.x` input chosen
+with *Run a pw.x input…*. Each folder keeps its own plan; *No run plan in …* means nothing was written there yet.
+*Run* starts a step:
+
+- `python` drivers run under `mpirun -np N` when the step supports MPI.
+- QE programs (`pw.x`, `ph.x`, `projwfc.x`, ...) run under `mpirun -np N` with their input file; their output goes
+  to the file the plan names (`scf.out`). The *options* field of the step adds the parallelisation flags
+  (`-nk 4 -nd 1`: `-nk`/`-npool`, `-ni`, `-nd`, `-nt`, `-nb`), checked against the ranks (images × pools must
+  divide them, task and band groups the ranks of a pool) and remembered per program.
+- `run_qe.sh` gets its rank count through `NP`.
+- Some steps start Quantum ESPRESSO themselves:
+  - ACBN0;
+  - the `run` phases of phonons and Raman;
+  - SSCHA with the local launcher;
+  - `run_qe.sh` and `run_zg.sh` of an electron–phonon system.
+
+  Their step has the ranks, the Quantum ESPRESSO build and the `pw.x` options of those runs. They reach the
+  script as `PAOFLOW_MPI_QE`, `PAOFLOW_QE_BIN` and `PAOFLOW_QE_OPTIONS` (`PAOFLOW.utils.qe_launch`; the ACBN0
+  Hartree step follows `PAOFLOW_MPI_QE`). The Setup forms therefore have no launch commands of their own: only
+  `paoflow-gen` in a terminal asks for them, as the defaults of the scripts. The Slurm settings of SSCHA stay in
+  its form.
+- Every command shows what runs: `mpirun -np N` of an MPI step, `NP=N`, and the variables, placed inside the
+  `(cd folder && …)` of the step, so it can be copied to a terminal.
+
+Every run is niced, with one thread per rank. Runs continue when the GUI stops; a restarted GUI shows them again.
+The log updates live, *Cancel* stops the process group, and *Results* opens the outputs.
+
+Only the steps of a generated plan can run: Python drivers and shell scripts inside the root,
+`paoflow-genbasis-ps`, and the QE programs with an input file inside the root. There is no free command line.
+The `plot*.py` steps open windows, so they have *Run in Plots* instead of *Run*: the Plots tab runs them without a
+display. Other steps that need a terminal are listed but not run.
+
+## Results
+
+![The Results tab](../_static/images/gui-results.png)
+
+The tab scans a folder and its subfolders: an `output/` folder, a run folder, or an electron–phonon system folder
+with its `<workflow>/output/` folders. It lists the datasets by category:
+
+- electronic structure;
+- Boltzmann transport;
+- topology and Hall;
+- optics and non-linear optics;
+- phonons and electron–phonon;
+- Green's-function transport;
+- ACBN0, SSCHA and quantum oscillations.
+
+The tensor components, spin channels or temperatures of one quantity are the series of one figure.
+
+- **Options** depend on the dataset:
+  - the energy window of band plots;
+  - the tensor component and the temperatures of transport;
+  - the grouping of the projected DOS (element and ℓ, site, shell, orbital), as lines or as stacked areas;
+  - the quantity of tables that mix units (mobility, Seebeck coefficient, carrier density, ...);
+  - the η column of the absorption;
+  - the bands, smoothing and zone of a Fermi surface.
+
+  Quantities with different units are never drawn on one axis.
+- **Maps** (ARPES intensity, spectral functions, Berry-curvature slices): click a point for the energy and
+  momentum distribution curves (EDC and MDC) through it.
+- **Fermi surfaces** are drawn in 3D in the browser, coloured by |v_F|, inside the Wigner–Seitz zone. This needs
+  scikit-image. Berry-curvature grids are shown as plane slices.
+- **Axes.** The x and y limits are set by number, with one row per y panel of an overlay. *Enter* applies them,
+  a blank end stays automatic (the data decide it), and *Automatic* clears them. A zoom with the mouse shows
+  its range in the fields, ready to be adjusted. The limits are kept per dataset, also across a reload, and the
+  PDF, PNG, SVG and Python exports use them.
+- **Overlay properties.** With a curve open, tick other datasets of the folder that share its x axis: Re ε with
+  Im ε, n with k, DOS with PDOS, σ/τ with S. Properties of one unit share a panel; another unit gets its own panel
+  below on the same x axis, never a second y axis. The colour marks the property, and the line style marks the
+  series. *Series* picks the tensor components (`xx` by default); a property without the chosen series shows its
+  first one. Up to three properties go on top of the open one.
+- **Compare runs.** Overlay the same kind of dataset from several folders, for example SOC against no SOC, or two
+  basis presets.
+- **Experiment overlay.** Add measured points from a column or CSV file. The GUI reports the RMS, bias and relative
+  RMS against the computed curve.
+- **Export.**
+  - CSV of the plotted data;
+  - a Python snippet that rebuilds the figure (with the `GPAO` call where one exists);
+  - PDF, PNG or SVG through matplotlib;
+  - the camera icon saves the view on screen.
+
+  *Report* writes one self-contained HTML file with every figure. It opens offline, so you can archive it or send
+  it.
+- **Live** rescans the folder every few seconds while a run writes files.
+- Every line figure has a *Table view* of its values.
+
+The same layer works without the GUI, in scripts and notebooks:
+
+```python
+from PAOFLOW.results import ResultsFolder
+
+results = ResultsFolder('Si/output')
+bands = results.load(results.find('bands').id, options={'window': [-6, 6]})
+results.save(bands, 'bands.pdf')                 # matplotlib
+spec = results.figure(bands, theme='light')      # plotly.graph_objects.Figure(spec) in Jupyter
+```
+
+or from the command line, without a server:
+
+```bash
+paoflow-studio report Si/output -o Si_report.html
+```
+
+At the end of every run, PAOFLOW writes `paoflow_outputs.json` in the output folder. It records the PAOFLOW
+version, the DFT Fermi energy (output energies are relative to it), the spin and basis facts, and the files the run
+wrote, each with its kind. The Results tab shows it as *Run information*.
+
+## Plots
+
+The generated plot scripts (`plot.py`, `plot.acbn0.py`, `plot.phonon.py`, the `plot_*.py` of an electron–phonon
+system) draw with matplotlib and open windows. The Plots tab runs them without a display and shows their figures.
+
+- The list holds the `plot*.py` of the working folder and of its subfolders (one level).
+- *Run* starts the selected script as a job: its log is in Runs, and *Cancel* stops it.
+- Each figure that the script shows (`plt.show()`) or saves (`savefig`) is kept once, as a PNG (shown) and a PDF.
+  The files go to `figures/<script>/` next to the script, for example `figures/plot/01_Band_structure.png`, and
+  `figures.json` lists them. A new run replaces them, and the figures appear one by one while the script runs.
+- The arguments field goes to the script. `--all` is filled in when the script has it, so `plot.py` draws every
+  quantity without its menu. Add options such as `--emin -6 --emax 4`; the field lists the script's options.
+  Prompts (`input()`) take their default answers.
+- Click a figure to enlarge it; *PNG* and *PDF* download it. *Log of the last run* shows the script's output and
+  opens by itself when the run failed, for example before `main.py` has written the outputs.
+
+The same runner works in a terminal on a machine with no display, such as a cluster login node:
+
+```bash
+python -m PAOFLOW.graphics.figure_capture --out figures/plot plot.py --all
+```
+
+## The guide inside the Studio
+
+*Help* in the header (or the `?` key) opens the guide of PAOFLOW Studio, with a search box: getting started,
+folders and permissions, every Setup step and tool, Runs, Results, Plots, remote use, the command line, and
+troubleshooting. It opens by itself on the first visit.

@@ -85,8 +85,8 @@ def test_plan_and_copy_conflicts(tmp_path):
         ('pw.x', '-in', 'scf.in'),
         ('pw.x', '-in', 'nscf.in'),
     ]
-    assert plan[0].stdout == 'scf.out' and plan[-1].action == 'setup:run' and plan[-1].manual
-    assert len(plan) == 3  # internal projections: no projwfc.x
+    assert plan[0].stdout == 'scf.out' and plan[2].action == 'setup:run' and plan[2].manual
+    assert len(plan) == 3  # the scripts and inputs of its how-tos live beside the pages
     written = copy_case(case, tmp_path)
     assert sorted(str(p) for p in written) == [
         'README.md', 'Si.pbe-tm-new-gipaw-v2.1.UPF', 'nscf.in', 'scf.in',
@@ -108,8 +108,10 @@ GENERATED = [case for case in CASES if not case.scripts]
 @pytest.mark.parametrize('case', GENERATED, ids=[case.name for case in GENERATED])
 def test_cases_use_the_internal_projections(case):
     assert case.answers.get('projector', 'internal') == 'internal'
-    assert all(step['program'] == 'pw.x' for step in case.qe)
-    assert not (case.folder / 'proj.in').exists()
+    # a projwfc.x run only when a step of the case reads atomic_proj.xml
+    projwfc = [step for step in case.qe if step['program'] != 'pw.x']
+    assert all(step['program'] == 'projwfc.x' for step in projwfc)
+    assert bool(projwfc) == (case.folder / 'proj.in').exists()
 
 
 def test_projwfc_chosen_in_the_form_writes_proj_in(tmp_path):
@@ -187,3 +189,98 @@ def test_scripts_case_plan_and_example(tmp_path, capsys):
     printed = capsys.readouterr().out
     assert (out / 'model.py').is_file() and (out / 'qe' / 'scf.in').is_file()
     assert '1. scf.in (pw.x)' in printed and '2. The model: mpirun -np 4 python model.py' in printed
+
+
+def _page_case(page):
+    """The case named by the first tip of a Learn page (``paoflow-gen --example <case>``)."""
+    import json
+
+    text = page.read_text()
+    if page.suffix == '.ipynb':
+        cells = json.loads(text)['cells']
+        text = '\n'.join(''.join(c['source']) for c in cells if c['cell_type'] == 'markdown')
+    tip = re.search(r':::\{tip\}\n(.*?)\n:::', text, re.S)
+    found = re.search(r'paoflow-gen --example (\w+)', tip.group(1)) if tip else None
+    return found.group(1) if found else None
+
+
+def test_pages_name_existing_cases():
+    """Every tutorial and how-to names an existing case in its tip; the case folder itself holds
+    nothing of the website (the catalogue derives the pages of a case from these tips)."""
+    docs = cases_root().parents[1] / 'docs'
+    pages = sorted((docs / 'learn').glob('tutorials/tutorial*.ipynb'))
+    pages += [p for p in sorted((docs / 'learn').glob('howtos/*.md')) if p.name != 'index.md']
+    named = {str(page.relative_to(docs)): _page_case(page) for page in pages}
+    missing_tip = sorted(page for page, case in named.items() if case is None)
+    assert not missing_tip, 'pages without a tip naming their case: %s' % missing_tip
+    names = {case.name for case in CASES}
+    unknown = sorted(page for page, case in named.items() if case not in names)
+    assert not unknown, 'pages whose tip names no case: %s' % unknown
+
+
+def test_case_data_registry_names_cases():
+    """``case_data.json`` pins archives of existing cases only."""
+    from PAOFLOW.gen.cases import CASE_DATA
+
+    assert set(CASE_DATA) <= {case.name for case in CASES}
+
+
+WITH_DATA = [case for case in CASES if case.data]
+
+
+@pytest.mark.parametrize('case', WITH_DATA, ids=[case.name for case in WITH_DATA])
+def test_case_data_pins(case):
+    """A data pin names a versioned archive of this case and its full checksum."""
+    assert re.fullmatch(re.escape(case.name) + r'-v[1-9]\d*\.tar\.gz', case.data['file'])
+    assert re.fullmatch(r'[0-9a-f]{64}', case.data['sha256'])
+
+
+def test_case_data_fetched_and_checked(tmp_path, monkeypatch):
+    """The archive comes from the cache when its checksum matches, a download that does not match
+    is refused, the extraction keeps differing files unless told otherwise, and the plan of a copy
+    with data starts after the QE steps."""
+    import dataclasses
+    import hashlib
+    import io
+    import tarfile
+
+    import PAOFLOW.gen.cases as cases_module
+    from PAOFLOW.gen.cases import case_data_archive, fetch_case_data
+
+    run = tmp_path / 'run'
+    (run / 'silicon.save').mkdir(parents=True)
+    (run / 'silicon.save' / 'data-file-schema.xml').write_text('<qes/>\n')
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    archive = cache / 'si_bands_transport-v1.tar.gz'
+    with tarfile.open(archive, 'w:gz') as tar:
+        tar.add(run / 'silicon.save', arcname='silicon.save')
+    sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
+    case = dataclasses.replace(
+        find_case('si_bands_transport'), data={'file': archive.name, 'sha256': sha256}
+    )
+    assert case_data_archive(case, cache) == archive
+    copy = tmp_path / 'copy'
+    written = fetch_case_data(case, copy, cache=cache)
+    assert [str(path) for path in written] == ['silicon.save/data-file-schema.xml']
+    assert (copy / 'silicon.save' / 'data-file-schema.xml').read_text() == '<qes/>\n'
+    (copy / 'silicon.save' / 'data-file-schema.xml').write_text('mine\n')
+    with pytest.raises(FileExistsError) as error:
+        fetch_case_data(case, copy, cache=cache)
+    assert error.value.args[1] == ['silicon.save/data-file-schema.xml']
+    assert (copy / 'silicon.save' / 'data-file-schema.xml').read_text() == 'mine\n'
+    fetch_case_data(case, copy, overwrite=True, cache=cache)
+    assert (copy / 'silicon.save' / 'data-file-schema.xml').read_text() == '<qes/>\n'
+
+    plan = case_plan(case, with_data=True)
+    assert plan[0].action == 'setup:run' and len(plan) == len(case_plan(case)) - len(case.qe)
+
+    archive.write_bytes(b'stale')  # a cached file with another checksum is downloaded again
+    monkeypatch.setattr(
+        cases_module.urllib.request, 'urlopen', lambda url: io.BytesIO(b'not the archive')
+    )
+    with pytest.raises(ValueError, match='checksum'):
+        case_data_archive(case, cache)
+    assert sorted(p.name for p in cache.iterdir()) == [archive.name]  # no partial download left
+    with pytest.raises(ValueError, match='no data'):
+        case_data_archive(dataclasses.replace(case, data={}), cache)

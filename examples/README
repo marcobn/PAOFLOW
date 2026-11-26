@@ -54,7 +54,11 @@ Scripts cases
 - Basis presets on norm-conserving and ultrasoft, scalar and fully relativistic pseudopotentials:
   si_oncv_basis_presets, si_uspp_basis_presets, pt_oncv_basis_presets, pt_uspp_basis_presets.
 - Sparse backend on a doubled cell: si_sparse_backend.
+- Boltzmann transport of n-type Si with built-in and custom relaxation-time models:
+  si_relaxation_times.
 - Low-level Transport calls of a conductor with a defect: al_transport_defect.
 
-The Results and Plots tabs of paoflow-studio show the outputs of any case. clean_runs.py removes
+The cases whose case.json lists `docs` are the base cases of pages of the website (Tutorials and
+How-tos): the page explains the code of the case. The Results and Plots tabs of paoflow-studio show
+the outputs of any case. clean_runs.py removes
 the outputs of runs made in place, keeping inputs, data and references.

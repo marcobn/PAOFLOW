@@ -2,7 +2,7 @@
 
 Status: implemented on 7 November 2026 (P1 to P6, uncommitted on `develop-marco`). Section 0 records what was built
 and how it differs from the plan; the rest of the page is the design as proposed. User documentation:
-[Working in the browser](../tutorials/howtos/browser-gui.md). Sections 4 to 7 are the generator (setup) GUI and sections
+[Working in the browser](../studio/browser-gui.md). Sections 4 to 7 are the generator (setup) GUI and sections
 8 to 10 the plotting (results) GUI. Both share the server and the security model of section 3.
 
 Decisions (user, 7 November 2026):

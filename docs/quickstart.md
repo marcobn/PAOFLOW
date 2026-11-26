@@ -1,147 +1,84 @@
 # Quickstart
 
-This page walks you through the Silicon electronic structure workflow — bands, DOS, and transport — using pre-computed QE data that ships with PAOFLOW.
-
----
-
-## What you will do
-
-1. Place the pre-computed `silicon.save/` directory in your working directory
-2. Run a short Python script that builds the PAO Hamiltonian from the QE output
-3. Inspect the output files for band structure, density of states, and transport tensors
-
-**You do not need to run Quantum ESPRESSO yourself.** The `silicon.save/` directory contains the required `atomic_proj.xml` and `data-file-schema.xml` outputs.
-
----
+This page runs one calculation, the bands, density of states and Boltzmann transport of bulk silicon, in the three ways PAOFLOW offers: in the browser with PAOFLOW Studio, on the command line with `paoflow-gen`, and as a Python script. The three are the same calculation: they start from the case `si_bands_transport` of `examples/cases`, write the same `main.py` and produce the same files.
 
 ## Prerequisites
 
-PAOFLOW installed (see [Installation](installation.md)):
+- PAOFLOW from a clone of the repository, which holds the cases (see [Installation](installation.md)):
+
+  ```bash
+  git clone https://github.com/marcobn/PAOFLOW.git
+  cd PAOFLOW
+  pip install -e ".[graphics,gui]"
+  ```
+
+- Quantum ESPRESSO, with `pw.x` on the `PATH`: the case starts from its inputs, a self-consistent and a non-self-consistent run of Si.
+
+## The case
+
+A case is a folder with the inputs of one calculation, a `README.md` that lists its steps and a `case.json` with the answers that `paoflow-gen` turns into a driver. `si_bands_transport` holds `scf.in` and `nscf.in` (Si on a $12\times12\times12$ grid) and names its pseudopotential. Its steps are:
+
+1. `pw.x -in scf.in`, the self-consistent run;
+2. `pw.x -in nscf.in`, the non-self-consistent run on the full k-grid, which writes `silicon.save/`;
+3. `mpirun -np 4 python main.py`, the PAOFLOW driver, then `python plot.py` for the figures.
+
+## In the browser: PAOFLOW Studio
 
 ```bash
-pip install PAOFLOW
+paoflow-studio --root ~/runs
 ```
 
----
+Open the printed URL. In the Setup tab choose *Examples…* → `si_bands_transport` and a folder name: Studio copies the inputs and the pseudopotential, fills in the form of the `run` workflow with the answers of the case, and lists the three steps in the Runs tab. Run them in order, then open the output folder in the Results tab. [Working in the browser](studio/browser-gui.md) describes every tab.
 
-## Step 1 — Obtain the tutorial assets
+## On the command line: `paoflow-gen`
 
-Download the precomputed tutorial assets from the [PAOFLOW Releases page](https://github.com/marcobn/PAOFLOW/releases) and extract them into a working directory. The assets include:
-
+```bash
+paoflow-gen --example si_bands_transport
+cd si_bands_transport
+mpirun -np 4 pw.x -in scf.in > scf.out
+mpirun -np 4 pw.x -in nscf.in > nscf.out
+mpirun -np 4 python main.py
+python plot.py
 ```
-silicon.save/          # Pre-computed QE output (atomic projections + data)
-```
 
-To make `silicon.save` yourself instead, `paoflow-gen --example si_bands_transport` copies the QE
-inputs and the pseudopotential of this run into `./si_bands_transport` and writes its `main.py`;
-run `pw.x` (scf, nscf) and `projwfc.x` there as its README says.
+`paoflow-gen --example` copies the case into `./si_bands_transport`, writes `main.py` and `plot.py` from its answers, and prints the steps. `paoflow-gen --example list` lists every case, and `paoflow-gen` alone asks the questions for a calculation of your own.
 
----
+## In Python
 
-## Step 2 — Examine the driver script
-
-Open `main.py`. It shows the standard PAOFLOW Python API pattern:
+The `main.py` written above is a plain PAOFLOW script. Without the configuration constants and the helper that generates the basis of the internal projections, its workflow is:
 
 ```python
 from PAOFLOW import PAOFLOW
 
-def main():
-    # Initialise PAOFLOW from a QE .save directory
-    paoflow = PAOFLOW.PAOFLOW(
-        savedir='silicon.save',
-        outputdir='output',
-        smearing='gauss',
-        npool=1,
-        verbose=True,
-    )
-
-    # Read pre-computed atomic projections from QE
-    paoflow.read_atomic_proj_QE()
-
-    # Drop bands with low projectability onto the PAO basis
-    paoflow.projectability()
-
-    # Construct the real-space Hamiltonian H(R)
-    paoflow.pao_hamiltonian()
-
-    # Interpolate onto the band path for ibrav=2 (FCC, e.g. Si)
-    paoflow.bands(ibrav=2, nk=2000)
-
-    # Double the Monkhorst-Pack grid by Fourier interpolation
-    paoflow.interpolated_hamiltonian()
-
-    # Diagonalise H(k) on the full BZ grid
-    paoflow.pao_eigh()
-
-    # Compute momentum matrix elements (needed for transport/optics)
-    paoflow.gradient_and_momenta()
-
-    # Apply adaptive Gaussian smearing for BZ integration (Yates widths; pass min_width= to floor
-    # them at or above the energy grid spacing of the later dos()/transport() calls)
-    paoflow.adaptive_smearing()
-
-    # Compute DOS and transport tensors
-    paoflow.dos(emin=-12., emax=2.2, ne=1000)
-    paoflow.transport(emin=-12., emax=2.2)
-
-    paoflow.finish_execution()
-
-if __name__ == '__main__':
-    main()
+p = PAOFLOW.PAOFLOW(savedir='silicon.save', outputdir='output', smearing='gauss')
+p.projections(basispath='BASIS_PS/', configuration='standard')  # internal projections
+p.projectability(pthr=0.95)
+p.pao_hamiltonian()
+p.bands(ibrav=2, nk=2000, fname='bands')
+p.interpolated_hamiltonian(nfft1=24, nfft2=24, nfft3=24)
+p.pao_eigh()
+p.gradient_and_momenta()
+p.adaptive_smearing()
+p.dos(do_dos=True, do_pdos=True, emin=-12.0, emax=2.2, ne=1000)
+p.transport(tmin=300.0, tmax=300.0, nt=1, emin=-12.0, emax=2.2, ne=1000, write_to_file=True)
+p.finish_execution()
 ```
 
----
+Edit a call or its arguments in `main.py` and run it again; Studio's Setup tab and `paoflow-gen` write the same file when you change an answer of the form instead.
 
-## Step 3 — Run PAOFLOW
+## The output
 
-```bash
-python main.py
-```
+`output/` holds, among others:
 
-For a parallel run with MPI (optional, speeds up dense k-grids):
-
-```bash
-mpirun -np 4 python main.py
-```
-
-The run typically completes in under a minute on a laptop for this small example.
-
----
-
-## Step 4 — Check the output
-
-After the run, an `output/` directory is created containing:
-
-| File                 | Contents                                          |
-| -------------------- | ------------------------------------------------- |
-| `bands_0.dat`        | Band structure along the default FCC k-path       |
-| `dosdk_0.dat`        | Total density of states                           |
-| `sigmagauss_0.dat`   | Electrical conductivity tensor vs. energy         |
-| `Seebeckgauss_0.dat` | Seebeck coefficient tensor vs. energy             |
-| `kappagauss_0.dat`   | Electronic thermal conductivity tensor vs. energy |
-
-:::{tip} Comparing to the reference
-The expected output files are not in the repository: they ship with the integration tests
-(`example01/Reference/` in `qe_test_assets.tar.gz` of the
-[integration-assets release](https://github.com/marcobn/PAOFLOW/releases/tag/integration-assets-v1)).
-`pytest "tests/integration/qe/test_qe_examples.py::test_qe_example[example01]"` downloads it, runs
-this example and compares the outputs.
-:::
-
----
+| File                 | Contents                                                   |
+| -------------------- | ---------------------------------------------------------- |
+| `bands_0.dat`        | Band structure along the fcc path of `kpath_points.txt`    |
+| `dosdk_0.dat`        | Total density of states                                    |
+| `*_pdosdk_0.dat`     | Density of states projected on each orbital                |
+| `sigmagauss_0.dat`   | Electrical conductivity over the relaxation time, against the chemical potential |
+| `Seebeckgauss_0.dat` | Seebeck coefficient                                        |
+| `kappagauss_0.dat`   | Electronic thermal conductivity over the relaxation time   |
 
 ## Next steps
 
-- Explore the [Tutorials](tutorials/index.md) for in-depth guided workflows covering more advanced topics (spin–orbit coupling, topology, transport).
-- Use the `paoflow-gen` command-line tool to generate a driver script for your own QE calculation:
-  ```bash
-  paoflow-gen
-  ```
-- See the [API Reference](internals/api-reference.md) for the full list of methods on the `PAOFLOW` class.
-- Start from an example case: `examples/cases/` holds every example, one folder per calculation,
-  from this silicon run to spin Hall, Weyl points, Z2, doped transport, Landauer junctions and
-  ACBN0 (cases that fill the form of a generator workflow), and to the electron–phonon system
-  folders, non-linear optics, tight-binding models, band unfolding, quantum oscillations, VASP runs,
-  the basis presets and the sparse backend (*scripts* cases, which bring their own drivers). In
-  PAOFLOW Studio use *Examples…* in the Setup tab; on the command line
-  `paoflow-gen --example list`, then `paoflow-gen --example si_bands_transport`.
+[Band structure and density of states of silicon](learn/tutorials/tutorial01.ipynb) walks through this `main.py` step by step: what each call computes on Si, which parameters matter, and how to read the bands and the DOS. The [Learn](learn/index.md) section continues with the other tutorials, the how-tos and the theory pages, and the [API reference](api/index.md) documents every method.

@@ -55,6 +55,7 @@ html[data-theme=dark] {
   --pst-color-blockquote-notch: #00a030;
   --pst-color-inline-code: #7eff7e;
   --pst-color-inline-code-links: #00cc33;
+  --pst-color-link-higher-contrast: #00cc33; /* pydata-sphinx-theme >= 0.17 name */
   --pst-color-target: #0a2a0a;
   --pst-color-table: #ffffff;
   --pst-color-table-row-hover-bg: #0d260d;
@@ -110,6 +111,7 @@ html[data-theme=light] {
   --pst-color-blockquote-notch: #4a8a5a;
   --pst-color-inline-code: #004d18;
   --pst-color-inline-code-links: #003811;
+  --pst-color-link-higher-contrast: #003811; /* pydata-sphinx-theme >= 0.17 name */
   --pst-color-target: #d4eedd;
   --pst-color-table: #0a1a0a;
   --pst-color-table-row-hover-bg: #c2e8cc;
@@ -151,6 +153,7 @@ html:not([data-theme]) {
   --pst-color-border-muted: #0f260f;
   --pst-color-inline-code: #7eff7e;
   --pst-color-inline-code-links: #00cc33;
+  --pst-color-link-higher-contrast: #00cc33; /* pydata-sphinx-theme >= 0.17 name */
   --pst-color-background: #060e06;
   --pst-color-on-background: #0a160a;
   --pst-color-surface: #0f1f0f;

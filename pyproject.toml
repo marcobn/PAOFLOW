@@ -24,6 +24,7 @@ dependencies = ["numpy>=2.0,<2.5; python_version < '3.14'",
 
 [project.optional-dependencies]
 weyl_search = ["z2pack", "tbmodels"]
+pythtb = ["pythtb>=2"]
 graphics = ["vtk", "matplotlib","mendeleev"]
 fermisurface = ["mayavi", "scikit-image>=0.20"]
 transport = ["psutil"]
@@ -34,7 +35,7 @@ phonon = ["phonopy>=2.21", "phono3py>=2.3", "seekpath>=2.0"]
 sscha = ["python-sscha>=1.6", "cellconstructor>=1.6", "ase>=3.22"]
 fast = ["numba>=0.58"]
 gui = ["plotly>=5.18"]
-dev = ["pre-commit>=2.20.0", "pytest>=7"]
+dev = ["pre-commit>=2.20.0", "pytest>=7", "nbclient", "ipykernel"]
 docs = [
     "sphinx>=8",
     "myst-parser>=4",

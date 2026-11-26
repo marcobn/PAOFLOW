@@ -271,6 +271,65 @@ jobs:
           path: /tmp/pytest-of-runner/**/*.png
           if-no-files-found: ignore
 
+  docs-page-tests:
+    # shortcut: switched off until the rule for when the page tests run is decided; delete this line
+    # to switch them back on
+    if: false
+    runs-on: ubuntu-22.04
+    needs: pre-commit
+    strategy:
+      fail-fast: false
+      matrix:
+        # one entry per page run of tests/integration/docs/test_pages.py: each tutorial notebook
+        # that runs (not in UNWRITTEN) and each how-to (its file name); "follows" checks every
+        # tutorial against the driver of its base case without running it
+        page:
+          - follows
+          - tutorial01
+          - tutorial02
+          - tutorial04
+          - tutorial05
+          - tutorial06
+          - plotting
+          - projections
+          - band-unfolding
+          - unfold-large-supercells
+          - twisted-bilayer
+          - tight-binding-model
+          - nonlinear-optics-model
+          - sparse-truncation
+          - sparse-states
+          - quantum-oscillations
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MPI runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openmpi-bin libopenmpi-dev
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev, qo_analysis]"
+          pip install matplotlib
+
+      - name: Run the page
+        run: |
+          if [ "${{ matrix.page }}" = follows ]; then
+            target="tests/integration/docs/test_pages.py::test_tutorial_follows_its_case"
+          else
+            target="tests/integration/docs/test_pages.py::test_page_runs[${{ matrix.page }}]"
+          fi
+          pytest "$target" -m "integration and not slow" -v --durations=0
+
   elphon-integration-tests:
     runs-on: ubuntu-22.04
     needs: pre-commit

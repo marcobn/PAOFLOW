@@ -39,16 +39,16 @@ def read_band_path_PAO(fname):
 
     ftags = []
     findex = [0]
-    for i in range(len(tags) - 1):
-        if tags[i] == 'G' or tags[i] == 'gG':
-            tags[i] = r'$\Gamma$'
-
-        if npnts[i] == 0:
-            ftags[-1] += '|' + tags[i]
+    jump = False  # the previous point ends a piece of the path (0 points to the next)
+    for i, tag in enumerate(tags):
+        tag = r'$\Gamma$' if tag in ('G', 'gG') else tag
+        if jump:
+            ftags[-1] += '|' + tag
         else:
-            ftags.append(tags[i])
+            ftags.append(tag)
+        jump = npnts[i] == 0
+        if not jump and i < len(tags) - 1:
             findex.append(npnts[i] + findex[-1])
-    ftags.append(tags[-1] if not tags[-1] == 'G' else r'$\Gamma$')
 
     return findex, ftags
 

@@ -410,6 +410,11 @@ def test_example_cases_listed_and_copied(client, make_client, gui_root):
         assert status == 200 and copied['scripts'] is True, copied
         assert copied['plan'] and not any(step.get('action') for step in copied['plan'])
         assert len(copied['plan']) == len(scripts[0]['qe']) + len(scripts[0]['steps'])
+    no_data = next(name for name, item in cases.items() if not item['data'])
+    status, body, _ = client.post(
+        '/api/cases/copy', {'name': no_data, 'folder': 'cases/nodata', 'with_data': True}
+    )
+    assert status == 400 and 'no data' in body['error'], body
     read_only = make_client(read_only=True)
     assert read_only.get('/api/cases')[1]['writable'] is False
     assert (

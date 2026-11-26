@@ -31,8 +31,6 @@ KEEP_NAMES = {
     'expected_results.json',  # nbsn2_qo_analysis: the numbers its test checks
     '.gitkeep',  # *_elphon/cache: the vertex cache folder
     'Si_SK_params.json',  # si_supercell_unfold: model inputs
-    'Si_geometry.json',
-    'Si_geometry_sc8.json',
     'C_EDTB_DD_params.json',  # tbg_unfold: model input
     'inputfile.xml',
     'POTCAR',
