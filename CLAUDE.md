@@ -10,7 +10,7 @@ user-invocable: true
 2. **Existing instructions**
     Follow the instructions in the folder .agents/skills when working on docstrings, feature-design and the Learn pages of the website:
     - `.agents/skills/docstring/SKILL.md`: NumPy-style docstrings, type hints on every new or edited function, RST `.. math::` equations in `Notes`
-    - `.agents/skills/learn/SKILL.md`: writing and reviewing the Learn section (`docs/learn/tutorials/tutorialNN.ipynb`, `docs/learn/howtos/<task>.md`, `docs/learn/theory/<topic>.md`) and the run cards of the cases (`references/case.md`); every tutorial and how-to is built on one case of `examples/cases` (terms in `CONTEXT.md`)
+    - `.agents/skills/learn/SKILL.md`: writing and reviewing the Learn section (`docs/learn/tutorials/tutorialNN.ipynb`, `docs/learn/howtos/<task>.md`, `docs/learn/theory/<topic>.md`) ; every tutorial and how-to is built on one case of `examples/cases`, whose inputs and data it starts from, and never edits it (terms in `CONTEXT.md`)
     - `.agents/skills/feature-design/SKILL.md`: API and module design rules (summarized in section 5)
     - `.agents/skills/sparse-backend/SKILL.md`: the sparse role every public `PAOFLOW.py` method needs, design notes and memory contract for `src/PAOFLOW/sparse/`. Read it before adding or changing a public `PAOFLOW.py` method or touching the sparse backend
 
@@ -98,11 +98,10 @@ user-invocable: true
                           REPORT.md, ges_nlo, *_nlo_model), TB models (*_tb_model, si_slater_koster_model),
                           unfolding, bi_pyskeaf, nbsn2_qo_analysis, vasp_*, *_basis_presets, si_sparse_backend,
                           al_transport_defect. README lists them; clean_runs.py cleans runs made in place.
-                          Each case's README.md is a run card; case.json `docs` lists the Learn pages built on
-                          the case, whose own calculation (a tutorial's driver, a how-to's main.py) lives in the case, while a
-                          how-to's variation of it (scripts, extra QE inputs) lives beside the page; case.json
-                          `data` pins its archive in the release case-data (`paoflow-gen --example <case> --with-data`);
-                          the figures and asserts of a how-to are docs/learn/howtos/<task>/figures.py
+                          The Learn pages never edit the cases: a page names its base case in its tip and keeps
+                          its own workflow (notebook, or docs/learn/howtos/<task>/<name>.py with figures.py) and
+                          extra inputs beside it; src/PAOFLOW/gen/case_data.json pins the archive of a case in the
+                          release case-data (`paoflow-gen --example <case> --with-data`)
     BASIS/                Per-element radial orbital tables (e.g. BASIS/Si/3P.dat) for internal projections
     PSEUDOS/              Norm-conserving pseudopotential sets (nc-sr-05, nc-fr-04 PBE standard); library/: one
                           copy of every UPF the cases and the tests use

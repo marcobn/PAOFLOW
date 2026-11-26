@@ -24,13 +24,15 @@ key                 content
                     ``"qe_launch": true`` (the Runs tab passes the ranks and the QE build)
 ``tags``            keywords
 ``source``          the folder of the former example
-``docs``            the pages of the website built on the case, relative to ``docs/``
-                    (``learn/tutorials/tutorial01.ipynb``); each names the case in its opening tip
-``data``            the data of the case, published once in the release ``case-data`` and never
-                    replaced: ``{"file": "<case>-v<N>.tar.gz", "sha256": ...}``; the archive holds
-                    paths relative to the case folder (a trimmed ``.save``, files too large for the
-                    repository) and :func:`fetch_case_data` extracts it into a copy
 ==================  =====================================================================================
+
+The data of a case, the DFT output that the case and the pages of the website built on it read, are
+one archive ``<case>-v1.tar.gz`` of the release ``case-data``, pinned by its checksum in
+``case_data.json`` beside this module (``{"<case>": {"file": ..., "sha256": ...}}``), so that a case
+folder never changes for the website. The archive holds paths relative to the case folder (a
+trimmed ``.save``, files too large for the repository) and :func:`fetch_case_data` extracts it into
+a copy. Until the first release of PAOFLOW that ships ``case_data.json``, a rebuilt archive replaces
+the published one under the same name; after it, a changed archive gets the next version.
 
 The pseudopotentials live once in ``PSEUDOS/library``; :func:`copy_case` copies them next to the
 inputs (``pseudo_dir = './'`` in the inputs, or the ``pseudo_dir`` folder of the case). Cases come with a source checkout (or an editable install): a wheel
@@ -52,6 +54,11 @@ from typing import Any
 from .outputs import RunStep
 
 CASE_FILE = 'case.json'
+
+#: Archive and checksum of the data of each case with data (see the module docstring).
+CASE_DATA: dict[str, dict[str, str]] = json.loads(
+    (Path(__file__).with_name('case_data.json')).read_text()
+)
 
 #: Workflow of a case whose drivers come with it: its run plan is the list of its ``steps``.
 SCRIPTS = 'scripts'
@@ -91,11 +98,9 @@ class Case:
         ``note``, ``stdout``).
     pseudo_dir : str
         Folder of the case that receives the pseudopotentials.
-    docs : list of str
-        Pages of the website built on the case, relative to ``docs/``.
     data : dict
-        ``file`` and ``sha256`` of the case's archive in the release ``case-data``; empty for a
-        case without data.
+        ``file`` and ``sha256`` of the case's archive in the release ``case-data``, from
+        ``case_data.json``; empty for a case without data.
     """
 
     name: str
@@ -110,7 +115,6 @@ class Case:
     source: str = ''
     steps: list[dict[str, Any]] = field(default_factory=list)
     pseudo_dir: str = '.'
-    docs: list[str] = field(default_factory=list)
     data: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -132,7 +136,6 @@ class Case:
             'source': self.source,
             'steps': self.steps,
             'scripts': self.scripts,
-            'docs': self.docs,
             'data': bool(self.data),
         }
 
@@ -184,8 +187,6 @@ def load_case(folder: Path) -> Case:
     for step in data.get('steps', []):
         if not step.get('label') or not step.get('command'):
             raise ValueError('%s: every step needs a label and a command' % folder.name)
-    if 'data' in data and not {'file', 'sha256'} <= set(data['data']):
-        raise ValueError('%s: data needs a file and a sha256' % folder.name)
     return Case(
         name=folder.name,
         folder=folder,
@@ -199,8 +200,7 @@ def load_case(folder: Path) -> Case:
         source=data.get('source', ''),
         steps=list(data.get('steps', [])),
         pseudo_dir=str(data.get('pseudo_dir', '.')),
-        docs=list(data.get('docs', [])),
-        data=dict(data.get('data', {})),
+        data=dict(CASE_DATA.get(folder.name, {})),
     )
 
 
@@ -414,7 +414,7 @@ def case_data_archive(case: Case, cache: Path | None = None) -> Path:
             shutil.copyfileobj(response, handle)
     if _sha256(partial) != case.data['sha256']:
         partial.unlink()
-        raise ValueError('%s does not match the checksum of case.json' % case.data['file'])
+        raise ValueError('%s does not match the checksum of case_data.json' % case.data['file'])
     partial.replace(archive)
     return archive
 

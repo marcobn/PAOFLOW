@@ -1,23 +1,23 @@
 """Re-run the tutorial notebooks and how-tos of the website on their base cases.
 
 Every tutorial and how-to is built on one case of ``examples/cases``, which its opening tip names
-(``paoflow-gen --example <case>``). The docs build does not execute the pages
+(``paoflow-gen --example <case>``): the case supplies the inputs and the data, and the page holds
+its own workflow, so a case folder never changes for the website. The docs build does not execute
+the pages
 (``nb_execution_mode = 'off'``), so this test is what notices that a page's code no longer runs,
 or that a number the page quotes has changed: each page ends with asserts of those numbers (a
 ``remove-cell`` cell in a notebook, the end of a how-to's figures script).
 
-- A tutorial makes the PAOFLOW calls of its case's driver: the ``main.py`` that ``paoflow-gen``
-  and Studio write from the answers of a generator case, or the ``main.py`` of a scripts case.
-  :func:`test_tutorial_follows_its_case` compares them without running anything.
-- A how-to shows one workflow script with ``literalinclude``: the ``main.py`` of its case when the
-  page explains the case's own calculation, or a script of its own beside the page,
-  ``docs/learn/howtos/<page>/<name>.py``, when it varies that calculation. It runs in a copy of the
-  case made by ``paoflow-gen --example <case> --with-data`` (a script of the page is copied in
-  first, as its tip tells the reader; on a generator case it runs after the generated
-  ``main.py``), followed there by the page's figures script,
+- A tutorial's notebook is its workflow. When its tip says that the notebook walks through the
+  driver ``main.py`` that ``paoflow-gen`` and Studio write from the answers of a generator case,
+  :func:`test_tutorial_follows_its_case` compares the two without running anything.
+- A how-to shows one workflow script with ``literalinclude``, kept beside the page,
+  ``docs/learn/howtos/<page>/<name>.py``. It is copied into a copy of the case made by
+  ``paoflow-gen --example <case> --with-data``, as the tip tells the reader, and runs there (on a
+  generator case after the generated ``main.py``), followed by the page's figures script,
   ``docs/learn/howtos/<page>/figures.py``, which draws the figures and asserts the numbers.
 
-The data of a case (``case.json`` ``data``) come from the release ``case-data`` through the
+The data of a case (``src/PAOFLOW/gen/case_data.json``) come from the release ``case-data`` through the
 download cache of :func:`PAOFLOW.gen.cases.case_data_archive`; an archive placed in that cache
 (``~/.cache/paoflow/case-data``) is used without a download, for data not yet published.
 
@@ -52,6 +52,8 @@ HIDDEN = {'hide-input', 'remove-cell'}  # plotting and asserts: not part of the 
 TIP = re.compile(r':::\{tip\}\n(.*?)\n:::', re.S)
 EXAMPLE = re.compile(r'paoflow-gen --example (\w+)')
 INCLUDE = re.compile(r'^```\{literalinclude\}\s+(\S+)', re.M)
+# the claim of a tip that the notebook makes the calls of the generated driver of its case
+WALKS_THROUGH = re.compile(r'driver `main.py` that this notebook walks through')
 
 
 def markdown(page: Path) -> str:
@@ -74,9 +76,7 @@ def base_case(page: Path):
 
 
 def driver(case) -> str:
-    """Source of the case's driver: generated from its answers, or its own ``main.py``."""
-    if case.scripts:
-        return (case.folder / 'main.py').read_text()
+    """Source of the ``main.py`` that ``paoflow-gen`` writes from the answers of a generator case."""
     from PAOFLOW.gen.outputs import workflow_outputs
     from PAOFLOW.gen.questions import WORKFLOWS
     from PAOFLOW.gen.questions.model import Context
@@ -183,16 +183,19 @@ def _notebooks() -> list[Path]:
 
 @pytest.mark.parametrize('notebook', _notebooks(), ids=lambda p: p.stem)
 def test_tutorial_follows_its_case(notebook: Path) -> None:
-    """The visible cells of a tutorial make the PAOFLOW calls of its case's driver."""
+    """The visible cells of a tutorial make the PAOFLOW calls of the driver it says it follows."""
     if notebook.stem == 'tutorial03':
         pytest.skip('stub')
+    case = base_case(notebook)
+    tip = TIP.search(markdown(notebook))
+    if case.scripts or not WALKS_THROUGH.search(tip.group(1)):
+        pytest.skip('the notebook is the workflow; it follows no generated driver')
     cells = json.loads(notebook.read_text())['cells']
     visible = '\n'.join(
         ''.join(c['source'])
         for c in cells
         if c['cell_type'] == 'code' and not HIDDEN & set(c['metadata'].get('tags', []))
     )
-    case = base_case(notebook)
     problems = compare_calls(driver(case), visible)
     if case.data and f'case-data/{case.data["file"]}' not in visible:
         problems.append(f'the setup cell does not download case-data/{case.data["file"]}')
@@ -209,7 +212,7 @@ def _howtos() -> list[Path]:
 
 
 def workflow_script(page: Path) -> Path:
-    """The one workflow script that the how-to shows with ``literalinclude``."""
+    """The one workflow script, kept beside the page, that the how-to shows with ``literalinclude``."""
     targets = {(page.parent / t).resolve() for t in INCLUDE.findall(page.read_text())}
     if len(targets) != 1:
         pytest.fail(f'{page.name} includes {len(targets)} scripts, not 1', pytrace=False)
@@ -277,16 +280,16 @@ def _run_howto(page: Path, mode: str, workdir: Path) -> None:
 
     case = base_case(page)
     script = workflow_script(page)
-    own = script.parent == page.with_suffix('')  # a variation kept beside the page
-    if not own and script.parent != case.folder:
-        pytest.fail(f'{page.name} shows {script}, neither its own script nor one of {case.name}')
+    if script.parent != page.with_suffix(''):
+        pytest.fail(f'{page.name} shows {script}, not a script beside the page', pytrace=False)
     argv = ['--example', case.name, '--workdir', str(workdir)]
     if paoflow_gen(argv + (['--with-data'] if case.data else [])) != 0:
         pytest.fail(f'paoflow-gen --example {case.name} failed', pytrace=False)
-    if own:
-        shutil.copy(script, workdir)
+    if (workdir / script.name).exists():
+        pytest.fail(f'{script.name} would overwrite a file of {case.name}', pytrace=False)
+    shutil.copy(script, workdir)
     if mode == 'scripts':
-        if not case.scripts and script.name != 'main.py':  # it reads the output of the driver
+        if not case.scripts:  # the workflow may read the output of the generated driver
             _run('main.py', workdir, log=workdir / 'main.log')
         _run(script.name, workdir, log=workdir / f'{script.stem}.log')
     _run(str(figures_script(page)), workdir)

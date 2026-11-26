@@ -204,18 +204,25 @@ def _page_case(page):
     return found.group(1) if found else None
 
 
-def test_case_docs_match_the_pages():
-    """``docs`` of each case lists exactly the tutorials and how-tos whose tip names the case."""
+def test_pages_name_existing_cases():
+    """Every tutorial and how-to names an existing case in its tip; the case folder itself holds
+    nothing of the website (the catalogue derives the pages of a case from these tips)."""
     docs = cases_root().parents[1] / 'docs'
     pages = sorted((docs / 'learn').glob('tutorials/tutorial*.ipynb'))
     pages += [p for p in sorted((docs / 'learn').glob('howtos/*.md')) if p.name != 'index.md']
     named = {str(page.relative_to(docs)): _page_case(page) for page in pages}
     missing_tip = sorted(page for page, case in named.items() if case is None)
     assert not missing_tip, 'pages without a tip naming their case: %s' % missing_tip
-    listed = {page: case.name for case in CASES for page in case.docs}
-    unknown = sorted(page for page in listed if page not in named)
-    assert not unknown, 'case.json docs entries that are no Learn page: %s' % unknown
-    assert listed == named, sorted(set(listed.items()) ^ set(named.items()))
+    names = {case.name for case in CASES}
+    unknown = sorted(page for page, case in named.items() if case not in names)
+    assert not unknown, 'pages whose tip names no case: %s' % unknown
+
+
+def test_case_data_registry_names_cases():
+    """``case_data.json`` pins archives of existing cases only."""
+    from PAOFLOW.gen.cases import CASE_DATA
+
+    assert set(CASE_DATA) <= {case.name for case in CASES}
 
 
 WITH_DATA = [case for case in CASES if case.data]
@@ -223,8 +230,7 @@ WITH_DATA = [case for case in CASES if case.data]
 
 @pytest.mark.parametrize('case', WITH_DATA, ids=[case.name for case in WITH_DATA])
 def test_case_data_pins(case):
-    """A data pin names a versioned archive of this case (never replaced, so the name changes
-    with the content) and its full checksum."""
+    """A data pin names a versioned archive of this case and its full checksum."""
     assert re.fullmatch(re.escape(case.name) + r'-v[1-9]\d*\.tar\.gz', case.data['file'])
     assert re.fullmatch(r'[0-9a-f]{64}', case.data['sha256'])
 

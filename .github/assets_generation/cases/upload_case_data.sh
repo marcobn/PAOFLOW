@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Upload case data archives (<case>-vN.tar.gz, from build_case_data.py) to the release case-data.
-# Creates the release when it does not exist; refuses to replace an archive already there.
+# Creates the release when it does not exist and replaces an archive of the same name: until the
+# first PAOFLOW release that ships src/PAOFLOW/gen/case_data.json, a rebuilt archive keeps its name
+# (update its checksum there in the same commit); after it, build a new version instead.
 #
 #   upload_case_data.sh si_bands_transport-v1.tar.gz [more archives...]
 #
@@ -12,7 +14,7 @@ TAG="case-data"
 REPO="${REPO:-marcobn/PAOFLOW}"
 
 if [[ $# -eq 0 ]]; then
-  sed -n '2,7p' "$0"
+  sed -n '2,9p' "$0"
   exit 1
 fi
 
@@ -26,15 +28,7 @@ done
 
 if ! gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
   gh release create "${TAG}" --repo "${REPO}" --title "${TAG}" \
-    --notes "Data of the example cases (examples/cases), one archive per case and version, pinned in case.json. Archives are never replaced."
+    --notes "Data of the example cases (examples/cases), one archive per case, pinned in src/PAOFLOW/gen/case_data.json."
 fi
 
-existing="$(gh release view "${TAG}" --repo "${REPO}" --json assets --jq '.assets[].name')"
-for archive in "$@"; do
-  if grep -Fxq "$(basename "${archive}")" <<< "${existing}"; then
-    echo "${TAG} already holds $(basename "${archive}"); build a new version instead." >&2
-    exit 1
-  fi
-done
-
-gh release upload "${TAG}" "$@" --repo "${REPO}"
+gh release upload "${TAG}" "$@" --repo "${REPO}" --clobber

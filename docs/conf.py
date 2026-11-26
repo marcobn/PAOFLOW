@@ -1,19 +1,39 @@
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 
+def page_case(page: Path) -> str | None:
+    """The base case a Learn page names in its opening tip (``paoflow-gen --example <case>``)."""
+    text = page.read_text(encoding='utf-8')
+    if page.suffix == '.ipynb':
+        cells = json.loads(text)['cells']
+        text = '\n'.join(''.join(c['source']) for c in cells if c['cell_type'] == 'markdown')
+    tip = re.search(r':::\{tip\}\n(.*?)\n:::', text, re.S)
+    found = re.search(r'paoflow-gen --example (\w+)', tip.group(1)) if tip else None
+    return found.group(1) if found else None
+
+
 def write_examples_page() -> None:
     """Write ``learn/examples.md``, the catalogue of ``examples/cases``, from their ``case.json``.
 
-    The case files are read as JSON, not through ``PAOFLOW.gen.cases``: importing PAOFLOW here would
-    pull in mpi4py. The page is rewritten only when it changes, so sphinx-autobuild does not loop.
+    The pages built on a case are those whose tip names it, and its data are those pinned in
+    ``src/PAOFLOW/gen/case_data.json``, so the case folders hold nothing of the website. The files
+    are read as JSON, not through ``PAOFLOW.gen.cases``: importing PAOFLOW here would pull in
+    mpi4py. The page is rewritten only when it changes, so sphinx-autobuild does not loop.
     """
     docs = Path(__file__).resolve().parent
     cases = docs.parent / 'examples' / 'cases'
+    data = json.loads((docs.parent / 'src' / 'PAOFLOW' / 'gen' / 'case_data.json').read_text())
+    pages = sorted((docs / 'learn').glob('tutorials/tutorial*.ipynb'))
+    pages += sorted(p for p in (docs / 'learn').glob('howtos/*.md') if p.name != 'index.md')
+    built_on: dict[str, list[str]] = {}
+    for page in pages:
+        built_on.setdefault(page_case(page), []).append(str(page.relative_to(docs).with_suffix('')))
     # the GitHub links follow the branch or tag Read the Docs builds
     ref = os.environ.get('READTHEDOCS_GIT_IDENTIFIER', 'develop')
     tree = 'https://github.com/marcobn/PAOFLOW/tree/%s/examples/cases/' % ref
@@ -34,14 +54,14 @@ def write_examples_page() -> None:
         facts = ['workflow `%s`' % case['workflow']]
         if case.get('tags'):
             facts.append('tags: ' + ', '.join(case['tags']))
-        if case.get('data'):
+        if folder.name in data:
             facts.append('precomputed data')
         facts.append('[folder on GitHub](%s%s)' % (tree, folder.name))
         lines += ['## `%s`' % folder.name, '', '**%s**' % case['title'], '']
         lines += [case['summary'], '', ' · '.join(facts), '']
-        if case.get('docs'):
-            pages = ['{doc}`/%s`' % Path(page).with_suffix('') for page in case['docs']]
-            lines += ['Explained in: ' + ', '.join(pages), '']
+        if folder.name in built_on:
+            links = ['{doc}`/%s`' % page for page in built_on[folder.name]]
+            lines += ['Explained in: ' + ', '.join(links), '']
     text = '\n'.join(lines)
     page = docs / 'learn' / 'examples.md'
     if not page.is_file() or page.read_text(encoding='utf-8') != text:

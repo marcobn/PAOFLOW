@@ -1,7 +1,7 @@
 """Figures and checks of the how-to "How to compute the non-linear optical response of a tight-binding
 model" (docs/learn/howtos/nonlinear-optics-model.md).
 
-Run it after ``python main.py > main.log``, in the folder of that run, by the path of this script
+Run it after ``python nonlinear_optics_model.py > nonlinear_optics_model.log``, in the folder of that run, by the path of this script
 (``python <PAOFLOW>/docs/learn/howtos/nonlinear-optics-model/figures.py``): it reads the spectra in
 ``output/`` and ``output_inv/``, draws ``nlo_shift.png`` and ``nlo_shg.png`` and asserts the numbers
 the page quotes.

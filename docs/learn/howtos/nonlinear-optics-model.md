@@ -8,14 +8,14 @@ On this page you compute the second-order optical response of a tight-binding mo
 - one constant broadening for all transitions, and injection currents given as rates, without a carrier relaxation time.
 
 :::{tip}
-This page is built on the case [`graphene_nlo_model`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/graphene_nlo_model): open it in PAOFLOW Studio with *Examples…* → `graphene_nlo_model`, or copy it with `paoflow-gen --example graphene_nlo_model`. The model is built in code, so the case needs no input files, and its run takes under a minute on one core. Download {download}`main.py <../../../examples/cases/graphene_nlo_model/main.py>` to compute the responses of your own model: replace `model` and set `nelec`, `components` and `nk` for it. Download {download}`figures.py <nonlinear-optics-model/figures.py>` to redraw the figures of this page from that run and to check the numbers it quotes, by running it in the same directory after `python main.py > main.log`.
+This page is built on the case [`graphene_nlo_model`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/graphene_nlo_model): open it in PAOFLOW Studio with *Examples…* → `graphene_nlo_model`, or copy it with `paoflow-gen --example graphene_nlo_model`. The model is built in code, so the case needs no input files, and its run takes under a minute on one core. Download {download}`nonlinear_optics_model.py <nonlinear-optics-model/nonlinear_optics_model.py>` to compute the responses of your own model: replace `model` and set `nelec`, `components` and `nk` for it. Download {download}`figures.py <nonlinear-optics-model/figures.py>` to redraw the figures of this page from that run and to check the numbers it quotes, by running it in the same directory after `python nonlinear_optics_model.py > nonlinear_optics_model.log`.
 :::
 
 ## Computing the responses
 
 The script uses the `graphene` model with $\delta = 1$ eV, which puts the on-site energies $\pm\delta/2$ on the two sublattices. This model has a gap of 1 eV at K and K′, and the point group $D_{3h}$. Its lattice vector $\mathbf{a}_1$ lies along $x$, and one of its mirror planes is perpendicular to $x$. The script computes the responses directly after the constructor:
 
-```{literalinclude} ../../../examples/cases/graphene_nlo_model/main.py
+```{literalinclude} nonlinear-optics-model/nonlinear_optics_model.py
 :language: python
 :end-before: '# The same model with inversion symmetry'
 ```
@@ -62,7 +62,7 @@ Symmetry gives the cheapest checks, because a component that the point group for
 
 A second run tests that the responses vanish with inversion. It uses the same model with $\delta = 0$, on a coarser mesh, because it only tests that the responses vanish:
 
-```{literalinclude} ../../../examples/cases/graphene_nlo_model/main.py
+```{literalinclude} nonlinear-optics-model/nonlinear_optics_model.py
 :language: python
 :start-after: '# The same model with inversion symmetry'
 :end-before: '# Symmetry checks'
@@ -70,7 +70,7 @@ A second run tests that the responses vanish with inversion. It uses the same mo
 
 The script prints the checks after the two runs:
 
-```{literalinclude} ../../../examples/cases/graphene_nlo_model/main.py
+```{literalinclude} nonlinear-optics-model/nonlinear_optics_model.py
 :language: python
 :start-after: '# Symmetry checks'
 ```

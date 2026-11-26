@@ -5,21 +5,21 @@ On this page you run PAOFLOW on a tight-binding model instead of a DFT calculati
 The Hamiltonian is then exactly the model: its basis is orthogonal, and its parameters are in eV. A model is therefore where you test a property against a known answer.
 
 :::{tip}
-This page is built on the case [`kane_mele_tb_model`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/kane_mele_tb_model): open it in PAOFLOW Studio with *Examples…* → `kane_mele_tb_model`, or copy it with `paoflow-gen --example kane_mele_tb_model`. The model is built in code, so the case has no input files. Download {download}`main.py <../../../examples/cases/kane_mele_tb_model/main.py>` to start your own model from it, replacing the model and keeping the calls; it runs in about 10 s on one core, and the [spin Hall tutorial](../tutorials/tutorial05.ipynb) walks through the same script. Download {download}`figures.py <tight-binding-model/figures.py>` to redraw the figure of this page from that run, in the same directory after `python main.py > main.log`.
+This page is built on the case [`kane_mele_tb_model`](https://github.com/marcobn/PAOFLOW/tree/develop/examples/cases/kane_mele_tb_model): open it in PAOFLOW Studio with *Examples…* → `kane_mele_tb_model`, or copy it with `paoflow-gen --example kane_mele_tb_model`. The model is built in code, so the case has no input files. Download {download}`tight_binding_model.py <tight-binding-model/tight_binding_model.py>` to start your own model from it, replacing the model and keeping the calls; it runs in about 10 s on one core, and the [spin Hall tutorial](../tutorials/tutorial05.ipynb) makes the same calls. Download {download}`figures.py <tight-binding-model/figures.py>` to redraw the figure of this page from that run, in the same directory after `python tight_binding_model.py > tight_binding_model.log`.
 :::
 
 ## Replacing the DFT steps with a model
 
 The script computes the bands, the density of states (DOS) and the spin Hall conductivity of the Kane–Mele model. This model is graphene with spin–orbit coupling. The script starts with the model:
 
-```{literalinclude} ../../../examples/cases/kane_mele_tb_model/main.py
+```{literalinclude} tight-binding-model/tight_binding_model.py
 :language: python
 :end-before: '# Bands along a path'
 ```
 
 The constructor builds $H_{\alpha\beta}(\mathbf{R})$, the lattice vectors and the orbital positions from the dictionary. There are no Kohn–Sham states to project, so you leave out {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.read_atomic_proj_QE`, {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.projectability` and {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.pao_hamiltonian`. You keep every call from {py:meth}`~PAOFLOW.PAOFLOW.PAOFLOW.bands` on. Five settings of these calls depend on the model instead of on a DFT calculation.
 
-```{literalinclude} ../../../examples/cases/kane_mele_tb_model/main.py
+```{literalinclude} tight-binding-model/tight_binding_model.py
 :language: python
 :start-after: '# Bands along a path'
 :end-before: '# Bands and velocities on the mesh'
@@ -27,7 +27,7 @@ The constructor builds $H_{\alpha\beta}(\mathbf{R})$, the lattice vectors and th
 
 You give the k-path with `band_path` and `high_sym_points`, in crystal coordinates of the reciprocal vectors of the model. `bands()` also needs `ibrav`, although it does not change a path given this way. Pass the Quantum ESPRESSO number of the model's lattice: 4 for hexagonal, 1 for simple cubic, 2 for fcc.
 
-```{literalinclude} ../../../examples/cases/kane_mele_tb_model/main.py
+```{literalinclude} tight-binding-model/tight_binding_model.py
 :language: python
 :start-after: '# Bands and velocities on the mesh'
 :end-before: '# Spin Hall conductivity of the sheet'
@@ -43,7 +43,7 @@ The energy zero is the zero of the model parameters, because PAOFLOW does not co
 
 The spin–orbit term opens a gap of 1.0392 eV at K. This gap is $6\sqrt{3}\,\lambda_{SO}$ for $\lambda_{SO}$ = `soc_par` = 0.1 eV ([Kane–Mele model](../theory/berry-topology.md#the-quantum-spin-hall-model-of-kane-and-mele)). The DOS integrates to 2.00 states below $E = 0$, two of the four bands, so $E = 0$ lies in the gap at half filling.
 
-```{literalinclude} ../../../examples/cases/kane_mele_tb_model/main.py
+```{literalinclude} tight-binding-model/tight_binding_model.py
 :language: python
 :start-after: '# Spin Hall conductivity of the sheet'
 ```

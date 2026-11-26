@@ -1,0 +1,14 @@
+{
+ "si_bands_transport": {
+  "file": "si_bands_transport-v1.tar.gz",
+  "sha256": "8f7b2f2142e6519b5f3d73f67413e37fcec7b1a31a2b27c1bb8114fd62a167bd"
+ },
+ "si_sparse_backend": {
+  "file": "si_sparse_backend-v1.tar.gz",
+  "sha256": "3a92d5faf34906c28cd418d27df74d94f7c0e8b7d41bc63dc2160fda84084a37"
+ },
+ "tbg_unfold": {
+  "file": "tbg_unfold-v1.tar.gz",
+  "sha256": "5fe9a4f3b52f787d551ff5e53b9f081f745fc7fe6bea5ef22dcaa0936a2079ed"
+ }
+}

@@ -1,6 +1,6 @@
 """Figure and checks of the how-to "How to run PAOFLOW on a tight-binding model".
 
-The page is docs/learn/howtos/tight-binding-model.md. Run it after ``python main.py`` in the folder
+The page is docs/learn/howtos/tight-binding-model.md. Run it after ``python tight_binding_model.py`` in the folder
 of that run, by the path of this script (``python
 <PAOFLOW>/docs/learn/howtos/tight-binding-model/figures.py``): it reads ``kane_mele/``, writes the
 figure of the page to the working directory and ends with asserts of the numbers the page quotes.
