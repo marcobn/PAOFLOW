@@ -79,3 +79,12 @@ def test_header_lines_and_clear_errors(tmp_path):
     sparse.write_text('0.0  G\n0.5  X\n')
     with pytest.raises(ValueError, match='sparse'):
         reader.read_band_path_PAO(str(sparse))
+
+
+def test_band_path_breaks_share_one_tick(tmp_path):
+    """A zero count is a path break: the label before and after it sit on one tick."""
+    path = tmp_path / 'kpath_points.txt'
+    path.write_text('gG 72\nM 42\nK 83\ngG 37\nA 72\nL 42\nH 83\nA 0\nL 37\nM 0\nK 37\nH 0\n\n')
+    findex, ftags = reader.read_band_path_PAO(str(path))
+    assert findex == [0, 72, 114, 197, 234, 306, 348, 431, 468, 505]
+    assert ftags == [r'$\Gamma$', 'M', 'K', r'$\Gamma$', 'A', 'L', 'H', 'A|L', 'M|K', 'H']
