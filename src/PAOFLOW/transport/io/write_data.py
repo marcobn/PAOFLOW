@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -144,7 +144,7 @@ def write_eigenchannels(
 
 def populate_real_space_hamiltonian(
     data_controller: DataController,
-    hk_data: Dict[str, np.ndarray],
+    hk_data: dict[str, np.ndarray],
     do_overlap_transformation: bool,
 ) -> None:
     """
@@ -183,7 +183,7 @@ def populate_real_space_hamiltonian(
     have_overlap = Sk is not None and do_overlap_transformation
 
     vr_crystal = ivr.astype(np.float64).T
-    rgrid_cart = crystal_to_cartesian(vr_crystal, avec).T  # (nrtot, 3)
+    rgrid_cart = crystal_to_cartesian(vr_crystal, avec.T).T  # (nrtot, 3)
 
     # H(R) = sum_k w_k exp(-i k.R) H(k) (compute_rham) for all R at once: one matrix product
     # instead of a Python loop over R, k and the orbital pairs (prohibitive on 3D meshes).
@@ -202,18 +202,18 @@ def write_operator_xml(
     *,
     output_dir: Path,
     filename: str,
-    operator_matrix: Optional[np.ndarray] = None,
-    ivr: Optional[np.ndarray] = None,
-    vr: Optional[np.ndarray] = None,
-    grid: Optional[np.ndarray] = None,
+    operator_matrix: np.ndarray | None = None,
+    ivr: np.ndarray | None = None,
+    vr: np.ndarray | None = None,
+    grid: np.ndarray | None = None,
     dimwann: int,
     dynamical: bool,
     analyticity: str = '',
     eunits: str = 'eV',
-    nomega: Optional[int] = None,
-    iomg_s: Optional[int] = None,
-    iomg_e: Optional[int] = None,
-    nrtot: Optional[int] = None,
+    nomega: int | None = None,
+    iomg_s: int | None = None,
+    iomg_e: int | None = None,
+    nrtot: int | None = None,
 ) -> None:
     """
     Write operator data to XML file in the exact format produced by Fortran iotk library.
@@ -393,9 +393,8 @@ def write_finite_bias_results(output_dir: str, postfix: str, scan: Any) -> None:
         handle.write(
             '# V (volt)   I (eV: units of 2e/h, per transverse cell)   iterations   converged   residual (eV)\n'
         )
-        for point in scan.points:
-            handle.write(f'{point.bias:12.6f} {point.current:16.8e} {point.iterations:6d} {int(point.converged):3d} '
-                         f'{point.residual:12.4e}\n')  # fmt: skip
+        handle.writelines(f'{point.bias:12.6f} {point.current:16.8e} {point.iterations:6d} {int(point.converged):3d} '
+                         f'{point.residual:12.4e}\n' for point in scan.points)  # fmt: skip
     coordinates = np.asarray(scan.group_coordinates, dtype=float)
     for name, attribute, unit in (
         ('potential', 'group_potential', 'eV'),
@@ -410,9 +409,8 @@ def write_finite_bias_results(output_dir: str, postfix: str, scan: Any) -> None:
         labels = scan.group_labels or ['X'] * len(coordinates)
         with open(target, 'w') as handle:
             handle.write(f'# atom element x y z (bohr), then {unit} at V = {biases}\n')
-            for index, (label, position, row) in enumerate(zip(labels, coordinates, values)):
-                handle.write(f'{index:6d} {label:>3s} ' + ' '.join(f'{x:12.6f}' for x in position) + ' '
-                             + ' '.join(f'{x:16.8e}' for x in row) + '\n')  # fmt: skip
+            handle.writelines(f'{index:6d} {label:>3s} ' + ' '.join(f'{x:12.6f}' for x in position) + ' '
+                             + ' '.join(f'{x:16.8e}' for x in row) + '\n' for index, (label, position, row) in enumerate(zip(labels, coordinates, values)))  # fmt: skip
     if scan.planar_average_coordinates is not None:
         averages = np.column_stack(
             [scan.planar_average_coordinates]
@@ -423,6 +421,8 @@ def write_finite_bias_results(output_dir: str, postfix: str, scan: Any) -> None:
     with open(os.path.join(output_dir, f'transmission_{tag}.dat'), 'w') as handle:
         handle.write('# V (volt)   E (eV)   T(E; V)\n')
         for point in scan.points:
-            for energy, value in zip(point.window_energies, point.transmission):
-                handle.write(f'{point.bias:12.6f} {energy:14.6f} {value:16.8e}\n')
+            handle.writelines(
+                f'{point.bias:12.6f} {energy:14.6f} {value:16.8e}\n'
+                for energy, value in zip(point.window_energies, point.transmission)
+            )
             handle.write('\n')
