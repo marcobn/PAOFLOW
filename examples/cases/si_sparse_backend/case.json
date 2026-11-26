@@ -1,6 +1,6 @@
 {
  "title": "Si: the sparse backend on a doubled cell",
- "summary": "Bulk silicon through PAOFLOW(sparse=True), the bond-list Hamiltonian meant for large cells: the PAO Hamiltonian truncated at the 36th neighbour shell, the cell doubled along the three axes (16 atoms), its folded bands, the DOS and the Boltzmann transport tensors in one mesh pass, checked against the dense pipeline on the 2-atom cell; then the choice of the truncation and of the states solved per k-point.",
+ "summary": "Bulk silicon through PAOFLOW(sparse=True), the bond-list Hamiltonian meant for large cells: PAO Hamiltonian, the cell doubled along the three axes (16 atoms), an energy window, then bands, DOS/PDOS and Boltzmann transport without dense (nk, nawf, nawf) arrays.",
  "workflow": "scripts",
  "pseudopotentials": [
   "library/Si.pbe-tm-new-gipaw-v2.1.UPF"
@@ -24,16 +24,15 @@
  ],
  "steps": [
   {
-   "label": "Sparse backend: doubled cell, bands, DOS and transport, checked against the dense pipeline",
+   "label": "Sparse backend: doubled cell, bands, DOS and transport",
    "command": [
     "python",
-    "main.py"
+    "main_sparse.py"
    ],
    "cwd": ".",
    "mpi": true,
    "interactive": false,
-   "note": "reads silicon.save (with the projwfc.x projections); writes output/ (sparse, 16 atoms) and output_dense/ (dense, 2 atoms)",
-   "stdout": "main.log"
+   "note": "reads silicon.save (with the projwfc.x projections); writes output_sparse/"
   }
  ],
  "tags": [
@@ -44,14 +43,5 @@
   "transport",
   "semiconductor"
  ],
- "source": "examples/recipes/sparse_backend",
- "docs": [
-  "learn/tutorials/tutorial04.ipynb",
-  "learn/howtos/sparse-truncation.md",
-  "learn/howtos/sparse-states.md"
- ],
- "data": {
-  "file": "si_sparse_backend-v1.tar.gz",
-  "sha256": "3a92d5faf34906c28cd418d27df74d94f7c0e8b7d41bc63dc2160fda84084a37"
- }
+ "source": "examples/recipes/sparse_backend"
 }

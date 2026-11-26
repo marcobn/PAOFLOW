@@ -1,28 +1,43 @@
 # Si: band unfolding of the 8-atom cubic cell onto the fcc zone
 
-An environment-dependent Slater-Koster (EDTB) model of silicon with s, p and d orbitals on the
-8-atom conventional cubic cell: `PAOFLOW.models.band_unfold.unfold_bands` unfolds its bands onto the
-Brillouin zone of the 2-atom fcc cell along L-Γ-X, giving each supercell state its spectral weight,
-for the perfect cell and for a cell with a +1 eV impurity potential on one atom. No DFT run: the
-models are built in code from the parameters in `Si_SK_params.json`.
+An environment-dependent Slater-Koster (EDTB) model of bulk silicon with s, p and d orbitals
+(`Si_SK_params.json`, nine orbitals per atom), built on the 2-atom fcc cell (`Si_geometry.json`) and on
+the 8-atom conventional cubic cell (`Si_geometry_sc8.json`). `PAOFLOW.models.band_unfold.unfold_bands`
+finds the supercell matrix, the translations and the atom mapping by itself and unfolds the 72 bands of
+the cubic cell onto the fcc Brillouin zone: every supercell state gets a spectral weight $W_n(\mathbf k)$
+on the path of the primitive cell. No DFT run.
 
 ## Run it
 
-- **PAOFLOW Studio**: *Examples…* → `si_supercell_unfold`. Studio copies the case, lists its scripts and runs the steps below in the Runs tab.
-- **Command line**: `paoflow-gen --example si_supercell_unfold` copies the case into `./si_supercell_unfold`; run the steps below in that folder.
-- **Python**: `main.py` is the workflow; read it to change a call.
+- **PAOFLOW Studio**: Setup tab, *Examples…*, pick this case and a folder name. Studio copies
+  the files and lists the steps below in the Runs tab.
+- **Command line**: `paoflow-gen --example si_supercell_unfold` copies the case into `./si_supercell_unfold` and prints
+  the steps; run them in that folder.
 
 ## Steps
 
-| step | command | run time |
-| ---- | ------- | -------- |
-| Unfold the bands of the perfect and the perturbed 8-atom cell onto the fcc zone | `python main.py > main.log` | under a minute on 4 cores |
+1. `python silicon.py`: builds both models, unfolds along Γ-X-W-K-Γ-L-U-W-L-K|U-X (80 points per
+   segment) and writes `si_sc8_unfolded.png`.
 
-## Outputs
+Runtime: a few seconds on one core.
 
-- `main.log`: the supercell matrix, the atom mapping and the sum rule of the weights.
-- `si_unfolded.npz`: the path (`kdist`, `kpath`, `ticks`), the primitive bands `E_pc`, and the supercell bands and weights of the perfect cell (`E_sc`, `W`) and of the cell with the impurity (`E_imp`, `W_imp`), in eV.
+## What to look at
 
-The parameter file is also a unit-test fixture (`tests/data/siliconSC/`).
+- The sum rule printed at the end: $\sum_n W_n(\mathbf k) = 18$, the orbitals of the primitive cell, at
+  every k (to about 1e-14).
+- `si_sc8_unfolded.png`: the unfolded supercell states, coloured by weight, fall on the bands of the
+  primitive cell (the grey reference lines underneath): dark red for weight 1, lighter where states
+  share the weight. The folded copies, with weight below 0.02, are not drawn.
 
-Explained in: [How to unfold supercell bands onto the primitive Brillouin zone](https://paoflow.readthedocs.io/en/latest/learn/howtos/band-unfolding.html)
+## Notes
+
+The same unfolding applies to projected DFT Hamiltonians: build the model dicts with
+`PAOFLOW.models.band_unfold.paoflow_to_model_dict(paoflow.data_controller)` for a primitive-cell run and a
+supercell run (both after `pao_hamiltonian()`, same pseudopotential and basis). The helper records the
+Fourier convention of the projected Hamiltonian (`fourier_sign = -1`), to which the spectral weights are
+sensitive. Since 15 November 2026 the Slater-Koster and EDTB builders store their hoppings in the same
+convention as DFT, so models and DFT runs mix freely (`docs/internals/sk-edtb.md`).
+
+The parameter and geometry files are also a unit-test fixture (`tests/data/siliconSC/`).
+
+Former location: `examples/unfold_examples/siliconSC`.

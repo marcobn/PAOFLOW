@@ -1,18 +1,18 @@
 {
- "title": "Gapped graphene model: Berry phases and Chern number",
- "summary": "The honeycomb model with a sublattice gap (t = -1 eV, delta = -0.2 eV): bands, the Berry phase of each band and of both on circles around K', its dependence on the radius of the loop (gapped and gapless graphene), and the Chern number of the lower band from the Berry flux through the whole zone. No DFT run; about a minute.",
+ "title": "Gapped graphene model: Berry phase and Berry flux at K",
+ "summary": "The honeycomb model with a sublattice gap (t = -1, delta = -0.2 eV): bands, the Berry phase of each band and of both on a circle around K, and the Berry flux on a square patch around K, with a map of the Berry curvature. No DFT run; seconds.",
  "workflow": "scripts",
  "steps": [
   {
-   "label": "Bands, Berry phases and Chern number of gapped graphene",
+   "label": "Bands, Berry phase and Berry flux around K",
    "command": [
     "python",
-    "main.py"
+    "graphene2.py"
    ],
    "cwd": ".",
    "mpi": false,
    "interactive": false,
-   "note": "writes graphene/ and gapless/ (bands, Berry phases on circles, plaquette phases)"
+   "note": "writes output/ and the Berry-curvature map output/berry_phase_k.pdf"
   }
  ],
  "tags": [
@@ -20,9 +20,6 @@
   "Berry phase",
   "topology",
   "2D"
- ],
- "docs": [
-  "learn/tutorials/tutorial06.ipynb"
  ],
  "source": "examples/TBmodel_examples/Graphene2"
 }

@@ -1,19 +1,15 @@
 {
  "title": "Gapped graphene model: shift current and SHG",
- "summary": "The honeycomb tight-binding model with a 1 eV sublattice gap (D3h): shift current, injection currents and second-harmonic susceptibility of the sheet from PAOFLOW.nonlinear_optics, with the selection rules yyy = -yxx = -xxy and xxx = 0, and the same model with inversion, where every response vanishes. No DFT run; under a minute.",
+ "summary": "The honeycomb tight-binding model with a 1 eV sublattice gap (D3h): shift current, injection currents and second-harmonic susceptibility of the sheet from PAOFLOW.nonlinear_optics, with the selection rules yyy = -yxx = -xxy and xxx = 0. No DFT run; seconds.",
  "workflow": "scripts",
  "steps": [
   {
-   "label": "Shift current, injection currents and SHG of gapped graphene, with and without inversion",
-   "command": [
-    "python",
-    "main.py"
-   ],
+   "label": "Shift current, injection currents and SHG of gapped graphene",
+   "command": ["python", "graphene_nonlinear.py"],
    "cwd": ".",
    "mpi": false,
    "interactive": false,
-   "note": "300 x 300 k-points, under a minute on one core; writes output/ and output_inv/ and prints the symmetry checks",
-   "stdout": "main.log"
+   "note": "300 x 300 k-points, a few seconds; writes output/"
   }
  ],
  "tags": [
@@ -23,8 +19,5 @@
   "SHG",
   "2D"
  ],
- "source": "examples/nlo_examples/Graphene",
- "docs": [
-  "learn/howtos/nonlinear-optics-model.md"
- ]
+ "source": "examples/nlo_examples/Graphene"
 }

@@ -1,6 +1,6 @@
 {
  "title": "Twisted bilayer graphene: moiré bands unfolded onto the graphene zone",
- "summary": "The commensurate (3,2) cell of twisted bilayer graphene (76 atoms, 13.17°) with a distance-dependent EDTB model of carbon: moiré bands folded in the supercell zone and unfolded onto the zone of the bilayer cell, first with dense diagonalisation, then with the sparse shift-invert Lanczos solver meant for large moiré cells. Two more scripts unfold the AA (4,3) supercell with the sparse solver, and compute the bands and the Dirac velocity of the (4,3) and (6,5) twisted cells. No DFT run.",
+ "summary": "The commensurate (3,2) cell of twisted bilayer graphene (76 atoms, 13.17°) with a distance-dependent EDTB model of carbon: moiré bands folded in the supercell zone and unfolded onto the zone of the bilayer cell, first with dense diagonalisation, then with the sparse shift-invert Lanczos solver meant for large moiré cells. No DFT run; a few minutes.",
  "workflow": "scripts",
  "steps": [
   {
@@ -37,13 +37,5 @@
   "2D",
   "sparse"
  ],
- "source": "examples/unfold_examples/TBG",
- "docs": [
-  "learn/howtos/unfold-large-supercells.md",
-  "learn/howtos/twisted-bilayer.md"
- ],
- "data": {
-  "file": "tbg_unfold-v1.tar.gz",
-  "sha256": "5fe9a4f3b52f787d551ff5e53b9f081f745fc7fe6bea5ef22dcaa0936a2079ed"
- }
+ "source": "examples/unfold_examples/TBG"
 }

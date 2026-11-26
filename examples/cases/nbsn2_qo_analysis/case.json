@@ -5,10 +5,7 @@
  "steps": [
   {
    "label": "Spin-orbit analysis against the torque rotation",
-   "command": [
-    "python",
-    "main.py"
-   ],
+   "command": ["python", "main.py"],
    "cwd": ".",
    "mpi": false,
    "interactive": false,
@@ -16,14 +13,11 @@
   },
   {
    "label": "Scalar-relativistic run and its convergence (81^3 vs 49^3)",
-   "command": [
-    "python",
-    "main_sr.py"
-   ],
+   "command": ["python", "main_sr.py"],
    "cwd": ".",
    "mpi": false,
    "interactive": false,
-   "note": "about 30 s; results in qo_analysis_sr/"
+   "note": "a few seconds; results in qo_analysis_sr/"
   }
  ],
  "tags": [
@@ -35,8 +29,5 @@
   "agentic",
   "spin-orbit"
  ],
- "source": "examples/qo_analysis_examples/NbSn2",
- "docs": [
-  "learn/howtos/quantum-oscillations.md"
- ]
+ "source": "examples/qo_analysis_examples/NbSn2"
 }

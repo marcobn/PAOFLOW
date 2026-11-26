@@ -41,14 +41,5 @@
   "transport",
   "semiconductor"
  ],
- "source": "examples/qe_examples/example01",
- "docs": [
-  "learn/tutorials/tutorial01.ipynb",
-  "learn/howtos/plotting.md",
-  "learn/howtos/projections.md"
- ],
- "data": {
-  "file": "si_bands_transport-v2.tar.gz",
-  "sha256": "8f7b2f2142e6519b5f3d73f67413e37fcec7b1a31a2b27c1bb8114fd62a167bd"
- }
+ "source": "examples/qe_examples/example01"
 }

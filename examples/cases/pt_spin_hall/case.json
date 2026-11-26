@@ -42,8 +42,5 @@
   "spin-orbit",
   "metal"
  ],
- "source": "examples/qe_examples/example05",
- "docs": [
-  "learn/tutorials/tutorial03.ipynb"
- ]
+ "source": "examples/qe_examples/example05"
 }

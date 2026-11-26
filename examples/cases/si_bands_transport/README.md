@@ -1,48 +1,21 @@
 # Si: bands, DOS and Boltzmann transport
 
-Bulk silicon on the internal projections: PAOFLOW generates a basis of pseudo-atomic orbitals
-from the pseudopotential, projects the Kohn–Sham wavefunctions onto it, and computes from the
-PAO Hamiltonian the band structure, the total and projected DOS, and the conductivity, Seebeck
-coefficient and electronic thermal conductivity at constant relaxation time.
+Bulk silicon with projwfc.x projections: band structure, total and projected DOS, conductivity, Seebeck coefficient and electronic thermal conductivity.
 
 ## Run it
 
-- **PAOFLOW Studio**: *Examples…* → `si_bands_transport`. Studio copies the case, fills the `run`
-  form and runs the steps below in the Runs tab.
-- **Command line**: `paoflow-gen --example si_bands_transport` copies the case into
-  `./si_bands_transport` and writes the drivers; run the steps below in that folder.
-- **Python**: the `main.py` written by the command above is the workflow, a plain PAOFLOW script;
-  read it to change a call.
+- **PAOFLOW Studio**: Setup tab, *Examples…*, pick this case and a folder name. Studio copies
+  the inputs and the pseudopotentials, fills the **run** form and lists the runs below in the
+  Runs tab.
+- **Command line**: `paoflow-gen --example si_bands_transport` copies the case into `./si_bands_transport` and writes the
+  drivers; then run the steps below in that folder.
 
 ## Steps
 
-| step | command | run time |
-| ---- | ------- | -------- |
-| Self-consistent run | `pw.x -in scf.in` | under a second on 1 core |
-| Non-self-consistent run on the full k grid | `pw.x -in nscf.in` | about 9 s on 1 core |
-| PAOFLOW | `mpirun -np 4 python main.py` | 1 min 45 s on 1 core with the basis generation of the first run, 5.0 GB |
-| Figures | `python plot.py` (or the Plots tab) | a few seconds |
+1. Self-consistent run: `pw.x -in scf.in`
+2. Non-self-consistent run on the full k grid: `pw.x -in nscf.in`
+3. PAOFLOW: `mpirun -np 4 python main.py`, then `python plot.py` (or the Plots tab)
 
-To skip the QE runs, copy the case with `paoflow-gen --example si_bands_transport --with-data`
-(in Studio, *Use the precomputed data of the case*): it extracts `silicon.save`, with the
-wavefunctions that the internal projections read, from `si_bands_transport-v2.tar.gz` of the
-release [case-data](https://github.com/marcobn/PAOFLOW/releases/tag/case-data) (QE 7.4.1). The
-archive also holds the `atomic_proj.xml` of `projwfc.x` and the DFT bands `bands.out` that the
-projections how-to reads.
+Projections: PAOFLOW's internal projections on the `standard` basis of the pseudopotentials (generated at run time in `BASIS_PS`); pick *projwfc* in the form for QE's projwfc.x, and Studio adds `proj.in` and the projwfc.x run.
 
-`main.py` projects on the `standard` basis, which it generates from the pseudopotential in
-`BASIS_PS/` on the first run; choose *projwfc* in the form to read the projections of QE's
-`projwfc.x` (`proj.in`) instead.
-
-## Outputs
-
-- `output/bands_0.dat`, `output/kpath_points.txt`: the bands along the fcc path (eV, relative to
-  $E_F$) and the high-symmetry points of the path.
-- `output/dosdk_0.dat`: the DOS (eV, states/eV per spin and cell).
-- `output/Si1_3s_pdosdk_0.dat`, ...: the PDOS of each orbital, and `output/pdosdk_sum_0.dat` their
-  sum.
-- `output/sigmagauss_0.dat`, `output/Seebeckgauss_0.dat`, `output/kappagauss_0.dat`,
-  `output/PFgauss_0.dat`: $\sigma/\tau$, $S$, $\kappa_0/\tau$ and $S^2\sigma/\tau$ at 300 K against
-  $\mu$; columns $T$, $\mu$, then $xx$, $yy$, $zz$, $xy$, $xz$, $yz$.
-
-Explained in: [Band structure and density of states of silicon](https://paoflow.readthedocs.io/en/latest/learn/tutorials/tutorial01.html), [How to plot PAOFLOW output with GPAO](https://paoflow.readthedocs.io/en/latest/learn/howtos/plotting.html), [How to choose the projections onto the PAO basis](https://paoflow.readthedocs.io/en/latest/learn/howtos/projections.html)
+Pseudopotentials (from `PSEUDOS/library`): `Si.pbe-tm-new-gipaw-v2.1.UPF`.

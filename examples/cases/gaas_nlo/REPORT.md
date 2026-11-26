@@ -382,7 +382,7 @@ values because a free 2D `vc-relax` converged to a cell 8 % too small.
 ## 6. Reproduce
 
 ```bash
-cd examples/cases/graphene_nlo_model && python main.py
+cd examples/cases/graphene_nlo_model && python graphene_nonlinear.py
 cd ../gaas_nlo  && (QE scf/nscf, or ln -s the GaAs.save of gaas_doped_transport) && mpirun -np 8 python main.py
 cd ../ges_nlo   && (QE scf/nscf, paoflow-genbasis-ps as in README.md) && mpirun -np 8 python main.py
 cd ../gaas_nlo  && python make_report_figures.py      # figures/fig1-3 from the three output/ folders
