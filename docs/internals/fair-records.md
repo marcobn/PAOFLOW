@@ -102,7 +102,7 @@ addresses are used. PAOFLOW links to the terms of all three and writes its own d
 never copy a definition, a unit table or a UCUM code from them. All 92 definitions were compared
 with every text of the QUDT quantity-kind vocabulary on 2026-11-20: the longest shared run is
 four ordinary words ("in units of the"). The credits are on the user page
-(`docs/tutorials/howtos/run-records.md`).
+(`docs/studio/run-records.md`).
 
 Terms with no shared counterpart stay local with their definition. NOMAD's dataset-level terms
 are added when their addresses resolve (they did not on 2026-11-19).
