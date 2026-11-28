@@ -355,6 +355,36 @@ def test_orchestrator_switches_to_the_density_matrix_engine_for_a_metal(tmp_path
     assert 'photocurrent' not in res and not attr['nonlinear_optics']['fermi_surface']
 
 
+def test_orchestrator_charge_neutral_fermi_level(tmp_path, capsys):
+    """Default: the DFT level (0.0), with a warning; 'neutral': the counted level, as if passed."""
+    from PAOFLOW import PAOFLOW
+
+    model = {'label': 'graphene', 't': 2.7, 'delta': 1.0}
+    pao = PAOFLOW.PAOFLOW(model=model, outputdir=str(tmp_path / 'out'), verbose=False)
+    options = dict(
+        nk=(24, 24, 1), emin=0.5, emax=3.0, ne=4, eta=0.1, components=['yyy'], nelec=2.5,
+        temperature=600.0, relaxation_time=25.0, twoD=True, second_harmonic=False,
+    )  # fmt: skip
+    default = pao.nonlinear_optics(**options)
+    printed = capsys.readouterr().out
+    attr = pao.data_controller.data_dicts()[1]
+    meta = attr['nonlinear_optics']
+    level = meta['charge_neutral_fermi_level_ev']
+    assert meta['fermi_energy_source'] == 'dft' and meta['fermi_energy_ev'] == 0.0
+    assert level > 0.1 and 'WARNING' in printed and "fermi_energy='neutral'" in printed
+    neutral = pao.nonlinear_optics(fermi_energy='neutral', **options)
+    meta = attr['nonlinear_optics']
+    assert meta['fermi_energy_source'] == 'neutral'
+    assert meta['fermi_energy_ev'] == pytest.approx(level, abs=1e-12)
+    assert [r['method'] for r in attr['charge_neutral_fermi_level']] == ['nonlinear_optics'] * 2
+    explicit = pao.nonlinear_optics(fermi_energy=level, **options)
+    assert attr['nonlinear_optics']['fermi_energy_source'] == 'given'
+    assert np.allclose(neutral['photocurrent'], explicit['photocurrent'], rtol=1e-9, atol=0.0)
+    assert not np.allclose(neutral['photocurrent'], default['photocurrent'], rtol=1e-3)
+    with pytest.raises(ValueError, match='neutral'):
+        pao.nonlinear_optics(fermi_energy='charge_neutral', **options)
+
+
 def test_orchestrator_coherence_damping_reaches_the_engine(tmp_path):
     """coherence_damping (1: eta, the default; 2: adiabatic) is passed to the engine and recorded."""
     from PAOFLOW import PAOFLOW

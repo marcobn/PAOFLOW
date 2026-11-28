@@ -144,7 +144,8 @@ $1/\omega_{mn}$ factors, while $r$, $r_{;a}$ and $\Delta$ keep the DFT eigenvect
 (`test_scissor_shifts_the_delta_spectra_rigidly`).
 
 **Occupations.** 0 K: a step by band index (`nelec`/$g_s$ bands) or by energy if `fermi_energy` is
-given; finite `temperature`: Fermi–Dirac at `fermi_energy` (default the mid-gap).
+given; finite `temperature`: Fermi–Dirac at `fermi_energy` (default the mid-gap; `'neutral'`: the charge-neutral
+level, see *The Fermi level of a metal*).
 
 **Degeneracies (U(N)-covariant since October 28 2026).** Bands are grouped in clusters by the
 transitive closure of consecutive gaps below `degeneracy_tol` (`degenerate_clusters`); $r$, $G$
@@ -319,7 +320,7 @@ cells), `second_harmonic=False` when only the δ-spectra are needed.
   (`examples/cases/gaas_nlo/REPORT.md` §3.2).
 - **GeS numbers** (monolayer, nosym 18×18×1 nscf, 200² dense grid, η = 0.05 eV, PBE gap 1.68 eV,
   sheet units with the 18 Å cell): shift-current peaks $\sigma^{xxx} = 46$, $\sigma^{xyy} = 48$,
-  $\sigma^{yxy} = 26$ nm µA/V² (about 75 µA/V² for a 0.6 nm layer, the order of magnitude of Rangel
+  $\sigma^{yxy} = 26$ nm µA/V² (xxx and xyy about 77 and 80 µA/V² for a 0.6 nm layer, the order of magnitude of Rangel
   *et al.* 2017), the mirror-forbidden $yyy$ and $xxy$ below $10^{-8}$, T-odd files identically zero.
   The repository BASIS tables projected the Ge 3d bands at 0.90 and gave a gapless PAO Hamiltonian;
   the tables generated from the pseudopotentials (`paoflow-genbasis-ps`, preset `standard`) give 26
@@ -731,6 +732,33 @@ reversal and allowed. In the trace these terms appear divided by τ.
 
 Use a long τ, or the δ-function path, for the rate. The time-odd Drude residual grows as τ², so at long τ it dominates
 the total circular current until k is converged (`validation/nlo_metals/CoSi/REPORT.md`, 15 Nov 2026).
+
+**The Fermi level of a metal.** PAOFLOW energies are relative to the Fermi level of the DFT run, which carries that
+run's smearing and k-grid; an nscf run recomputes it on its own grid. With Marzari–Vanderbilt 0.27 eV in QE, the
+charge-neutral level of the PAO bands is:
+
+| | 300 K | 100 K | 10 K |
+|---|---|---|---|
+| TaAs (spin-orbit; scf and nscf 10³), 80³ | +73.7 meV | +84.3 meV | +85.4 meV |
+| CoSi (scalar), 80³ | −3.0 meV | −18.0 meV | −19.0 meV |
+| Al (scf 16³ shifted, nscf 12³), 48³ / 64³ | +115.9 / +115.8 meV | | |
+
+In Al the nscf level is 104 meV below the scf one (7.7552 against 7.8592 eV): the coarse unshifted nscf grid, not
+the smearing, is the cause, and the charge-neutral level is 12 meV above the scf level. On the coarse grids of a
+response the count itself is not converged (Al at 300 K: +194 / −12 / +143 / +107 meV on 8³ / 12³ / 16³ / 24³),
+but it is the neutral level of the grid the response uses.
+
+The level of a semimetal converges slowly with the grid (TaAs at 10 K: +94 / +94 / +85 meV on 40³ / 60³ / 80³).
+`fermi_energy` still defaults to 0.0, the DFT level, so earlier outputs do not change. A metallic run of
+`nonlinear_optics` or `coupled_optical_response` with that default counts the electrons of its own bands on `nk` at
+`temperature` (`PAOFLOW.charge_neutral_fermi_level`, `spectrum/fermi_level.py`; eigenvalues only, on the irreducible
+wedge of the unitary point-group operations when they leave the bands invariant) and prints a warning when the
+charge-neutral level differs by more than max(5 meV, kT/2).
+`fermi_energy='neutral'` uses that level. Both cases record `fermi_energy_source` and
+`charge_neutral_fermi_level_ev` in `attr`, and the counted levels go to `paoflow_outputs.json`. The count is a balance
+of the conduction electrons and the valence holes solved in logarithms, exact in a gap at any temperature, so an
+insulator gets its intrinsic level. It refuses an electron count that the bands at the DFT level do not hold
+(semicore shells of the DFT valence outside the basis: pass `nelec`).
 
 The physical models of these tables (gapped and strained graphene, the Haldane model, the Rice–Mele chain, the
 two-band Weyl semimetal, the single bands) are library models, `PAOFLOW.models.models` (`honeycomb_model`,

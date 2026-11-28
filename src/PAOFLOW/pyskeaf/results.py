@@ -10,6 +10,7 @@ formatting will be filled in as later phases produce real orbit data.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Union
@@ -246,6 +247,90 @@ def write_orbit_outlines(
     output_invau.write_text(''.join(lines_au))
 
 
+@dataclass
+class OrbitOutline:
+    """One orbit of an orbit-outline file (:func:`write_orbit_outlines`).
+
+    Attributes
+    ----------
+    azimuthal_deg, polar_deg : float
+        Field direction of the block (pyskeaf convention, BXSF Cartesian frame).
+    frequency_kT : float
+        Frequency averaged over the copies of the orbit (kT).
+    outline_frequency_kT : float
+        Frequency of the copy whose contour is given (kT); ``nan`` if the file omits it.
+    slice_index : int
+        Slice of that copy.
+    points_inv_angstrom : ndarray ``(npts, 3)``
+        The contour as written (Cartesian, 1/Angstrom, 2 pi included).
+    """
+
+    azimuthal_deg: float
+    polar_deg: float
+    frequency_kT: float
+    outline_frequency_kT: float
+    slice_index: int
+    points_inv_angstrom: np.ndarray
+
+
+_OUTLINE_HEADER_RE = re.compile(
+    r'Azimuthal\(deg\)\s*=\s*([-\d.Ee+]+)\s*,\s*Polar\(deg\)\s*=\s*([-\d.Ee+]+)'
+)
+_OUTLINE_SLICE_RE = re.compile(
+    r'Slice\s*=\s*(\d+)\s*,\s*Freq\(kT, average of all copies\)\s*=\s*([-\d.Ee+]+)'
+)
+_OUTLINE_ORBIT_RE = re.compile(
+    r'Orbit #\s*=\s*(\d+)\s*,\s*Freq\(kT, this largest copy used for outline\)\s*=\s*([-\d.Ee+]+)'
+)
+_OUTLINE_POINTS_RE = re.compile(r'Points\s*=\s*(\d+)')
+
+
+def read_orbit_outlines(path: Union[str, Path]) -> list[OrbitOutline]:
+    """Read an orbit-outline file of :func:`write_orbit_outlines` (the 1/Angstrom one).
+
+    Parameters
+    ----------
+    path : str or Path
+        ``qo_EF_<token>_orbitoutlines_invAng[_<band>].out``; blocks of several angles may follow
+        one another (each block starts with its ``Azimuthal(deg) = ..., Polar(deg) = ...`` line).
+
+    Returns
+    -------
+    list of OrbitOutline
+        In file order, the points as written (a contour may repeat its first point at the end).
+    """
+    outlines: list[OrbitOutline] = []
+    lines = Path(path).read_text().splitlines()
+    azimuthal = polar = None
+    i = 0
+    while i < len(lines):
+        header = _OUTLINE_HEADER_RE.search(lines[i])
+        if header:
+            azimuthal, polar = float(header.group(1)), float(header.group(2))
+            i += 1
+            continue
+        block = _OUTLINE_SLICE_RE.search(lines[i])
+        if block and azimuthal is not None:
+            orbit = _OUTLINE_ORBIT_RE.search(lines[i + 1])
+            npoints = int(_OUTLINE_POINTS_RE.search(lines[i + 2]).group(1))
+            rows = lines[i + 4 : i + 4 + npoints]  # after the 'kx ky kz' line
+            points = np.array([[float(x) for x in row.split()] for row in rows], dtype=float)
+            outlines.append(
+                OrbitOutline(
+                    azimuthal_deg=azimuthal,
+                    polar_deg=polar,
+                    frequency_kT=float(block.group(2)),
+                    outline_frequency_kT=float(orbit.group(2)) if orbit else float('nan'),
+                    slice_index=int(block.group(1)),
+                    points_inv_angstrom=points,
+                )
+            )
+            i += 4 + npoints
+            continue
+        i += 1
+    return outlines
+
+
 # --- internal header / per-angle helpers ------------------------------------
 
 
@@ -263,7 +348,7 @@ def _results_header(result: SKEAFResult, *, brief: bool) -> str:
         out.append(f' XCrysDen FS filename: {bxsf.filename:<50}\n')
         fermi_energy_ev = result.fermi_energy * RYDBERG_IN_EV
         out.append(f' Fermi energy: {fermi_energy_ev:12.6f} eV \n')
-        out.append(f' Original     nx = {bxsf.nx:4d}  ny = {bxsf.ny:4d}' f'  nz = {bxsf.nz:4d}\n')
+        out.append(f' Original     nx = {bxsf.nx:4d}  ny = {bxsf.ny:4d}  nz = {bxsf.nz:4d}\n')
     if cfg is not None:
         out.append(f' num_interpolation = {cfg.numint:4d}\n')
         rad2deg = 180.0 / np.pi
@@ -294,11 +379,10 @@ def _results_header(result: SKEAFResult, *, brief: bool) -> str:
         )
         if cfg.allow_ext_near_walls:
             out.append(
-                ' Extremal orbits near super-cell walls are ALLOWED '
-                'to be included in the output.\n'
+                ' Extremal orbits near super-cell walls are ALLOWED to be included in the output.\n'
             )
         else:
-            out.append(' Extremal orbits near super-cell walls are REJECTED ' 'from the output.\n')
+            out.append(' Extremal orbits near super-cell walls are REJECTED from the output.\n')
     if result.dos_at_ef is not None:
         out.append(f' DOS at E_F: {result.dos_at_ef:14.6E} states/Ryd/cell\n')
     if result.band_volume is not None:
@@ -349,8 +433,6 @@ def _per_angle_blocks(result: SKEAFResult, *, include_outline_pointer: bool) -> 
                 f'{ay:8.4f}+/-{sy:8.4f},{az:8.4f}+/-{sz:8.4f})\n'
             )
             if include_outline_pointer and o.rep_contour_xy is not None:
-                out.append(
-                    f'  Orbit copy chosen for outline: ' f'from slice {o.rep_slice_index:4d}\n'
-                )
+                out.append(f'  Orbit copy chosen for outline: from slice {o.rep_slice_index:4d}\n')
             out.append(' \n')
     return ''.join(out)

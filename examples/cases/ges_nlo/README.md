@@ -48,7 +48,7 @@ mirror-forbidden components vanish to 1e-9.
 
 Reference run (October 2026, 18×18×1 nosym nscf, 200×200 dense grid, eta 0.05 eV, no scissor,
 PBE gap 1.68 eV): sheet shift current peaks σ^{xxx} = 46, σ^{xyy} = 48, σ^{yxy} = 26 nm µA/V²
-(at 2.8, 2.8 and 2.05 eV; divided by a 0.6 nm layer thickness ≈ 75 µA/V², the order of magnitude
+(at 2.8, 2.8 and 2.05 eV; divided by a 0.6 nm layer thickness ≈ 77 and 80 µA/V² for xxx and xyy, the order of magnitude
 of Rangel 2017 / Wang 2017); the forbidden yyy and xxy components and the T-odd files vanish
 (< 1e-8). 13 min on 8 ranks. Fig. 3 of the validation report (`make_report_figures.py` of the case
 `gaas_nlo`) is drawn from `output/` when the two cases sit in the same parent folder.

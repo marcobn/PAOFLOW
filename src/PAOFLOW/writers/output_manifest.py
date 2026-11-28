@@ -125,6 +125,18 @@ def run_record(attributes: dict, start_time: float, output_path: str) -> dict:
     facts = {key: _scalar(attributes.get(key)) for key in keys if key in attributes}
     if 'Efermi' in facts:
         facts['fermi_energy_dft_ev'] = facts.pop('Efermi')
+    if attributes.get('charge_neutral_fermi_level'):
+        # charge-neutral levels counted in this run (PAOFLOW.charge_neutral_fermi_level and the
+        # response methods that use or check them), relative to the DFT Fermi energy
+        facts['charge_neutral_fermi_level'] = [
+            {
+                key: (
+                    [_scalar(item) for item in value] if isinstance(value, list) else _scalar(value)
+                )
+                for key, value in record.items()
+            }
+            for record in attributes['charge_neutral_fermi_level']
+        ]
     revision = source_revision()
     if revision is not None:
         facts = {

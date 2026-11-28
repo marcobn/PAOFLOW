@@ -4,10 +4,13 @@ Figure 1  fig1_sweep_overlay.png   calculated extremal orbits (NumOrbCopy >= fig
                                    the experimental sweep peaks, with branch assignments.
 Figure 2  fig2_network_orbits.png  magnetic-breakdown network orbits vs the measured peaks that no
                                    direct orbit explains (only if data/network_orbits.csv exists).
+Figure 3  fig3_spin_factors.png    calculated orbits coloured by the spin factor |R_s| of the first
+                                   harmonic (only if data/spin_splitting.csv exists).
 
 Requires only Python 3, numpy and matplotlib:  python plot_figures.py
 Inputs: data/calc_orbits.csv, data/exp_sweep_peaks.csv, data/meta.json,
-        optional data/branch_assignments.csv and data/network_orbits.csv (see README.md).
+        optional data/branch_assignments.csv, data/network_orbits.csv and data/spin_splitting.csv
+        (see README.md).
 """
 
 import csv
@@ -278,11 +281,35 @@ def figure2(e, c, n):
     plt.close(fig)
 
 
+def figure3(e):
+    from matplotlib.colors import LinearSegmentedColormap
+
+    # one-hue sequential ramp, light = suppressed (|R_s| ~ 0), dark = full amplitude
+    ramp = LinearSegmentedColormap.from_list('rs', ['#cde2fb', '#5598e7', '#1c5cab', '#0d366b'])
+    s = read_csv(DATA / 'spin_splitting.csv')
+    angle, freq, copies = num(s, 'angle_deg'), num(s, 'freq_T'), num(s, 'num_orbit_copies')
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6.5), dpi=150, sharey=True)
+    for ax, column, name in (
+        (axes[0], 'Rs_total', 'adiabatic |R_s|'),
+        (axes[1], 'absRs_total_prop', '|R_s| with the Berry transport'),
+    ):
+        exp_scatter(ax, e)
+        points = ax.scatter(angle, freq, c=np.abs(num(s, column)), cmap=ramp, vmin=0, vmax=1,
+                            s=8 + 0.04 * np.clip(copies, 0, 400), zorder=4)  # fmt: skip
+        style(ax, f'{META["title"]}: {name}', ylim=(10, 10000))
+    fig.colorbar(points, ax=axes, label='|R_s| (first harmonic)', shrink=0.8)
+    axes[0].legend(fontsize=7, loc='lower right', framealpha=0.9)
+    fig.savefig(HERE / 'fig3_spin_factors.png')
+    plt.close(fig)
+
+
 def main():
     e, c, n, ann = load()
     figure1(e, c, ann)
     if n is not None:
         figure2(e, c, n)
+    if (DATA / 'spin_splitting.csv').exists():
+        figure3(e)
     print('figures written')
 
 

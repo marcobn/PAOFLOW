@@ -28,8 +28,12 @@ def build_package(
     contact_field: float,
     min_copies: int,
     figure_min_copies: int,
+    spin_table: pd.DataFrame | None = None,
 ) -> Path:
     """Write ``data/`` (CSV tables and ``meta.json``), the standalone scripts and a README template.
+
+    ``spin_table`` (optional, :meth:`QuantumOscillationAnalysis.spin_splitting`) adds
+    ``data/spin_splitting.csv``: g* and the spin factor R_s of every orbit.
 
     Returns
     -------
@@ -51,6 +55,12 @@ def build_package(
         assignments.to_csv(data / 'branch_assignments.csv', index=False)
     if network is not None:
         network.to_csv(data / 'network_orbits.csv', index=False)
+    if spin_table is not None and len(spin_table):
+        spin_table.assign(angle_deg=spin_table[sweep_angle])[
+            ['angle_deg', 'group', 'freq_T', 'm_star', 'g_spin', 'g_spin_atomic', 'g_total', 'Rs_total',
+             'absRs_total_prop', 'num_orbit_copies']
+        ].rename(columns={'m_star': 'm_band'}).to_csv(data / 'spin_splitting.csv', index=False,
+                                                      float_format='%.6g')  # fmt: skip
     if image:
         shutil.copy(image, data / Path(image).name)
     meta = dict(

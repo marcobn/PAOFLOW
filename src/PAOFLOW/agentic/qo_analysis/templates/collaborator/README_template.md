@@ -7,6 +7,7 @@
 |---|---|
 | `fig1_sweep_overlay.png` | calculated extremal orbits vs measured peaks over the rotation, with branch assignments |
 | `fig2_network_orbits.png` | magnetic-breakdown network orbits vs the peaks no ordinary orbit explains (if computed) |
+| `fig3_spin_factors.png` | calculated orbits coloured by the spin factor \|R_s\| of the first harmonic (if computed) |
 | `plot_figures.py`, `weak_peak_tests.py` | regenerate figures and statistics (Python 3 + numpy + matplotlib) |
 | `data/` | all inputs (see the end) |
 
@@ -47,7 +48,7 @@
 `python plot_figures.py` ; `python weak_peak_tests.py` - data files and columns:
 `calc_orbits.csv` (angle_deg, band, group, freq_T, mstar_me, carrier, extremum, curv_kTA2, amp_factor,
 num_orbit_copies), `exp_sweep_peaks.csv` (angle_deg [calculation angle], freq_T, rel_mag),
-`branch_assignments.csv`, `network_orbits.csv`, `meta.json` (thresholds, colours, touching groups).
+`branch_assignments.csv`, `network_orbits.csv`, `spin_splitting.csv`, `meta.json` (thresholds, colours, touching groups).
 
 ## 7. How to read calc_orbits.csv (FAQ)
 - One row = one extremal orbit (dA/dk_H = 0), not one Fermi surface. F[T] = 10 476 x A[A^-2].

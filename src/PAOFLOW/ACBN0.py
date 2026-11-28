@@ -1097,6 +1097,29 @@ class ACBN0:
                 check=True,
             )
 
+    #: Smallest |U| (eV) written to the HUBBARD card: QE stops on a Hubbard_U of exactly zero.
+    MIN_HUBBARD_VALUE = 1.0e-4
+
+    @classmethod
+    def _qe_value(cls, value: float) -> str:
+        """Hubbard value as QE text: fixed point, never rounded or floored to zero.
+
+        Parameters
+        ----------
+        value : float
+            U or V in eV.
+
+        Returns
+        -------
+        str
+            ``value`` with six decimals; ``|value|`` below :attr:`MIN_HUBBARD_VALUE`
+            (including 0) is replaced by that minimum, with the sign kept (positive for 0).
+        """
+        value = float(value)
+        if abs(value) < cls.MIN_HUBBARD_VALUE:
+            value = -cls.MIN_HUBBARD_VALUE if value < 0 else cls.MIN_HUBBARD_VALUE
+        return f'{value:.6f}'
+
     def hubbard_card(self):
         if len(self.uVals) == 0 and len(self.vVals) == 0:
             msg = (
@@ -1107,7 +1130,7 @@ class ACBN0:
 
         card = [self.hubbard_tag]
         for k, v in self.uVals.items():
-            card.append(f' U {k} {v}')
+            card.append(f' U {k} {self._qe_value(v)}')
 
         # Emit each undirected V channel only once.  QE's HUBBARD card
         # check (PW/src/read_cards.f90, card_hubbard) considers two V
@@ -1139,7 +1162,7 @@ class ACBN0:
                 grouped[canonical] = ((sym1, sym2, idx1, idx2), [v])
         for (sym1, sym2, idx1, idx2), vals in grouped.values():
             v_emit = sum(vals) / len(vals)
-            card.append(f' V {sym1} {sym2} {idx1} {idx2} {v_emit}')
+            card.append(f' V {sym1} {sym2} {idx1} {idx2} {self._qe_value(v_emit)}')
 
         return card
 
